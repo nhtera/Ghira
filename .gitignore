@@ -35,3 +35,6 @@ tools/eval/results/
 .vscode/*
 !.vscode/extensions.json
 *.log
+
+# Local agent state
+/.claude/agent-memory/
