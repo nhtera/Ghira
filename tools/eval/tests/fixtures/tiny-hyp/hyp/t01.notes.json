@@ -1,0 +1,46 @@
+{
+  "schema": "ghi.notes/1",
+  "engine": {
+    "name": "fixture",
+    "version": "1"
+  },
+  "summary": [
+    {
+      "text": "Scope agreed.",
+      "citations": [
+        0
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "text": "Beta ships with current scope.",
+      "citations": [
+        0
+      ]
+    }
+  ],
+  "action_items": [
+    {
+      "text": "Gửi tài liệu scope hôm nay",
+      "owner": "Linh",
+      "due": null,
+      "citations": [
+        1
+      ]
+    },
+    {
+      "text": "Book a meeting room",
+      "owner": null,
+      "due": null,
+      "citations": [
+        2
+      ]
+    }
+  ],
+  "perf": {
+    "wall_s": 1.0,
+    "rtf": null,
+    "peak_rss_mb": null
+  }
+}

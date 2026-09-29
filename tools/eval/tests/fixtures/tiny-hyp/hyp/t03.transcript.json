@@ -1,0 +1,45 @@
+{
+  "schema": "ghi.transcript/1",
+  "audio": "t03.wav",
+  "duration_s": 24.0,
+  "pass": "final",
+  "lang": "auto",
+  "engine": {
+    "name": "fixture",
+    "version": "1"
+  },
+  "segments": [
+    {
+      "id": 0,
+      "start": 0,
+      "end": 6,
+      "text": "Deadline là thứ sáu nhé team.",
+      "lang": "vi",
+      "speaker": null,
+      "words": null
+    },
+    {
+      "id": 1,
+      "start": 12,
+      "end": 18,
+      "text": "Mình sẽ review pull request trước.",
+      "lang": "vi",
+      "speaker": null,
+      "words": null
+    },
+    {
+      "id": 2,
+      "start": 18,
+      "end": 24,
+      "text": "rồi mình deploy lên staging",
+      "lang": "vi",
+      "speaker": null,
+      "words": null
+    }
+  ],
+  "perf": {
+    "wall_s": 1.0,
+    "rtf": 0.05,
+    "peak_rss_mb": null
+  }
+}

@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ghi.notes/1",
+  "type": "object",
+  "required": [
+    "schema",
+    "engine",
+    "summary",
+    "decisions",
+    "action_items",
+    "perf"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ghi.notes/1"
+    },
+    "engine": {
+      "$ref": "#/$defs/engine"
+    },
+    "summary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "text",
+          "citations"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "text",
+          "citations"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "action_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "text",
+          "citations"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "perf": {
+      "$ref": "#/$defs/perf"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "perf": {
+      "type": "object",
+      "required": [
+        "wall_s"
+      ],
+      "properties": {
+        "wall_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rtf": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "peak_rss_mb": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "engine": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

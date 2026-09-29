@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ghi.error/1",
+  "type": "object",
+  "required": [
+    "schema",
+    "code",
+    "message"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ghi.error/1"
+    },
+    "code": {
+      "enum": [
+        "not_implemented",
+        "engine_unavailable",
+        "bad_input",
+        "internal"
+      ]
+    },
+    "message": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "perf": {
+      "type": "object",
+      "required": [
+        "wall_s"
+      ],
+      "properties": {
+        "wall_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rtf": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "peak_rss_mb": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "engine": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

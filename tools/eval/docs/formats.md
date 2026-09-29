@@ -1,0 +1,339 @@
+# Eval kit: file formats and contracts
+
+This is the single reference for the eval kit's data layout, the `ghi` CLI
+JSON contract, and the report format. The Rust CLI (`crates/ghi-cli`), the
+Python harness (`tools/eval/ghi_eval`) and the guides all follow it. Change it
+here first, then bump the `schema` version of whatever changed.
+
+Times are seconds (float) from the start of the audio. Text is UTF-8, NFC.
+
+## 1. Dataset layout
+
+A dataset is one directory. Customer and team datasets live on an encrypted
+volume and never enter git. Public sets (`scripts/fetch_public_sets.py`) use
+the same layout under `tools/eval/data/` (git-ignored).
+
+```
+<dataset>/
+  manifest.yaml
+  audio/<id>.wav                 # one mixed track, any sample rate, mono or stereo
+  audio/<id>.mic.wav             # optional, call recordings with 2 tracks
+  audio/<id>.system.wav          #   (then `audio` in the manifest names the mix)
+  labels/<id>.rttm               # reference diarization (optional for ASR-only sets)
+  refs/<id>.txt                  # reference transcript (optional for diarization-only sets)
+  notes/<id>.yaml                # reference notes for LLM metrics (optional, §5)
+  runs/<run-id>/                 # harness output; contains hypothesis text, stays here
+  published-hyp/hyp/<id>.rttm    # public sets only: published system output (fetcher
+  published.json                 #   --with-published-hyp) and its published scores
+```
+
+### manifest.yaml (version 1)
+
+```yaml
+version: 1
+name: customer-2026q4            # free text, appears in reports
+# Names of people, companies and projects that may be spoken in the meetings.
+# Used only by the privacy lint (§6); never copied into a report.
+names: [Linh, Minh, "Công ty ABC"]
+files:
+  - id: m001                     # [A-Za-z0-9_-]+, unique; never appears in a report
+    audio: audio/m001.wav
+    tracks: {mic: audio/m001.mic.wav, system: audio/m001.system.wav}   # optional
+    rttm: labels/m001.rttm       # optional
+    ref: refs/m001.txt           # optional
+    notes_ref: notes/m001.yaml   # optional
+    lang: vi                     # vi | en | mixed
+    setting: room                # room | call | other (other: public read or broadcast speech)
+    playback: speakers           # headphones | speakers | na   (na for room)
+    speakers: 4                  # number of distinct speakers in the recording
+    duration_s: 1834.2           # optional; read from the audio when missing
+    persons: {spk1: P01, spk2: P02}   # optional: RTTM speaker label -> pseudonymous
+                                      # person id, for cross-meeting speaker-ID trials
+```
+
+Slices used in reports: `lang` × `setting` × speaker bucket, where the bucket
+is `1-2`, `3-5` or `6+` from `speakers`.
+
+Target mix for a customer set (recording guide): ≥10 h, ~40% `vi`, ~30% `en`,
+~30% `mixed`; both settings; both playback modes for calls; 3–5 files with 6–8
+speakers. `ghi-eval validate` prints hours per slice against these targets.
+
+### labels/<id>.rttm
+
+Standard NIST RTTM, one `SPEAKER` line per turn, overlaps allowed:
+
+```
+SPEAKER m001 1 12.340 3.210 <NA> <NA> spk1 <NA> <NA>
+```
+
+The file-id column must equal the manifest `id`.
+
+### refs/<id>.txt
+
+Verbatim transcript as spoken, one utterance per line, in time order. Scoring
+joins the lines, so line breaks don't matter. Conventions (labelling guide):
+English words in Vietnamese speech are written in English as spoken;
+unintelligible speech is `[unk]`; `[unk]` tokens and anything inside
+`[...]` are removed before scoring.
+
+## 2. `ghi` CLI contract (schema version 1)
+
+`ghi` is the headless CLI in `crates/ghi-cli`. The harness is its only
+consumer. Every command prints **one JSON document on stdout**, except
+`--stream`, which prints NDJSON (one event per line). Logs go to stderr.
+
+`ghi` with no arguments prints help and exits `2`; `ghi --version` prints
+`ghi <version>`.
+
+Exit codes: `0` ok · `1` runtime failure · `2` usage error · `3` not
+implemented / engine unavailable. On exit codes 1 and 3 stdout is empty and
+stderr's **last line** is an error document:
+
+```json
+{"schema":"ghi.error/1","code":"not_implemented","message":"transcribe: no speech engine yet (phase 3)"}
+```
+
+`code` is one of `not_implemented`, `engine_unavailable`, `bad_input`, `internal`.
+
+Every result has `perf`: `{"wall_s": float, "rtf": float|null, "peak_rss_mb": float|null}`.
+`rtf` = `wall_s / duration_s`. The harness also measures wall time and peak RSS
+itself (§4) and reports its own numbers; `perf` is informational.
+
+### `ghi version --json`
+
+```json
+{"schema":"ghi.version/1","ghi":"0.1.0","core":"0.1.0","engines":[]}
+```
+
+`engines` lists `{"name": str, "version": str}` once engines exist.
+
+### `ghi transcribe <audio> [--lang auto|vi|en] [--pass live|final] --json`
+
+Defaults: `--lang auto`, `--pass final`.
+
+```json
+{
+  "schema": "ghi.transcript/1",
+  "audio": "m001.wav",
+  "duration_s": 1834.2,
+  "pass": "final",
+  "lang": "auto",
+  "engine": {"name": "nemotron-3.5-asr-streaming", "version": "1"},
+  "segments": [
+    {"id": 0, "start": 1.23, "end": 3.40, "text": "Mình chốt scope cho beta nhé.",
+     "lang": "vi", "speaker": null, "words": null}
+  ],
+  "perf": {"wall_s": 95.1, "rtf": 0.052, "peak_rss_mb": 2210.0}
+}
+```
+
+`segments[].id` is unique within the document (citations refer to it).
+`lang` is `vi`, `en` or `null`. `speaker` is a diarization label or `null`.
+`words` is `null` or a list of `{"start", "end", "text"}`.
+
+### `ghi transcribe <audio> --stream [--realtime] [--lang ...]`
+
+NDJSON on stdout, one event per line:
+
+```json
+{"schema":"ghi.event/1","type":"partial","seq":0,"wall_s":1.92,"audio_start":0.0,"audio_end":1.60,"text":"Mình chốt","lang":"vi","speaker":null}
+{"schema":"ghi.event/1","type":"final","seq":1,"wall_s":3.95,"audio_start":0.0,"audio_end":3.40,"text":"Mình chốt scope cho beta nhé.","lang":"vi","speaker":"S1"}
+{"schema":"ghi.event/1","type":"end","seq":2,"wall_s":1834.9,"audio_start":0.0,"audio_end":1834.2,"text":"","lang":null,"speaker":null}
+```
+
+- `type`: `partial` (may change), `final` (committed caption), `end` (last line).
+- `wall_s`: seconds since the CLI started feeding audio.
+- `--realtime` requires `--stream`. With it the CLI feeds audio at 1× speed, as the live app does, so
+  **caption lag = `wall_s − audio_end`**. Without `--realtime` audio is fed as
+  fast as possible and the harness does not compute lag.
+
+### `ghi diarize <audio> [--pass live|final] [--max-speakers N] --json`
+
+```json
+{
+  "schema": "ghi.diarization/1",
+  "audio": "m001.wav",
+  "duration_s": 1834.2,
+  "pass": "final",
+  "engine": {"name": "nemotron-3-diarization", "version": "1"},
+  "turns": [{"start": 12.34, "end": 15.55, "speaker": "S1"}],
+  "perf": {"wall_s": 40.2, "rtf": 0.022, "peak_rss_mb": 1500.0}
+}
+```
+
+### `ghi notes <transcript.json> [--lang auto|vi|en] --json`
+
+Input is a `ghi.transcript/1` document. Output (phase 6 fills it in; the
+schema may grow, but fields below keep their meaning):
+
+```json
+{
+  "schema": "ghi.notes/1",
+  "engine": {"name": "qwen3-8b-q4", "version": "1"},
+  "summary": [{"text": "Scope for the beta was agreed.", "citations": [0]}],
+  "decisions": [{"text": "Beta ships without calendar sync.", "citations": [0, 4]}],
+  "action_items": [
+    {"text": "Send the beta scope doc", "owner": "Linh", "due": null, "citations": [7]}
+  ],
+  "perf": {"wall_s": 61.0, "rtf": null, "peak_rss_mb": 5400.0}
+}
+```
+
+`citations` are `segments[].id` values of the input transcript.
+
+### `ghi bench <audio> [--pass live|final] --json`
+
+Default: `--pass live`.
+
+```json
+{
+  "schema": "ghi.bench/1",
+  "audio": "m001.wav",
+  "duration_s": 1834.2,
+  "pass": "live",
+  "stages": [{"name": "asr", "wall_s": 80.0}, {"name": "diarization", "wall_s": 30.1}],
+  "perf": {"wall_s": 110.1, "rtf": 0.06, "peak_rss_mb": 3000.0}
+}
+```
+
+Golden examples of each document live in `tools/eval/tests/fixtures/cli/`.
+`crates/ghi-cli` serializes its types against them in its unit tests, and the
+harness validates them against `ghi_eval/schemas/*.schema.json`, so a change on
+either side fails a test.
+
+## 3. Systems under test (adapters)
+
+`ghi-eval run --system <spec>`:
+
+| spec | What runs |
+|---|---|
+| `ghi` or `ghi:<path-to-binary>` | The `ghi` CLI (§2). Default binary: `ghi` on `PATH`. |
+| `nemo-ref[:<config.yaml>]` | NeMo Python models (reference baselines for phase 3, drafts for labelling). Optional extra: `uv sync --extra nemo`. |
+| `whisper-ref[:<model>]` | faster-whisper, ASR only (labelling drafts). Optional extra: `uv sync --extra whisper`. |
+| `files:<dir>` | Precomputed hypotheses in `<dir>/hyp/` (or `<dir>` itself if it has no `hyp/`), named as in a run directory (§4). Used by CI and to score outputs made elsewhere. |
+
+## 4. Run directory
+
+`<dataset>/runs/<run-id>/` (default run id `<system>-<YYYYMMDD-HHMMSS>`).
+It holds hypothesis text, so it stays on the encrypted volume.
+
+```
+run.yaml                       # system spec + version, tasks, pass, start/end time
+hyp/<id>.transcript.json       # ghi.transcript/1
+hyp/<id>.rttm                  # from ghi.diarization/1
+hyp/<id>.events.ndjson         # ghi.event/1 stream (only with --realtime)
+hyp/<id>.notes.json            # ghi.notes/1
+hyp/<id>.notes-gold.json       # ghi.notes/1 made from the reference transcript
+hyp/<id>.perf.json             # harness-measured {"wall_s","audio_s","rtf","peak_rss_mb"} per task
+speaker_scores.tsv             # optional: enroll_file enroll_spk test_file test_spk score
+judgements.csv                 # LLM note judgements (§5), filled in by a person
+scores.json                    # per-file metrics; file ids, no text
+report-<system>-<pass>-<YYYYMMDD>.json / .md   # aggregates only (§6); the only files that leave
+```
+
+## 5. LLM note references and judgements
+
+`notes/<id>.yaml`, written by the customer for 5–10 meetings:
+
+```yaml
+action_items:
+  - text: Send the beta scope doc
+    owner: Linh                # or null
+decisions:
+  - text: Beta ships without calendar sync
+```
+
+`ghi-eval judge --run <dir>` writes `judgements.csv`, one row per system
+action item plus one row per unmatched reference item, pre-filled with a
+suggested match (token F1 ≥ 0.5). A person checks every row:
+
+| column | values |
+|---|---|
+| `file`, `source` | file id; `pipeline` or `gold` (which transcript the notes came from) |
+| `sys_idx`, `sys_text`, `sys_owner` | system item (blank on reference-only rows) |
+| `sys_citations`, `cited_text` | cited segment ids (joined with `;`) and their text, to judge `citation_ok` |
+| `ref_idx`, `ref_text`, `ref_owner` | matched reference item, blank if none |
+| `owner_ok` | `y` / `n` / blank (only when matched) |
+| `citation_ok` | `y` / `n` / `na`: do the cited segments support the item? |
+| `hallucinated` | `y` / `n`: is the item unsupported by the meeting? |
+
+Metrics: precision = matched system items / system items; recall = matched
+reference items / reference items; owner accuracy = `owner_ok=y` / matched;
+citation validity = `citation_ok=y` / (`y`+`n`); hallucinations = count of
+`y`; schema validity = notes outputs valid against `ghi.notes/1` / outputs.
+
+## 6. Report (schema `ghi.eval-report/1`)
+
+`report-<system>-<pass>-<YYYYMMDD>.json` (and a `.md` rendering of the same numbers):
+
+```json
+{
+  "schema": "ghi.eval-report/1",
+  "generated": "2026-10-20T10:00:00Z",
+  "kit_version": "0.1.0",
+  "system": {"spec": "ghi", "version": "0.1.0"},
+  "dataset": {"name": "customer-2026q4", "files": 42, "hours": 10.4},
+  "run": {"pass": "final", "realtime": false, "lang": "auto", "tasks": ["asr", "diar", "notes"], "errors": 0},
+  "der_collar": 0.25,
+  "slices": [
+    {"lang": "vi", "setting": "room", "speakers": "3-5", "files": 6, "hours": 1.8,
+     "der": 0.182, "jer": 0.25, "spk_count_err": 0.5,
+     "wer": null, "syl_wer": 0.141, "mer": null,
+     "partial_lag_p50": 0.9, "partial_lag_p95": 1.6,
+     "final_lag_p50": 1.8, "final_lag_p95": 2.7,
+     "rtf": 0.05, "peak_rss_mb": 2300.0,
+     "asr_files": 6, "diar_files": 6, "lag_files": 0, "notes_files": 2}
+  ],
+  "overall": {"...": "same metric keys, over all files"},
+  "speaker_id": {"eer": 0.08, "trials": 120},
+  "llm": [{"source": "pipeline", "files": 8, "schema_valid": 1.0, "precision": 0.8,
+           "recall": 0.7, "owner_acc": 0.9, "citation_valid": 0.85, "hallucinations": 2}],
+  "gates": [{"id": "der_vn_room", "metric": "der", "slice": {"lang": "vi", "setting": "room"},
+             "max": 0.20, "floor": 0.25, "value": 0.182, "status": "pass"}],
+  "privacy_lint": {"passed": true, "ngram": 3, "names_checked": 12}
+}
+```
+
+- Metrics are pooled, not averaged per file: DER = total error time / total
+  reference speech; WER = total errors / total reference tokens.
+- `wer` is computed on `en` files, `syl_wer` on `vi` files, `mer` on `mixed`
+  files. All three use the same tokens: NFC, lowercase, punctuation removed,
+  split on whitespace (a Vietnamese syllable is one token). Numbers are not
+  normalized: references spell them as spoken, so a system that prints digits
+  is penalized (phase 3 adds a number normalizer if the engines print digits). `mer` here is the
+  code-switch **mixed error rate**, not jiwer's "match error rate".
+- DER: collar ±0.25 s (`der_collar`; `--collar` on `run`/`score`/`report`
+  changes it, `0` = none), overlap scored. JER uses no collar. `overall` also
+  carries `files` and `hours`. Missing metrics are `null`.
+- `asr_files`, `diar_files`, `lag_files`, `notes_files`: files with both a
+  reference and a valid hypothesis for that metric. `run.errors` counts the
+  errors recorded in `run.yaml`. `system.spec` and `system.version` never hold
+  paths (basenames only; `files:<dir>` is reported as `files`).
+- A report never contains file ids, file names, paths, transcript text,
+  reference text or names. Before writing, the privacy lint fails the report
+  (JSON and `.md`) if any 3-token sequence from a reference transcript or
+  reference note appears anywhere in it; if a free-text field (`system.*`,
+  `dataset.name`, gate ids) contains a manifest `names` entry, a note owner or
+  a file id; or if any string contains `/`, `\` or a drive prefix such as `C:`
+  (fixed vocabulary like `n/a` is exempt). All matching is after the same
+  normalization, with diacritics folded for names.
+
+### Gates
+
+`ghi_eval/gates.yaml` encodes doc 05 §9 (a copy can be passed with `--gates`):
+
+| id | metric | slice | max | floor |
+|---|---|---|---|---|
+| `der_overall` | `der` | all | 0.15 | |
+| `der_call` | `der` | `setting: call` | 0.15 | |
+| `der_vn_room` | `der` | `lang: vi, setting: room` | 0.20 | 0.25 |
+| `syl_wer_vn_call` | `syl_wer` | `lang: vi, setting: call` | 0.15 | |
+| `syl_wer_vn_room` | `syl_wer` | `lang: vi, setting: room` | 0.15 | 0.25 |
+| `lag_en` | `final_lag_p95` | `lang: en` | 2.0 | |
+| `lag_vn` | `final_lag_p95` | `lang: vi` | 3.0 | |
+
+Status: `pass` if value ≤ max; `best_effort` if a floor exists and value ≤
+floor; `fail` otherwise; `n/a` without data; `incomplete` if some file in the
+slice has a reference but no valid hypothesis for the metric (fix the errors
+and re-run before trusting the gate). Word-error gates are `n/a` on
+`--pass live` runs; lag gates are `n/a` unless the run used `--realtime`.

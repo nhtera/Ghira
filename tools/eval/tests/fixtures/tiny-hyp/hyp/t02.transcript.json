@@ -1,0 +1,36 @@
+{
+  "schema": "ghi.transcript/1",
+  "audio": "t02.wav",
+  "duration_s": 20.0,
+  "pass": "final",
+  "lang": "auto",
+  "engine": {
+    "name": "fixture",
+    "version": "1"
+  },
+  "segments": [
+    {
+      "id": 0,
+      "start": 0,
+      "end": 4,
+      "text": "Let us ship the beta on Monday.",
+      "lang": "en",
+      "speaker": null,
+      "words": null
+    },
+    {
+      "id": 1,
+      "start": 9,
+      "end": 13,
+      "text": "Can you send the doc?",
+      "lang": "en",
+      "speaker": null,
+      "words": null
+    }
+  ],
+  "perf": {
+    "wall_s": 1.0,
+    "rtf": 0.05,
+    "peak_rss_mb": null
+  }
+}

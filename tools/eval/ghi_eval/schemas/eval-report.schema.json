@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ghi.eval-report/1",
+  "type": "object",
+  "required": ["schema", "generated", "kit_version", "system", "dataset", "run", "der_collar", "slices", "overall", "speaker_id", "llm", "gates", "privacy_lint"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "ghi.eval-report/1"},
+    "generated": {"type": "string"},
+    "kit_version": {"type": "string"},
+    "system": {
+      "type": "object",
+      "required": ["spec", "version"],
+      "additionalProperties": false,
+      "properties": {"spec": {"type": "string"}, "version": {"type": "string"}}
+    },
+    "dataset": {
+      "type": "object",
+      "required": ["name", "files", "hours"],
+      "additionalProperties": false,
+      "properties": {"name": {"type": "string"}, "files": {"type": "integer"}, "hours": {"type": "number"}}
+    },
+    "run": {
+      "type": "object",
+      "required": ["pass", "realtime", "lang", "tasks", "errors"],
+      "additionalProperties": false,
+      "properties": {
+        "pass": {"enum": ["live", "final"]},
+        "realtime": {"type": "boolean"},
+        "lang": {"enum": ["auto", "vi", "en"]},
+        "tasks": {"type": "array", "items": {"enum": ["asr", "diar", "stream", "notes"]}},
+        "errors": {"type": "integer", "minimum": 0}
+      }
+    },
+    "der_collar": {"type": "number", "minimum": 0},
+    "slices": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          {"$ref": "#/$defs/metrics"},
+          {
+            "type": "object",
+            "required": ["lang", "setting", "speakers"],
+            "properties": {
+              "lang": {"enum": ["vi", "en", "mixed"]},
+              "setting": {"enum": ["room", "call", "other"]},
+              "speakers": {"enum": ["1-2", "3-5", "6+"]}
+            }
+          }
+        ]
+      }
+    },
+    "overall": {"$ref": "#/$defs/metrics"},
+    "speaker_id": {
+      "type": ["object", "null"],
+      "required": ["eer", "trials"],
+      "additionalProperties": false,
+      "properties": {"eer": {"type": ["number", "null"]}, "trials": {"type": "integer"}}
+    },
+    "llm": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "files", "schema_valid", "precision", "recall", "owner_acc", "citation_valid", "hallucinations"],
+        "additionalProperties": false,
+        "properties": {
+          "source": {"enum": ["pipeline", "gold"]},
+          "files": {"type": "integer"},
+          "schema_valid": {"type": ["number", "null"]},
+          "precision": {"type": ["number", "null"]},
+          "recall": {"type": ["number", "null"]},
+          "owner_acc": {"type": ["number", "null"]},
+          "citation_valid": {"type": ["number", "null"]},
+          "hallucinations": {"type": ["integer", "null"]}
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "metric", "slice", "max", "floor", "value", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string"},
+          "metric": {"type": "string"},
+          "slice": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {"lang": {"type": "string"}, "setting": {"type": "string"}, "speakers": {"type": "string"}}
+          },
+          "max": {"type": "number"},
+          "floor": {"type": ["number", "null"]},
+          "value": {"type": ["number", "null"]},
+          "status": {"enum": ["pass", "best_effort", "fail", "incomplete", "n/a"]}
+        }
+      }
+    },
+    "privacy_lint": {
+      "type": "object",
+      "required": ["passed", "ngram", "names_checked"],
+      "additionalProperties": false,
+      "properties": {"passed": {"const": true}, "ngram": {"type": "integer"}, "names_checked": {"type": "integer"}}
+    }
+  },
+  "$defs": {
+    "metrics": {
+      "type": "object",
+      "required": ["files", "hours", "der", "jer", "spk_count_err", "wer", "syl_wer", "mer", "partial_lag_p50", "partial_lag_p95", "final_lag_p50", "final_lag_p95", "rtf", "peak_rss_mb", "asr_files", "diar_files", "lag_files", "notes_files"],
+      "properties": {
+        "asr_files": {"type": "integer", "minimum": 0},
+        "diar_files": {"type": "integer", "minimum": 0},
+        "lag_files": {"type": "integer", "minimum": 0},
+        "notes_files": {"type": "integer", "minimum": 0},
+        "files": {"type": "integer"},
+        "hours": {"type": "number"},
+        "der": {"type": ["number", "null"]},
+        "jer": {"type": ["number", "null"]},
+        "spk_count_err": {"type": ["number", "null"]},
+        "wer": {"type": ["number", "null"]},
+        "syl_wer": {"type": ["number", "null"]},
+        "mer": {"type": ["number", "null"]},
+        "partial_lag_p50": {"type": ["number", "null"]},
+        "partial_lag_p95": {"type": ["number", "null"]},
+        "final_lag_p50": {"type": ["number", "null"]},
+        "final_lag_p95": {"type": ["number", "null"]},
+        "rtf": {"type": ["number", "null"]},
+        "peak_rss_mb": {"type": ["number", "null"]}
+      }
+    }
+  }
+}

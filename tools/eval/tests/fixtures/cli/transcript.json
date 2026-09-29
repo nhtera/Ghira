@@ -1,0 +1,14 @@
+{
+  "schema": "ghi.transcript/1",
+  "audio": "m001.wav",
+  "duration_s": 12.5,
+  "pass": "final",
+  "lang": "auto",
+  "engine": {"name": "example-asr", "version": "1"},
+  "segments": [
+    {"id": 0, "start": 1.23, "end": 3.4, "text": "Mình chốt scope cho beta nhé.", "lang": "vi", "speaker": "S1", "words": null},
+    {"id": 1, "start": 4.0, "end": 6.5, "text": "Okay, I will send the doc.", "lang": "en", "speaker": "S2",
+     "words": [{"start": 4.0, "end": 4.4, "text": "Okay,"}, {"start": 4.5, "end": 4.6, "text": "I"}]}
+  ],
+  "perf": {"wall_s": 0.65, "rtf": 0.052, "peak_rss_mb": 2210.0}
+}

@@ -1,0 +1,12 @@
+{
+  "schema": "ghi.diarization/1",
+  "audio": "m001.wav",
+  "duration_s": 12.5,
+  "pass": "final",
+  "engine": {"name": "example-diar", "version": "1"},
+  "turns": [
+    {"start": 1.2, "end": 3.5, "speaker": "S1"},
+    {"start": 3.9, "end": 6.6, "speaker": "S2"}
+  ],
+  "perf": {"wall_s": 0.3, "rtf": 0.024, "peak_rss_mb": null}
+}

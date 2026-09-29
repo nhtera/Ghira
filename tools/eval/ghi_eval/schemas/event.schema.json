@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ghi.event/1",
+  "type": "object",
+  "required": [
+    "schema",
+    "type",
+    "seq",
+    "wall_s",
+    "audio_start",
+    "audio_end",
+    "text"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ghi.event/1"
+    },
+    "type": {
+      "enum": [
+        "partial",
+        "final",
+        "end"
+      ]
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "wall_s": {
+      "type": "number",
+      "minimum": 0
+    },
+    "audio_start": {
+      "type": "number",
+      "minimum": 0
+    },
+    "audio_end": {
+      "type": "number",
+      "minimum": 0
+    },
+    "text": {
+      "type": "string"
+    },
+    "lang": {
+      "enum": [
+        "vi",
+        "en",
+        null
+      ]
+    },
+    "speaker": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "perf": {
+      "type": "object",
+      "required": [
+        "wall_s"
+      ],
+      "properties": {
+        "wall_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rtf": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "peak_rss_mb": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "engine": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

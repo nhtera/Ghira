@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ghi.diarization/1",
+  "type": "object",
+  "required": [
+    "schema",
+    "audio",
+    "duration_s",
+    "pass",
+    "engine",
+    "turns",
+    "perf"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ghi.diarization/1"
+    },
+    "audio": {
+      "type": "string"
+    },
+    "duration_s": {
+      "type": "number",
+      "minimum": 0
+    },
+    "pass": {
+      "enum": [
+        "live",
+        "final"
+      ]
+    },
+    "engine": {
+      "$ref": "#/$defs/engine"
+    },
+    "turns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "speaker"
+        ],
+        "properties": {
+          "start": {
+            "type": "number",
+            "minimum": 0
+          },
+          "end": {
+            "type": "number",
+            "minimum": 0
+          },
+          "speaker": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "perf": {
+      "$ref": "#/$defs/perf"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "perf": {
+      "type": "object",
+      "required": [
+        "wall_s"
+      ],
+      "properties": {
+        "wall_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rtf": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "peak_rss_mb": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "engine": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

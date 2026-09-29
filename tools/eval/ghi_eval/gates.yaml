@@ -1,0 +1,14 @@
+# Acceptance gates (doc 05 section 9). `slice` filters the files a gate looks at
+# (any of lang, setting, speakers); the metric is pooled over all matching files.
+# Status: pass if value <= max; best_effort if floor is set and value <= floor;
+# fail otherwise; n/a without data. Word-error gates are meant for `--pass final`
+# runs, lag gates for `--pass live --realtime` runs.
+version: 1
+gates:
+  - {id: der_overall, metric: der, slice: {}, max: 0.15}
+  - {id: der_call, metric: der, slice: {setting: call}, max: 0.15}
+  - {id: der_vn_room, metric: der, slice: {lang: vi, setting: room}, max: 0.20, floor: 0.25}
+  - {id: syl_wer_vn_call, metric: syl_wer, slice: {lang: vi, setting: call}, max: 0.15}
+  - {id: syl_wer_vn_room, metric: syl_wer, slice: {lang: vi, setting: room}, max: 0.15, floor: 0.25}
+  - {id: lag_en, metric: final_lag_p95, slice: {lang: en}, max: 2.0}
+  - {id: lag_vn, metric: final_lag_p95, slice: {lang: vi}, max: 3.0}

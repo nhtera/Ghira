@@ -1,0 +1,5 @@
+action_items:
+  - text: Gửi tài liệu scope
+    owner: Linh
+decisions:
+  - text: Beta chốt scope hiện tại

@@ -1,0 +1,34 @@
+version: 1
+name: tiny-fixture
+names: [Linh, Minh, "Công ty ABC"]
+files:
+  - id: t01
+    audio: audio/t01.wav        # not committed; duration_s is enough for files: runs
+    rttm: labels/t01.rttm
+    ref: refs/t01.txt
+    notes_ref: notes/t01.yaml
+    lang: vi
+    setting: room
+    playback: na
+    speakers: 2
+    duration_s: 30.0
+    persons: {spk1: P01, spk2: P02}
+  - id: t02
+    audio: audio/t02.wav
+    rttm: labels/t02.rttm
+    ref: refs/t02.txt
+    lang: en
+    setting: call
+    playback: headphones
+    speakers: 2
+    duration_s: 20.0
+    persons: {spk1: P01, spk2: P03}
+  - id: t03
+    audio: audio/t03.wav
+    rttm: labels/t03.rttm
+    ref: refs/t03.txt
+    lang: mixed
+    setting: room
+    playback: na
+    speakers: 4
+    duration_s: 24.0

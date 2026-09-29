@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ghi.bench/1",
+  "type": "object",
+  "required": [
+    "schema",
+    "audio",
+    "duration_s",
+    "pass",
+    "stages",
+    "perf"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ghi.bench/1"
+    },
+    "audio": {
+      "type": "string"
+    },
+    "duration_s": {
+      "type": "number",
+      "minimum": 0
+    },
+    "pass": {
+      "enum": [
+        "live",
+        "final"
+      ]
+    },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "wall_s"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "wall_s": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "perf": {
+      "$ref": "#/$defs/perf"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "perf": {
+      "type": "object",
+      "required": [
+        "wall_s"
+      ],
+      "properties": {
+        "wall_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rtf": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "peak_rss_mb": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "engine": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -34,4 +34,10 @@ pnpm build && cargo test --workspace && cargo clippy --workspace --all-targets -
 pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @ghi/desktop test:e2e
 ./tools/scripts/check-spdx.sh && ./tools/scripts/check-net-egress.sh
 cargo deny check licenses bans advisories sources
+# eval kit (phase 2), from tools/eval:
+uv sync --locked && uv run ruff check && uv run ruff format --check && uv run pytest -q
 ```
+
+Eval kit: `tools/eval` (`ghi-eval`, Python 3.11 + uv). The data, `ghi` CLI and
+report contract is `tools/eval/docs/formats.md`. Recordings, transcripts and
+run directories never enter git; only aggregate reports leave the customer.

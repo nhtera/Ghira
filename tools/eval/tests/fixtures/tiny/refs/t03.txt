@@ -1,0 +1,3 @@
+Deadline là thứ sáu nhé team.
+Mình sẽ review pull request trước.
+[unk] rồi mình deploy lên staging.

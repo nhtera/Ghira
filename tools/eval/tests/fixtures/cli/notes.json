@@ -1,0 +1,10 @@
+{
+  "schema": "ghi.notes/1",
+  "engine": {"name": "example-llm", "version": "1"},
+  "summary": [{"text": "Scope for the beta was agreed.", "citations": [0]}],
+  "decisions": [{"text": "Beta ships with the agreed scope.", "citations": [0]}],
+  "action_items": [
+    {"text": "Send the beta scope doc", "owner": "S2", "due": null, "citations": [1]}
+  ],
+  "perf": {"wall_s": 61.0, "rtf": null, "peak_rss_mb": 5400.0}
+}

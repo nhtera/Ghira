@@ -9,3 +9,6 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+  - package-ecosystem: uv
+    directory: /tools/eval
+    schedule: { interval: weekly }

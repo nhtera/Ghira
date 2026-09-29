@@ -96,3 +96,42 @@ jobs:
         env:
           NEMO_BUILD_ROOT: ${{ runner.temp }}/nemo
         run: ./tools/scripts/nemo-smoke-build.sh
+
+  # Eval harness (phase 2): unit tests, plus one scored run on a text-only
+  # fixture. Real and public audio never enters CI.
+  eval:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: tools/eval
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      # The real `ghi` binary, so the harness is tested against the CLI contract.
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: eval
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build ghi
+        run: cargo build -p ghi-cli --locked
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run pytest -q
+        env:
+          GHI_BIN: ${{ github.workspace }}/target/debug/ghi${{ runner.os == 'Windows' && '.exe' || '' }}
+      - name: Scored run on the text-only fixture
+        run: >-
+          uv run ghi-eval run --dataset tests/fixtures/tiny
+          --system files:tests/fixtures/tiny-hyp --run-id ci
+          --tasks asr,diar,notes --out "$RUNNER_TEMP/eval-run"

@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ghi.transcript/1",
+  "type": "object",
+  "required": [
+    "schema",
+    "audio",
+    "duration_s",
+    "pass",
+    "lang",
+    "engine",
+    "segments",
+    "perf"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ghi.transcript/1"
+    },
+    "audio": {
+      "type": "string"
+    },
+    "duration_s": {
+      "type": "number",
+      "minimum": 0
+    },
+    "pass": {
+      "enum": [
+        "live",
+        "final"
+      ]
+    },
+    "lang": {
+      "enum": [
+        "auto",
+        "vi",
+        "en"
+      ]
+    },
+    "engine": {
+      "$ref": "#/$defs/engine"
+    },
+    "segments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/segment"
+      }
+    },
+    "perf": {
+      "$ref": "#/$defs/perf"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "perf": {
+      "type": "object",
+      "required": [
+        "wall_s"
+      ],
+      "properties": {
+        "wall_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rtf": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "peak_rss_mb": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "engine": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "segment": {
+      "type": "object",
+      "required": [
+        "id",
+        "start",
+        "end",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string"
+        },
+        "lang": {
+          "enum": [
+            "vi",
+            "en",
+            null
+          ]
+        },
+        "speaker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "words": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "required": [
+              "start",
+              "end",
+              "text"
+            ],
+            "properties": {
+              "start": {
+                "type": "number",
+                "minimum": 0
+              },
+              "end": {
+                "type": "number",
+                "minimum": 0
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
