@@ -1,0 +1,9 @@
+# Changes to CI, release, license and network policy need the owner's review
+# (enforced once branch protection requires code-owner review).
+/.github/                     @nhtera
+/deny.toml                    @nhtera
+/about.toml                   @nhtera
+/tools/scripts/               @nhtera
+/crates/ghi-net/              @nhtera
+/apps/desktop/src-tauri/tauri.conf.json      @nhtera
+/apps/desktop/src-tauri/capabilities/        @nhtera

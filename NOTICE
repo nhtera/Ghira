@@ -1,0 +1,13 @@
+Ghi
+Copyright 2026 The Ghi Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party Rust crates and their licenses are listed in
+THIRD_PARTY_NOTICES.html, generated at build time by cargo-about and shown in
+Settings > About > Licenses.
+
+third_party/NeMo-Speech.cpp is a git submodule (NVIDIA, Apache-2.0) with its
+own LICENSE, NOTICE and THIRD_PARTY_NOTICES.md. Speech and language models are
+downloaded at runtime, not distributed with this source; their licenses are
+shown in the in-app model manager.

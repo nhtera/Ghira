@@ -1,0 +1,15 @@
+[package]
+name = "ghi-cli"
+description = "Headless CLI used by the eval harness and tests."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "ghi"
+path = "src/main.rs"

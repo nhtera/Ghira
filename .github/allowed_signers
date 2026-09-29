@@ -1,0 +1,4 @@
+# SSH keys allowed to sign release tags (git tag -s with gpg.format=ssh).
+# Format: <principal> namespaces="git" <key-type> <public-key>
+# The owner adds their signing key here before the first release. While this
+# file lists no key, release.yml refuses to build (fails closed).

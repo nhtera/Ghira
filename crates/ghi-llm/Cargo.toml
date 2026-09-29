@@ -1,0 +1,11 @@
+[package]
+name = "ghi-llm"
+description = "Client for the LLM worker process, prompts, JSON schemas, cloud providers and redaction."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

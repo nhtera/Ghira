@@ -1,0 +1,62 @@
+# cargo-deny policy (docs/05 §4.1, red-team RT-6). Run: cargo deny check licenses bans advisories sources
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+# Unmaintained notices only for crates we depend on directly; vulnerabilities
+# are always reported for the whole graph.
+unmaintained = "workspace"
+
+[licenses]
+version = 2
+confidence-threshold = 0.93
+# Permissive only. GPL, AGPL, SSPL, LGPL, non-commercial and source-available
+# licenses are not allowed in shipped binaries.
+allow = [
+  "Apache-2.0",
+  "MIT",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "MPL-2.0",
+  "OFL-1.1",
+  "Unicode-3.0",
+  "CC0-1.0",
+  # More permissive than Apache-2.0 (target-lexicon, via Linux GTK build deps).
+  "Apache-2.0 WITH LLVM-exception",
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+# RT-6: ghi-net is the only crate allowed to make network connections.
+deny = [
+  # tauri: its iOS/Android runtime uses reqwest internally (framework code, not
+  # ours); phase 7 verifies a release mobile build makes no requests.
+  { crate = "reqwest", wrappers = ["ghi-net", "tauri"] },
+  { crate = "hyper", wrappers = ["ghi-net", "reqwest", "hyper-util", "hyper-rustls", "hyper-tls"] },
+  { crate = "ureq", wrappers = ["ghi-net"] },
+  { crate = "isahc", wrappers = ["ghi-net"] },
+  { crate = "attohttpc", wrappers = ["ghi-net"] },
+  { crate = "curl", wrappers = ["ghi-net"] },
+  { crate = "surf", wrappers = ["ghi-net"] },
+  { crate = "socket2", wrappers = ["ghi-net", "hyper-util", "tokio"] },
+  { crate = "tungstenite", wrappers = ["ghi-net", "tokio-tungstenite"] },
+  { crate = "tokio-tungstenite", wrappers = ["ghi-net"] },
+  { crate = "quinn", wrappers = ["ghi-net"] },
+  # Tauri plugins that give the webview network or process access.
+  { crate = "tauri-plugin-http" },
+  { crate = "tauri-plugin-websocket" },
+  { crate = "tauri-plugin-upload" },
+  { crate = "tauri-plugin-shell" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

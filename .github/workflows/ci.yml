@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: Apache-2.0
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Cancel superseded PR runs only; every push to main gets a full run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Repo policy checks and the webview CSP test. Cheap, so they run on Linux.
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: SPDX headers
+        run: ./tools/scripts/check-spdx.sh
+      - name: Network egress only in ghi-net (RT-6)
+        run: ./tools/scripts/check-net-egress.sh
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: CSP blocks remote origins (RT-6)
+        working-directory: apps/desktop
+        run: |
+          pnpm exec playwright install --with-deps chromium webkit
+          pnpm test:e2e
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true # NeMo-Speech.cpp only; its own submodules are fetched by the smoke script
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      # Models are cached once the registry exists (phase 3). CI jobs only:
+      # release builds never restore caches (RT-12).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: hashFiles('crates/ghi-models/registry*.toml') != ''
+        with:
+          path: models
+          key: models-${{ hashFiles('crates/ghi-models/registry*.toml') }}
+      - run: pnpm install --frozen-lockfile
+      # The desktop crate embeds the frontend at compile time, so build it first.
+      - run: pnpm build
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: cargo test
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # The lib test exe of a Tauri crate lacks the Common Controls v6
+            # manifest on Windows and cannot start (tauri#11028, tauri#13419).
+            # Its tests are platform-independent and run on macOS.
+            cargo test --workspace --locked --exclude ghi-desktop
+          else
+            cargo test --workspace --locked
+          fi
+      - name: Tauri build (unsigned, no bundle)
+        working-directory: apps/desktop
+        run: pnpm tauri build --no-bundle -- --locked
+      - name: NeMo-Speech.cpp smoke build
+        shell: bash
+        env:
+          NEMO_BUILD_ROOT: ${{ runner.temp }}/nemo
+        run: ./tools/scripts/nemo-smoke-build.sh

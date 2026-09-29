@@ -1,0 +1,11 @@
+[package]
+name = "ghi-llm-worker"
+description = "llama.cpp worker run as a separate process, spoken to over stdio."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

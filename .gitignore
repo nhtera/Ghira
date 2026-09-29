@@ -1,0 +1,37 @@
+plans
+# Specs stay local (owner decision). Anchored so it also holds where git is case-sensitive (Linux).
+/Plans/
+
+# Build output
+target/
+node_modules/
+/apps/*/dist/
+/packages/*/dist/
+dist-ssr/
+apps/*/src-tauri/gen/schemas/
+test-results/
+playwright-report/
+THIRD_PARTY_NOTICES.html
+
+# Models and eval data never enter git (downloaded at a pinned revision + SHA-256)
+/models/
+*.gguf
+*.onnx
+*.nemo
+*.bin
+tools/eval/data/
+tools/eval/results/
+*.wav
+*.flac
+*.opus
+*.m4a
+
+# Local env and editors
+.env
+.env.*
+*.local
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log

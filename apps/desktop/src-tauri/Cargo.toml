@@ -1,0 +1,29 @@
+[package]
+name = "ghi-desktop"
+description = "Ghi desktop app (Tauri 2 shell over the Rust core)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name (cargo#8519 on Windows).
+name = "ghi_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# No shell or http plugins: the webview never touches the network or spawns
+# processes; all I/O goes through Rust commands and `ghi-net`.
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+specta = "=2.0.0-rc.25"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+specta-typescript = "=0.0.12"
+ghi-core = { path = "../../../crates/ghi-core" }
+
+[lints]
+workspace = true

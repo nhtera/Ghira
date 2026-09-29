@@ -1,0 +1,11 @@
+[package]
+name = "ghi-core"
+description = "Session manager, job queue, aligner and pipeline orchestration."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+{
+  "name": "@ghi/i18n",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./locales/*.json": "./locales/*.json"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}
