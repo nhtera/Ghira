@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The only network egress point of Ghi (red-team finding RT-6).
+//! The only network egress point of Ghira (red-team finding RT-6).
 //!
 //! Every network path (cloud LLM, model download, update check, calendar OAuth,
 //! LAN sync listener) must go through this crate. CI rejects HTTP clients and

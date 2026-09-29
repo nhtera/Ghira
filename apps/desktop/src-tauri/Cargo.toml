@@ -1,6 +1,6 @@
 [package]
 name = "ghi-desktop"
-description = "Ghi desktop app (Tauri 2 shell over the Rust core)."
+description = "Ghira desktop app (Tauri 2 shell over the Rust core)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -14,7 +14,7 @@ device without an explicit opt-in.
 
 ## Network policy
 
-Ghi is offline-first; [PRIVACY.md](PRIVACY.md) defines exactly what may leave
+Ghira is offline-first; [PRIVACY.md](PRIVACY.md) defines exactly what may leave
 the device. In code:
 
 - `crates/ghi-net` is the **only** place allowed to open network connections.

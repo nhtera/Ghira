@@ -13,7 +13,7 @@ test("CSP blocks remote images, fetches and sockets", async ({ page }) => {
   });
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Ghi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ghira" })).toBeVisible();
 
   const violations = await page.evaluate(async () => {
     const seen: string[] = [];

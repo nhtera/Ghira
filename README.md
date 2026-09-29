@@ -1,6 +1,6 @@
-# Ghi
+# Ghira
 
-Ghi is an offline-first AI meeting note taker for English and Vietnamese, with
+Ghira is an offline-first AI meeting note taker for English and Vietnamese, with
 live speaker diarization. Audio, transcripts and notes stay on your device.
 Cloud AI is optional, per meeting, and sends transcript text only, never audio.
 
@@ -32,4 +32,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup).
 
 Report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
 
-"Ghi" and its logo are not covered by the code license; see [TRADEMARKS.md](TRADEMARKS.md).
+"Ghira" and its logo are not covered by the code license; see [TRADEMARKS.md](TRADEMARKS.md).

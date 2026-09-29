@@ -1,6 +1,6 @@
-# Contributing to Ghi
+# Contributing to Ghira
 
-Thanks for helping. Ghi is Apache-2.0 licensed, and every contribution is made
+Thanks for helping. Ghira is Apache-2.0 licensed, and every contribution is made
 under that license.
 
 ## Sign your commits (DCO)

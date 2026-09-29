@@ -56,7 +56,7 @@ pub fn run() {
                 "main",
                 tauri::WebviewUrl::App("index.html".into()),
             )
-            .title("Ghi")
+            .title("Ghira")
             .inner_size(1200.0, 800.0)
             .min_inner_size(900.0, 600.0)
             .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny)
@@ -64,7 +64,7 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running the Ghi desktop app");
+        .expect("error while running the Ghira desktop app");
 }
 
 #[cfg(test)]

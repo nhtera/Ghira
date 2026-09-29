@@ -1,6 +1,7 @@
-# Ghi: guidance for Claude Code
+# Ghira: guidance for Claude Code
 
 Offline-first AI meeting note taker (EN + VN, live diarization). Apache-2.0.
+Product name **Ghira**; "Ghi" is the codename used in `Plans/`, crate names (`ghi-*`) and the repo folder.
 
 Specs, designs and the v1 roadmap live in `Plans/` (see `Plans/CLAUDE.md`).
 `Plans/` is kept **local only** and is not committed to this repo; team
