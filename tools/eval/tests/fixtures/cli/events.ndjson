@@ -1,3 +1,3 @@
-{"schema": "ghi.event/1", "type": "partial", "seq": 0, "wall_s": 1.92, "audio_start": 0.0, "audio_end": 1.6, "text": "Mình chốt", "lang": "vi", "speaker": null}
-{"schema": "ghi.event/1", "type": "final", "seq": 1, "wall_s": 3.95, "audio_start": 0.0, "audio_end": 3.4, "text": "Mình chốt scope cho beta nhé.", "lang": "vi", "speaker": "S1"}
-{"schema": "ghi.event/1", "type": "end", "seq": 2, "wall_s": 12.9, "audio_start": 0.0, "audio_end": 12.5, "text": "", "lang": null, "speaker": null}
+{"schema": "ghi.event/1", "type": "partial", "seq": 0, "wall_s": 1.92, "audio_start": 0.0, "audio_end": 1.6, "text": "Mình chốt", "lang": "vi", "speaker": null, "words": null}
+{"schema": "ghi.event/1", "type": "final", "seq": 1, "wall_s": 3.95, "audio_start": 0.0, "audio_end": 1.6, "text": "Mình chốt scope", "lang": "vi", "speaker": "S1", "words": [{"start": 0.0, "end": 0.4, "text": "Mình", "shown_s": 1.92}, {"start": 0.5, "end": 0.9, "text": "chốt", "shown_s": 1.92}, {"start": 1.0, "end": 1.6, "text": "scope", "shown_s": 3.95}]}
+{"schema": "ghi.event/1", "type": "end", "seq": 2, "wall_s": 12.9, "audio_start": 0.0, "audio_end": 12.5, "text": "", "lang": null, "speaker": null, "words": null}

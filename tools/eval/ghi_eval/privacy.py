@@ -28,7 +28,7 @@ _SLICE_CELL = re.compile(
 # is not one of these (a name "Vi" or a file id "room" must not fail a clean report).
 FIXED_VOCAB = frozenset(
     """lang setting spk files hours der jer spk_count_err wer syl_wer mer partial_lag_p50
-    partial_lag_p95 final_lag_p50 final_lag_p95 rtf peak_rss_mb asr_files diar_files lag_files
+    partial_lag_p95 final_lag_p50 final_lag_p95 caption_lag_p50 caption_lag_p95 rtf peak_rss_mb asr_files diar_files lag_files
     notes_files vi en mixed room call other 1-2 3-5 6+ all id metric slice max floor value status
     pass best_effort fail n/a incomplete eer trials source schema_valid precision recall owner_acc
     citation_valid hallucinations pipeline gold passed ngram names_checked true false -""".split()

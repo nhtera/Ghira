@@ -6,7 +6,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use ghi_cli::cmd::{self, bench::Topology};
 use ghi_cli::contract::{ErrorDoc, LangMode, Pass};
+use ghi_cli::engine::EngineArgs;
 
 #[derive(Parser)]
 #[command(
@@ -44,6 +46,8 @@ enum Command {
         /// Print JSON (currently the only output format).
         #[arg(long)]
         json: bool,
+        #[command(flatten)]
+        engine: EngineArgs,
     },
     /// Find who spoke when (`ghi.diarization/1`).
     Diarize {
@@ -55,6 +59,8 @@ enum Command {
         /// Print JSON (currently the only output format).
         #[arg(long)]
         json: bool,
+        #[command(flatten)]
+        engine: EngineArgs,
     },
     /// Write meeting notes from a `ghi.transcript/1` file (`ghi.notes/1`).
     Notes {
@@ -70,38 +76,52 @@ enum Command {
         audio: PathBuf,
         #[arg(long, value_enum, default_value_t = Pass::Live)]
         pass: Pass,
+        #[arg(long, value_enum, default_value_t = Topology::Single)]
+        topology: Topology,
         /// Print JSON (currently the only output format).
         #[arg(long)]
         json: bool,
+        #[command(flatten)]
+        engine: EngineArgs,
     },
 }
 
 fn run(command: Command) -> Result<(), ErrorDoc> {
     match command {
-        Command::Version { json: true } => {
-            let doc = serde_json::to_string(&ghi_cli::version_doc())
-                .expect("version document serializes");
-            println!("{doc}");
-            Ok(())
-        }
+        Command::Version { json: true } => ghi_cli::emit(&ghi_cli::version_doc()),
         Command::Version { json: false } => {
-            println!("ghi {}", ghi_cli::version());
-            Ok(())
+            use std::io::Write;
+            writeln!(std::io::stdout().lock(), "ghi {}", ghi_cli::version())
+                .map_err(|e| ErrorDoc::new(ghi_cli::contract::ErrorCode::Internal, e.to_string()))
         }
-        Command::Transcribe { audio, .. } => {
-            ghi_cli::check_input_file(&audio)?;
-            Err(ghi_cli::not_implemented(
-                "transcribe",
-                "no speech engine yet (phase 3)",
-            ))
-        }
-        Command::Diarize { audio, .. } => {
-            ghi_cli::check_input_file(&audio)?;
-            Err(ghi_cli::not_implemented(
-                "diarize",
-                "no diarization engine yet (phase 3)",
-            ))
-        }
+        Command::Transcribe {
+            audio,
+            lang,
+            pass,
+            stream,
+            realtime,
+            engine,
+            ..
+        } => cmd::transcribe::run(&cmd::transcribe::Args {
+            audio: &audio,
+            lang,
+            pass,
+            stream,
+            realtime,
+            engine: &engine,
+        }),
+        Command::Diarize {
+            audio,
+            pass,
+            max_speakers,
+            engine,
+            ..
+        } => cmd::diarize::run(&cmd::diarize::Args {
+            audio: &audio,
+            pass,
+            max_speakers,
+            engine: &engine,
+        }),
         Command::Notes { transcript, .. } => {
             ghi_cli::read_transcript(&transcript)?;
             Err(ghi_cli::not_implemented(
@@ -109,13 +129,18 @@ fn run(command: Command) -> Result<(), ErrorDoc> {
                 "no LLM engine yet (phase 6)",
             ))
         }
-        Command::Bench { audio, .. } => {
-            ghi_cli::check_input_file(&audio)?;
-            Err(ghi_cli::not_implemented(
-                "bench",
-                "no pipeline yet (phase 8)",
-            ))
-        }
+        Command::Bench {
+            audio,
+            pass,
+            topology,
+            engine,
+            ..
+        } => cmd::bench::run(&cmd::bench::Args {
+            audio: &audio,
+            pass,
+            topology,
+            engine: &engine,
+        }),
     }
 }
 
@@ -125,8 +150,7 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             // The error document is always the last line of stderr.
-            let doc = serde_json::to_string(&err).expect("error document serializes");
-            eprintln!("{doc}");
+            ghi_cli::warn(&serde_json::to_string(&err).expect("error document serializes"));
             ExitCode::from(err.code.exit_code())
         }
     }

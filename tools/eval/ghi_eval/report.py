@@ -24,7 +24,8 @@ SETTING_ORDER = ["room", "call", "other"]
 BUCKET_ORDER = ["1-2", "3-5", "6+"]
 METRIC_KEYS = [
     "der", "jer", "spk_count_err", "wer", "syl_wer", "mer",
-    "partial_lag_p50", "partial_lag_p95", "final_lag_p50", "final_lag_p95", "rtf", "peak_rss_mb",
+    "partial_lag_p50", "partial_lag_p95", "final_lag_p50", "final_lag_p95",
+    "caption_lag_p50", "caption_lag_p95", "rtf", "peak_rss_mb",
 ]  # fmt: skip
 COVERAGE_KEYS = ["asr_files", "diar_files", "lag_files", "notes_files"]
 
@@ -46,7 +47,7 @@ def aggregate(files: list[dict]) -> dict:
         # files with both a reference and a valid hypothesis, per metric family
         "asr_files": sum("asr" in f for f in files),
         "diar_files": len(diar),
-        "lag_files": sum("lag" in f for f in files),
+        "lag_files": sum(bool(f.get("lag", {}).get("caption")) for f in files),
         "notes_files": sum(
             bool(f.get("expects", {}).get("notes")) and any(f.get("notes", {}).values())
             for f in files
@@ -55,7 +56,7 @@ def aggregate(files: list[dict]) -> dict:
     for metric in ("wer", "syl_wer", "mer"):
         asr = [f["asr"] for f in files if "asr" in f and f["asr"]["metric"] == metric]
         out[metric] = _ratio(sum(a["errors"] for a in asr), sum(a["ref_tokens"] for a in asr))
-    for kind in ("partial", "final"):
+    for kind in ("partial", "final", "caption"):
         lags = [x for f in files for x in f.get("lag", {}).get(kind, [])]
         out[f"{kind}_lag_p50"] = percentile(lags, 50)
         out[f"{kind}_lag_p95"] = percentile(lags, 95)
@@ -96,7 +97,10 @@ def gate_status(value: float | None, gate: dict) -> str:
 
 
 WORD_METRICS = ("wer", "syl_wer", "mer")
-LAG_METRICS = ("partial_lag_p50", "partial_lag_p95", "final_lag_p50", "final_lag_p95")
+LAG_METRICS = (
+    "partial_lag_p50", "partial_lag_p95", "final_lag_p50", "final_lag_p95",
+    "caption_lag_p50", "caption_lag_p95",
+)  # fmt: skip
 
 
 def _coverage(subset: list[dict], metric: str, run: dict) -> tuple[int, int] | None:
@@ -107,8 +111,14 @@ def _coverage(subset: list[dict], metric: str, run: dict) -> tuple[int, int] | N
         mine = [f for f in subset if asr_metric_for(f["lang"]) == metric]
         return sum("asr" in f for f in mine), sum(f["expects"]["asr"] for f in mine)
     if metric in LAG_METRICS:
-        expected = len(subset) if run.get("realtime") and "stream" in run["tasks"] else 0
-        return sum("lag" in f for f in subset), expected
+        ran = (
+            run.get("realtime")
+            and "stream" in run["tasks"]
+            and "stream" not in run.get("unsupported", {})
+        )
+        expected = len(subset) if ran else 0
+        key = metric.split("_", 1)[0]  # partial, final or caption
+        return sum(bool(f.get("lag", {}).get(key)) for f in subset), expected
     return None
 
 
@@ -130,7 +140,8 @@ def evaluate_gates(files: list[dict], gates: list[dict], run: dict) -> list[dict
             metric in LAG_METRICS and not run.get("realtime")
         ):
             value, status = None, "n/a"
-        elif cov and 0 < cov[0] < cov[1]:
+        elif cov and cov[0] < cov[1] and (cov[0] > 0 or metric in LAG_METRICS):
+            # some file has a reference (or, for lag, was streamed) but no valid hypothesis
             status = "incomplete"
         else:
             status = gate_status(value, g)

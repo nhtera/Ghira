@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Pinned speech models (phase 3 decision record: Plans/docs/06). Downloaded, never
+# committed or bundled. Every file is fetched at `revision` and must match `sha256`.
+# Dev download: tools/scripts/fetch-models.sh; the in-app downloader (ghi-net) comes later.
+
+[[model]]
+id = "nemotron-3.5-asr"
+role = "asr"
+repo = "nvidia/nemotron-3.5-asr-streaming-0.6b"
+revision = "ea30d66debe3740a08b573244286791d423d6b3e"
+file = "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"
+sha256 = "3fc991d3badad7277c11030a7519832cddaf2057aafed6d4b25147e953a070b1"
+size = 742090464
+license = "OpenMDW-1.1"
+
+[[model]]
+id = "nemotron-3-diarization"
+role = "diarization"
+repo = "nvidia/Nemotron-3-Diarization"
+revision = "f667ed73aee57d40cc39428eb768b4fd87a0a29e"
+file = "Nemotron-3-Diarization.q8_0.gguf"
+sha256 = "08456d9e22cd9a323c0364d98375f3746d6e68507ebb705cd46438c534c7a3a1"
+size = 107012128
+license = "OpenMDW-1.1"

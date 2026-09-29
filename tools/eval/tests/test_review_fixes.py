@@ -354,3 +354,24 @@ def test_dead_code_removed():
 
     assert not hasattr(m, "pooled_rate") and not hasattr(m, "DER_COLLAR_TOTAL")
     assert not hasattr(Manifest, "get")
+
+
+def test_lag_gate_incomplete_only_when_stream_ran():
+    files = [
+        {
+            "lang": "en",
+            "setting": "call",
+            "speakers": "1-2",
+            "expects": {"asr": False, "diar": False},
+        }
+    ]
+    gates = [{"id": "l", "metric": "caption_lag_p95", "slice": {}, "max": 2.0}]
+    run = {"pass": "final", "realtime": True, "tasks": ["stream"]}
+    assert evaluate_gates(files, gates, run)[0]["status"] == "incomplete"
+    assert (
+        evaluate_gates(files, gates, {**run, "unsupported": {"stream": "not implemented"}})[0][
+            "status"
+        ]
+        == "n/a"
+    )
+    assert evaluate_gates(files, gates, {**run, "realtime": False})[0]["status"] == "n/a"

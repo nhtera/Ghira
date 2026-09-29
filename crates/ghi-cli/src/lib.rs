@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Headless CLI used by the eval harness and tests.
 //!
-//! `ghi` prints the JSON documents in [`contract`]. Speech, diarization and
-//! notes commands are stubs until their engines land (phases 3, 6 and 8): they
-//! validate their input, then fail with `not_implemented` (exit code 3).
+//! `ghi` prints the JSON documents in [`contract`]. `transcribe`, `diarize`
+//! and `bench` run the speech engines when built with the `nemo` feature;
+//! `notes` is a stub until phase 6 (`not_implemented`, exit code 3).
 
+pub mod audio;
+pub mod cmd;
 pub mod contract;
+pub mod engine;
 
 use std::path::Path;
 
@@ -22,8 +25,24 @@ pub fn version_doc() -> Version {
         schema: VERSION.to_owned(),
         ghi: version().to_owned(),
         core: ghi_core::version().to_owned(),
-        engines: Vec::new(),
+        engines: engine::engines(),
     }
+}
+
+/// Prints one JSON document on stdout. Never panics: `println!` would abort
+/// the process (release builds use `panic = "abort"`) when stdout is closed.
+pub fn emit<T: serde::Serialize>(doc: &T) -> Result<(), ErrorDoc> {
+    use std::io::Write;
+    let line = serde_json::to_string(doc)
+        .map_err(|e| ErrorDoc::new(ErrorCode::Internal, e.to_string()))?;
+    writeln!(std::io::stdout().lock(), "{line}")
+        .map_err(|e| ErrorDoc::new(ErrorCode::Internal, format!("writing stdout: {e}")))
+}
+
+/// Writes a line to stderr, ignoring failures (stderr may be closed too).
+pub fn warn(message: &str) {
+    use std::io::Write;
+    let _ = writeln!(std::io::stderr().lock(), "{message}");
 }
 
 /// Fails with `bad_input` unless `path` is an existing file.

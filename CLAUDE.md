@@ -34,9 +34,15 @@ pnpm build && cargo test --workspace && cargo clippy --workspace --all-targets -
 pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @ghi/desktop test:e2e
 ./tools/scripts/check-spdx.sh && ./tools/scripts/check-net-egress.sh
 cargo deny check licenses bans advisories sources
+# speech engines (phase 3; needs tools/scripts/build-nemo.sh and fetch-models.sh first):
+cargo clippy -p ghi-speech -p ghi-cli --all-targets --features ghi-cli/nemo -- -D warnings
+cargo test -p ghi-speech -p ghi-cli --features ghi-cli/nemo
 # eval kit (phase 2), from tools/eval:
 uv sync --locked && uv run ruff check && uv run ruff format --check && uv run pytest -q
 ```
+
+Speech engines: `crates/ghi-speech` (NeMo-Speech.cpp FFI, feature `nemo`); models
+pinned in `crates/ghi-models/registry.toml`; decision record `Plans/docs/06`.
 
 Eval kit: `tools/eval` (`ghi-eval`, Python 3.11 + uv). The data, `ghi` CLI and
 report contract is `tools/eval/docs/formats.md`. Recordings, transcripts and

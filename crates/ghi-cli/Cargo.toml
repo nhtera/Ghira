@@ -14,8 +14,22 @@ workspace = true
 name = "ghi"
 path = "src/main.rs"
 
+[features]
+# Real speech engines (NeMo-Speech.cpp). Without it, engine commands exit 3
+# (`engine_unavailable`). Build the library first: tools/scripts/build-nemo.sh
+nemo = ["ghi-speech/nemo"]
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+hound = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ghi-core = { path = "../ghi-core" }
+ghi-models = { path = "../ghi-models" }
+ghi-speech = { path = "../ghi-speech" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+hound = "3"

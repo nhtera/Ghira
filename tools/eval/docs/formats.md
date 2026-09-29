@@ -85,9 +85,20 @@ consumer. Every command prints **one JSON document on stdout**, except
 `ghi` with no arguments prints help and exits `2`; `ghi --version` prints
 `ghi <version>`.
 
+Engines (phase 3): `transcribe`, `diarize` and `bench` run NeMo-Speech.cpp
+when `ghi` is built with `--features nemo` (after `tools/scripts/build-nemo.sh`);
+otherwise they exit `3` with `engine_unavailable`. Models are the pinned files
+in `crates/ghi-models/registry.toml`, read from `$GHI_MODELS_DIR` (default
+`./models`, relative to the working directory, so the harness needs an
+absolute path; fetch them with `tools/scripts/fetch-models.sh`). Extra flags,
+outside the harness contract: `--asr-model PATH`, `--diar-model PATH`, `--cpu`
+(or `GHI_DEVICE=cpu`), `transcribe --offline` (one offline decode of the whole
+file) and `bench --topology single|call`.
+
 Exit codes: `0` ok · `1` runtime failure · `2` usage error · `3` not
-implemented / engine unavailable. On exit codes 1 and 3 stdout is empty and
-stderr's **last line** is an error document:
+implemented / engine unavailable. On exit codes 1 and 3 stdout is empty (except
+`--stream`, which may already have printed events before a mid-stream failure;
+consumers discard them) and stderr's **last line** is an error document:
 
 ```json
 {"schema":"ghi.error/1","code":"not_implemented","message":"transcribe: no speech engine yet (phase 3)"}
@@ -136,18 +147,28 @@ Defaults: `--lang auto`, `--pass final`.
 NDJSON on stdout, one event per line:
 
 ```json
-{"schema":"ghi.event/1","type":"partial","seq":0,"wall_s":1.92,"audio_start":0.0,"audio_end":1.60,"text":"Mình chốt","lang":"vi","speaker":null}
-{"schema":"ghi.event/1","type":"final","seq":1,"wall_s":3.95,"audio_start":0.0,"audio_end":3.40,"text":"Mình chốt scope cho beta nhé.","lang":"vi","speaker":"S1"}
-{"schema":"ghi.event/1","type":"end","seq":2,"wall_s":1834.9,"audio_start":0.0,"audio_end":1834.2,"text":"","lang":null,"speaker":null}
+{"schema":"ghi.event/1","type":"partial","seq":0,"wall_s":1.92,"audio_start":0.0,"audio_end":1.60,"text":"Mình chốt","lang":"vi","speaker":null,"words":null}
+{"schema":"ghi.event/1","type":"final","seq":1,"wall_s":3.95,"audio_start":0.0,"audio_end":1.60,"text":"Mình chốt scope","lang":"vi","speaker":"S1","words":[{"start":0.0,"end":0.4,"text":"Mình","shown_s":1.92},{"start":0.5,"end":0.9,"text":"chốt","shown_s":1.92},{"start":1.0,"end":1.6,"text":"scope","shown_s":3.95}]}
+{"schema":"ghi.event/1","type":"end","seq":2,"wall_s":1834.9,"audio_start":0.0,"audio_end":1834.2,"text":"","lang":null,"speaker":null,"words":null}
 ```
 
 - `type`: `partial` (may change), `final` (committed caption), `end` (last line).
 - `wall_s`: seconds since the CLI started feeding audio.
-- `--realtime` requires `--stream`. With it the CLI feeds audio at 1× speed, as the live app does, so
-  **caption lag = `wall_s − audio_end`**. Without `--realtime` audio is fed as
-  fast as possible and the harness does not compute lag.
+- `audio_start`/`audio_end`: the words' span; partials have no word times, so
+  for them `audio_end` is the audio consumed so far.
+- `words` (final events only, else `null`): the committed words with their
+  times, and `shown_s`, the `wall_s` of the first event (partial or this
+  final) that displayed the word.
+- `--realtime` requires `--stream`. With it the CLI feeds audio at 1× speed,
+  as the live app does, so **caption lag of a word = `shown_s − end`**, and
+  **commit lag of a final = `wall_s − audio_end`**. Without `--realtime` audio
+  is fed as fast as possible and the harness does not compute lag.
+- Older producers may omit `words`; consumers treat a missing field as `null`.
 
 ### `ghi diarize <audio> [--pass live|final] [--max-speakers N] --json`
+
+`--max-speakers` is a hint and is currently ignored: the model tracks up to its
+own capacity (Nemotron 3 Diarization: 8); `ghi` warns when N exceeds it.
 
 ```json
 {
@@ -281,6 +302,7 @@ citation validity = `citation_ok=y` / (`y`+`n`); hallucinations = count of
      "wer": null, "syl_wer": 0.141, "mer": null,
      "partial_lag_p50": 0.9, "partial_lag_p95": 1.6,
      "final_lag_p50": 1.8, "final_lag_p95": 2.7,
+     "caption_lag_p50": 0.9, "caption_lag_p95": 1.7,
      "rtf": 0.05, "peak_rss_mb": 2300.0,
      "asr_files": 6, "diar_files": 6, "lag_files": 0, "notes_files": 2}
   ],
@@ -298,9 +320,10 @@ citation validity = `citation_ok=y` / (`y`+`n`); hallucinations = count of
   reference speech; WER = total errors / total reference tokens.
 - `wer` is computed on `en` files, `syl_wer` on `vi` files, `mer` on `mixed`
   files. All three use the same tokens: NFC, lowercase, punctuation removed,
-  split on whitespace (a Vietnamese syllable is one token). Numbers are not
-  normalized: references spell them as spoken, so a system that prints digits
-  is penalized (phase 3 adds a number normalizer if the engines print digits). `mer` here is the
+  split on whitespace (a Vietnamese syllable is one token). Digits are read
+  out as spoken words on both sides before tokenizing (language from the manifest, `mixed`
+  uses the Vietnamese rules; `ghi_eval/numwords.py`), so "53 tuổi" equals "năm mươi ba tuổi"
+  and "1967" equals "nineteen sixty seven". `mer` here is the
   code-switch **mixed error rate**, not jiwer's "match error rate".
 - DER: collar ±0.25 s (`der_collar`; `--collar` on `run`/`score`/`report`
   changes it, `0` = none), overlap scored. JER uses no collar. `overall` also
@@ -329,8 +352,11 @@ citation validity = `citation_ok=y` / (`y`+`n`); hallucinations = count of
 | `der_vn_room` | `der` | `lang: vi, setting: room` | 0.20 | 0.25 |
 | `syl_wer_vn_call` | `syl_wer` | `lang: vi, setting: call` | 0.15 | |
 | `syl_wer_vn_room` | `syl_wer` | `lang: vi, setting: room` | 0.15 | 0.25 |
-| `lag_en` | `final_lag_p95` | `lang: en` | 2.0 | |
-| `lag_vn` | `final_lag_p95` | `lang: vi` | 3.0 | |
+| `lag_en` | `caption_lag_p95` | `lang: en` | 2.0 | |
+| `lag_vn` | `caption_lag_p95` | `lang: vi` | 3.0 | |
+
+Note: since 2026-09-30 `lag_en` and `lag_vn` measure `caption_lag_p95`. Gate values in
+earlier reports used `final_lag_p95` (commit lag) and are not comparable.
 
 Status: `pass` if value ≤ max; `best_effort` if a floor exists and value ≤
 floor; `fail` otherwise; `n/a` without data; `incomplete` if some file in the

@@ -98,7 +98,7 @@ Write **exactly what was said**. Do not correct grammar, do not summarise, do no
 | Names of people | Normal spelling with diacritics. Also add the name to `names:` in the manifest. | `chị Linh` |
 | Speech that is not part of the meeting (TV, a person in the hallway) | Skip it unless someone in the meeting replies to it. | |
 
-*Known limitation:* a system that writes digits ("15%") is penalised against "mười lăm phần trăm" in every run alike. Runs stay comparable, but absolute word error rates are pessimistic for digit-writing systems.
+*Numbers:* the scoring software reads digits out as words on both sides (Vietnamese and English), so "15%" and "mười lăm phần trăm" count as the same. Spoken variants such as "mốt", "tư", "lăm", "ngàn" and "lẻ" are also treated as equal to "một", "bốn", "năm", "nghìn" and "linh". Times ("10:30"), codes and phone numbers are not converted, so write those the same way the speaker would say them everywhere. When in doubt, keep writing numbers in words.
 
 Keep one utterance per line in the exported text. The tool joins the lines, so where you break lines does not change the score. Break at natural pauses.
 

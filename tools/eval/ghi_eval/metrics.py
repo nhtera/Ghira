@@ -33,14 +33,14 @@ class TokenErrors:
     insertions: int
 
 
-def token_errors(reference: str, hypothesis: str) -> TokenErrors | None:
+def token_errors(reference: str, hypothesis: str, lang: str | None = None) -> TokenErrors | None:
     """Edit-distance components between two texts after normalization.
 
     Returns None when the reference has no scorable tokens.
     """
     import jiwer
 
-    ref, hyp = normalize(reference), normalize(hypothesis)
+    ref, hyp = normalize(reference, lang), normalize(hypothesis, lang)
     if not ref:
         return None
     if not hyp:

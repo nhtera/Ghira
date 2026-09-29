@@ -106,7 +106,7 @@
   "$defs": {
     "metrics": {
       "type": "object",
-      "required": ["files", "hours", "der", "jer", "spk_count_err", "wer", "syl_wer", "mer", "partial_lag_p50", "partial_lag_p95", "final_lag_p50", "final_lag_p95", "rtf", "peak_rss_mb", "asr_files", "diar_files", "lag_files", "notes_files"],
+      "required": ["files", "hours", "der", "jer", "spk_count_err", "wer", "syl_wer", "mer", "partial_lag_p50", "partial_lag_p95", "final_lag_p50", "final_lag_p95", "caption_lag_p50", "caption_lag_p95", "rtf", "peak_rss_mb", "asr_files", "diar_files", "lag_files", "notes_files"],
       "properties": {
         "asr_files": {"type": "integer", "minimum": 0},
         "diar_files": {"type": "integer", "minimum": 0},
@@ -124,6 +124,8 @@
         "partial_lag_p95": {"type": ["number", "null"]},
         "final_lag_p50": {"type": ["number", "null"]},
         "final_lag_p95": {"type": ["number", "null"]},
+        "caption_lag_p50": {"type": ["number", "null"]},
+        "caption_lag_p95": {"type": ["number", "null"]},
         "rtf": {"type": ["number", "null"]},
         "peak_rss_mb": {"type": ["number", "null"]}
       }

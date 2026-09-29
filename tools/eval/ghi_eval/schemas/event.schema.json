@@ -53,6 +53,38 @@
         "string",
         "null"
       ]
+    },
+    "words": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "text",
+          "shown_s"
+        ],
+        "properties": {
+          "start": {
+            "type": "number",
+            "minimum": 0
+          },
+          "end": {
+            "type": "number",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string"
+          },
+          "shown_s": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
     }
   },
   "additionalProperties": true,

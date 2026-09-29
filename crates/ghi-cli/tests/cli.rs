@@ -43,16 +43,44 @@ fn version_flag_still_prints_text() {
     assert_eq!(text.trim(), format!("ghi {}", env!("CARGO_PKG_VERSION")));
 }
 
+/// A short 16 kHz mono WAV (a 440 Hz tone) in the temp dir.
+fn tone_wav(name: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("ghi-cli-{}-{name}.wav", std::process::id()));
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 16_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut w = hound::WavWriter::create(&path, spec).unwrap();
+    for i in 0..16_000 {
+        let t = i as f32 / 16_000.0;
+        w.write_sample(((t * 440.0 * std::f32::consts::TAU).sin() * 8000.0) as i16)
+            .unwrap();
+    }
+    w.finalize().unwrap();
+    path
+}
+
 #[test]
-fn engine_commands_are_not_implemented_yet() {
-    // Any existing file will do: the stubs only check that the input exists.
-    let audio = format!("{FIXTURES}version.json");
-    let transcript = format!("{FIXTURES}transcript.json");
+fn notes_is_not_implemented_yet() {
+    let out = ghi(&["notes", &format!("{FIXTURES}transcript.json"), "--json"]);
+    assert_eq!(out.status.code(), Some(3));
+    assert!(out.stdout.is_empty());
+    assert_eq!(error_doc(&out)["code"], "not_implemented");
+}
+
+/// Without the `nemo` feature the engine commands exit 3 `engine_unavailable`.
+#[cfg(not(feature = "nemo"))]
+#[test]
+fn engine_commands_need_the_nemo_feature() {
+    let wav = tone_wav("noengine");
+    let audio = wav.to_str().unwrap();
     for args in [
-        vec!["transcribe", audio.as_str(), "--json"],
+        vec!["transcribe", audio, "--json"],
         vec![
             "transcribe",
-            audio.as_str(),
+            audio,
             "--stream",
             "--realtime",
             "--lang",
@@ -60,26 +88,71 @@ fn engine_commands_are_not_implemented_yet() {
         ],
         vec![
             "diarize",
-            audio.as_str(),
+            audio,
             "--pass",
             "live",
             "--max-speakers",
             "8",
             "--json",
         ],
-        vec!["notes", transcript.as_str(), "--json"],
-        vec!["bench", audio.as_str(), "--json"],
+        vec!["bench", audio, "--json"],
     ] {
         let out = ghi(&args);
         assert_eq!(out.status.code(), Some(3), "{args:?}");
         assert!(out.stdout.is_empty(), "{args:?}");
-        assert_eq!(error_doc(&out)["code"], "not_implemented", "{args:?}");
+        assert_eq!(error_doc(&out)["code"], "engine_unavailable", "{args:?}");
     }
+    let _ = std::fs::remove_file(wav);
+}
+
+/// With the engines and the pinned models present, every engine command
+/// prints a document of the right schema. Skipped when the models are missing.
+#[cfg(feature = "nemo")]
+#[test]
+fn engine_commands_run_with_models() {
+    let models = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models");
+    if !models
+        .join("nemotron-3.5-asr-streaming-0.6b.q8_0.gguf")
+        .is_file()
+    {
+        eprintln!("skipped: run tools/scripts/fetch-models.sh");
+        return;
+    }
+    let wav = tone_wav("engine");
+    let audio = wav.to_str().unwrap();
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_ghi"))
+            .args(args)
+            .env("GHI_MODELS_DIR", &models)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let doc: Value = serde_json::from_str(&run(&["transcribe", audio, "--json"])).unwrap();
+    assert_eq!(doc["schema"], "ghi.transcript/1");
+    let doc: Value = serde_json::from_str(&run(&["diarize", audio, "--json"])).unwrap();
+    assert_eq!(doc["schema"], "ghi.diarization/1");
+    let doc: Value = serde_json::from_str(&run(&["bench", audio, "--topology", "call"])).unwrap();
+    assert_eq!(doc["schema"], "ghi.bench/1");
+    let stream = run(&["transcribe", audio, "--stream"]);
+    let last: Value = serde_json::from_str(stream.lines().last().unwrap()).unwrap();
+    assert_eq!(last["type"], "end");
+    let _ = std::fs::remove_file(wav);
 }
 
 #[test]
 fn bad_input_exits_1() {
     let out = ghi(&["transcribe", "no-such-file.wav", "--json"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(error_doc(&out)["code"], "bad_input");
+
+    // Not a WAV file.
+    let out = ghi(&["diarize", &format!("{FIXTURES}version.json"), "--json"]);
     assert_eq!(out.status.code(), Some(1));
     assert_eq!(error_doc(&out)["code"], "bad_input");
 

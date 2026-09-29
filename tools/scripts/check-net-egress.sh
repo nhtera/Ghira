@@ -17,6 +17,8 @@ rust="${w}(TcpListener|TcpStream|UdpSocket)(\$|[^A-Za-z0-9_])|${w}(libc|nix)::(c
 
 # Native plugins (phases 4, 7, 17): Swift and Kotlin networking APIs.
 native="${w}(URLSession|NWConnection|NWListener|CFSocket|HttpURLConnection|okhttp3|ServerSocket)|java\\.net\\.(Socket|URL)"
+# First-party C/C++ (phase 3 onward): sockets, DNS and HTTP clients.
+cpp="${w}(socket|connect|getaddrinfo|gethostbyname)\\(|httplib::|curl_easy_|WinHttp[A-Z]|InternetOpen"
 
 
 status=0
@@ -30,6 +32,7 @@ scan() { # pattern, pathspecs...
 scan "$deps" '*Cargo.toml'
 scan "$rust" '*.rs'
 scan "$native" '*.swift' '*.kt' '*.kts' '*.java' '*.m' '*.mm'
+scan "$cpp" '*.c' '*.cc' '*.cpp' '*.h' '*.hpp' '*.m' '*.mm'
 
 if [[ $status -ne 0 ]]; then
   echo "Network code outside crates/ghi-net (RT-6); see matches above." >&2

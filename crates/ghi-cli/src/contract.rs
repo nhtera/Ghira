@@ -157,6 +157,19 @@ pub struct Event {
     pub text: String,
     pub lang: Option<Lang>,
     pub speaker: Option<String>,
+    /// Final events only: the committed words and when each was first shown
+    /// as a caption. `null` on partial and end events.
+    pub words: Option<Vec<EventWord>>,
+}
+
+/// A word of a final event. Caption lag of the word is `shown_s - end`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EventWord {
+    pub start: f64,
+    pub end: f64,
+    pub text: String,
+    /// `wall_s` of the first event (partial or this final) that displayed the word.
+    pub shown_s: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

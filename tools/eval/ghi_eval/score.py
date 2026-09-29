@@ -32,7 +32,7 @@ def _score_asr(entry: FileEntry, hyp: Path) -> dict | None:
     if doc is None or validation_errors(doc, "transcript"):
         return None
     hyp_text = " ".join(s["text"] for s in doc["segments"])
-    te = token_errors(entry.ref.read_text(encoding="utf-8"), hyp_text)
+    te = token_errors(entry.ref.read_text(encoding="utf-8"), hyp_text, entry.lang)
     if te is None:
         return None
     return {"metric": asr_metric_for(entry.lang), "errors": te.errors, "ref_tokens": te.ref_tokens}
@@ -54,7 +54,10 @@ def _score_lag(hyp: Path, fid: str) -> dict | None:
     path = hyp / f"{fid}.events.ndjson"
     if not path.is_file():
         return None
-    lags: dict[str, list[float]] = {"partial": [], "final": []}
+    # partial/final: wall_s - audio_end per event. partial lag is only a lower bound while
+    # partials carry no word times (audio_end is then the end of audio fed so far).
+    # caption: shown_s - end per word of final events, the spoken-to-shown lag.
+    lags: dict[str, list[float]] = {"partial": [], "final": [], "caption": []}
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
@@ -62,8 +65,11 @@ def _score_lag(hyp: Path, fid: str) -> dict | None:
             ev = json.loads(line)
         except json.JSONDecodeError as exc:
             raise HarnessError(f"{path.name}: line is not JSON") from exc
-        if ev.get("type") in lags:
+        if ev.get("type") in ("partial", "final"):
             lags[ev["type"]].append(round(ev["wall_s"] - ev["audio_end"], 4))
+        if ev.get("type") == "final":  # "words" may be missing in older outputs
+            for w in ev.get("words") or []:
+                lags["caption"].append(round(w["shown_s"] - w["end"], 4))
     return lags
 
 
@@ -102,7 +108,7 @@ def _expects(entry: FileEntry) -> dict[str, bool]:
     """Which metrics this file has a reference for (so a missing hypothesis is visible)."""
     asr = entry.ref is not None and entry.ref.is_file()
     if asr:
-        asr = bool(normalize(entry.ref.read_text(encoding="utf-8")))
+        asr = bool(normalize(entry.ref.read_text(encoding="utf-8"), entry.lang))
     diar = entry.rttm is not None and entry.rttm.is_file() and bool(read_rttm(entry.rttm))
     return {
         "asr": asr,

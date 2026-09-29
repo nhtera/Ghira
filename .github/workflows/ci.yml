@@ -91,11 +91,23 @@ jobs:
       - name: Tauri build (unsigned, no bundle)
         working-directory: apps/desktop
         run: pnpm tauri build --no-bundle -- --locked
-      - name: NeMo-Speech.cpp smoke build
+      - name: NeMo-Speech.cpp build
         shell: bash
         env:
           NEMO_BUILD_ROOT: ${{ runner.temp }}/nemo
-        run: ./tools/scripts/nemo-smoke-build.sh
+        run: ./tools/scripts/build-nemo.sh
+      # Engine tests with the pinned models (cached above). CPU: hosted runners
+      # have no usable Metal. Windows links the DLL differently (phase 13).
+      - name: Speech engine tests
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          NEMO_SPEECH_DIR: ${{ runner.temp }}/nemo/install
+          GHI_DEVICE: cpu
+        run: |
+          cargo clippy --locked -p ghi-speech -p ghi-cli --all-targets --features ghi-cli/nemo -- -D warnings
+          ./tools/scripts/fetch-models.sh
+          cargo test --locked -p ghi-speech -p ghi-cli --features ghi-cli/nemo
 
   # Eval harness (phase 2): unit tests, plus one scored run on a text-only
   # fixture. Real and public audio never enters CI.

@@ -34,7 +34,15 @@ pnpm install
 pnpm build                                   # frontend (needed before cargo builds the desktop crate)
 cargo test --workspace
 pnpm --filter @ghi/desktop tauri dev         # run the desktop app
-./tools/scripts/nemo-smoke-build.sh          # optional: NeMo-Speech.cpp CPU build
+```
+
+Speech engines (optional, needed for real `ghi transcribe|diarize|bench`):
+
+```sh
+./tools/scripts/build-nemo.sh                # NeMo-Speech.cpp into target/nemo (Metal on macOS)
+./tools/scripts/fetch-models.sh              # pinned models into ./models (~850 MB, SHA-256 checked)
+cargo test -p ghi-speech -p ghi-cli --features ghi-cli/nemo
+cargo build --release -p ghi-cli --features nemo   # target/release/ghi
 ```
 
 Before opening a PR, run what CI runs:

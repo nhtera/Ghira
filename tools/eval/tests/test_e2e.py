@@ -25,11 +25,17 @@ def dataset(tiny, tiny_hyp):
     return tiny
 
 
-def events(final_lag):
+def events(final_lag, words=True):
     rows = []
     for i, t in enumerate(("partial", "final", "end")):
-        rows.append({"schema": "ghi.event/1", "type": t, "seq": i, "wall_s": 3.0 + final_lag * (t != "partial"),
-                     "audio_start": 0.0, "audio_end": 3.0, "text": "", "lang": None, "speaker": None})  # fmt: skip
+        row = {"schema": "ghi.event/1", "type": t, "seq": i, "wall_s": 3.0 + final_lag * (t != "partial"),
+               "audio_start": 0.0, "audio_end": 3.0, "text": "", "lang": None, "speaker": None}  # fmt: skip
+        if words and t == "final":  # two words: shown 0.5 s and final_lag after they ended
+            row["words"] = [{"start": 0.0, "end": 1.0, "text": "a", "shown_s": 1.5},
+                            {"start": 1.0, "end": 3.0, "text": "b", "shown_s": 3.0 + final_lag}]  # fmt: skip
+        elif words:
+            row["words"] = None
+        rows.append(row)
     return "".join(json.dumps(r) + "\n" for r in rows)
 
 
@@ -68,8 +74,12 @@ def test_run_score_report(dataset, tiny_hyp, capsys):
     assert gates["der_overall"]["status"] == "fail"  # t03 has one hypothesis speaker for four
     assert gates["syl_wer_vn_room"]["status"] == "pass"
     assert gates["syl_wer_vn_call"]["status"] == "n/a"
-    assert gates["lag_en"]["status"] == "fail" and gates["lag_en"]["value"] == pytest.approx(2.5)
-    assert gates["lag_vn"]["status"] == "pass"
+    # caption lag: t01 words [0.5, 1.0], t02 words [0.5, 2.5]; en gate sees t02 only
+    assert report["overall"]["caption_lag_p50"] == pytest.approx(0.75)
+    assert report["overall"]["lag_files"] == 2
+    assert gates["lag_en"]["metric"] == "caption_lag_p95"
+    assert gates["lag_en"]["status"] == "fail" and gates["lag_en"]["value"] == pytest.approx(2.4)
+    assert gates["lag_vn"]["status"] == "pass" and gates["lag_vn"]["value"] == pytest.approx(0.975)
     assert report["privacy_lint"] == {
         "passed": True,
         "ngram": 3,
@@ -173,3 +183,23 @@ def test_collar_flag_recorded(tiny, tiny_hyp, tmp_path):
     assert main(["report", "--run", str(run_dir), "--collar", "0.25"]) == 0
     rep = json.loads(next(run_dir.glob("report-*.json")).read_text(encoding="utf-8"))
     assert rep["der_collar"] == 0.25
+
+
+def test_events_without_words_still_score_commit_lag(dataset, tiny_hyp):
+    """Older producers omit `words`: final/partial lag work, caption lag is null, gates n/a."""
+    hyp = tiny_hyp / "hyp"
+    (hyp / "t02.events.ndjson").write_text(events(2.5, words=False), encoding="utf-8")
+    text = json.loads(events(1.0).splitlines()[1])
+    text.pop("words")  # field missing entirely
+    (hyp / "t01.events.ndjson").write_text(json.dumps(text) + "\n", encoding="utf-8")
+    assert main(["run", "--dataset", str(dataset), "--system", f"files:{tiny_hyp}", "--run-id", "old",
+                 "--realtime", "--tasks", "stream"]) == 0  # fmt: skip
+    report = json.loads(
+        next((dataset / "runs" / "old").glob("report-*.json")).read_text(encoding="utf-8")
+    )
+    o = report["overall"]
+    assert o["final_lag_p95"] == pytest.approx(2.425) and o["caption_lag_p95"] is None
+    assert o["lag_files"] == 0
+    gates = {g["id"]: g["status"] for g in report["gates"]}
+    # realtime run, files streamed, but no final event carries words: incomplete, not n/a
+    assert gates["lag_en"] == "incomplete" and gates["lag_vn"] == "incomplete"
