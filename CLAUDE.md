@@ -37,6 +37,9 @@ cargo deny check licenses bans advisories sources
 # speech engines (phase 3; needs tools/scripts/build-nemo.sh and fetch-models.sh first):
 cargo clippy -p ghi-speech -p ghi-cli --all-targets --features ghi-cli/nemo -- -D warnings
 cargo test -p ghi-speech -p ghi-cli --features ghi-cli/nemo
+# iOS spike (phase 7; needs Xcode + xcodegen):
+cargo clippy -p ghi-mobile --features nemo --target aarch64-apple-ios -- -D warnings
+apps/mobile/scripts/build-ios.sh --sim
 # eval kit (phase 2), from tools/eval:
 uv sync --locked && uv run ruff check && uv run ruff format --check && uv run pytest -q
 ```
@@ -57,6 +60,14 @@ separate process); `ghi notes|ask|keys` and `ghi store notes`. Local model:
 `tools/scripts/fetch-models.sh qwen3-4b`, then `cargo build -p ghi-llm-worker`
 (the golden tests skip without both). Cloud sends only go through `ghi-net`'s
 `CloudGrant`, bound to the exact previewed bytes.
+
+iOS spike (phase 7): `apps/mobile` (Tauri 2, iOS only) + `native/ios` (Swift
+audio/lifecycle and the Live Activity, C ABI in `GhiAudio/include/ghi_ios.h`).
+NeMo-Speech.cpp for iOS: `tools/scripts/build-nemo-ios.sh` (XCFrameworks in
+`target/nemo-ios`). Build/install: `apps/mobile/scripts/build-ios.sh [--release|--sim]`,
+then `push-models.sh` and `selftest-ios.sh <wav>`. The Xcode project is generated
+from the committed `gen/apple/project.yml` (don't re-run `tauri ios init`); the
+signing team comes from `$APPLE_DEVELOPMENT_TEAM` and is never committed.
 
 Speech engines: `crates/ghi-speech` (NeMo-Speech.cpp FFI, feature `nemo`); models
 pinned in `crates/ghi-models/registry.toml`; decision record `Plans/docs/06`.

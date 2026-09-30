@@ -1531,6 +1531,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ghi-mobile"
+version = "0.1.0"
+dependencies = [
+ "ghi-audio",
+ "ghi-models",
+ "ghi-speech",
+ "libc",
+ "serde",
+ "serde_json",
+ "specta",
+ "specta-typescript",
+ "tauri",
+ "tauri-build",
+ "tauri-specta",
+]
+
+[[package]]
 name = "ghi-models"
 version = "0.1.0"
 dependencies = [

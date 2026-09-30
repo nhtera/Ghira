@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# iOS C dependencies (libopus via CMake) build with Xcode's clang. A Homebrew
+# LLVM earlier in PATH would otherwise be picked in some shells and not in
+# others, and CMake then reconfigures with a broken install prefix.
+[env]
+CC_aarch64_apple_ios = "/usr/bin/clang"
+CXX_aarch64_apple_ios = "/usr/bin/clang++"
+CC_aarch64_apple_ios_sim = "/usr/bin/clang"
+CXX_aarch64_apple_ios_sim = "/usr/bin/clang++"

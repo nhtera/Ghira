@@ -83,8 +83,8 @@ jobs:
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             # The lib test exe of a Tauri crate lacks the Common Controls v6
             # manifest on Windows and cannot start (tauri#11028, tauri#13419).
-            # Its tests are platform-independent and run on macOS.
-            cargo test --workspace --locked --exclude ghi-desktop
+            # Their tests are platform-independent and run on macOS.
+            cargo test --workspace --locked --exclude ghi-desktop --exclude ghi-mobile
           else
             cargo test --workspace --locked
           fi
@@ -115,6 +115,39 @@ jobs:
           cargo clippy --locked -p ghi-speech -p ghi-cli --all-targets --features ghi-cli/nemo -- -D warnings
           ./tools/scripts/fetch-models.sh
           cargo test --locked -p ghi-speech -p ghi-cli --features ghi-cli/nemo
+
+  # iOS spike (phase 7): the app with NeMo-Speech.cpp builds for the simulator.
+  # Device builds need the owner's signing team (apps/mobile/scripts/build-ios.sh).
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install && rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: brew install xcodegen
+      - run: pnpm install --frozen-lockfile
+      - name: NeMo-Speech.cpp for the iOS simulator
+        env:
+          NEMO_IOS_ROOT: ${{ github.workspace }}/target/nemo-ios
+        run: ./tools/scripts/build-nemo-ios.sh ios-sim
+      # The app crate embeds the frontend at compile time.
+      - run: pnpm --filter @ghi/mobile build
+      - name: Clippy (iOS, with the engine)
+        run: cargo clippy --locked -p ghi-mobile --features ghi-mobile/nemo --target aarch64-apple-ios-sim -- -D warnings
+      - name: Simulator app build
+        run: ./apps/mobile/scripts/build-ios.sh --sim
 
   # Eval harness (phase 2): unit tests, plus one scored run on a text-only
   # fixture. Real and public audio never enters CI.

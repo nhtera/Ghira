@@ -2,8 +2,8 @@
 // Fails if any shipped npm package uses a license outside the allow-list
 // (docs/05 §4.1). Checks two lists:
 //   1. production dependencies of every workspace package (pnpm's own report);
-//   2. every package actually bundled into the desktop frontend
-//      (apps/desktop/dist/third-party-js.json, written by `pnpm build`), which
+//   2. every package actually bundled into the desktop and mobile frontends
+//      (apps/*/dist/third-party-js.json, written by `pnpm build`), which
 //      catches devDependencies that end up in the bundle.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -38,14 +38,19 @@ for (const [license, packages] of Object.entries(report)) {
   for (const pkg of packages) bad.push(`${pkg.name}@${(pkg.versions ?? [pkg.version]).join(",")}: ${license}`);
 }
 
-const bundleList = new URL("../../apps/desktop/dist/third-party-js.json", import.meta.url);
-if (!existsSync(bundleList)) {
-  console.error("apps/desktop/dist/third-party-js.json is missing: run `pnpm build` first.");
-  process.exit(1);
-}
-const bundled = JSON.parse(readFileSync(bundleList, "utf8"));
-for (const pkg of bundled) {
-  if (!isAllowed(pkg.license)) bad.push(`${pkg.name}@${pkg.version} (bundled): ${pkg.license}`);
+// Every app's bundle list (the desktop and the mobile shell).
+let bundledCount = 0;
+for (const app of ["desktop", "mobile"]) {
+  const bundleList = new URL(`../../apps/${app}/dist/third-party-js.json`, import.meta.url);
+  if (!existsSync(bundleList)) {
+    console.error(`apps/${app}/dist/third-party-js.json is missing: run \`pnpm build\` first.`);
+    process.exit(1);
+  }
+  const bundled = JSON.parse(readFileSync(bundleList, "utf8"));
+  bundledCount += bundled.length;
+  for (const pkg of bundled) {
+    if (!isAllowed(pkg.license)) bad.push(`${pkg.name}@${pkg.version} (bundled in ${app}): ${pkg.license}`);
+  }
 }
 
 if (bad.length) {
@@ -53,4 +58,4 @@ if (bad.length) {
   for (const line of bad) console.error(`  ${line}`);
   process.exit(1);
 }
-console.log(`js licenses: ok (${Object.keys(report).length} license kinds in prod deps; ${bundled.length} bundled packages)`);
+console.log(`js licenses: ok (${Object.keys(report).length} license kinds in prod deps; ${bundledCount} bundled packages)`);

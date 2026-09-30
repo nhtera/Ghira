@@ -1,0 +1,5 @@
+xcuserdata/
+build/
+Externals/
+# Generated from project.yml by apps/mobile/scripts/build-ios.sh (carries the signing team).
+ghi-mobile.xcodeproj/

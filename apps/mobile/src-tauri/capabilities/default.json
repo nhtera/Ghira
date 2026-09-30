@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "default",
+  "description": "Main window: core defaults plus the spike's commands. No shell, http, fs or opener plugins.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "allow-snapshot",
+    "allow-start-recording",
+    "allow-stop-recording",
+    "allow-mark-moment"
+  ]
+}

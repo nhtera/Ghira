@@ -1,0 +1,39 @@
+[package]
+name = "ghi-mobile"
+description = "Ghira iOS spike (phase 7): Tauri 2 shell, Swift audio over a C ABI, live speech engines."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "ghi_mobile_lib"
+# iOS links the static library into the Xcode app target, where the Swift side
+# of the C ABI lives. No cdylib: it would need those Swift symbols at link time.
+crate-type = ["staticlib", "rlib"]
+
+[features]
+# Live ASR + diarization (NeMo-Speech.cpp). iOS: tools/scripts/build-nemo-ios.sh.
+nemo = ["ghi-speech/nemo"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# No shell, http, fs or opener plugins: the webview never touches the network.
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+specta = "=2.0.0-rc.25"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+specta-typescript = "=0.0.12"
+ghi-audio = { path = "../../../crates/ghi-audio" }
+ghi-models = { path = "../../../crates/ghi-models" }
+ghi-speech = { path = "../../../crates/ghi-speech" }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+libc = "0.2"
+
+[lints]
+workspace = true
