@@ -54,6 +54,12 @@ cargo build -p ghi-cli && codesign -s - -f target/debug/ghi   # binds the embedd
 target/debug/ghi record --mode call --duration 10 --out /tmp/rec   # prompts for mic + System Audio Recording
 ```
 
+Storage (phase 5): `crates/ghi-store` builds SQLCipher; on Windows and Linux
+it also builds OpenSSL, which needs Perl (Apple targets use CommonCrypto).
+Debug builds of `ghi` keep a store's key ring in `<dir>.devkey`
+instead of the Keychain (`GHI_KEYSTORE=keychain` to use it); release builds
+never contain that code path (`tools/scripts/check-no-dev-key.sh`).
+
 Before opening a PR, run what CI runs:
 
 ```sh

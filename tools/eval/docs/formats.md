@@ -253,6 +253,10 @@ target/<profile>/ghi`) so macOS binds the plist and can show the prompts.
     Events are also logged to stderr as they happen (e.g. `silent_system_track`
     after `--silent-warn` seconds, default 5: System Audio Recording is
     probably denied).
+- `--format store` records a meeting into the encrypted Ghira store at `--out`
+  (a data directory, see "Store commands"); `--title` names it and the
+  document's `id` is the meeting gid. Track files are the store's encrypted
+  bundles (`bundles/<gid>/<track>.ghb`).
 - `ghi recover DIR` decodes every `*.opus` in DIR to `*.recovered.wav`,
   tolerating a torn last page; prints `ghi.recover/1`: `files[{file, wav,
   duration_s, complete, bad_pages, truncated, error?}]`; a file that cannot be
@@ -262,6 +266,34 @@ target/<profile>/ghi`) so macOS binds the plist and can show the prompts.
   null). `--watch` polls every second and prints one document per prompt.
   Known gap: Safari plays and records call audio in `com.apple.WebKit.GPU`,
   which is not mapped to Safari yet, so Safari calls are not detected.
+
+### Store commands (phase 5; not used by the harness)
+
+`ghi store --dir DIR <action>` opens (or creates) an encrypted store: a
+SQLCipher database, per-meeting keys and encrypted audio bundles. Debug builds
+keep the key ring in a file next to the directory (`DIR.devkey`) (`GHI_KEYSTORE=keychain` uses the
+Keychain); release builds use the OS key store (macOS Keychain item service
+`com.nhtera.ghira.cli`, Windows DPAPI). Passwords are read from stdin, never
+from arguments. Every action prints one JSON document:
+
+- `list` → `ghi.store-list/1`: `meetings[{gid, title, started_at, duration_s,
+  mode, status, tracks[{kind, pages}]}]`.
+- `search QUERY [--limit N]` → `ghi.store-search/1`: `hits[{kind, meeting_gid,
+  meeting_title, item_gid, t0_s, t1_s, snippet, highlights[[start, end]],
+  exact, score}]`, `took_ms`. Accent-insensitive (`dong` finds `đồng`);
+  highlights are char offsets into `snippet`; `exact` marks accent-exact hits.
+- `audio GID [--track mic|system] --out X.wav` → `ghi.store-audio/1`: decrypts
+  a track to 16 kHz WAV (`pages`, `complete`, `duration_s`).
+- `add-transcript FILE [--meeting GID]` → `ghi.store-transcript/1`: stores a
+  `ghi.transcript/1` as a new transcript version (a new meeting by default).
+- `delete GID` → `ghi.store-deleted/1`: crypto-shred (key destroyed first,
+  then files, rows and index entries).
+- `export --out FILE` → `ghi.store-export/1`: everything in one archive
+  encrypted with the password (Argon2id). The archive includes the master
+  key, so its security is the password's.
+- `import ARCHIVE` → `ghi.store-import/1`: restores into an empty `--dir` on a
+  device without a key; a wrong password fails with `bad_input`.
+- Empty passwords are refused (`bad_input`): the archive is only as strong as its password.
 
 Golden examples of each document live in `tools/eval/tests/fixtures/cli/`.
 `crates/ghi-cli` serializes its types against them in its unit tests, and the

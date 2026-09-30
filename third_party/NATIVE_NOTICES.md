@@ -21,6 +21,8 @@ C code compiled into Rust crates by their build scripts (statically linked;
 | Component | Version | License | License text |
 |---|---|---|---|
 | libopus (via `opusic-sys`, feature `bundled`, used by `ghi-audio`) | 1.6.1 (`opusic-sys` 0.7.5) | BSD-3-Clause | `opus/COPYING` in the `opusic-sys` crate source |
+| SQLCipher, with SQLite inside (via `libsqlite3-sys`, `bundled-sqlcipher`, used by `ghi-store`) | 4.14.0 / SQLite 3.51 (`libsqlite3-sys` 0.38.2) | BSD-3-Clause-style (SQLCipher, Zetetic); SQLite is public domain | `sqlcipher/LICENSE` in the `libsqlite3-sys` crate source |
+| OpenSSL 3 (via `openssl-src`, **non-Apple targets only**: SQLCipher's crypto provider; Apple targets use CommonCrypto) | 3.6 (`openssl-src` 300.6) | Apache-2.0 | `openssl/LICENSE.txt` in the `openssl-src` crate source |
 
 `native/macos/GhiAudioMac` (our Swift capture package, Apache-2.0) is linked
 statically into `ghi-audio` on macOS; it uses only Apple system frameworks.

@@ -91,6 +91,13 @@ jobs:
       - name: Tauri build (unsigned, no bundle)
         working-directory: apps/desktop
         run: pnpm tauri build --no-bundle -- --locked
+      # RT-12: the debug-only file key store must not reach release binaries.
+      - name: No dev key in release binaries
+        shell: bash
+        run: |
+          cargo build --release --locked -p ghi-cli
+          exe=""; [[ "$RUNNER_OS" == "Windows" ]] && exe=".exe"
+          ./tools/scripts/check-no-dev-key.sh "target/release/ghi$exe" "target/release/ghi-desktop$exe"
       - name: NeMo-Speech.cpp build
         shell: bash
         env:

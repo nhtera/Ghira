@@ -9,3 +9,37 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[dependencies]
+argon2 = "0.5"
+bip39 = "3"
+chacha20poly1305 = { version = "0.10", features = ["stream"] }
+hkdf = "0.12"
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+unicode-normalization = "0.1"
+uuid = { version = "1", features = ["v7"] }
+zeroize = { version = "1", features = ["derive"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+core-foundation-sys = "0.8"
+security-framework = { version = "3", features = ["OSX_10_15"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+
+# SQLCipher: Apple targets use CommonCrypto (no OpenSSL build); others build
+# a vendored OpenSSL 3 (Apache-2.0). Needs Perl on those hosts.
+[target.'cfg(target_vendor = "apple")'.dependencies]
+rusqlite = { version = "0.40", features = ["bundled-sqlcipher", "backup"] }
+
+[target.'cfg(not(target_vendor = "apple"))'.dependencies]
+rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl", "backup"] }

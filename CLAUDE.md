@@ -45,6 +45,11 @@ Audio capture: `crates/ghi-audio` (rings, 16 kHz resample, AEC via `sonora`,
 Ogg Opus, meeting detect) + `native/macos/GhiAudioMac` (Swift, C ABI in its
 `include/ghi_audio_mac.h`, built by `ghi-audio/build.rs`); `ghi record|recover|detect`.
 
+Storage: `crates/ghi-store` (SQLCipher, per-meeting DEKs, encrypted audio
+bundles, VN-folded FTS5 search, crypto-shred delete, key stores) and
+`ghi store ...`. Debug-only file key store; `tools/scripts/check-no-dev-key.sh`
+guards release binaries.
+
 Speech engines: `crates/ghi-speech` (NeMo-Speech.cpp FFI, feature `nemo`); models
 pinned in `crates/ghi-models/registry.toml`; decision record `Plans/docs/06`.
 

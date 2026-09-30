@@ -9,6 +9,7 @@ pub mod audio;
 pub mod cmd;
 pub mod contract;
 pub mod engine;
+pub mod keystore;
 pub mod sink;
 
 use std::path::Path;

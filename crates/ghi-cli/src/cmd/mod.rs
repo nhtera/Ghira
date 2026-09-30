@@ -6,6 +6,7 @@ pub mod bench;
 pub mod detect;
 pub mod diarize;
 pub mod record;
+pub mod store;
 pub mod transcribe;
 
 use std::time::{Duration, Instant};

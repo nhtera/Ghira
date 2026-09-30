@@ -99,6 +99,9 @@ enum Command {
         /// File name stem (default `rec-<unix time>`).
         #[arg(long, value_parser = cmd::record::parse_id)]
         id: Option<String>,
+        /// Meeting title for `--format store`.
+        #[arg(long)]
+        title: Option<String>,
         /// Stop after this many seconds of recording.
         #[arg(long, value_parser = cmd::record::parse_duration)]
         duration: Option<f64>,
@@ -124,12 +127,56 @@ enum Command {
     /// Decode the Ogg Opus tracks in a recording directory, including a torn
     /// last page after a crash, to `*.recovered.wav` (`ghi.recover/1`).
     Recover { dir: PathBuf },
+    /// Inspect and manage an encrypted Ghira store (a data directory).
+    Store {
+        /// The data directory (created on first use).
+        #[arg(long)]
+        dir: PathBuf,
+        #[command(subcommand)]
+        action: StoreAction,
+    },
     /// Show processes using audio and what meeting auto-detect would do (`ghi.detect/1`).
     Detect {
         /// Poll every second for this many seconds; print one line per prompt.
         #[arg(long)]
         watch: Option<u64>,
     },
+}
+
+#[derive(Subcommand)]
+enum StoreAction {
+    /// List meetings and their audio tracks (`ghi.store-list/1`).
+    List,
+    /// Accent-insensitive search over transcripts and notes (`ghi.store-search/1`).
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    /// Decrypt one audio track of a meeting to a WAV file (`ghi.store-audio/1`).
+    Audio {
+        meeting: String,
+        #[arg(long, value_enum, default_value_t = cmd::store::TrackArg::Mic)]
+        track: cmd::store::TrackArg,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Store a `ghi.transcript/1` file as a meeting's transcript (`ghi.store-transcript/1`).
+    AddTranscript {
+        transcript: PathBuf,
+        /// Existing meeting gid; default: a new meeting.
+        #[arg(long)]
+        meeting: Option<String>,
+    },
+    /// Delete a meeting: its key is destroyed first, so nothing stays readable.
+    Delete { meeting: String },
+    /// Export everything into one archive encrypted with a password read from stdin.
+    Export {
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Restore an export into the (empty) --dir; password from stdin.
+    Import { archive: PathBuf },
 }
 
 fn run(command: Command) -> Result<(), ErrorDoc> {
@@ -191,6 +238,7 @@ fn run(command: Command) -> Result<(), ErrorDoc> {
             mode,
             out,
             id,
+            title,
             duration,
             format,
             replay,
@@ -202,6 +250,7 @@ fn run(command: Command) -> Result<(), ErrorDoc> {
             mode,
             out: &out,
             id: id.as_deref(),
+            title: title.as_deref(),
             duration_s: duration,
             format,
             replay: &replay,
@@ -211,6 +260,22 @@ fn run(command: Command) -> Result<(), ErrorDoc> {
         }),
         Command::Recover { dir } => cmd::record::recover(&dir),
         Command::Detect { watch } => cmd::detect::run(watch),
+        Command::Store { dir, action } => match action {
+            StoreAction::List => cmd::store::list(&dir),
+            StoreAction::Search { query, limit } => cmd::store::search(&dir, &query, limit),
+            StoreAction::Audio {
+                meeting,
+                track,
+                out,
+            } => cmd::store::audio(&dir, &meeting, track, &out),
+            StoreAction::AddTranscript {
+                transcript,
+                meeting,
+            } => cmd::store::add_transcript(&dir, &transcript, meeting.as_deref()),
+            StoreAction::Delete { meeting } => cmd::store::delete(&dir, &meeting),
+            StoreAction::Export { out } => cmd::store::export(&dir, &out),
+            StoreAction::Import { archive } => cmd::store::import(&archive, &dir),
+        },
     }
 }
 

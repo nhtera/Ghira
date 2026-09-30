@@ -381,3 +381,141 @@ fn capture_is_unavailable_off_macos() {
     assert_eq!(error_doc(&out)["code"], "capture_unavailable");
     std::fs::remove_dir_all(&out_dir).unwrap();
 }
+
+#[test]
+fn store_record_transcript_search_export_delete() {
+    use std::io::Write;
+    let wav = tone_wav("store");
+    let wav = wav.to_str().unwrap();
+    let root = temp_dir("store");
+    let data = root.join("data");
+    let dir = data.to_str().unwrap();
+    let json = |out: Output| -> Value {
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    let stdin_ghi = |args: &[&str], input: &str| -> Output {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_ghi"))
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    };
+
+    // Record a call into the store (debug builds use a key file, not the Keychain).
+    let rec = json(ghi(&[
+        "record",
+        "--mode",
+        "call",
+        "--format",
+        "store",
+        "--replay",
+        &format!("{wav},{wav}"),
+        "--out",
+        dir,
+        "--title",
+        "Họp tuần",
+    ]));
+    let gid = rec["id"].as_str().unwrap().to_owned();
+    assert!(
+        rec["tracks"][0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("mic.ghb")
+    );
+    let list = json(ghi(&["store", "--dir", dir, "list"]));
+    assert_eq!(list["meetings"][0]["title"], "Họp tuần");
+    assert_eq!(list["meetings"][0]["tracks"].as_array().unwrap().len(), 2);
+
+    // Audio comes back out of the encrypted bundle.
+    let out_wav = root.join("mic.wav");
+    let audio = json(ghi(&[
+        "store",
+        "--dir",
+        dir,
+        "audio",
+        &gid,
+        "--out",
+        out_wav.to_str().unwrap(),
+    ]));
+    assert_eq!(audio["complete"], true);
+    assert!((audio["duration_s"].as_f64().unwrap() - 1.0).abs() < 0.05);
+
+    // Transcript → accent-insensitive search with highlights on the original.
+    let t = root.join("t.json");
+    std::fs::write(&t, r#"{"schema":"ghi.transcript/1","audio":"a.wav","duration_s":1.0,"pass":"final","lang":"auto","engine":{"name":"t","version":"0"},"segments":[{"id":0,"start":0.0,"end":1.0,"text":"Chốt kế hoạch ở Đà Nẵng","lang":"vi","speaker":null,"words":null}],"perf":{"wall_s":0.0,"rtf":null,"peak_rss_mb":null}}"#).unwrap();
+    json(ghi(&[
+        "store",
+        "--dir",
+        dir,
+        "add-transcript",
+        t.to_str().unwrap(),
+        "--meeting",
+        &gid,
+    ]));
+    let hits = json(ghi(&["store", "--dir", dir, "search", "da nang"]));
+    let hit = &hits["hits"][0];
+    let snippet: Vec<char> = hit["snippet"].as_str().unwrap().chars().collect();
+    let [a, b] = [0, 1].map(|i| hit["highlights"][0][i].as_u64().unwrap() as usize);
+    assert_eq!(snippet[a..b].iter().collect::<String>(), "Đà Nẵng");
+
+    // Export with a password, restore elsewhere; a wrong password fails.
+    let archive = root.join("all.ghx");
+    let arch = archive.to_str().unwrap();
+    json(stdin_ghi(
+        &["store", "--dir", dir, "export", "--out", arch],
+        "pw 1\n",
+    ));
+    let restored = root.join("restored");
+    let bad = stdin_ghi(
+        &["store", "--dir", restored.to_str().unwrap(), "import", arch],
+        "nope\n",
+    );
+    assert_eq!(bad.status.code(), Some(1));
+    let imp = json(stdin_ghi(
+        &["store", "--dir", restored.to_str().unwrap(), "import", arch],
+        "pw 1\n",
+    ));
+    assert_eq!(imp["meetings"], 1);
+
+    // Delete: gone from list, search and audio.
+    json(ghi(&["store", "--dir", dir, "delete", &gid]));
+    assert_eq!(
+        json(ghi(&["store", "--dir", dir, "list"]))["meetings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        json(ghi(&["store", "--dir", dir, "search", "chot"]))["hits"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    let gone = ghi(&[
+        "store",
+        "--dir",
+        dir,
+        "audio",
+        &gid,
+        "--out",
+        out_wav.to_str().unwrap(),
+    ]);
+    assert_eq!(gone.status.code(), Some(1));
+    std::fs::remove_dir_all(&root).unwrap();
+}

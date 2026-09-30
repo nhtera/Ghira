@@ -19,7 +19,7 @@ use crate::contract::{
     ErrorCode, ErrorDoc, Perf, RECORD, RECOVER, Record, RecordEvent, RecordTrack, Recover,
     RecoveredFile,
 };
-use crate::sink::{OggPages, Tally, WavSink, seconds, sync_dir, track_path, write_wav};
+use crate::sink::{OggPages, StorePages, Tally, WavSink, seconds, sync_dir, track_path, write_wav};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Mode {
@@ -35,12 +35,17 @@ pub enum Format {
     Wav,
     /// Ogg Opus per track, synced page by page (crash-safe).
     Opus,
+    /// A meeting in the encrypted Ghira store at `--out` (a data directory):
+    /// Ogg Opus pages sealed into the store's audio bundles.
+    Store,
 }
 
 pub struct Args<'a> {
     pub mode: Mode,
     pub out: &'a Path,
     pub id: Option<&'a str>,
+    /// Meeting title (`--format store`).
+    pub title: Option<&'a str>,
     pub duration_s: Option<f64>,
     pub format: Format,
     /// WAV files played through the pipeline at 1x instead of capturing:
@@ -525,8 +530,13 @@ pub fn run(args: &Args) -> Result<(), ErrorDoc> {
         sync_dir(parent).map_err(|e| internal("sync directory", e))?;
     }
     let tracks = tracks_of(args.mode);
+    // The store is opened first: a key or database problem fails before capture.
+    let store = match args.format {
+        Format::Store => Some(crate::keystore::open_store(args.out)?),
+        _ => None,
+    };
     let session = args.out.join(format!("{id}.session.json"));
-    if session.exists() {
+    if store.is_none() && session.exists() {
         return Err(ErrorDoc::new(
             ErrorCode::BadInput,
             format!(
@@ -543,10 +553,32 @@ pub fn run(args: &Args) -> Result<(), ErrorDoc> {
     };
     // After the source is up (no orphan file on a permission error), before
     // any audio is written. The rings buffer the first blocks meanwhile.
-    if let Err(e) = write_session(args, &id, tracks) {
-        source.handle.stop();
-        return Err(internal("write session file", e));
-    }
+    // Store recordings are a meeting row instead; their id is the meeting gid.
+    let meeting = match &store {
+        Some(store) => {
+            let new = ghi_store::store::NewMeeting {
+                title: args.title.unwrap_or("Recording").to_owned(),
+                source: "live".into(),
+                mode: format!("{:?}", args.mode).to_lowercase(),
+                ..Default::default()
+            };
+            match store.create_meeting(new) {
+                Ok(m) => Some(m.gid),
+                Err(e) => {
+                    source.handle.stop();
+                    return Err(crate::keystore::store_error(e));
+                }
+            }
+        }
+        None => {
+            if let Err(e) = write_session(args, &id, tracks) {
+                source.handle.stop();
+                return Err(internal("write session file", e));
+            }
+            None
+        }
+    };
+    let id = meeting.clone().unwrap_or(id);
     install_signal_handlers();
     let cfg = PipelineConfig {
         route: source.route,
@@ -560,6 +592,7 @@ pub fn run(args: &Args) -> Result<(), ErrorDoc> {
     let ext = match args.format {
         Format::Wav => "wav",
         Format::Opus => "opus",
+        Format::Store => "ghb",
     };
     let (outcome, levels, markers) = match args.format {
         Format::Wav => {
@@ -604,6 +637,67 @@ pub fn run(args: &Args) -> Result<(), ErrorDoc> {
             sync_dir(args.out).map_err(|e| internal("sync directory", e))?;
             (outcome, tally.levels, pages.log.markers)
         }
+        Format::Store => {
+            let (store, gid) = (store.as_ref().unwrap(), meeting.as_deref().unwrap());
+            let mut pages = StorePages {
+                writers: [None, None],
+                markers: Vec::new(),
+            };
+            let mut opened = Ok(());
+            for &t in tracks {
+                match store.open_track(gid, track_kind(t)) {
+                    Ok(w) => pages.writers[t.index()] = Some(w),
+                    Err(e) => {
+                        opened = Err(crate::keystore::store_error(e));
+                        break;
+                    }
+                }
+            }
+            let recorder = match opened {
+                Ok(()) => OpusRecorder::new(pages, tracks, EncoderConfig::default())
+                    .map_err(|e| internal("start Opus encoder", e)),
+                Err(e) => {
+                    let _ = close_store_meeting(store, gid, tracks, &mut pages, 0.0);
+                    Err(e)
+                }
+            };
+            let recorder = match recorder {
+                Ok(r) => r,
+                Err(e) => {
+                    source.handle.stop();
+                    // The pages moved into the failed encoder were dropped; the
+                    // store recovers unfinished tracks when it next opens.
+                    let _ = store.finish_meeting(gid, 0);
+                    return Err(e);
+                }
+            };
+            let (mut pipeline, mut asr) = Pipeline::new(cfg, mic, system, Tally::new(recorder));
+            let outcome = run_loop(
+                &mut pipeline,
+                &mut asr,
+                &mut source,
+                args.out,
+                args.duration_s,
+            );
+            source.handle.stop();
+            let tally = pipeline.finish();
+            // Every stop path closes the tracks and the meeting; the first
+            // error is reported after that.
+            let finished = tally.inner.finish();
+            let (markers, closed) = match finished {
+                Ok(mut pages) => {
+                    let closed =
+                        close_store_meeting(store, gid, tracks, &mut pages, outcome.duration_s);
+                    (pages.markers, closed)
+                }
+                Err(e) => {
+                    let _ = store.finish_meeting(gid, (outcome.duration_s * 1000.0) as i64);
+                    (Vec::new(), Err(internal("finish Opus pages", e)))
+                }
+            };
+            closed?;
+            (outcome, tally.levels, markers)
+        }
     };
     if outcome.stopped == "writer_error" {
         return Err(internal("record", "writing the recording failed"));
@@ -621,7 +715,13 @@ pub fn run(args: &Args) -> Result<(), ErrorDoc> {
                 let l = levels[t.index()];
                 RecordTrack {
                     track: t.name().into(),
-                    file: track_path(Path::new(""), &id, t, ext).display().to_string(),
+                    file: match (&store, &meeting) {
+                        (Some(s), Some(gid)) => match s.bundle_path(gid, track_kind(t)) {
+                            Ok(p) => p.strip_prefix(args.out).unwrap_or(&p).display().to_string(),
+                            Err(_) => String::new(),
+                        },
+                        _ => track_path(Path::new(""), &id, t, ext).display().to_string(),
+                    },
                     duration_s: seconds(l.samples),
                     rms_dbfs: l.rms_dbfs(),
                     peak: f64::from(l.peak),
@@ -643,6 +743,39 @@ pub fn run(args: &Args) -> Result<(), ErrorDoc> {
         },
     };
     crate::emit(&doc)
+}
+
+/// Finishes every open track writer, then the meeting, even after an error;
+/// returns the first error.
+fn close_store_meeting(
+    store: &ghi_store::store::Store,
+    gid: &str,
+    tracks: &[Track],
+    pages: &mut StorePages,
+    duration_s: f64,
+) -> Result<(), ErrorDoc> {
+    let mut first = Ok(());
+    for &t in tracks {
+        if let Some(w) = pages.writers[t.index()].take()
+            && let Err(e) = store.finish_track(gid, track_kind(t), w)
+            && first.is_ok()
+        {
+            first = Err(crate::keystore::store_error(e));
+        }
+    }
+    if let Err(e) = store.finish_meeting(gid, (duration_s * 1000.0) as i64)
+        && first.is_ok()
+    {
+        first = Err(crate::keystore::store_error(e));
+    }
+    first
+}
+
+fn track_kind(t: Track) -> ghi_store::store::TrackKind {
+    match t {
+        Track::Mic => ghi_store::store::TrackKind::Mic,
+        Track::System => ghi_store::store::TrackKind::System,
+    }
 }
 
 /// Writes `<id>.session.json` before any audio, so a recording that crashes

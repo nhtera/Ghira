@@ -255,6 +255,38 @@ impl PageSink for OggPages {
     }
 }
 
+/// Ogg Opus pages into the encrypted store bundles (`ghi record --format
+/// store`): the phase 5 bundle writer behind the encoder's page sink.
+pub struct StorePages {
+    pub writers: [Option<ghi_store::bundle::BundleWriter>; 2],
+    pub markers: Vec<RecordMarker>,
+}
+
+fn store_io(e: ghi_store::StoreError) -> io::Error {
+    io::Error::other(e.to_string())
+}
+
+impl PageSink for StorePages {
+    fn write_page(&mut self, track: Track, page: &[u8]) -> io::Result<()> {
+        match self.writers[track.index()].as_mut() {
+            Some(w) => w.append(page).map(|_| ()).map_err(store_io),
+            None => Ok(()),
+        }
+    }
+
+    fn sync(&mut self, track: Track, durable: bool) -> io::Result<()> {
+        match self.writers[track.index()].as_ref() {
+            Some(w) => w.sync(durable).map_err(store_io),
+            None => Ok(()),
+        }
+    }
+
+    fn marker(&mut self, marker: &Marker) -> io::Result<()> {
+        self.markers.push(describe_marker(marker));
+        Ok(())
+    }
+}
+
 /// Level statistics of one track.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Level {
