@@ -62,12 +62,28 @@ fn tone_wav(name: &str) -> std::path::PathBuf {
     path
 }
 
+/// Without the model (or the worker) the notes engine exits 3 `engine_unavailable`.
 #[test]
-fn notes_is_not_implemented_yet() {
-    let out = ghi(&["notes", &format!("{FIXTURES}transcript.json"), "--json"]);
-    assert_eq!(out.status.code(), Some(3));
-    assert!(out.stdout.is_empty());
-    assert_eq!(error_doc(&out)["code"], "not_implemented");
+fn notes_and_ask_need_the_local_model() {
+    let empty = std::env::temp_dir().join(format!("ghi-cli-{}-no-models", std::process::id()));
+    std::fs::create_dir_all(&empty).unwrap();
+    let transcript = format!("{FIXTURES}transcript.json");
+    for args in [
+        vec!["notes", transcript.as_str(), "--json"],
+        vec!["ask", transcript.as_str(), "what was decided?", "--json"],
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_ghi"))
+            .args(&args)
+            .env("GHI_MODELS_DIR", &empty)
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(3), "{args:?}");
+        assert!(out.stdout.is_empty());
+        assert_eq!(error_doc(&out)["code"], "engine_unavailable");
+    }
+    let out = ghi(&["notes", &transcript, "--template", "nope", "--json"]);
+    assert_eq!(error_doc(&out)["code"], "bad_input");
+    std::fs::remove_dir_all(empty).unwrap();
 }
 
 /// Without the `nemo` feature the engine commands exit 3 `engine_unavailable`.
@@ -518,4 +534,175 @@ fn store_record_transcript_search_export_delete() {
     ]);
     assert_eq!(gone.status.code(), Some(1));
     std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// With cloud off the notes engine never needs the network: `ghi notes` and
+/// its worker run to completion under a sandbox that denies every socket.
+/// Needs the local model and the worker binary; skipped without them.
+#[cfg(target_os = "macos")]
+#[test]
+fn notes_run_with_the_network_denied() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let worker = root.join("target/debug/ghi-llm-worker");
+    let model = root.join("models/Qwen3-4B-Q4_K_M.gguf");
+    if !worker.is_file() || !model.is_file() {
+        eprintln!("skipped: needs target/debug/ghi-llm-worker and models/Qwen3-4B-Q4_K_M.gguf");
+        return;
+    }
+    let out = Command::new("/usr/bin/sandbox-exec")
+        .args(["-p", "(version 1)(allow default)(deny network*)"])
+        .arg(env!("CARGO_BIN_EXE_ghi"))
+        .args(["notes", &format!("{FIXTURES}transcript.json"), "--json"])
+        .env("GHI_LLM_WORKER", &worker)
+        .env("GHI_MODELS_DIR", root.join("models"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(doc["schema"], "ghi.notes/1");
+}
+
+/// A transcript with personal data, for the cloud path tests.
+fn pii_transcript(name: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("ghi-cli-{}-{name}.json", std::process::id()));
+    let doc = serde_json::json!({
+        "schema": "ghi.transcript/1", "audio": "m.wav", "duration_s": 8.0, "pass": "final",
+        "lang": "auto", "engine": {"name": "test", "version": "1"},
+        "segments": [
+            {"id": 0, "start": 0.0, "end": 4.0, "lang": "vi", "speaker": "Linh", "words": null,
+             "text": "Linh đây, gửi scope qua linh.tran@example.com nhé, số em 0912 345 678."},
+            {"id": 1, "start": 4.0, "end": 8.0, "lang": "vi", "speaker": "S2", "words": null,
+             "text": "Ok, chốt beta không có lịch."}
+        ],
+        "perf": {"wall_s": 0.0, "rtf": null, "peak_rss_mb": null}
+    });
+    std::fs::write(&path, doc.to_string()).unwrap();
+    path
+}
+
+fn ghi_env(args: &[&str], secrets: &std::path::Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_ghi"))
+        .args(args)
+        .env("GHI_DEV_SECRETS_DIR", secrets)
+        .env_remove("GHI_KEYSTORE")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap()
+}
+
+/// The cloud path never sends without the exact previewed bytes, a key and
+/// an allowed policy; none of these runs opens a connection.
+#[test]
+fn cloud_notes_need_a_confirmed_preview() {
+    let t = pii_transcript("pii");
+    let t = t.to_str().unwrap();
+    let secrets = std::env::temp_dir().join(format!("ghi-cli-{}-secrets", std::process::id()));
+    let base = [
+        "notes",
+        t,
+        "--provider",
+        "anthropic",
+        "--cloud-model",
+        "claude-test",
+        "--json",
+    ];
+
+    let out = ghi_env(&[&base[..], &["--preview"]].concat(), &secrets);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let pv: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(pv["schema"], "ghi.send-preview/1");
+    assert_eq!(pv["host"], "api.anthropic.com");
+    let payload = pv["payload"].as_str().unwrap();
+    for leaked in ["linh.tran@example.com", "0912 345 678", "Linh"] {
+        assert!(!payload.contains(leaked), "{leaked} is in the payload");
+    }
+    assert!(payload.contains("<<EMAIL_1>>") && payload.contains("<<PHONE_1>>"));
+    let sha = pv["sha256"].as_str().unwrap().to_string();
+    assert_eq!(sha.len(), 64);
+
+    // Not confirmed, confirmed with other bytes, strict offline, no key.
+    for (extra, needle) in [
+        (vec![], "confirmed preview"),
+        (vec!["--confirm-send", &"0".repeat(64)], "payload changed"),
+        (
+            vec!["--confirm-send", sha.as_str(), "--strict-offline"],
+            "refused",
+        ),
+        (vec!["--confirm-send", sha.as_str()], "no API key"),
+    ] {
+        let out = ghi_env(&[&base[..], &extra[..]].concat(), &secrets);
+        assert_eq!(out.status.code(), Some(1), "{extra:?}");
+        let err = error_doc(&out);
+        assert_eq!(err["code"], "bad_input");
+        assert!(err["message"].as_str().unwrap().contains(needle), "{err}");
+        assert!(out.stdout.is_empty());
+    }
+    // A base URL whose preview host could differ from the real one is refused.
+    let out = ghi_env(
+        &[
+            "notes",
+            t,
+            "--provider",
+            "openai",
+            "--cloud-model",
+            "m",
+            "--preview",
+            "--base-url",
+            "https://evil.example#@api.openai.com/v1",
+        ],
+        &secrets,
+    );
+    assert_eq!(error_doc(&out)["code"], "bad_input");
+    let _ = std::fs::remove_dir_all(secrets);
+    std::fs::remove_file(t).unwrap();
+}
+
+#[test]
+fn keys_are_stored_without_ever_being_printed() {
+    let secrets = std::env::temp_dir().join(format!("ghi-cli-{}-keys", std::process::id()));
+    let key = "test-key-not-real-123";
+    let mut child = Command::new(env!("CARGO_BIN_EXE_ghi"))
+        .args(["keys", "set", "openai"])
+        .env("GHI_DEV_SECRETS_DIR", &secrets)
+        .env_remove("GHI_KEYSTORE")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    use std::io::Write;
+    writeln!(child.stdin.take().unwrap(), "{key}").unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    let status = ghi_env(&["keys", "status"], &secrets);
+    let doc: Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(
+        doc["providers"][0],
+        serde_json::json!({"provider": "openai", "stored": true})
+    );
+    for o in [&out, &status] {
+        assert!(!String::from_utf8_lossy(&o.stdout).contains(key));
+        assert!(!String::from_utf8_lossy(&o.stderr).contains(key));
+    }
+    let del = ghi_env(&["keys", "delete", "openai"], &secrets);
+    assert!(del.status.success());
+    // A self-hosted OpenAI-compatible server's key is stored under its host.
+    let host = Command::new(env!("CARGO_BIN_EXE_ghi"))
+        .args(["keys", "set", "llm.example.com"])
+        .env("GHI_DEV_SECRETS_DIR", &secrets)
+        .env_remove("GHI_KEYSTORE")
+        .output()
+        .unwrap();
+    assert_eq!(error_doc(&host)["message"], "empty API key on stdin");
+    let bad = ghi_env(&["keys", "set", "nope"], &secrets);
+    assert_eq!(error_doc(&bad)["code"], "bad_input");
+    let _ = std::fs::remove_dir_all(secrets);
 }

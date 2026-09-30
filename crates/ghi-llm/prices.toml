@@ -1,0 +1,66 @@
+# Cloud model prices, USD per 1M tokens, for the send preview's cost estimate.
+# A convenience only: providers change prices, so treat the estimate as
+# approximate and override with `ghi notes --prices <file>` (same format).
+# A model not listed here shows no cost estimate. `model` matches a model id
+# exactly or as a prefix (dated snapshots such as claude-haiku-4-5-20251001).
+# Last reviewed 2026-10-01.
+
+[[model]]
+provider = "openai"
+model = "gpt-4.1-mini"
+input = 0.40
+output = 1.60
+
+[[model]]
+provider = "openai"
+model = "gpt-4.1"
+input = 2.00
+output = 8.00
+
+[[model]]
+provider = "openai"
+model = "gpt-4o-mini"
+input = 0.15
+output = 0.60
+
+[[model]]
+provider = "openai"
+model = "gpt-4o"
+input = 2.50
+output = 10.00
+
+[[model]]
+provider = "anthropic"
+model = "claude-haiku-4-5"
+input = 1.00
+output = 5.00
+
+[[model]]
+provider = "anthropic"
+model = "claude-sonnet-4-5"
+input = 3.00
+output = 15.00
+
+[[model]]
+provider = "anthropic"
+model = "claude-opus-4-5"
+input = 5.00
+output = 25.00
+
+[[model]]
+provider = "gemini"
+model = "gemini-2.5-flash-lite"
+input = 0.10
+output = 0.40
+
+[[model]]
+provider = "gemini"
+model = "gemini-2.5-flash"
+input = 0.30
+output = 2.50
+
+[[model]]
+provider = "gemini"
+model = "gemini-2.5-pro"
+input = 1.25
+output = 10.00

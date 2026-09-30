@@ -34,6 +34,7 @@ pub mod android;
 pub mod apple;
 #[cfg(debug_assertions)]
 pub mod dev;
+pub mod secrets;
 #[cfg(windows)]
 pub mod windows;
 

@@ -3,8 +3,10 @@
 //! `ghi-speech` stream traits so it is testable without models.
 
 pub mod bench;
+pub mod cloud;
 pub mod detect;
 pub mod diarize;
+pub mod notes;
 pub mod record;
 pub mod store;
 pub mod transcribe;

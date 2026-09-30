@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+id = "interview"
+name = "Interview"
+guidance_en = "A job interview. Capture the candidate's experience and evidence for strengths and concerns. Do not judge; report what was said."
+guidance_vi = "Buổi phỏng vấn tuyển dụng. Ghi lại kinh nghiệm của ứng viên và dẫn chứng cho điểm mạnh, điểm cần lưu ý. Không đánh giá; chỉ ghi lại những gì đã nói."
+
+[[section]]
+id = "experience"
+title_en = "Experience"
+title_vi = "Kinh nghiệm"
+instruction = "Roles, projects and skills the candidate described."
+
+[[section]]
+id = "strengths"
+title_en = "Strengths"
+title_vi = "Điểm mạnh"
+instruction = "Evidence of strengths, as stated in the conversation."
+
+[[section]]
+id = "concerns"
+title_en = "Concerns"
+title_vi = "Điểm cần lưu ý"
+instruction = "Gaps or concerns that came up, as stated in the conversation."

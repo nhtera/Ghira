@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+id = "lecture"
+name = "Lecture / Workshop"
+guidance_en = "A lecture or workshop. Capture the key concepts, definitions and examples in the order taught."
+guidance_vi = "Bài giảng hoặc hội thảo. Ghi lại các khái niệm chính, định nghĩa và ví dụ theo thứ tự trình bày."
+
+[[section]]
+id = "concepts"
+title_en = "Key concepts"
+title_vi = "Khái niệm chính"
+instruction = "Concepts and definitions explained."
+
+[[section]]
+id = "examples"
+title_en = "Examples"
+title_vi = "Ví dụ"
+instruction = "Examples, demos or exercises given."

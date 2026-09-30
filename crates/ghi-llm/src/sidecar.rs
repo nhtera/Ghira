@@ -1,0 +1,462 @@
+// SPDX-License-Identifier: Apache-2.0
+//! The ghi-llm-worker process: spawn, stdio JSON lines, timeouts, kill = unload.
+
+use std::collections::VecDeque;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+
+pub use ghi_llm_worker::{Body, Hello, Op, PROTOCOL, Reply, Request, WireMessage};
+
+use crate::{LlmError, Result};
+
+/// How long `Drop` waits for the worker to exit after `shutdown`.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+/// How long a fresh worker has to say hello.
+const HELLO_TIMEOUT: Duration = Duration::from_secs(30);
+/// Longest stdout line accepted (a completion is one line).
+const MAX_LINE: usize = 8 * 1024 * 1024;
+/// Non-protocol stdout lines tolerated per request before giving up.
+const MAX_NOISE: usize = 20;
+/// Worker stderr lines kept for crash reports.
+const STDERR_LINES: usize = 50;
+/// Stderr is read in pieces of at most this many bytes per line.
+const STDERR_LINE_MAX: usize = 4096;
+/// Stderr lines shown in an error message, and their width.
+const TAIL_SHOWN: usize = 12;
+const TAIL_WIDTH: usize = 300;
+
+type Tail = Arc<Mutex<VecDeque<String>>>;
+
+enum Line {
+    Text(String),
+    TooLong,
+    Err(std::io::Error),
+}
+
+/// One running worker process. Requests are strictly one at a time.
+pub struct Sidecar {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    lines: Receiver<Line>,
+    tail: Tail,
+    threads: Vec<JoinHandle<()>>,
+    next_id: u64,
+    hello: Hello,
+}
+
+impl Sidecar {
+    /// Start the worker binary and check its hello.
+    pub fn spawn(worker: &Path) -> Result<Sidecar> {
+        let mut cmd = Command::new(worker);
+        // The worker needs nothing from the environment but the debug switch.
+        cmd.env_clear();
+        if debug() {
+            cmd.env("GHI_LLM_DEBUG", "1");
+        }
+        Sidecar::spawn_command(cmd, HELLO_TIMEOUT)
+    }
+
+    /// Start `cmd` as a worker (stdio is set here) and read its hello line.
+    fn spawn_command(mut cmd: Command, hello_timeout: Duration) -> Result<Sidecar> {
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = cmd.spawn().map_err(|e| {
+            LlmError::Worker(format!("cannot start {}: {e}", cmd.get_program().display()))
+        })?;
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().expect("stdout is piped");
+        let stderr = child.stderr.take().expect("stderr is piped");
+
+        let (tx, lines) = mpsc::channel();
+        let reader = thread::spawn(move || read_lines(stdout, &tx));
+        let tail: Tail = Arc::default();
+        let drain = {
+            let tail = Arc::clone(&tail);
+            thread::spawn(move || drain_stderr(stderr, &tail))
+        };
+        let mut s = Sidecar {
+            child,
+            stdin,
+            lines,
+            tail,
+            threads: vec![reader, drain],
+            next_id: 1,
+            hello: Hello::current(),
+        };
+        s.read_hello(hello_timeout)?;
+        Ok(s)
+    }
+
+    fn read_hello(&mut self, timeout: Duration) -> Result<()> {
+        let deadline = Instant::now() + timeout;
+        let raw = self.next_line(deadline)?;
+        match serde_json::from_str::<Hello>(&raw) {
+            Ok(h) if h.kind == "hello" && h.protocol == PROTOCOL => {
+                self.hello = h;
+                Ok(())
+            }
+            Ok(h) if h.kind == "hello" => {
+                self.kill();
+                Err(LlmError::Worker(format!(
+                    "worker speaks protocol {} (worker {}), expected {PROTOCOL}",
+                    h.protocol, h.worker
+                )))
+            }
+            _ => {
+                self.kill();
+                Err(LlmError::Worker("worker did not start with a hello".into()))
+            }
+        }
+    }
+
+    /// The worker's version, from its hello.
+    pub fn worker_version(&self) -> &str {
+        &self.hello.worker
+    }
+
+    /// Send one request and wait for its reply. On timeout the worker is
+    /// killed and reaped; after any error the sidecar must be discarded.
+    pub fn request(&mut self, op: Op, timeout: Duration) -> Result<Reply> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let line = serde_json::to_string(&Request { id, op })
+            .map_err(|e| LlmError::Worker(format!("cannot encode request: {e}")))?;
+        let stdin = self
+            .stdin
+            .as_mut()
+            .ok_or_else(|| LlmError::Worker("worker is not running".into()))?;
+        if let Err(e) = writeln!(stdin, "{line}").and_then(|_| stdin.flush()) {
+            return Err(self.died(&format!("cannot write to worker: {e}")));
+        }
+
+        let deadline = Instant::now() + timeout;
+        let mut noise = 0;
+        loop {
+            let raw = self.next_line(deadline)?;
+            let Ok(reply) = serde_json::from_str::<Reply>(&raw) else {
+                // Stray output that is not a reply (a library printing to fd 1).
+                noise += 1;
+                if noise > MAX_NOISE {
+                    return Err(self.died("worker keeps writing non-protocol output"));
+                }
+                continue;
+            };
+            if reply.id != id {
+                return Err(self.died(&format!(
+                    "reply id {} does not match request {id}",
+                    reply.id
+                )));
+            }
+            return Ok(reply);
+        }
+    }
+
+    /// The next stdout line before `deadline`; every failure kills the worker.
+    fn next_line(&mut self, deadline: Instant) -> Result<String> {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match self.lines.recv_timeout(left) {
+            Ok(Line::Text(raw)) => Ok(raw),
+            Ok(Line::TooLong) => Err(self.died("worker line exceeds the size limit")),
+            Ok(Line::Err(e)) => Err(self.died(&format!("cannot read from worker: {e}"))),
+            Err(RecvTimeoutError::Timeout) => {
+                self.kill();
+                Err(LlmError::Timeout)
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                let status = self.child.wait().ok();
+                let why = match status {
+                    Some(s) => format!("worker exited ({s})"),
+                    None => "worker exited".to_string(),
+                };
+                Err(self.died(&why))
+            }
+        }
+    }
+
+    /// Kill the worker and build the error, with its last stderr lines.
+    fn died(&mut self, why: &str) -> LlmError {
+        self.kill();
+        let tail = self.stderr_tail();
+        if tail.is_empty() {
+            LlmError::Worker(why.to_string())
+        } else {
+            LlmError::Worker(format!("{why}; worker stderr:\n{tail}"))
+        }
+    }
+
+    fn stderr_tail(&mut self) -> String {
+        // Give the drain thread a moment to flush what the dead child wrote.
+        let until = Instant::now() + Duration::from_millis(200);
+        while Instant::now() < until && !self.threads.last().is_none_or(|t| t.is_finished()) {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let tail = self.tail.lock().unwrap_or_else(|e| e.into_inner());
+        let skip = tail.len().saturating_sub(TAIL_SHOWN);
+        tail.iter()
+            .skip(skip)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Kill the worker and reap it; frees the model memory.
+    pub fn kill(&mut self) {
+        self.stdin = None;
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl Drop for Sidecar {
+    fn drop(&mut self) {
+        if let Some(mut stdin) = self.stdin.take() {
+            let line = serde_json::to_string(&Request {
+                id: 0,
+                op: Op::Shutdown,
+            })
+            .expect("request serializes");
+            let _ = writeln!(stdin, "{line}").and_then(|_| stdin.flush());
+        }
+        let deadline = Instant::now() + SHUTDOWN_GRACE;
+        while Instant::now() < deadline {
+            match self.child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => thread::sleep(Duration::from_millis(20)),
+                Err(_) => break,
+            }
+        }
+        self.kill();
+        // The pipe threads end at EOF on their own; not joined, since a
+        // grandchild holding a pipe open must not block us.
+        self.threads.clear();
+    }
+}
+
+fn debug() -> bool {
+    std::env::var_os("GHI_LLM_DEBUG").is_some_and(|v| v == "1")
+}
+
+/// stdout to lines; a line over [`MAX_LINE`] ends the stream.
+fn read_lines(stdout: impl Read, tx: &mpsc::Sender<Line>) {
+    let mut r = BufReader::new(stdout);
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        let n = match r
+            .by_ref()
+            .take(MAX_LINE as u64 + 1)
+            .read_until(b'\n', &mut buf)
+        {
+            Ok(n) => n,
+            Err(e) => {
+                let _ = tx.send(Line::Err(e));
+                return;
+            }
+        };
+        if n == 0 {
+            return;
+        }
+        if buf.last() == Some(&b'\n') {
+            buf.pop();
+        } else if buf.len() > MAX_LINE {
+            let _ = tx.send(Line::TooLong);
+            return;
+        }
+        let text = String::from_utf8_lossy(&buf).into_owned();
+        if tx.send(Line::Text(text)).is_err() {
+            return;
+        }
+    }
+}
+
+/// stderr into a ring of the last [`STDERR_LINES`] lines; nothing else is kept.
+fn drain_stderr(stderr: impl Read, tail: &Tail) {
+    let dbg = debug();
+    let mut r = BufReader::new(stderr);
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match r
+            .by_ref()
+            .take(STDERR_LINE_MAX as u64)
+            .read_until(b'\n', &mut buf)
+        {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+        while matches!(buf.last(), Some(b'\n' | b'\r')) {
+            buf.pop();
+        }
+        let line = String::from_utf8_lossy(&buf);
+        if dbg {
+            eprintln!("ghi-llm-worker: {line}");
+        }
+        let line: String = line.chars().take(TAIL_WIDTH).collect();
+        let mut t = tail.lock().unwrap_or_else(|e| e.into_inner());
+        if t.len() == STDERR_LINES {
+            t.pop_front();
+        }
+        t.push_back(line);
+    }
+}
+
+/// Where the worker binary is: `$GHI_LLM_WORKER`, else `ghi-llm-worker` next to
+/// the running executable (or one level up, for `target/debug/deps` test binaries).
+pub fn worker_path() -> Result<PathBuf> {
+    if let Some(p) = std::env::var_os("GHI_LLM_WORKER") {
+        let p = PathBuf::from(p);
+        return if p.is_file() {
+            Ok(p)
+        } else {
+            Err(LlmError::Worker(format!(
+                "GHI_LLM_WORKER points at {}, which is not a file",
+                p.display()
+            )))
+        };
+    }
+    let name = format!("ghi-llm-worker{}", std::env::consts::EXE_SUFFIX);
+    let exe = std::env::current_exe()?;
+    let dirs = exe
+        .parent()
+        .into_iter()
+        .chain(exe.parent().and_then(Path::parent));
+    for dir in dirs {
+        let p = dir.join(&name);
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    Err(LlmError::Worker(format!(
+        "{name} not found next to {}; build it or set GHI_LLM_WORKER",
+        exe.display()
+    )))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    const HELLO: &str = r#"echo '{"kind":"hello","protocol":1,"worker":"fake"}'"#;
+    const T: Duration = Duration::from_secs(5);
+
+    /// A fake worker: `/bin/sh -c "<hello>; <script>"`.
+    fn fake(script: &str) -> Result<Sidecar> {
+        fake_raw(&format!("{HELLO}; {script}"))
+    }
+
+    fn fake_raw(script: &str) -> Result<Sidecar> {
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", script]);
+        Sidecar::spawn_command(cmd, T)
+    }
+
+    fn pid_alive(pid: u32) -> bool {
+        Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    }
+
+    #[test]
+    fn normal_reply() {
+        let mut s = fake(r#"read l; echo '{"id":1,"kind":"health","loaded":true}'"#).unwrap();
+        assert_eq!(s.worker_version(), "fake");
+        let r = s.request(Op::Health, T).unwrap();
+        assert_eq!(r.body, Body::Health { loaded: true });
+    }
+
+    #[test]
+    fn hello_mismatch_is_rejected() {
+        let err = fake_raw(r#"echo '{"kind":"hello","protocol":2,"worker":"x"}'; sleep 5"#)
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("protocol 2"), "{err}");
+        let err = fake_raw("echo hi; sleep 5").err().unwrap();
+        assert!(matches!(err, LlmError::Worker(_)), "{err}");
+    }
+
+    #[test]
+    fn timeout_kills_the_child() {
+        let mut s = fake("read l; sleep 30").unwrap();
+        let pid = s.child.id();
+        let err = s
+            .request(Op::Health, Duration::from_millis(200))
+            .unwrap_err();
+        assert!(matches!(err, LlmError::Timeout), "{err}");
+        assert!(!pid_alive(pid));
+    }
+
+    #[test]
+    fn crash_is_a_worker_error_with_stderr() {
+        let mut s = fake("read l; echo 'boom: out of memory' >&2; exit 3").unwrap();
+        let err = s.request(Op::Health, T).unwrap_err();
+        assert!(matches!(err, LlmError::Worker(_)), "{err}");
+        assert!(err.to_string().contains("boom: out of memory"), "{err}");
+    }
+
+    #[test]
+    fn garbage_is_ignored_then_reply_accepted() {
+        let mut s =
+            fake(r#"read l; echo not json; echo '{"id":1,"kind":"health","loaded":false}'"#)
+                .unwrap();
+        let r = s.request(Op::Health, T).unwrap();
+        assert_eq!(r.body, Body::Health { loaded: false });
+    }
+
+    #[test]
+    fn endless_garbage_is_a_worker_error() {
+        let mut s = fake("read l; while true; do echo junk; done").unwrap();
+        let err = s.request(Op::Health, T).unwrap_err();
+        assert!(matches!(err, LlmError::Worker(_)), "{err}");
+    }
+
+    #[test]
+    fn id_mismatch_is_a_worker_error() {
+        let mut s = fake(r#"read l; echo '{"id":99,"kind":"health","loaded":true}'"#).unwrap();
+        let err = s.request(Op::Health, T).unwrap_err();
+        assert!(matches!(err, LlmError::Worker(_)), "{err}");
+    }
+
+    #[test]
+    fn oversized_line_is_a_worker_error() {
+        let mut s = fake("read l; head -c 9000000 /dev/zero | tr '\\0' x; echo").unwrap();
+        let err = s.request(Op::Health, T).unwrap_err();
+        assert!(err.to_string().contains("size limit"), "{err}");
+    }
+
+    #[test]
+    fn stderr_flood_does_not_block_the_reply() {
+        let mut s = fake(
+            r#"read l; head -c 10000000 /dev/zero | tr '\0' e >&2; echo >&2 last-line; echo '{"id":1,"kind":"health","loaded":true}'"#,
+        )
+        .unwrap();
+        let r = s.request(Op::Health, Duration::from_secs(20)).unwrap();
+        assert_eq!(r.body, Body::Health { loaded: true });
+        assert!(s.tail.lock().unwrap().len() <= STDERR_LINES);
+    }
+
+    #[test]
+    fn drop_reaps_a_worker_that_ignores_shutdown() {
+        let s = fake("sleep 30").unwrap();
+        let pid = s.child.id();
+        let t = Instant::now();
+        drop(s);
+        assert!(t.elapsed() < Duration::from_secs(5));
+        assert!(!pid_alive(pid));
+    }
+
+    #[test]
+    fn missing_worker_is_reported() {
+        let err = Sidecar::spawn(Path::new("/nonexistent/ghi-llm-worker"))
+            .err()
+            .unwrap();
+        assert!(matches!(err, LlmError::Worker(_)));
+    }
+}

@@ -9,3 +9,12 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+# ureq's `unversioned` resolver/connector API may change in minor releases: pinned.
+# Not its `rustls` feature: that bundles webpki-roots (CDLA-Permissive-2.0). Roots
+# come from the OS through rustls-platform-verifier; the crypto provider is ring.
+ureq = { version = "=3.4.2", default-features = false, features = ["rustls-no-provider", "platform-verifier"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+sha2 = "0.10"
+zeroize = "1"

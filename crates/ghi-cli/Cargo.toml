@@ -27,6 +27,8 @@ serde_json = "1"
 zeroize = "1"
 ghi-audio = { path = "../ghi-audio" }
 ghi-core = { path = "../ghi-core" }
+ghi-llm = { path = "../ghi-llm" }
+ghi-net = { path = "../ghi-net" }
 ghi-models = { path = "../ghi-models" }
 ghi-speech = { path = "../ghi-speech" }
 ghi-store = { path = "../ghi-store" }

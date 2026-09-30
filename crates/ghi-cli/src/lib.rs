@@ -3,7 +3,8 @@
 //!
 //! `ghi` prints the JSON documents in [`contract`]. `transcribe`, `diarize`
 //! and `bench` run the speech engines when built with the `nemo` feature;
-//! `notes` is a stub until phase 6 (`not_implemented`, exit code 3).
+//! `notes` and `ask` run the notes engine (`ghi-llm`, local model in the
+//! `ghi-llm-worker` process).
 
 pub mod audio;
 pub mod cmd;

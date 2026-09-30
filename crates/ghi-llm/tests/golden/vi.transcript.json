@@ -1,0 +1,216 @@
+{
+ "schema": "ghi.transcript/1",
+ "audio": "vi.wav",
+ "duration_s": 135.6,
+ "pass": "final",
+ "lang": "vi",
+ "engine": {
+  "name": "synthetic",
+  "version": "1"
+ },
+ "segments": [
+  {
+   "id": 0,
+   "start": 0.0,
+   "end": 6.3,
+   "text": "Chào mọi người, hôm nay mình họp về kế hoạch ra mắt bản beta.",
+   "lang": "vi",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 1,
+   "start": 6.9,
+   "end": 13.2,
+   "text": "Bản build đã xong, chỉ còn tính năng đồng bộ lịch là chưa ổn.",
+   "lang": "vi",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 2,
+   "start": 13.8,
+   "end": 21.45,
+   "text": "Anh nghĩ mình ra mắt beta mà không có đồng bộ lịch, bản sau sẽ bổ sung.",
+   "lang": "vi",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 3,
+   "start": 22.05,
+   "end": 27.9,
+   "text": "Em đồng ý, tuần trước đồng bộ lịch bị lỗi sập hai lần.",
+   "lang": "vi",
+   "speaker": "S3",
+   "words": null
+  },
+  {
+   "id": 4,
+   "start": 28.5,
+   "end": 33.9,
+   "text": "Vậy chốt nhé: bản beta ra mắt không có đồng bộ lịch.",
+   "lang": "vi",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 5,
+   "start": 34.5,
+   "end": 39.0,
+   "text": "Vậy cần ghi chú phát hành. Ai viết được ạ?",
+   "lang": "vi",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 6,
+   "start": 39.6,
+   "end": 45.9,
+   "text": "Em sẽ viết ghi chú phát hành và gửi cả nhóm trước thứ Năm.",
+   "lang": "vi",
+   "speaker": "S3",
+   "words": null
+  },
+  {
+   "id": 7,
+   "start": 46.5,
+   "end": 51.0,
+   "text": "Tốt. Chủ đề tiếp theo là giá gói trả phí.",
+   "lang": "vi",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 8,
+   "start": 51.6,
+   "end": 58.8,
+   "text": "Bên marketing đề xuất chín mươi chín nghìn một tháng nhưng tài chính chưa xác nhận.",
+   "lang": "vi",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 9,
+   "start": 59.4,
+   "end": 65.7,
+   "text": "Hôm nay chưa chốt giá. Cần số liệu từ bộ phận tài chính trước.",
+   "lang": "vi",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 10,
+   "start": 66.3,
+   "end": 70.8,
+   "text": "Mình có giảm giá cho người dùng sớm không anh?",
+   "lang": "vi",
+   "speaker": "S3",
+   "words": null
+  },
+  {
+   "id": 11,
+   "start": 71.4,
+   "end": 76.35,
+   "text": "Câu hỏi hay, chưa ai biết. Để mở câu hỏi này.",
+   "lang": "vi",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 12,
+   "start": 76.95,
+   "end": 82.35,
+   "text": "Em sẽ hỏi tài chính số liệu chi phí trước thứ Hai.",
+   "lang": "vi",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 13,
+   "start": 82.95,
+   "end": 88.8,
+   "text": "Hộp thư hỗ trợ đang có bốn mươi yêu cầu chưa trả lời.",
+   "lang": "vi",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 14,
+   "start": 89.4,
+   "end": 94.8,
+   "text": "Chiều thứ Sáu em sẽ xử lý hết hàng đợi hỗ trợ.",
+   "lang": "vi",
+   "speaker": "S3",
+   "words": null
+  },
+  {
+   "id": 15,
+   "start": 95.4,
+   "end": 102.6,
+   "text": "Cảm ơn em. Nhớ là buổi đánh giá bảo mật diễn ra vào ngày mười lăm.",
+   "lang": "vi",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 16,
+   "start": 103.2,
+   "end": 109.5,
+   "text": "Đúng rồi, bên kiểm toán muốn có tài liệu thiết kế mã hóa trước.",
+   "lang": "vi",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 17,
+   "start": 110.1,
+   "end": 117.3,
+   "text": "Anh sẽ gửi tài liệu thiết kế mã hóa cho bên kiểm toán vào ngày mai.",
+   "lang": "vi",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 18,
+   "start": 117.9,
+   "end": 123.3,
+   "text": "Thêm một việc: video hướng dẫn quá dài, người dùng bỏ qua.",
+   "lang": "vi",
+   "speaker": "S3",
+   "words": null
+  },
+  {
+   "id": 19,
+   "start": 123.9,
+   "end": 127.95,
+   "text": "Mình rút video hướng dẫn xuống dưới hai phút.",
+   "lang": "vi",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 20,
+   "start": 128.55,
+   "end": 131.7,
+   "text": "Tuần sau em sẽ dựng lại video.",
+   "lang": "vi",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 21,
+   "start": 132.3,
+   "end": 135.0,
+   "text": "Vậy thôi, cảm ơn cả nhà.",
+   "lang": "vi",
+   "speaker": "S1",
+   "words": null
+  }
+ ],
+ "perf": {
+  "wall_s": 0.0,
+  "rtf": null,
+  "peak_rss_mb": null
+ }
+}

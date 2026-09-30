@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+id = "client"
+name = "Client meeting"
+guidance_en = "A meeting with a client. Capture requests, feedback, agreements and follow-ups."
+guidance_vi = "Cuộc họp với khách hàng. Ghi lại yêu cầu, phản hồi, thỏa thuận và việc cần theo dõi."
+
+[[section]]
+id = "requests"
+title_en = "Client requests"
+title_vi = "Yêu cầu của khách hàng"
+instruction = "What the client asked for or changed."
+
+[[section]]
+id = "feedback"
+title_en = "Client feedback"
+title_vi = "Phản hồi của khách hàng"
+instruction = "The client's feedback on work delivered so far."

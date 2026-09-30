@@ -24,6 +24,91 @@ fn record(store: &Store, gid: &str, pages: &[&[u8]]) {
 }
 
 #[test]
+fn regenerate_keeps_what_the_user_wrote_pinned_edited_or_ticked_off() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let m = store.create_meeting(NewMeeting::default()).unwrap();
+    let block = |body: &str, provenance, pinned| NewNoteBlock {
+        kind: "tldr".into(),
+        provenance,
+        body: body.into(),
+        anchors: vec![],
+        pinned,
+    };
+    let action = |text: &str| NewActionItem {
+        text: text.into(),
+        due_text: Some("thứ Sáu".into()),
+        provenance: Provenance::Ai,
+        ..Default::default()
+    };
+    store
+        .replace_ai_notes(
+            &m.gid,
+            vec![
+                block("ai old", Provenance::Ai, false),
+                block("ai to edit", Provenance::Ai, false),
+            ],
+            vec![action("act old"), action("act done"), action("act edited")],
+        )
+        .unwrap();
+    store
+        .add_note_block(&m.gid, block("user wrote", Provenance::User, false))
+        .unwrap();
+    store
+        .add_note_block(&m.gid, block("ai pinned", Provenance::Ai, true))
+        .unwrap();
+    let notes = store.note_blocks(&m.gid).unwrap();
+    // Editing an AI block makes it ai_edited, which a regenerate keeps.
+    store.update_note_block(&notes[1].gid, "ai edited").unwrap();
+    let acts = store.action_items(&m.gid).unwrap();
+    assert_eq!(acts[0].due_text.as_deref(), Some("thứ Sáu"));
+    assert_eq!(acts[0].provenance, Provenance::Ai);
+    store.set_action_done(&acts[1].gid, true).unwrap();
+    store
+        .update_action_item_text(&acts[2].gid, "act edited!")
+        .unwrap();
+
+    let r = store
+        .replace_ai_notes(
+            &m.gid,
+            vec![block("ai new", Provenance::User, true)],
+            vec![action("act new")],
+        )
+        .unwrap();
+    assert_eq!((r.removed, r.kept, r.added), (2, 5, 2));
+    let bodies: Vec<_> = store
+        .note_blocks(&m.gid)
+        .unwrap()
+        .into_iter()
+        .map(|b| (b.body, b.provenance, b.pinned))
+        .collect();
+    assert_eq!(
+        bodies,
+        vec![
+            ("ai edited".to_string(), Provenance::AiEdited, false),
+            ("user wrote".to_string(), Provenance::User, false),
+            ("ai pinned".to_string(), Provenance::Ai, true),
+            ("ai new".to_string(), Provenance::Ai, false),
+        ]
+    );
+    let texts: Vec<_> = store
+        .action_items(&m.gid)
+        .unwrap()
+        .into_iter()
+        .map(|a| a.text)
+        .collect();
+    assert_eq!(texts, vec!["act done", "act edited!", "act new"]);
+    assert!(store.is_tombstoned(&notes[0].gid).unwrap());
+    assert!(store.is_tombstoned(&acts[0].gid).unwrap());
+
+    assert!(!store.get_meeting(&m.gid).unwrap().cloud_used);
+    store
+        .record_cloud_request(&m.gid, "anthropic", "claude-x", 1200, 300)
+        .unwrap();
+    assert!(store.get_meeting(&m.gid).unwrap().cloud_used);
+}
+
+#[test]
 fn crud_round_trip_with_encrypted_columns() {
     let tmp = tempfile::tempdir().unwrap();
     let (store, _k) = common::open(tmp.path());
@@ -123,6 +208,7 @@ fn crud_round_trip_with_encrypted_columns() {
                 owner_speaker_gid: Some(sp),
                 due: Some(42),
                 anchor: Some(anchor),
+                ..Default::default()
             },
         )
         .unwrap();

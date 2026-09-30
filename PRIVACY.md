@@ -25,7 +25,9 @@ can check it against the code (all network access lives in `crates/ghi-net`).
 Cloud AI is off by default and chosen per meeting. You bring your own API key;
 Ghira runs no server and never sees your key or data. Before anything is sent, a
 preview shows the exact text, with names and other personal details you can
-redact. Audio is never sent.
+redact. Audio is never sent, and neither are the notes you type yourself. Each
+request is recorded on your device (provider, model and token counts, not the
+text), and the meeting is marked as having used cloud AI.
 
 ## Voice profiles
 

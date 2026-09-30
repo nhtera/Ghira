@@ -1,0 +1,989 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Meeting notes from a transcript (doc 02 §E).
+//!
+//! If the whole transcript fits in the model's context it is summarised in
+//! one call. Otherwise map-reduce: the transcript is cut into parts of about
+//! `chunk_minutes` (snapped to a speaker change) that fit the context, each
+//! part yields facts with citations, and the facts are reduced into the notes.
+//! A reply cut off at the token limit falls back to smaller parts.
+//!
+//! Output is validated ([`crate::validate`]): only segment ids the call was
+//! allowed to cite survive (the reduce step may only cite what the map steps
+//! cited), items left without a citation are dropped, an action item's owner
+//! must speak in the lines it cites (else it is unassigned), and all text is
+//! plain. Speakers are aliased `SPK1..SPKn` in prompts and mapped back here.
+//!
+//! Cloud providers use the same prompt and parser in one call
+//! ([`request`], [`parse`]): their bodies are fixed by the send preview.
+
+use std::collections::HashSet;
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::run::{self, Outcome, PROMPT_OVERHEAD, RETRY_RESERVE, estimate_tokens};
+use crate::schema::{self, Dialect, MAX_QUOTES, MAX_TLDR, MAX_TOPICS, Shape};
+use crate::template::{OutLang, Template};
+use crate::transcript::{Aliases, Segment, Transcript, render};
+use crate::validate::{Cites, Diagnostics, plain_text, snap, supported};
+use crate::{EngineInfo, Llm, LlmError, Message, Request, Result, prompt};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Item {
+    pub text: String,
+    /// Segment ids (at least one).
+    pub citations: Vec<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionItem {
+    pub text: String,
+    /// The transcript's speaker (label or name); `None` = unassigned.
+    pub owner: Option<String>,
+    pub due: Option<String>,
+    pub citations: Vec<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Quote {
+    pub text: String,
+    pub speaker: Option<String>,
+    pub citations: Vec<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Topic {
+    pub title: String,
+    pub citations: Vec<u64>,
+    /// Span of the cited segments.
+    pub t0_ms: i64,
+    pub t1_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Section {
+    pub id: String,
+    pub title: String,
+    pub items: Vec<Item>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Notes {
+    pub template: String,
+    /// Output language (`en` / `vi`).
+    pub lang: String,
+    pub tldr: Vec<Item>,
+    pub decisions: Vec<Item>,
+    pub action_items: Vec<ActionItem>,
+    pub open_questions: Vec<Item>,
+    pub key_quotes: Vec<Quote>,
+    pub topics: Vec<Topic>,
+    pub sections: Vec<Section>,
+}
+
+impl Notes {
+    /// Rewrites every piece of text (e.g. restoring redacted values).
+    pub fn map_text(&mut self, mut f: impl FnMut(&str) -> String) {
+        let mut items = |v: &mut Vec<Item>| v.iter_mut().for_each(|i| i.text = f(&i.text));
+        items(&mut self.tldr);
+        items(&mut self.decisions);
+        items(&mut self.open_questions);
+        for s in &mut self.sections {
+            items(&mut s.items);
+        }
+        for a in &mut self.action_items {
+            a.text = f(&a.text);
+            a.due = a.due.as_deref().map(&mut f);
+        }
+        for q in &mut self.key_quotes {
+            q.text = f(&q.text);
+        }
+        for t in &mut self.topics {
+            t.title = f(&t.title);
+        }
+    }
+
+    /// Every item's citations, for callers that check anchors.
+    pub fn all_citations(&self) -> impl Iterator<Item = &[u64]> {
+        let items = self
+            .tldr
+            .iter()
+            .chain(&self.decisions)
+            .chain(&self.open_questions)
+            .chain(self.sections.iter().flat_map(|s| &s.items))
+            .map(|i| i.citations.as_slice());
+        items
+            .chain(self.action_items.iter().map(|a| a.citations.as_slice()))
+            .chain(self.key_quotes.iter().map(|q| q.citations.as_slice()))
+            .chain(self.topics.iter().map(|t| t.citations.as_slice()))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Options {
+    pub template: Template,
+    pub lang: OutLang,
+    /// User-written (pinned) notes kept on regenerate; the model is told not
+    /// to repeat them.
+    pub pinned: Vec<String>,
+    pub max_output_tokens: u32,
+    pub chunk_minutes: u32,
+}
+
+impl Options {
+    pub fn new(template: Template, lang: OutLang) -> Options {
+        Options {
+            template,
+            lang,
+            pinned: Vec::new(),
+            max_output_tokens: 2048,
+            chunk_minutes: 10,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Strategy {
+    Single,
+    MapReduce { parts: usize },
+}
+
+#[derive(Debug, Clone)]
+pub struct Run {
+    pub notes: Notes,
+    pub engine: EngineInfo,
+    pub strategy: Strategy,
+    pub diagnostics: Diagnostics,
+}
+
+/// Notes with the local model (or any [`Llm`]).
+pub fn generate(llm: &mut dyn Llm, t: &Transcript, opts: &Options) -> Result<Run> {
+    if t.is_empty() {
+        return Err(LlmError::Invalid("the transcript is empty".into()));
+    }
+    let aliases = Aliases::new(t);
+    let mut diag = Diagnostics::default();
+    let all: Vec<&Segment> = t.segments().iter().collect();
+    // Pinned notes are in every prompt too.
+    let budget = transcript_budget(llm, opts.max_output_tokens)
+        .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
+        .max(512);
+    let rendered = render(t, &aliases, &all);
+    // The estimate is high; count exactly before falling back to map-reduce.
+    let fits = estimate_tokens(&rendered) <= budget || llm.count_tokens(&rendered)? <= budget;
+    if fits {
+        let (req, _) = request(t, &all, &aliases, opts, Dialect::Local);
+        let allowed = |id: u64| t.get(id).is_some();
+        let outcome = run::complete_json(llm, req, opts.lang, &mut diag, |v, d| {
+            parse_notes(v, &Ctx::new(t, &aliases, opts, &allowed), d)
+        })?;
+        if let Outcome::Done(notes) = outcome {
+            return Ok(Run {
+                notes,
+                engine: llm.engine(),
+                strategy: Strategy::Single,
+                diagnostics: diag,
+            });
+        }
+    }
+    map_reduce(llm, t, &aliases, opts, budget, diag)
+}
+
+/// Tokens of transcript one call can take.
+fn transcript_budget(llm: &dyn Llm, max_output: u32) -> u32 {
+    llm.context_tokens()
+        .saturating_sub(max_output + PROMPT_OVERHEAD + RETRY_RESERVE)
+        .max(512)
+}
+
+/// The single-call notes request over `segments` (also what a cloud provider
+/// is sent). Returns the request and the ids it may cite.
+pub fn request(
+    t: &Transcript,
+    segments: &[&Segment],
+    aliases: &Aliases,
+    opts: &Options,
+    dialect: Dialect,
+) -> (Request, Vec<u64>) {
+    let ids: Vec<u64> = segments.iter().map(|s| s.id).collect();
+    let shape = Shape {
+        dialect,
+        ids: &ids,
+        speakers: aliases.aliases(),
+    };
+    let user = format!(
+        "{}\n{}",
+        prompt::notes_task(&opts.template, opts.lang, &opts.pinned),
+        prompt::transcript_block(opts.lang, &render(t, aliases, segments))
+    );
+    let req = Request {
+        messages: vec![
+            Message::system(prompt::notes_system(opts.lang)),
+            Message::user(user),
+        ],
+        schema: Some(schema::notes(&opts.template, &shape)),
+        max_tokens: opts.max_output_tokens,
+        temperature: 0.3,
+    };
+    (req, ids)
+}
+
+/// Parses and validates a notes reply (the cloud path; the local path does
+/// the same inside its retry loop).
+pub fn parse(
+    reply: &str,
+    t: &Transcript,
+    aliases: &Aliases,
+    opts: &Options,
+    diag: &mut Diagnostics,
+) -> Result<Notes> {
+    let allowed = |id: u64| t.get(id).is_some();
+    crate::validate::extract_json(reply)
+        .and_then(|v| parse_notes(&v, &Ctx::new(t, aliases, opts, &allowed), diag))
+        .map_err(LlmError::InvalidOutput)
+}
+
+struct Ctx<'a> {
+    t: &'a Transcript,
+    aliases: &'a Aliases,
+    template: &'a Template,
+    lang: OutLang,
+    cites: Cites<'a>,
+}
+
+impl<'a> Ctx<'a> {
+    fn new(
+        t: &'a Transcript,
+        aliases: &'a Aliases,
+        opts: &'a Options,
+        allowed: &'a dyn Fn(u64) -> bool,
+    ) -> Ctx<'a> {
+        Ctx {
+            t,
+            aliases,
+            template: &opts.template,
+            lang: opts.lang,
+            cites: Cites::new(allowed),
+        }
+    }
+
+    fn segments(&self, ids: &[u64]) -> Vec<&'a Segment> {
+        ids.iter().filter_map(|id| self.t.get(*id)).collect()
+    }
+
+    /// Plain text + valid citations, or `None` (dropped) if either is empty.
+    fn anchored(
+        &self,
+        text: &str,
+        cite: &[i64],
+        d: &mut Diagnostics,
+    ) -> Option<(String, Vec<u64>)> {
+        let text = self.aliases.expand(&plain_text(text));
+        let mut cites = self.cites.keep(cite, d);
+        if text.is_empty() || cites.is_empty() {
+            d.dropped_items += 1;
+            return None;
+        }
+        // Word overlap is only meaningful when notes and transcript share a language.
+        let same_lang = self
+            .segments(&cites)
+            .iter()
+            .all(|s| s.lang.as_deref().is_none_or(|l| l == self.lang.code()));
+        if same_lang {
+            let near = |id: u64| {
+                let i = self.t.index_of(id).unwrap_or(0);
+                let segs = self.t.segments();
+                segs[i.saturating_sub(2)..(i + 3).min(segs.len())]
+                    .iter()
+                    .filter(|s| self.cites.allows(s.id))
+                    .collect::<Vec<_>>()
+            };
+            snap(&text, &mut cites, near, |id| self.t.get(id), d);
+        }
+        let segs = self.segments(&cites);
+        if same_lang && !supported(&text, &segs) {
+            d.weak_anchors += 1;
+        }
+        Some((text, cites))
+    }
+
+    fn speaker(&self, alias: Option<&str>) -> Option<String> {
+        alias.and_then(|a| self.aliases.original(a)).map(plain_text)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawItem {
+    text: String,
+    cite: Vec<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawAction {
+    text: String,
+    owner: Option<String>,
+    due: Option<String>,
+    cite: Vec<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawQuote {
+    text: String,
+    speaker: Option<String>,
+    cite: Vec<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawTopic {
+    title: String,
+    cite: Vec<i64>,
+}
+
+fn field<T: serde::de::DeserializeOwned>(
+    obj: &serde_json::Map<String, Value>,
+    key: &str,
+) -> std::result::Result<T, String> {
+    let v = obj.get(key).ok_or_else(|| format!("missing key `{key}`"))?;
+    serde_json::from_value(v.clone()).map_err(|e| format!("`{key}`: {e}"))
+}
+
+/// The text an item is compared by when dropping repeats.
+trait Keyed {
+    fn key(&self) -> &str;
+}
+
+impl Keyed for Item {
+    fn key(&self) -> &str {
+        &self.text
+    }
+}
+
+impl Keyed for ActionItem {
+    fn key(&self) -> &str {
+        &self.text
+    }
+}
+
+impl Keyed for Quote {
+    fn key(&self) -> &str {
+        &self.text
+    }
+}
+
+impl Keyed for Topic {
+    fn key(&self) -> &str {
+        &self.title
+    }
+}
+
+/// Drops repeats (same folded text) within one list, then keeps at most `max`.
+fn cap<T: Keyed>(v: Vec<T>, max: usize, d: &mut Diagnostics) -> Vec<T> {
+    let mut seen = HashSet::new();
+    let mut v: Vec<T> = v
+        .into_iter()
+        .filter(|x| {
+            let new = seen.insert(ghi_text::fold(x.key()));
+            if !new {
+                d.duplicates += 1;
+            }
+            new
+        })
+        .collect();
+    if v.len() > max {
+        d.truncated_lists += 1;
+        v.truncate(max);
+    }
+    v
+}
+
+fn parse_notes(v: &Value, ctx: &Ctx, d: &mut Diagnostics) -> std::result::Result<Notes, String> {
+    let obj = v.as_object().ok_or("the reply is not a JSON object")?;
+    let expected: HashSet<&str> = schema::CORE_KEYS
+        .iter()
+        .copied()
+        .chain(ctx.template.sections.iter().map(|s| s.id.as_str()))
+        .collect();
+    if let Some(extra) = obj.keys().find(|k| !expected.contains(k.as_str())) {
+        return Err(format!("unexpected key `{extra}`"));
+    }
+    let items = |key: &str, d: &mut Diagnostics| -> std::result::Result<Vec<Item>, String> {
+        let raw: Vec<RawItem> = field(obj, key)?;
+        Ok(raw
+            .iter()
+            .filter_map(|r| ctx.anchored(&r.text, &r.cite, d))
+            .map(|(text, citations)| Item { text, citations })
+            .collect())
+    };
+
+    let tldr = cap(items("tldr", d)?, MAX_TLDR, d);
+    let decisions = cap(items("decisions", d)?, usize::MAX, d);
+    let open_questions = cap(items("open_questions", d)?, usize::MAX, d);
+
+    let mut action_items = Vec::new();
+    for r in field::<Vec<RawAction>>(obj, "action_items")? {
+        let Some((text, citations)) = ctx.anchored(&r.text, &r.cite, d) else {
+            continue;
+        };
+        // The owner must speak in the cited lines; never guess.
+        let owner = ctx.speaker(r.owner.as_deref()).filter(|o| {
+            ctx.segments(&citations)
+                .iter()
+                .any(|s| s.speaker.as_deref().map(plain_text).as_deref() == Some(o.as_str()))
+        });
+        if r.owner.is_some() && owner.is_none() {
+            d.unassigned_owners += 1;
+        }
+        let due = r.due.as_deref().map(plain_text).filter(|s| !s.is_empty());
+        action_items.push(ActionItem {
+            text,
+            owner,
+            due,
+            citations,
+        });
+    }
+
+    let mut key_quotes = Vec::new();
+    for r in field::<Vec<RawQuote>>(obj, "key_quotes")? {
+        if let Some((text, citations)) = ctx.anchored(&r.text, &r.cite, d) {
+            // Like an owner, a quote's speaker must speak in the cited lines.
+            let speaker = ctx.speaker(r.speaker.as_deref()).filter(|sp| {
+                ctx.segments(&citations)
+                    .iter()
+                    .any(|s| s.speaker.as_deref().map(plain_text).as_deref() == Some(sp.as_str()))
+            });
+            key_quotes.push(Quote {
+                text,
+                speaker,
+                citations,
+            });
+        }
+    }
+    let action_items = cap(action_items, usize::MAX, d);
+    let key_quotes = cap(key_quotes, MAX_QUOTES, d);
+
+    let mut topics = Vec::new();
+    for r in field::<Vec<RawTopic>>(obj, "topics")? {
+        if let Some((title, citations)) = ctx.anchored(&r.title, &r.cite, d) {
+            let segs = ctx.segments(&citations);
+            topics.push(Topic {
+                title,
+                t0_ms: segs.iter().map(|s| s.t0_ms).min().unwrap_or(0),
+                t1_ms: segs.iter().map(|s| s.t1_ms).max().unwrap_or(0),
+                citations,
+            });
+        }
+    }
+    let topics = cap(topics, MAX_TOPICS, d);
+
+    let mut sections = Vec::new();
+    for s in &ctx.template.sections {
+        sections.push(Section {
+            id: s.id.clone(),
+            title: match ctx.lang {
+                OutLang::En => s.title_en.clone(),
+                OutLang::Vi => s.title_vi.clone(),
+            },
+            items: cap(items(&s.id, d)?, usize::MAX, d),
+        });
+    }
+
+    Ok(Notes {
+        template: ctx.template.id.clone(),
+        lang: ctx.lang.code().to_string(),
+        tldr,
+        decisions,
+        action_items,
+        open_questions,
+        key_quotes,
+        topics,
+        sections,
+    })
+}
+
+/// One extracted fact of the map step (speakers still aliased).
+#[derive(Debug, Clone, PartialEq)]
+struct Fact {
+    kind: String,
+    text: String,
+    speaker: Option<String>,
+    owner: Option<String>,
+    due: Option<String>,
+    cites: Vec<u64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawFacts {
+    facts: Vec<RawFact>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawFact {
+    kind: String,
+    text: String,
+    speaker: Option<String>,
+    owner: Option<String>,
+    due: Option<String>,
+    cite: Vec<i64>,
+}
+
+fn map_reduce(
+    llm: &mut dyn Llm,
+    t: &Transcript,
+    aliases: &Aliases,
+    opts: &Options,
+    budget: u32,
+    mut diag: Diagnostics,
+) -> Result<Run> {
+    // Parts leave room for the facts of the others in the reduce prompt.
+    let mut parts = chunk(t, aliases, budget, opts.chunk_minutes);
+    let mut facts = Vec::new();
+    let mut i = 0;
+    while i < parts.len() {
+        match map_part(
+            llm,
+            t,
+            aliases,
+            opts,
+            &parts[i],
+            i + 1,
+            parts.len(),
+            &mut diag,
+        )? {
+            Some(f) => {
+                facts.extend(f);
+                i += 1;
+            }
+            // Too much to say for one reply: split the part (once it can be split).
+            None if parts[i].len() > 1 => {
+                let half = parts[i].len() / 2;
+                let second = parts[i].split_off(half);
+                parts.insert(i + 1, second);
+            }
+            None => return Err(LlmError::InvalidOutput("output hit the token limit".into())),
+        }
+    }
+    let n = parts.len();
+
+    // Reduce: the facts, in transcript order, with the lines they cite. If
+    // they don't fit, minor points go first, then quotes, then the tail.
+    for minor in ["point", "quote"] {
+        if estimate_tokens(&render_facts(&facts)) <= budget {
+            break;
+        }
+        facts.retain(|f| f.kind != minor);
+        diag.truncated_lists += 1;
+    }
+    while facts.len() > 1 && estimate_tokens(&render_facts(&facts)) > budget {
+        facts.truncate(facts.len() * 3 / 4);
+        diag.truncated_lists += 1;
+    }
+    let cited: HashSet<u64> = facts.iter().flat_map(|f| f.cites.iter().copied()).collect();
+    let lines = render_facts(&facts);
+    let mut ids: Vec<u64> = cited.iter().copied().collect();
+    ids.sort_unstable();
+    let shape = Shape {
+        dialect: Dialect::Local,
+        ids: &ids,
+        speakers: aliases.aliases(),
+    };
+    let user = format!(
+        "{}\n{}",
+        prompt::notes_task(&opts.template, opts.lang, &opts.pinned),
+        prompt::reduce_block(opts.lang, &lines)
+    );
+    let req = Request {
+        messages: vec![
+            Message::system(prompt::notes_system(opts.lang)),
+            Message::user(user),
+        ],
+        schema: Some(schema::notes(&opts.template, &shape)),
+        max_tokens: opts.max_output_tokens,
+        temperature: 0.3,
+    };
+    let allowed = |id: u64| cited.contains(&id);
+    match run::complete_json(llm, req, opts.lang, &mut diag, |v, d| {
+        parse_notes(v, &Ctx::new(t, aliases, opts, &allowed), d)
+    })? {
+        Outcome::Done(notes) => Ok(Run {
+            notes,
+            engine: llm.engine(),
+            strategy: Strategy::MapReduce { parts: n },
+            diagnostics: diag,
+        }),
+        Outcome::Truncated => Err(LlmError::InvalidOutput(
+            "the notes hit the token limit".into(),
+        )),
+    }
+}
+
+/// Facts as reduce-prompt lines: `- [kind] text (speaker SPK1, ...) cite: 3, 4`.
+fn render_facts(facts: &[Fact]) -> String {
+    facts
+        .iter()
+        .map(|f| {
+            let mut extra = Vec::new();
+            if let Some(s) = &f.speaker {
+                extra.push(format!("speaker {s}"));
+            }
+            if let Some(o) = &f.owner {
+                extra.push(format!("owner {o}"));
+            }
+            if let Some(due) = &f.due {
+                extra.push(format!("due {due}"));
+            }
+            let cites: Vec<String> = f.cites.iter().map(u64::to_string).collect();
+            let extra = if extra.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", extra.join(", "))
+            };
+            format!(
+                "- [{}] {}{} cite: {}",
+                f.kind,
+                f.text,
+                extra,
+                cites.join(", ")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn map_part(
+    llm: &mut dyn Llm,
+    t: &Transcript,
+    aliases: &Aliases,
+    opts: &Options,
+    part: &[usize],
+    n: usize,
+    of: usize,
+    diag: &mut Diagnostics,
+) -> Result<Option<Vec<Fact>>> {
+    let segs: Vec<&Segment> = part.iter().map(|&i| &t.segments()[i]).collect();
+    let ids: Vec<u64> = segs.iter().map(|s| s.id).collect();
+    let shape = Shape {
+        dialect: Dialect::Local,
+        ids: &ids,
+        speakers: aliases.aliases(),
+    };
+    let req = Request {
+        messages: vec![
+            Message::system(prompt::map_system(opts.lang)),
+            Message::user(prompt::map_task(
+                opts.lang,
+                n,
+                of,
+                &render(t, aliases, &segs),
+            )),
+        ],
+        schema: Some(schema::facts(&shape)),
+        max_tokens: opts.max_output_tokens,
+        temperature: 0.3,
+    };
+    let in_part: HashSet<u64> = ids.iter().copied().collect();
+    let allowed = |id: u64| in_part.contains(&id);
+    let cites = Cites::new(&allowed);
+    let outcome = run::complete_json(llm, req, opts.lang, diag, |v, d| {
+        let raw: RawFacts = serde_json::from_value(v.clone()).map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for f in raw.facts {
+            if !schema::FACT_KINDS.contains(&f.kind.as_str()) {
+                return Err(format!("unknown fact kind `{}`", f.kind));
+            }
+            // Facts stay aliased: they are prompt text for the reduce step.
+            let text = plain_text(&f.text);
+            let c = cites.keep(&f.cite, d);
+            if text.is_empty() || c.is_empty() {
+                d.dropped_items += 1;
+                continue;
+            }
+            let alias = |a: Option<String>| a.filter(|a| aliases.original(a).is_some());
+            out.push(Fact {
+                kind: f.kind,
+                text,
+                speaker: alias(f.speaker),
+                owner: alias(f.owner),
+                due: f.due.map(|s| plain_text(&s)).filter(|s| !s.is_empty()),
+                cites: c,
+            });
+        }
+        Ok(out)
+    })?;
+    Ok(match outcome {
+        Outcome::Done(f) => Some(f),
+        Outcome::Truncated => None,
+    })
+}
+
+/// Parts of about `minutes` (ending at a speaker change when possible), each
+/// within `budget` tokens. Transcripts without times are cut by tokens only.
+fn chunk(t: &Transcript, aliases: &Aliases, budget: u32, minutes: u32) -> Vec<Vec<usize>> {
+    let span_ms = i64::from(minutes.max(1)) * 60_000;
+    let grace_ms = 60_000;
+    let max_tokens = budget.max(512);
+    let timed = t.has_times();
+    let mut parts: Vec<Vec<usize>> = Vec::new();
+    let mut cur: Vec<usize> = Vec::new();
+    let mut tokens = 0u32;
+    let segs = t.segments();
+    for (i, s) in segs.iter().enumerate() {
+        let line = estimate_tokens(&crate::transcript::render_line(s, aliases, timed)) + 1;
+        if let Some(&first) = cur.first() {
+            let elapsed = s.t0_ms - segs[first].t0_ms;
+            let turn = s.speaker != segs[i - 1].speaker;
+            let long = timed && (elapsed >= span_ms + grace_ms || (elapsed >= span_ms && turn));
+            if tokens + line > max_tokens || long {
+                parts.push(std::mem::take(&mut cur));
+                tokens = 0;
+            }
+        }
+        cur.push(i);
+        tokens += line;
+    }
+    if !cur.is_empty() {
+        parts.push(cur);
+    }
+    parts
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::template;
+    use crate::transcript::tests::seg;
+    use crate::{Completion, Llm};
+
+    /// Replies with scripted texts in order and records the requests.
+    pub struct Scripted {
+        pub replies: Vec<(String, bool)>,
+        pub requests: Vec<Request>,
+        pub context: u32,
+    }
+
+    impl Scripted {
+        pub fn new(replies: &[&str]) -> Scripted {
+            Scripted {
+                replies: replies.iter().map(|r| (r.to_string(), false)).collect(),
+                requests: Vec::new(),
+                context: 16384,
+            }
+        }
+    }
+
+    impl Llm for Scripted {
+        fn engine(&self) -> EngineInfo {
+            EngineInfo {
+                name: "scripted".into(),
+                version: "1".into(),
+            }
+        }
+        fn context_tokens(&self) -> u32 {
+            self.context
+        }
+        fn complete(&mut self, req: &Request) -> Result<Completion> {
+            self.requests.push(req.clone());
+            assert!(!self.replies.is_empty(), "unexpected request");
+            let (text, truncated) = self.replies.remove(0);
+            Ok(Completion {
+                text,
+                tokens_in: 10,
+                tokens_out: 5,
+                truncated,
+            })
+        }
+    }
+
+    pub fn meeting() -> Transcript {
+        Transcript::new(vec![
+            seg(
+                0,
+                0.0,
+                4.0,
+                "Linh",
+                "Mình chốt scope cho bản beta nhé, không làm lịch.",
+                "vi",
+            ),
+            seg(
+                1,
+                4.0,
+                8.0,
+                "Nam",
+                "OK, tôi sẽ gửi tài liệu scope trước thứ Sáu.",
+                "vi",
+            ),
+            seg(
+                2,
+                8.0,
+                12.0,
+                "Linh",
+                "Còn chuyện ngân sách quý sau thì chưa rõ.",
+                "vi",
+            ),
+        ])
+        .unwrap()
+    }
+
+    fn reply(body: &str) -> String {
+        let empty = r#""tldr":[],"decisions":[],"action_items":[],"open_questions":[],"key_quotes":[],"topics":[]"#;
+        let mut v: serde_json::Map<String, Value> =
+            serde_json::from_str(&format!("{{{empty}}}")).unwrap();
+        let extra: serde_json::Map<String, Value> = serde_json::from_str(body).unwrap();
+        v.extend(extra);
+        Value::Object(v).to_string()
+    }
+
+    fn opts() -> Options {
+        Options::new(template::builtin("general").unwrap(), OutLang::Vi)
+    }
+
+    #[test]
+    fn single_pass_maps_aliases_owners_and_citations() {
+        let t = meeting();
+        let mut llm = Scripted::new(&[&reply(
+            r#"{"tldr":[{"text":"Chốt scope beta","cite":[0]},{"text":"Bịa","cite":[99]}],
+                "decisions":[{"text":"Chốt scope","cite":[0]},{"text":"chot  SCOPE","cite":[0]}],
+                "action_items":[
+                  {"text":"Gửi tài liệu scope","owner":"SPK2","due":"thứ Sáu","cite":[1]},
+                  {"text":"Lo ngân sách","owner":"SPK2","due":null,"cite":[2]}],
+                "key_quotes":[{"text":"không làm lịch","speaker":"SPK1","cite":[0]}],
+                "topics":[{"title":"Scope beta","cite":[0,1]}]}"#,
+        )]);
+        let run = generate(&mut llm, &t, &opts()).unwrap();
+        assert_eq!(run.strategy, Strategy::Single);
+        let n = &run.notes;
+        assert_eq!(
+            n.tldr.len(),
+            1,
+            "the item citing a missing segment is dropped"
+        );
+        assert_eq!(n.action_items[0].owner.as_deref(), Some("Nam"));
+        assert_eq!(n.action_items[0].due.as_deref(), Some("thứ Sáu"));
+        assert_eq!(n.action_items[1].owner, None, "Nam does not speak in s2");
+        assert_eq!(n.key_quotes[0].speaker.as_deref(), Some("Linh"));
+        assert_eq!((n.topics[0].t0_ms, n.topics[0].t1_ms), (0, 8000));
+        let d = &run.diagnostics;
+        assert_eq!(
+            (d.dropped_items, d.unassigned_owners, d.requests),
+            (1, 1, 1)
+        );
+        // Names never reach the prompt; aliases and ids do.
+        let prompt = &llm.requests[0].messages[1].content;
+        assert!(prompt.contains("[s1] (00:04) SPK2: OK"));
+        assert!(!prompt.contains("Linh") && !prompt.contains("Nam:"));
+        let schema = llm.requests[0].schema.as_ref().unwrap().to_string();
+        assert!(schema.contains("\"enum\":[0,1,2]"));
+    }
+
+    #[test]
+    fn invalid_output_is_retried_with_the_error_then_fails() {
+        let t = meeting();
+        let mut llm =
+            Scripted::new(&["not json", &reply(r#"{"tldr":[{"text":"ok","cite":[0]}]}"#)]);
+        let run = generate(&mut llm, &t, &opts()).unwrap();
+        assert_eq!(run.diagnostics.retries, 1);
+        let retry = &llm.requests[1].messages;
+        assert_eq!(retry.len(), 4);
+        assert!(retry[3].content.contains("không hợp lệ"));
+
+        let mut bad = Scripted::new(&[r#"{"tldr":[]}"#, "{}", r#"{"x":1}"#]);
+        assert!(matches!(
+            generate(&mut bad, &t, &opts()),
+            Err(LlmError::InvalidOutput(_))
+        ));
+        assert_eq!(bad.requests.len(), 3);
+    }
+
+    #[test]
+    fn unknown_keys_and_missing_sections_are_invalid() {
+        let t = meeting();
+        let a = Aliases::new(&t);
+        let o = Options::new(template::builtin("standup").unwrap(), OutLang::En);
+        let mut d = Diagnostics::default();
+        let missing = reply("{}");
+        assert!(parse(&missing, &t, &a, &o, &mut d).is_err());
+        let full = reply(r#"{"done":[],"next":[],"blockers":[{"text":"CI is red","cite":[2]}]}"#);
+        let n = parse(&full, &t, &a, &o, &mut d).unwrap();
+        assert_eq!(n.sections[2].title, "Blockers");
+        assert_eq!(n.sections[2].items[0].citations, vec![2]);
+        let extra = reply(r#"{"done":[],"next":[],"blockers":[],"x":[]}"#);
+        assert!(parse(&extra, &t, &a, &o, &mut d).is_err());
+    }
+
+    #[test]
+    fn long_meetings_map_then_reduce_citing_only_mapped_lines() {
+        let mut segs = Vec::new();
+        for i in 0..40u64 {
+            let sp = if i % 2 == 0 { "S1" } else { "S2" };
+            segs.push(seg(
+                i,
+                i as f64 * 30.0,
+                i as f64 * 30.0 + 25.0,
+                sp,
+                &"word ".repeat(40),
+                "en",
+            ));
+        }
+        let t = Transcript::new(segs).unwrap();
+        let facts = r#"{"facts":[{"kind":"decision","text":"Ship it","speaker":"SPK1","owner":null,"due":null,"cite":[0]}]}"#;
+        // 40 × 30 s = 20 min at 10-minute parts → 2 map calls + reduce.
+        let mut llm = Scripted::new(&[
+            facts,
+            r#"{"facts":[{"kind":"action","text":"Send doc","speaker":"SPK2","owner":"SPK2","due":null,"cite":[21]}]}"#,
+            &reply(
+                r#"{"decisions":[{"text":"Ship it","cite":[0]}],"tldr":[{"text":"Not mapped","cite":[5]}]}"#,
+            ),
+        ]);
+        llm.context = 6500;
+        let run = generate(
+            &mut llm,
+            &t,
+            &Options::new(template::builtin("general").unwrap(), OutLang::En),
+        )
+        .unwrap();
+        assert_eq!(run.strategy, Strategy::MapReduce { parts: 2 });
+        assert_eq!(run.notes.decisions.len(), 1);
+        assert!(run.notes.tldr.is_empty(), "s5 was not cited by any fact");
+        let reduce = &llm.requests[2].messages[1].content;
+        assert!(reduce.contains("- [action] Send doc (speaker SPK2, owner SPK2) cite: 21"));
+        // Map calls only allow their own part's ids.
+        let map1 = llm.requests[0].schema.as_ref().unwrap().to_string();
+        assert!(map1.contains("\"enum\":[0,1,") && !map1.contains(",21,"));
+    }
+
+    #[test]
+    fn a_truncated_part_is_split() {
+        let t = meeting();
+        let mut llm = Scripted::new(&[
+            "{",
+            "{",
+            r#"{"facts":[{"kind":"point","text":"a","speaker":null,"owner":null,"due":null,"cite":[0]}]}"#,
+            r#"{"facts":[]}"#,
+            &reply(r#"{"tldr":[{"text":"a","cite":[0]}]}"#),
+        ]);
+        // The single pass, then the one map part, hit the token limit.
+        llm.replies[0].1 = true;
+        llm.replies[1].1 = true;
+        let run = generate(&mut llm, &t, &opts()).unwrap();
+        assert_eq!(run.strategy, Strategy::MapReduce { parts: 2 });
+        assert_eq!(run.notes.tldr.len(), 1);
+    }
+
+    #[test]
+    fn gold_transcripts_without_times_chunk_by_tokens() {
+        let segs: Vec<_> = (0..30u64)
+            .map(|i| seg(i, 0.0, 0.0, "", &"x".repeat(300), ""))
+            .collect();
+        let t = Transcript::new(segs).unwrap();
+        let parts = chunk(&t, &Aliases::new(&t), 1000, 10);
+        assert!(parts.len() > 1);
+        assert_eq!(parts.iter().map(Vec::len).sum::<usize>(), 30);
+    }
+}

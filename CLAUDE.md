@@ -50,6 +50,14 @@ bundles, VN-folded FTS5 search, crypto-shred delete, key stores) and
 `ghi store ...`. Debug-only file key store; `tools/scripts/check-no-dev-key.sh`
 guards release binaries.
 
+Notes engine: `crates/ghi-llm` (templates in `templates/*.toml`, generated
+JSON schemas, map-reduce notes with citations, enhance, Ask, redaction, send
+preview, cloud providers) + `crates/ghi-llm-worker` (llama.cpp over stdio, a
+separate process); `ghi notes|ask|keys` and `ghi store notes`. Local model:
+`tools/scripts/fetch-models.sh qwen3-4b`, then `cargo build -p ghi-llm-worker`
+(the golden tests skip without both). Cloud sends only go through `ghi-net`'s
+`CloudGrant`, bound to the exact previewed bytes.
+
 Speech engines: `crates/ghi-speech` (NeMo-Speech.cpp FFI, feature `nemo`); models
 pinned in `crates/ghi-models/registry.toml`; decision record `Plans/docs/06`.
 

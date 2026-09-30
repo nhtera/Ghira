@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+id = "general"
+name = "General"
+guidance_en = "A general meeting. Capture what was discussed, agreed and left open."
+guidance_vi = "Cuộc họp chung. Ghi lại nội dung thảo luận, điều đã thống nhất và vấn đề còn bỏ ngỏ."

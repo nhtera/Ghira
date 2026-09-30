@@ -44,10 +44,16 @@ pub struct Migration {
 }
 
 /// All migrations, in order. Versions start at 1 and have no gaps.
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    step: Step::Sql(include_str!("migrations/0001_init.sql")),
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        step: Step::Sql(include_str!("migrations/0001_init.sql")),
+    },
+    Migration {
+        version: 2,
+        step: Step::Sql(include_str!("migrations/0002_ai_action_items.sql")),
+    },
+];
 
 /// The schema version this build expects.
 pub fn latest_version() -> u32 {

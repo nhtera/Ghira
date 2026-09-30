@@ -69,11 +69,38 @@ enum Command {
     /// Write meeting notes from a `ghi.transcript/1` file (`ghi.notes/1`).
     Notes {
         transcript: PathBuf,
+        /// Language of the notes (auto = the meeting's language).
         #[arg(long, value_enum, default_value_t = LangMode::Auto)]
         lang: LangMode,
+        #[command(flatten)]
+        notes: cmd::notes::NotesArgs,
+        #[command(flatten)]
+        model: cmd::notes::ModelArgs,
+        #[command(flatten)]
+        cloud: cmd::cloud::CloudArgs,
         /// Print JSON (currently the only output format).
         #[arg(long)]
         json: bool,
+    },
+    /// Answer a question about a `ghi.transcript/1` file, with citations (`ghi.ask/1`).
+    Ask {
+        transcript: PathBuf,
+        question: String,
+        /// Language of the answer (auto = the meeting's language).
+        #[arg(long, value_enum, default_value_t = LangMode::Auto)]
+        lang: LangMode,
+        #[command(flatten)]
+        model: cmd::notes::ModelArgs,
+        #[command(flatten)]
+        cloud: cmd::cloud::CloudArgs,
+        /// Print JSON (currently the only output format).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Cloud AI provider API keys in the OS keystore (`ghi.keys/1`).
+    Keys {
+        #[command(subcommand)]
+        action: KeysAction,
     },
     /// Run the pipeline on an audio file and report timings (`ghi.bench/1`).
     Bench {
@@ -144,6 +171,18 @@ enum Command {
 }
 
 #[derive(Subcommand)]
+enum KeysAction {
+    /// Store a provider's API key, read from the first line of stdin.
+    Set { provider: String },
+    /// Remove a provider's API key.
+    Delete { provider: String },
+    /// Which providers have a key stored (never the key itself).
+    Status,
+}
+
+// Parsed once per run; the size difference between variants doesn't matter.
+#[allow(clippy::large_enum_variant)]
+#[derive(Subcommand)]
 enum StoreAction {
     /// List meetings and their audio tracks (`ghi.store-list/1`).
     List,
@@ -167,6 +206,20 @@ enum StoreAction {
         /// Existing meeting gid; default: a new meeting.
         #[arg(long)]
         meeting: Option<String>,
+    },
+    /// Write (or regenerate) a meeting's notes from its transcript; pinned,
+    /// user-written, edited and done items are kept (`ghi.store-notes/1`).
+    Notes {
+        meeting: String,
+        /// Language of the notes (auto = the meeting's language).
+        #[arg(long, value_enum, default_value_t = LangMode::Auto)]
+        lang: LangMode,
+        #[command(flatten)]
+        notes: cmd::notes::NotesArgs,
+        #[command(flatten)]
+        model: cmd::notes::ModelArgs,
+        #[command(flatten)]
+        cloud: cmd::cloud::CloudArgs,
     },
     /// Delete a meeting: its key is destroyed first, so nothing stays readable.
     Delete { meeting: String },
@@ -215,13 +268,27 @@ fn run(command: Command) -> Result<(), ErrorDoc> {
             max_speakers,
             engine: &engine,
         }),
-        Command::Notes { transcript, .. } => {
-            ghi_cli::read_transcript(&transcript)?;
-            Err(ghi_cli::not_implemented(
-                "notes",
-                "no LLM engine yet (phase 6)",
-            ))
-        }
+        Command::Notes {
+            transcript,
+            lang,
+            notes,
+            model,
+            cloud,
+            ..
+        } => cmd::notes::run(&transcript, lang, &notes, &model, &cloud),
+        Command::Ask {
+            transcript,
+            question,
+            lang,
+            model,
+            cloud,
+            ..
+        } => cmd::notes::ask(&transcript, &question, lang, &model, &cloud),
+        Command::Keys { action } => match action {
+            KeysAction::Set { provider } => cmd::cloud::keys_set(&provider),
+            KeysAction::Delete { provider } => cmd::cloud::keys_delete(&provider),
+            KeysAction::Status => cmd::cloud::keys_status(),
+        },
         Command::Bench {
             audio,
             pass,
@@ -272,6 +339,13 @@ fn run(command: Command) -> Result<(), ErrorDoc> {
                 transcript,
                 meeting,
             } => cmd::store::add_transcript(&dir, &transcript, meeting.as_deref()),
+            StoreAction::Notes {
+                meeting,
+                lang,
+                notes,
+                model,
+                cloud,
+            } => cmd::notes::store_notes(&dir, &meeting, lang, &notes, &model, &cloud),
             StoreAction::Delete { meeting } => cmd::store::delete(&dir, &meeting),
             StoreAction::Export { out } => cmd::store::export(&dir, &out),
             StoreAction::Import { archive } => cmd::store::import(&archive, &dir),

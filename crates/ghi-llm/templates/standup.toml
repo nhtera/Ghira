@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+id = "standup"
+name = "Standup"
+guidance_en = "A team standup. Summarise per person: done, next, blocked."
+guidance_vi = "Buổi standup của nhóm. Tóm tắt theo từng người: đã làm, sẽ làm, đang vướng."
+
+[[section]]
+id = "done"
+title_en = "Done"
+title_vi = "Đã làm"
+instruction = "What each person finished since the last standup (name the speaker)."
+
+[[section]]
+id = "next"
+title_en = "Next"
+title_vi = "Sẽ làm"
+instruction = "What each person plans to do next (name the speaker)."
+
+[[section]]
+id = "blockers"
+title_en = "Blockers"
+title_vi = "Vướng mắc"
+instruction = "Anything blocking someone, and who can help."

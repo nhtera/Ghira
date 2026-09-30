@@ -28,6 +28,9 @@ pub struct Model {
     pub sha256: String,
     pub size: u64,
     pub license: String,
+    /// Chat template family for LLMs (`qwen3`); absent for other roles.
+    #[serde(default)]
+    pub chat_format: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -94,5 +97,13 @@ mod tests {
         assert_eq!(find("nemotron-3.5-asr").unwrap().role, "asr");
         assert_eq!(find("nemotron-3-diarization").unwrap().role, "diarization");
         assert!(find("nope").is_none());
+    }
+
+    #[test]
+    fn llm_declares_its_chat_format() {
+        let m = find("qwen3-4b").unwrap();
+        assert_eq!(m.role, "llm");
+        assert_eq!(m.chat_format.as_deref(), Some("qwen3"));
+        assert_eq!(find("nemotron-3.5-asr").unwrap().chat_format, None);
     }
 }

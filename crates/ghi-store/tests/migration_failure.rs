@@ -30,31 +30,35 @@ fn corrupts_the_file_then_fails(tx: &Transaction) -> rusqlite::Result<()> {
     Err(rusqlite::Error::InvalidQuery)
 }
 
-static BAD_FUNC: [Migration; 2] = [
+static BAD_FUNC: [Migration; 3] = [
     MIGRATIONS[0],
+    MIGRATIONS[1],
     Migration {
-        version: 2,
+        version: 3,
         step: Step::Func(fails_after_partial_work),
     },
 ];
-static BAD_SQL: [Migration; 2] = [
+static BAD_SQL: [Migration; 3] = [
     MIGRATIONS[0],
+    MIGRATIONS[1],
     Migration {
-        version: 2,
+        version: 3,
         step: Step::Sql("CREATE TABLE t (x); THIS IS NOT SQL;"),
     },
 ];
-static CORRUPTING: [Migration; 2] = [
+static CORRUPTING: [Migration; 3] = [
     MIGRATIONS[0],
+    MIGRATIONS[1],
     Migration {
-        version: 2,
+        version: 3,
         step: Step::Func(corrupts_the_file_then_fails),
     },
 ];
-static GOOD_V2: [Migration; 2] = [
+static GOOD_V2: [Migration; 3] = [
     MIGRATIONS[0],
+    MIGRATIONS[1],
     Migration {
-        version: 2,
+        version: 3,
         step: Step::Sql("CREATE TABLE ok2 (x INTEGER);"),
     },
 ];
@@ -114,7 +118,7 @@ fn assert_intact_and_usable(f: &Fixture) {
     assert_eq!(store.segments(&f.meeting).unwrap().len(), 3);
     drop(store);
     let conn = db::open(&f.tmp.path().join("ghira.db"), &common::db_key(&f.master)).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 1);
+    assert_eq!(db::user_version(&conn).unwrap(), 2);
     for t in ["half_done", "t"] {
         let n: i64 = conn
             .query_row(
@@ -138,7 +142,7 @@ fn a_failing_rust_migration_is_rolled_back() {
         panic!("the migration should fail");
     };
     assert!(
-        matches!(err, StoreError::Migration { version: 2, .. }),
+        matches!(err, StoreError::Migration { version: 3, .. }),
         "{err}"
     );
     assert_intact_and_usable(&f);
@@ -151,7 +155,7 @@ fn a_sql_error_is_rolled_back() {
         panic!("the migration should fail");
     };
     assert!(
-        matches!(err, StoreError::Migration { version: 2, .. }),
+        matches!(err, StoreError::Migration { version: 3, .. }),
         "{err}"
     );
     assert_intact_and_usable(&f);
@@ -164,7 +168,7 @@ fn damage_a_rollback_cannot_undo_is_repaired_from_the_snapshot() {
         panic!("the migration should fail");
     };
     assert!(
-        matches!(err, StoreError::Migration { version: 2, .. }),
+        matches!(err, StoreError::Migration { version: 3, .. }),
         "{err}"
     );
     // The snapshot survives the failure, and the database is back to normal.
@@ -185,5 +189,36 @@ fn after_a_failure_the_migration_can_be_retried() {
     assert_eq!(store.segments(&f.meeting).unwrap().len(), 2);
     drop(store);
     let conn = db::open(&f.tmp.path().join("ghira.db"), &common::db_key(&f.master)).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 2);
+    assert_eq!(db::user_version(&conn).unwrap(), 3);
+}
+
+/// Migration 0002 keeps a v1 action item's one citation in the new list.
+#[test]
+fn v2_copies_v1_action_anchors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let master = common::keys();
+    let store = common::open_with(tmp.path(), &master, &MIGRATIONS[..1]).unwrap();
+    let meeting = common::meeting(&store, "v1");
+    drop(store);
+    let path = tmp.path().join("ghira.db");
+    let anchor = r#"{"meeting_gid":"m","t0_ms":1,"t1_ms":2,"transcript_version":1}"#;
+    let conn = db::open(&path, &common::db_key(&master)).unwrap();
+    conn.execute(
+        "INSERT INTO action_items (gid, meeting_id, text_ct, anchor_json)
+         VALUES ('a1', (SELECT id FROM meetings WHERE gid = ?1), x'00', ?2)",
+        rusqlite::params![meeting, anchor],
+    )
+    .unwrap();
+    drop(conn);
+    drop(common::open_with(tmp.path(), &master, MIGRATIONS).unwrap());
+    let conn = db::open(&path, &common::db_key(&master)).unwrap();
+    let (anchors, provenance): (String, String) = conn
+        .query_row(
+            "SELECT anchors_json, provenance FROM action_items WHERE gid = 'a1'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(anchors, format!("[{anchor}]"));
+    assert_eq!(provenance, "user");
 }

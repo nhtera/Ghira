@@ -185,8 +185,15 @@ own capacity (Nemotron 3 Diarization: 8); `ghi` warns when N exceeds it.
 
 ### `ghi notes <transcript.json> [--lang auto|vi|en] --json`
 
-Input is a `ghi.transcript/1` document. Output (phase 6 fills it in; the
-schema may grow, but fields below keep their meaning):
+Input is a `ghi.transcript/1` document. `--lang` is the language of the notes
+(`auto` = the meeting's). Other options: `--template ID` (general,
+one_on_one, standup, sales, interview, client, lecture) or `--template-file
+T.toml`, `--user-notes FILE` (one typed note per line, optional `[mm:ss] `
+prefix; adds `enhanced`), `--model ID --n-ctx N` (local model, default
+`qwen3-4b`, 32768). The local model runs offline in the `ghi-llm-worker`
+process; without the model or the worker `ghi` exits `3`
+(`engine_unavailable`). Output (the schema may grow, but fields below keep
+their meaning):
 
 ```json
 {
@@ -201,7 +208,21 @@ schema may grow, but fields below keep their meaning):
 }
 ```
 
-`citations` are `segments[].id` values of the input transcript.
+`citations` are `segments[].id` values of the input transcript; every item
+has at least one. `summary` is the TL;DR (≤5). `owner` is the transcript's
+`speaker` value of someone who speaks in the cited segments, or `null`
+(never a guess). Text is plain (no Markdown, links or HTML). Also present:
+`template`, `lang`, `open_questions`, `key_quotes` (`speaker`), `topics`
+(`title`, `start`, `end`), `sections` (template-specific: `id`, `title`,
+`items`), `strategy` (`single` or `map_reduce` with `parts`) and
+`diagnostics` (requests, retries, tokens, items dropped for invalid
+citations, weak anchors, unassigned owners).
+
+### `ghi ask <transcript.json> <question> [--lang auto|vi|en] --json`
+
+`ghi.ask/1`: `answer` is `{"kind": "answered", "text", "citations"}` or
+`{"kind": "not_discussed", "searched": [folded terms]}`; plus `engine`,
+`diagnostics`, `perf`. Not used by the harness.
 
 ### `ghi bench <audio> [--pass live|final] --json`
 

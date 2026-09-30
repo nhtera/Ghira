@@ -30,6 +30,14 @@ allow = [
   "Apache-2.0 WITH LLVM-exception",
 ]
 
+# rustls-platform-verifier depends on webpki-root-certs (CDLA-Permissive-2.0,
+# Mozilla's root list) only for wasm32 targets, which Ghira never builds. It is
+# listed for the cross-target graph, never linked into a shipped binary; TLS
+# roots on macOS/Windows/iOS/Android come from the OS verifier.
+exceptions = [
+  { crate = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
+]
+
 [bans]
 multiple-versions = "allow"
 wildcards = "deny"

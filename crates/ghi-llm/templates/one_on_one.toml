@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+id = "one_on_one"
+name = "1:1"
+guidance_en = "A one-on-one between a manager and a report. Focus on feedback, growth, concerns and commitments."
+guidance_vi = "Buổi 1:1 giữa quản lý và nhân viên. Tập trung vào phản hồi, phát triển, mối lo ngại và cam kết."
+
+[[section]]
+id = "feedback"
+title_en = "Feedback"
+title_vi = "Phản hồi"
+instruction = "Feedback given or received, by whom."
+
+[[section]]
+id = "concerns"
+title_en = "Concerns"
+title_vi = "Mối lo ngại"
+instruction = "Worries, blockers or wellbeing topics raised."
+
+[[section]]
+id = "growth"
+title_en = "Growth"
+title_vi = "Phát triển"
+instruction = "Career, learning and goals discussed."

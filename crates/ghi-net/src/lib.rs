@@ -4,9 +4,21 @@
 //! Every network path (cloud LLM, model download, update check, calendar OAuth,
 //! LAN sync listener) must go through this crate. CI rejects HTTP clients and
 //! sockets anywhere else (`deny.toml` bans + `tools/scripts/check-net-egress.sh`).
-//! This is the phase 1 skeleton: the policy model only. The HTTP client, the
-//! per-meeting cloud grants (phase 6), per-class switches for model downloads and
-//! the update check, and the LAN listener guard (phase 15) build on it.
+//! The policy model lives here; [`cloud`] is the HTTPS client for cloud AI,
+//! gated by a per-request [`CloudGrant`] (phase 6). Per-class switches for model
+//! downloads and the update check, and the LAN listener guard (phase 15), build
+//! on it.
+
+mod cloud;
+mod ip;
+mod secret;
+
+pub use cloud::{
+    CloudGrant, GRANT_TTL, HttpResponse, MAX_ATTEMPTS, MeetingGate, NetError, connections_opened,
+    send, sha256_hex,
+};
+pub use ip::{is_lan, is_public};
+pub use secret::{Headers, Secret};
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 

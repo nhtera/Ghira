@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::anchors::Anchor;
 use crate::bundle::{self, BundleReader, BundleWriter};
@@ -191,8 +191,9 @@ pub struct Speaker {
     pub is_me: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Provenance {
+    #[default]
     User,
     Ai,
     AiEdited,
@@ -239,8 +240,15 @@ pub struct NoteBlock {
 pub struct NewActionItem {
     pub text: String,
     pub owner_speaker_gid: Option<String>,
+    /// Due date (unix ms) when known.
     pub due: Option<i64>,
+    /// The due date as spoken ("thứ Sáu"), encrypted like the text.
+    pub due_text: Option<String>,
+    /// Primary citation.
     pub anchor: Option<Anchor>,
+    /// Every citation (the primary one first).
+    pub anchors: Vec<Anchor>,
+    pub provenance: Provenance,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -249,8 +257,21 @@ pub struct ActionItem {
     pub text: String,
     pub owner_speaker_gid: Option<String>,
     pub due: Option<i64>,
+    pub due_text: Option<String>,
     pub done: bool,
     pub anchor: Option<Anchor>,
+    pub anchors: Vec<Anchor>,
+    pub provenance: Provenance,
+}
+
+/// What [`Store::replace_ai_notes`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ReplacedNotes {
+    /// AI blocks and action items removed (unpinned, unedited, not done).
+    pub removed: usize,
+    /// User-written, pinned, edited or done items kept.
+    pub kept: usize,
+    pub added: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1123,38 +1144,13 @@ impl Store {
     // ------------------------------------------------------------- notes
 
     pub fn add_note_block(&self, meeting_gid: &str, new: NewNoteBlock) -> Result<NoteBlock> {
-        let gid = new_gid();
         let mut conn = self.conn();
         let m = Store::meeting_ref(&conn, meeting_gid)?;
         let dek = self.dek(&conn, m.id)?;
-        let body = fold::nfc(&new.body);
-        let ct = seal_text(&dek, &body, &row_aad("notes_blocks", "body_ct", &gid));
-        let anchors_json =
-            serde_json::to_string(&new.anchors).map_err(|e| StoreError::Invalid(e.to_string()))?;
         let tx = conn.transaction()?;
-        let lamport = Store::alloc_lamport(&tx, 1)?;
-        tx.execute(
-            "INSERT INTO notes_blocks (gid, meeting_id, kind, provenance, body_ct, anchors_json, pinned, lamport)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![gid, m.id, new.kind, new.provenance.as_str(), ct, anchors_json, new.pinned, lamport],
-        )?;
-        let id = tx.last_insert_rowid();
-        let norm = fold::fold(&body);
-        if !norm.is_empty() {
-            tx.execute(
-                "INSERT INTO notes_fts (rowid, body_norm) VALUES (?1, ?2)",
-                params![id, norm],
-            )?;
-        }
+        let block = insert_note_block(&tx, &dek, m.id, new)?;
         tx.commit()?;
-        Ok(NoteBlock {
-            gid,
-            kind: new.kind,
-            provenance: new.provenance,
-            body,
-            anchors: new.anchors,
-            pinned: new.pinned,
-        })
+        Ok(block)
     }
 
     pub fn note_blocks(&self, meeting_gid: &str) -> Result<Vec<NoteBlock>> {
@@ -1246,37 +1242,146 @@ impl Store {
     // ------------------------------------------------------ action items
 
     pub fn add_action_item(&self, meeting_gid: &str, new: NewActionItem) -> Result<ActionItem> {
-        let gid = new_gid();
         let mut conn = self.conn();
         let m = Store::meeting_ref(&conn, meeting_gid)?;
         let dek = self.dek(&conn, m.id)?;
-        let text = fold::nfc(&new.text);
-        let ct = seal_text(&dek, &text, &row_aad("action_items", "text_ct", &gid));
-        let anchor_json = new
-            .anchor
-            .as_ref()
-            .map(|a| serde_json::to_string(a).map_err(|e| StoreError::Invalid(e.to_string())))
-            .transpose()?;
         let tx = conn.transaction()?;
-        let owner = match &new.owner_speaker_gid {
-            Some(s) => Some(id_of(&tx, "speakers", s)?),
-            None => None,
-        };
+        let item = insert_action_item(&tx, &dek, m.id, new)?;
+        tx.commit()?;
+        Ok(item)
+    }
+
+    /// Edits an action item's text. AI-written items become `ai_edited`, so a
+    /// regenerate keeps them.
+    pub fn update_action_item_text(&self, action_gid: &str, text: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let meeting_id: i64 = conn
+            .query_row(
+                "SELECT meeting_id FROM action_items WHERE gid = ?1",
+                [action_gid],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound {
+                kind: "action item",
+                gid: action_gid.to_string(),
+            })?;
+        let dek = self.dek(&conn, meeting_id)?;
+        let text = fold::nfc(text);
+        let ct = seal_text(&dek, &text, &row_aad("action_items", "text_ct", action_gid));
+        let tx = conn.transaction()?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tx.execute(
-            "INSERT INTO action_items (gid, meeting_id, text_ct, owner_speaker_id, due, anchor_json, lamport)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![gid, m.id, ct, owner, new.due, anchor_json, lamport],
+            "UPDATE action_items SET text_ct = ?1, lamport = ?2,
+                    provenance = CASE provenance WHEN 'ai' THEN 'ai_edited' ELSE provenance END
+             WHERE gid = ?3",
+            params![ct, lamport, action_gid],
         )?;
         tx.commit()?;
-        Ok(ActionItem {
-            gid,
-            text,
-            owner_speaker_gid: new.owner_speaker_gid,
-            due: new.due,
-            done: false,
-            anchor: new.anchor,
-        })
+        Ok(())
+    }
+
+    /// Regenerated notes (RT-7): in one transaction, removes the AI note
+    /// blocks that aren't pinned and the AI action items that are neither
+    /// done nor edited, then adds `blocks` and `actions` as AI-written.
+    /// Everything the user wrote, pinned, edited or ticked off stays.
+    pub fn replace_ai_notes(
+        &self,
+        meeting_gid: &str,
+        blocks: Vec<NewNoteBlock>,
+        actions: Vec<NewActionItem>,
+    ) -> Result<ReplacedNotes> {
+        let mut conn = self.conn();
+        let m = Store::meeting_ref(&conn, meeting_gid)?;
+        let dek = self.dek(&conn, m.id)?;
+        let tx = conn.transaction()?;
+        let mut out = ReplacedNotes::default();
+        let old_blocks: Vec<(i64, String)> = tx
+            .prepare(
+                "SELECT id, gid FROM notes_blocks
+                 WHERE meeting_id = ?1 AND provenance = 'ai' AND pinned = 0",
+            )?
+            .query_map([m.id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        let old_actions: Vec<(i64, String)> = tx
+            .prepare(
+                "SELECT id, gid FROM action_items
+                 WHERE meeting_id = ?1 AND provenance = 'ai' AND done = 0",
+            )?
+            .query_map([m.id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        let total: i64 = tx.query_row(
+            "SELECT (SELECT count(*) FROM notes_blocks WHERE meeting_id = ?1)
+                  + (SELECT count(*) FROM action_items WHERE meeting_id = ?1)",
+            [m.id],
+            |r| r.get(0),
+        )?;
+        out.removed = old_blocks.len() + old_actions.len();
+        out.kept = usize::try_from(total).unwrap_or(0) - out.removed;
+        if out.removed > 0 {
+            let first = Store::alloc_lamport(&tx, out.removed as i64)?;
+            for (n, (id, gid)) in old_blocks.iter().enumerate() {
+                tombstones::write(&tx, gid, "note", first + n as i64)?;
+                tx.execute("DELETE FROM notes_fts WHERE rowid = ?1", [id])?;
+                tx.execute("DELETE FROM notes_blocks WHERE id = ?1", [id])?;
+            }
+            for (n, (id, gid)) in old_actions.iter().enumerate() {
+                tombstones::write(
+                    &tx,
+                    gid,
+                    "action_item",
+                    first + (old_blocks.len() + n) as i64,
+                )?;
+                tx.execute("DELETE FROM action_items WHERE id = ?1", [id])?;
+            }
+        }
+        for mut b in blocks {
+            b.provenance = Provenance::Ai;
+            b.pinned = false;
+            insert_note_block(&tx, &dek, m.id, b)?;
+            out.added += 1;
+        }
+        for mut a in actions {
+            a.provenance = Provenance::Ai;
+            insert_action_item(&tx, &dek, m.id, a)?;
+            out.added += 1;
+        }
+        tx.commit()?;
+        Ok(out)
+    }
+
+    /// Records a cloud AI request in the audit log and marks the meeting as
+    /// having used the cloud. Counts only; no content.
+    pub fn record_cloud_request(
+        &self,
+        meeting_gid: &str,
+        provider: &str,
+        model: &str,
+        tokens_in: u64,
+        tokens_out: u64,
+    ) -> Result<()> {
+        let mut conn = self.conn();
+        let m = Store::meeting_ref(&conn, meeting_gid)?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO cloud_requests (meeting_id, provider, model, tokens_in, tokens_out, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                m.id,
+                provider,
+                model,
+                i64::try_from(tokens_in).unwrap_or(i64::MAX),
+                i64::try_from(tokens_out).unwrap_or(i64::MAX),
+                now_ms()
+            ],
+        )?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        tx.execute(
+            "UPDATE meetings SET cloud_used = 1, lamport = ?1 WHERE id = ?2",
+            params![lamport, m.id],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn action_items(&self, meeting_gid: &str) -> Result<Vec<ActionItem>> {
@@ -1284,39 +1389,50 @@ impl Store {
         let m = Store::meeting_ref(&conn, meeting_gid)?;
         let dek = self.dek(&conn, m.id)?;
         let mut stmt = conn.prepare_cached(
-            "SELECT a.gid, a.text_ct, sp.gid, a.due, a.done, a.anchor_json
+            "SELECT a.gid, a.text_ct, sp.gid, a.due, a.done, a.anchor_json,
+                    a.due_text_ct, a.anchors_json, a.provenance
              FROM action_items a LEFT JOIN speakers sp ON sp.id = a.owner_speaker_id
              WHERE a.meeting_id = ?1 ORDER BY a.id",
         )?;
         let rows = stmt
             .query_map([m.id], |r| {
                 Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, Vec<u8>>(1)?,
-                    r.get::<_, Option<String>>(2)?,
-                    r.get::<_, Option<i64>>(3)?,
-                    r.get::<_, bool>(4)?,
-                    r.get::<_, Option<String>>(5)?,
+                    (
+                        r.get::<_, String>(0)?,
+                        r.get::<_, Vec<u8>>(1)?,
+                        r.get::<_, Option<String>>(2)?,
+                        r.get::<_, Option<i64>>(3)?,
+                        r.get::<_, bool>(4)?,
+                    ),
+                    (
+                        r.get::<_, Option<String>>(5)?,
+                        r.get::<_, Option<Vec<u8>>>(6)?,
+                        r.get::<_, String>(7)?,
+                        r.get::<_, String>(8)?,
+                    ),
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         rows.into_iter()
-            .map(|(gid, ct, owner_speaker_gid, due, done, anchor)| {
-                let text = open_text(&dek, &ct, &row_aad("action_items", "text_ct", &gid))?;
-                let anchor = anchor
-                    .map(|a| {
-                        serde_json::from_str(&a).map_err(|e| StoreError::Invalid(e.to_string()))
+            .map(
+                |((gid, ct, owner_speaker_gid, due, done), (anchor, due_ct, anchors, prov))| {
+                    let text = open_text(&dek, &ct, &row_aad("action_items", "text_ct", &gid))?;
+                    let due_text = due_ct
+                        .map(|c| open_text(&dek, &c, &row_aad("action_items", "due_text_ct", &gid)))
+                        .transpose()?;
+                    Ok(ActionItem {
+                        text,
+                        owner_speaker_gid,
+                        due,
+                        due_text,
+                        done,
+                        anchor: anchor.as_deref().map(from_json).transpose()?,
+                        anchors: from_json(&anchors)?,
+                        provenance: Provenance::parse(&prov),
+                        gid,
                     })
-                    .transpose()?;
-                Ok(ActionItem {
-                    gid,
-                    text,
-                    owner_speaker_gid,
-                    due,
-                    done,
-                    anchor,
-                })
-            })
+                },
+            )
             .collect()
     }
 
@@ -1747,6 +1863,98 @@ impl Store {
 // ------------------------------------------------------------------ helpers
 
 /// FTS `optimize` on both indexes, then vacuum and truncate the WAL.
+fn insert_note_block(
+    tx: &Transaction,
+    dek: &Dek,
+    meeting_id: i64,
+    new: NewNoteBlock,
+) -> Result<NoteBlock> {
+    let gid = new_gid();
+    let body = fold::nfc(&new.body);
+    let ct = seal_text(dek, &body, &row_aad("notes_blocks", "body_ct", &gid));
+    let anchors_json = to_json(&new.anchors)?;
+    let lamport = Store::alloc_lamport(tx, 1)?;
+    tx.execute(
+        "INSERT INTO notes_blocks (gid, meeting_id, kind, provenance, body_ct, anchors_json, pinned, lamport)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![gid, meeting_id, new.kind, new.provenance.as_str(), ct, anchors_json, new.pinned, lamport],
+    )?;
+    let id = tx.last_insert_rowid();
+    let norm = fold::fold(&body);
+    if !norm.is_empty() {
+        tx.execute(
+            "INSERT INTO notes_fts (rowid, body_norm) VALUES (?1, ?2)",
+            params![id, norm],
+        )?;
+    }
+    Ok(NoteBlock {
+        gid,
+        kind: new.kind,
+        provenance: new.provenance,
+        body,
+        anchors: new.anchors,
+        pinned: new.pinned,
+    })
+}
+
+fn insert_action_item(
+    tx: &Transaction,
+    dek: &Dek,
+    meeting_id: i64,
+    new: NewActionItem,
+) -> Result<ActionItem> {
+    let gid = new_gid();
+    let text = fold::nfc(&new.text);
+    let ct = seal_text(dek, &text, &row_aad("action_items", "text_ct", &gid));
+    let due_text = new.due_text.as_deref().map(fold::nfc);
+    let due_ct = due_text
+        .as_deref()
+        .map(|d| seal_text(dek, d, &row_aad("action_items", "due_text_ct", &gid)));
+    let anchor_json = new.anchor.as_ref().map(to_json).transpose()?;
+    let anchors_json = to_json(&new.anchors)?;
+    let owner = match &new.owner_speaker_gid {
+        Some(s) => Some(id_of(tx, "speakers", s)?),
+        None => None,
+    };
+    let lamport = Store::alloc_lamport(tx, 1)?;
+    tx.execute(
+        "INSERT INTO action_items (gid, meeting_id, text_ct, owner_speaker_id, due, anchor_json,
+                                   lamport, provenance, due_text_ct, anchors_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            gid,
+            meeting_id,
+            ct,
+            owner,
+            new.due,
+            anchor_json,
+            lamport,
+            new.provenance.as_str(),
+            due_ct,
+            anchors_json
+        ],
+    )?;
+    Ok(ActionItem {
+        gid,
+        text,
+        owner_speaker_gid: new.owner_speaker_gid,
+        due: new.due,
+        due_text,
+        done: false,
+        anchor: new.anchor,
+        anchors: new.anchors,
+        provenance: new.provenance,
+    })
+}
+
+fn to_json<T: serde::Serialize>(v: &T) -> Result<String> {
+    serde_json::to_string(v).map_err(|e| StoreError::Invalid(e.to_string()))
+}
+
+fn from_json<T: serde::de::DeserializeOwned>(s: &str) -> Result<T> {
+    serde_json::from_str(s).map_err(|e| StoreError::Invalid(e.to_string()))
+}
+
 fn compact_locked(conn: &Connection) -> Result<()> {
     conn.execute(
         "INSERT INTO segments_fts (segments_fts) VALUES ('optimize')",

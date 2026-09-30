@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Pinned speech models (phase 3 decision record: Plans/docs/06). Downloaded, never
+# Pinned models (phase 3 decision record: Plans/docs/06). Downloaded, never
 # committed or bundled. Every file is fetched at `revision` and must match `sha256`.
 # Dev download: tools/scripts/fetch-models.sh; the in-app downloader (ghi-net) comes later.
 
@@ -22,3 +22,16 @@ file = "Nemotron-3-Diarization.q8_0.gguf"
 sha256 = "08456d9e22cd9a323c0364d98375f3746d6e68507ebb705cd46438c534c7a3a1"
 size = 107012128
 license = "OpenMDW-1.1"
+
+# Local notes LLM, Light-tier candidate (phase 6 dev/test model; the S4 pick
+# per tier is recorded in Plans/docs/06 §LLM). Run in no-think mode.
+[[model]]
+id = "qwen3-4b"
+role = "llm"
+repo = "Qwen/Qwen3-4B-GGUF"
+revision = "bc640142c66e1fdd12af0bd68f40445458f3869b"
+file = "Qwen3-4B-Q4_K_M.gguf"
+sha256 = "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5"
+size = 2497280256
+license = "Apache-2.0"
+chat_format = "qwen3"

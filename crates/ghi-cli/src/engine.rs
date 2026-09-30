@@ -113,29 +113,36 @@ pub fn speech_error(e: ghi_speech::SpeechError) -> ErrorDoc {
     ErrorDoc::new(ErrorCode::Internal, e.to_string())
 }
 
-/// Peak resident memory of this process so far, in MB.
+/// Peak resident memory so far, in MB: the larger of this process and its
+/// finished children (the LLM worker, once it has exited).
 pub fn peak_rss_mb() -> Option<f64> {
     #[cfg(unix)]
     {
-        let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
-        // SAFETY: getrusage fills the struct we pass.
-        if unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } != 0 {
-            return None;
-        }
-        // SAFETY: initialized by the successful call above.
-        let max = unsafe { usage.assume_init() }.ru_maxrss as f64;
-        // Bytes on macOS, KiB on Linux.
-        let bytes = if cfg!(target_os = "macos") {
-            max
-        } else {
-            max * 1024.0
-        };
-        Some(bytes / 1_048_576.0)
+        let own = max_rss_mb(libc::RUSAGE_SELF)?;
+        Some(max_rss_mb(libc::RUSAGE_CHILDREN).map_or(own, |c| c.max(own)))
     }
     #[cfg(not(unix))]
     {
         None
     }
+}
+
+#[cfg(unix)]
+fn max_rss_mb(who: libc::c_int) -> Option<f64> {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
+    // SAFETY: getrusage fills the struct we pass.
+    if unsafe { libc::getrusage(who, usage.as_mut_ptr()) } != 0 {
+        return None;
+    }
+    // SAFETY: initialized by the successful call above.
+    let max = unsafe { usage.assume_init() }.ru_maxrss as f64;
+    // Bytes on macOS, KiB on Linux.
+    let bytes = if cfg!(target_os = "macos") {
+        max
+    } else {
+        max * 1024.0
+    };
+    Some(bytes / 1_048_576.0)
 }
 
 #[cfg(feature = "nemo")]

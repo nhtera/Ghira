@@ -110,17 +110,23 @@ pub fn delete(dir: &Path, gid: &str) -> Result<(), ErrorDoc> {
 /// The first line of stdin, without its line ending. Empty passwords are
 /// refused: an archive's security is its password.
 fn read_password() -> Result<zeroize::Zeroizing<String>, ErrorDoc> {
+    read_secret_line("password")
+}
+
+/// A secret (`what`: password, API key) from the first line of stdin, so it
+/// never appears in arguments or shell history. Empty is refused.
+pub fn read_secret_line(what: &str) -> Result<zeroize::Zeroizing<String>, ErrorDoc> {
     let mut line = zeroize::Zeroizing::new(String::new());
     std::io::stdin()
         .lock()
         .read_line(&mut line)
-        .map_err(|e| ErrorDoc::new(ErrorCode::BadInput, format!("reading the password: {e}")))?;
+        .map_err(|e| ErrorDoc::new(ErrorCode::BadInput, format!("reading the {what}: {e}")))?;
     let len = line.trim_end_matches(['\r', '\n']).len();
     line.truncate(len);
     if line.is_empty() {
         return Err(ErrorDoc::new(
             ErrorCode::BadInput,
-            "empty password on stdin",
+            format!("empty {what} on stdin"),
         ));
     }
     Ok(line)

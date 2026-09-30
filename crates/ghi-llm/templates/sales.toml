@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+id = "sales"
+name = "Sales / Discovery"
+guidance_en = "A sales or discovery call. Capture the customer's situation, needs, objections and next steps."
+guidance_vi = "Cuộc gọi bán hàng hoặc khảo sát nhu cầu. Ghi lại tình hình, nhu cầu, phản đối của khách hàng và bước tiếp theo."
+
+[[section]]
+id = "pain_points"
+title_en = "Pain points"
+title_vi = "Vấn đề của khách hàng"
+instruction = "Problems and needs the customer described."
+
+[[section]]
+id = "budget_timeline"
+title_en = "Budget and timeline"
+title_vi = "Ngân sách và thời gian"
+instruction = "Budget, timing, decision process and decision makers mentioned."
+
+[[section]]
+id = "objections"
+title_en = "Objections"
+title_vi = "Phản đối"
+instruction = "Concerns or objections the customer raised, and the answers given."
