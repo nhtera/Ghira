@@ -15,6 +15,16 @@ when the NeMo-Speech.cpp pin or its build options change.
 | protobuf-lite (inside SentencePiece) | same | BSD-3-Clause | `.../sentencepiece-src/third_party/protobuf-lite/LICENSE` |
 | darts-clone (inside SentencePiece) | same | BSD-2-Clause | `.../sentencepiece-src/third_party/darts_clone/LICENSE` |
 
+C code compiled into Rust crates by their build scripts (statically linked;
+`cargo-about` lists the crate, not the C library inside it):
+
+| Component | Version | License | License text |
+|---|---|---|---|
+| libopus (via `opusic-sys`, feature `bundled`, used by `ghi-audio`) | 1.6.1 (`opusic-sys` 0.7.5) | BSD-3-Clause | `opus/COPYING` in the `opusic-sys` crate source |
+
+`native/macos/GhiAudioMac` (our Swift capture package, Apache-2.0) is linked
+statically into `ghi-audio` on macOS; it uses only Apple system frameworks.
+
 Not built, and must stay out of shipped binaries: KenLM (LGPL), flashlight-text,
 llama.cpp, cpp-httplib, OpenSSL, gRPC/Riva protos, Open JTalk, CppJieba, and
 miniaudio (mic capture is off). `build-nemo.sh` asserts HTTP, gRPC and

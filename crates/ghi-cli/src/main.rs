@@ -6,7 +6,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use ghi_cli::cmd::{self, bench::Topology};
+use ghi_cli::cmd::{
+    self,
+    bench::Topology,
+    record::{Format, Mode},
+};
 use ghi_cli::contract::{ErrorDoc, LangMode, Pass};
 use ghi_cli::engine::EngineArgs;
 
@@ -84,6 +88,48 @@ enum Command {
         #[command(flatten)]
         engine: EngineArgs,
     },
+    /// Record the mic (and system audio) to files (`ghi.record/1`). Capture
+    /// tooling for tests and soak runs; stop with Ctrl-C or --duration.
+    Record {
+        #[arg(long, value_enum, default_value_t = Mode::Call)]
+        mode: Mode,
+        /// Output directory.
+        #[arg(long)]
+        out: PathBuf,
+        /// File name stem (default `rec-<unix time>`).
+        #[arg(long, value_parser = cmd::record::parse_id)]
+        id: Option<String>,
+        /// Stop after this many seconds of recording.
+        #[arg(long, value_parser = cmd::record::parse_duration)]
+        duration: Option<f64>,
+        #[arg(long, value_enum, default_value_t = Format::Wav)]
+        format: Format,
+        /// Play WAV files through the pipeline at 1x instead of capturing:
+        /// MIC (room) or MIC,SYSTEM (call).
+        #[arg(long, value_delimiter = ',', num_args = 1..)]
+        replay: Vec<PathBuf>,
+        /// Capture system audio from these processes only (repeatable).
+        #[arg(long = "pid")]
+        pids: Vec<i32>,
+        /// Turn echo cancellation off (it only runs on speakers anyway).
+        #[arg(long)]
+        no_aec: bool,
+        /// Seconds of silent system audio before a warning.
+        #[arg(long, default_value_t = 5.0)]
+        silent_warn: f32,
+        /// Print JSON (currently the only output format).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Decode the Ogg Opus tracks in a recording directory, including a torn
+    /// last page after a crash, to `*.recovered.wav` (`ghi.recover/1`).
+    Recover { dir: PathBuf },
+    /// Show processes using audio and what meeting auto-detect would do (`ghi.detect/1`).
+    Detect {
+        /// Poll every second for this many seconds; print one line per prompt.
+        #[arg(long)]
+        watch: Option<u64>,
+    },
 }
 
 fn run(command: Command) -> Result<(), ErrorDoc> {
@@ -141,6 +187,30 @@ fn run(command: Command) -> Result<(), ErrorDoc> {
             topology,
             engine: &engine,
         }),
+        Command::Record {
+            mode,
+            out,
+            id,
+            duration,
+            format,
+            replay,
+            pids,
+            no_aec,
+            silent_warn,
+            ..
+        } => cmd::record::run(&cmd::record::Args {
+            mode,
+            out: &out,
+            id: id.as_deref(),
+            duration_s: duration,
+            format,
+            replay: &replay,
+            pids: &pids,
+            aec: !no_aec,
+            silent_s: silent_warn,
+        }),
+        Command::Recover { dir } => cmd::record::recover(&dir),
+        Command::Detect { watch } => cmd::detect::run(watch),
     }
 }
 

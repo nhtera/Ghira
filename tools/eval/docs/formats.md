@@ -96,7 +96,7 @@ outside the harness contract: `--asr-model PATH`, `--diar-model PATH`, `--cpu`
 file) and `bench --topology single|call`.
 
 Exit codes: `0` ok · `1` runtime failure · `2` usage error · `3` not
-implemented / engine unavailable. On exit codes 1 and 3 stdout is empty (except
+implemented / engine or capture unavailable. On exit codes 1 and 3 stdout is empty (except
 `--stream`, which may already have printed events before a mid-stream failure;
 consumers discard them) and stderr's **last line** is an error document:
 
@@ -104,7 +104,8 @@ consumers discard them) and stderr's **last line** is an error document:
 {"schema":"ghi.error/1","code":"not_implemented","message":"transcribe: no speech engine yet (phase 3)"}
 ```
 
-`code` is one of `not_implemented`, `engine_unavailable`, `bad_input`, `internal`.
+`code` is one of `not_implemented`, `engine_unavailable`, `bad_input`, `internal`,
+`capture_unavailable` (capture commands below: unsupported OS, or permission denied).
 
 Every result has `perf`: `{"wall_s": float, "rtf": float|null, "peak_rss_mb": float|null}`.
 `rtf` = `wall_s / duration_s`. The harness also measures wall time and peak RSS
@@ -216,6 +217,51 @@ Default: `--pass live`.
   "perf": {"wall_s": 110.1, "rtf": 0.06, "peak_rss_mb": 3000.0}
 }
 ```
+
+### Capture commands (phase 4; not used by the harness)
+
+Tooling for test recordings, soak runs and crash tests. Live capture is
+macOS 14.2+ only; elsewhere these exit `3` with `capture_unavailable`.
+The `ghi` binary embeds an Info.plist with the Microphone and System Audio
+Recording usage strings; after building, re-sign it (`codesign -s - -f
+target/<profile>/ghi`) so macOS binds the plist and can show the prompts.
+
+- `ghi record --out DIR [--mode call|room] [--id ID] [--duration S]
+  [--format wav|opus] [--replay MIC[,SYSTEM]] [--pid PID]... [--no-aec]
+  [--silent-warn S]` records until `--duration`, Ctrl-C/SIGTERM or the end of
+  a replay. `call` = mic + system audio, `room` = mic only. `--replay` plays
+  WAV files through the capture pipeline at 1x instead of capturing (CI and
+  crash tests). `--pid` taps only those processes. `--id` (letters, digits,
+  `-`, `_`) and `--duration` (> 0) are checked as usage errors (exit `2`); an
+  existing recording with the same id is never overwritten (`bad_input`).
+  - `wav` writes the dataset layout of §1: `<id>.mic.wav`, `<id>.system.wav`
+    and the mix `<id>.wav` (16 kHz, 16-bit). Tracks are **raw**; echo
+    cancellation only feeds ASR. Not crash-safe: the WAV sizes are written
+    when the recording stops. Use `opus` for crash and soak tests.
+  - `opus` writes `<id>.mic.opus` / `<id>.system.opus` (Ogg Opus, ~1 s pages,
+    a write barrier per page and a full sync every 2 pages: a process crash
+    loses the unfinished page (≤1 s), a power loss up to ~3 s).
+  - Always: `<id>.session.json` (written first: start time, mode, tracks) and
+    `<id>.markers.jsonl` (pause, gap, AEC on/off...).
+  - Prints `ghi.record/1`: `duration_s`, `tracks[{track, file, duration_s,
+    rms_dbfs, peak, overrun_samples}]`, `mix`, `route`, `aec`, `erle_db`,
+    `markers[{t_s, kind, detail?}]`, `events[{t_s, kind, detail?}]`, `stopped`
+    (`duration|signal|source_ended|disk_full|writer_error|track_lost|no_audio`),
+    `perf`. Losing the system track leaves a mic-only recording; `no_audio`
+    means the device delivered nothing for 10 s. Sleep works like a pause:
+    the timeline stops and the `wake` marker notes the wall-clock sleep.
+    Events are also logged to stderr as they happen (e.g. `silent_system_track`
+    after `--silent-warn` seconds, default 5: System Audio Recording is
+    probably denied).
+- `ghi recover DIR` decodes every `*.opus` in DIR to `*.recovered.wav`,
+  tolerating a torn last page; prints `ghi.recover/1`: `files[{file, wav,
+  duration_s, complete, bad_pages, truncated, error?}]`; a file that cannot be
+  decoded gets `error` and the others are still recovered.
+- `ghi detect [--watch S]` prints `ghi.detect/1`: `processes[{pid, bundle_id,
+  input, output, app}]` and the auto-detect `prompt` (`{app, title, pids}` or
+  null). `--watch` polls every second and prints one document per prompt.
+  Known gap: Safari plays and records call audio in `com.apple.WebKit.GPU`,
+  which is not mapped to Safari yet, so Safari calls are not detected.
 
 Golden examples of each document live in `tools/eval/tests/fixtures/cli/`.
 `crates/ghi-cli` serializes its types against them in its unit tests, and the

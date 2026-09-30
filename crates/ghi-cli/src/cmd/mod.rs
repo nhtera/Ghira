@@ -3,7 +3,9 @@
 //! `ghi-speech` stream traits so it is testable without models.
 
 pub mod bench;
+pub mod detect;
 pub mod diarize;
+pub mod record;
 pub mod transcribe;
 
 use std::time::{Duration, Instant};

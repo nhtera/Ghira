@@ -45,6 +45,15 @@ cargo test -p ghi-speech -p ghi-cli --features ghi-cli/nemo
 cargo build --release -p ghi-cli --features nemo   # target/release/ghi
 ```
 
+Audio capture (phase 4): `crates/ghi-audio` needs CMake (it builds libopus)
+and, on macOS, the Xcode Swift toolchain: its `build.rs` compiles
+`native/macos/GhiAudioMac` with `swift build`. To record on this Mac:
+
+```sh
+cargo build -p ghi-cli && codesign -s - -f target/debug/ghi   # binds the embedded Info.plist
+target/debug/ghi record --mode call --duration 10 --out /tmp/rec   # prompts for mic + System Audio Recording
+```
+
 Before opening a PR, run what CI runs:
 
 ```sh

@@ -16,7 +16,8 @@
         "not_implemented",
         "engine_unavailable",
         "bad_input",
-        "internal"
+        "internal",
+        "capture_unavailable"
       ]
     },
     "message": {

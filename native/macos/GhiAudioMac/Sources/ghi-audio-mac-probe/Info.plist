@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>app.ghira.audio-mac-probe</string>
+    <key>CFBundleName</key>
+    <string>ghi-audio-mac-probe</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Ghira probe records a short microphone clip to verify audio capture.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Ghira probe records a short system audio clip to verify audio capture.</string>
+</dict>
+</plist>

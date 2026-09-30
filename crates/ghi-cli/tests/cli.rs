@@ -174,3 +174,210 @@ fn usage_errors_exit_2() {
         assert_eq!(ghi(&args).status.code(), Some(2), "{args:?}");
     }
 }
+
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("ghi-cli-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn record_replay_writes_eval_layout() {
+    let wav = tone_wav("record-replay");
+    let wav = wav.to_str().unwrap();
+    let out_dir = temp_dir("record-wav");
+    let replay = format!("{wav},{wav}");
+    let out = ghi(&[
+        "record",
+        "--mode",
+        "call",
+        "--replay",
+        &replay,
+        "--out",
+        out_dir.to_str().unwrap(),
+        "--id",
+        "r1",
+        "--json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(doc["schema"], "ghi.record/1");
+    assert_eq!(doc["stopped"], "source_ended");
+    assert_eq!(doc["mix"], "r1.wav");
+    for name in [
+        "r1.wav",
+        "r1.mic.wav",
+        "r1.system.wav",
+        "r1.session.json",
+        "r1.markers.jsonl",
+    ] {
+        assert!(out_dir.join(name).is_file(), "{name} missing");
+    }
+    // The recording is valid input for the engine commands' WAV reader.
+    let mic = hound::WavReader::open(out_dir.join("r1.mic.wav")).unwrap();
+    assert_eq!(mic.spec().sample_rate, 16_000);
+    let secs = mic.duration() as f64 / 16_000.0;
+    assert!((secs - 1.0).abs() < 0.05, "{secs}");
+    std::fs::remove_dir_all(&out_dir).unwrap();
+}
+
+#[test]
+fn record_opus_then_recover() {
+    let wav = tone_wav("record-opus");
+    let out_dir = temp_dir("record-opus");
+    let out = ghi(&[
+        "record",
+        "--mode",
+        "room",
+        "--format",
+        "opus",
+        "--replay",
+        wav.to_str().unwrap(),
+        "--out",
+        out_dir.to_str().unwrap(),
+        "--id",
+        "o1",
+        "--duration",
+        "0.5",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(doc["stopped"], "duration");
+    assert_eq!(doc["tracks"].as_array().unwrap().len(), 1);
+
+    let out = ghi(&["recover", out_dir.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(doc["schema"], "ghi.recover/1");
+    let file = &doc["files"][0];
+    assert_eq!(file["file"], "o1.mic.opus");
+    assert_eq!(file["complete"], true);
+    let secs = file["duration_s"].as_f64().unwrap();
+    assert!((0.45..=0.6).contains(&secs), "{secs}");
+    assert!(out_dir.join("o1.mic.recovered.wav").is_file());
+    std::fs::remove_dir_all(&out_dir).unwrap();
+}
+
+#[test]
+fn record_rejects_bad_arguments() {
+    let wav = tone_wav("record-bad");
+    let wav = wav.to_str().unwrap();
+    let out_dir = temp_dir("record-bad");
+    let dir = out_dir.to_str().unwrap();
+    // Call mode needs two replay files.
+    let out = ghi(&["record", "--mode", "call", "--replay", wav, "--out", dir]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(error_doc(&out)["code"], "bad_input");
+    // Ids become file names: a bad one is a usage error.
+    let out = ghi(&[
+        "record", "--mode", "room", "--replay", wav, "--out", dir, "--id", "../x",
+    ]);
+    assert_eq!(out.status.code(), Some(2));
+    let out = ghi(&[
+        "record",
+        "--mode",
+        "room",
+        "--replay",
+        wav,
+        "--out",
+        dir,
+        "--duration",
+        "0",
+    ]);
+    assert_eq!(out.status.code(), Some(2));
+    // An existing recording is never overwritten.
+    let run = || {
+        ghi(&[
+            "record", "--mode", "room", "--replay", wav, "--out", dir, "--id", "same",
+        ])
+    };
+    assert!(run().status.success());
+    let out = run();
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(error_doc(&out)["code"], "bad_input");
+    std::fs::remove_dir_all(&out_dir).unwrap();
+}
+
+#[test]
+fn recover_reports_bad_files_and_goes_on() {
+    let wav = tone_wav("recover-bad");
+    let out_dir = temp_dir("recover-bad");
+    let dir = out_dir.to_str().unwrap();
+    let out = ghi(&[
+        "record",
+        "--mode",
+        "room",
+        "--format",
+        "opus",
+        "--replay",
+        wav.to_str().unwrap(),
+        "--out",
+        dir,
+        "--id",
+        "good",
+        "--duration",
+        "0.3",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    std::fs::write(out_dir.join("bad.mic.opus"), b"not ogg").unwrap();
+    let out = ghi(&["recover", dir]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let files = doc["files"].as_array().unwrap();
+    assert_eq!(files.len(), 2);
+    assert!(files[0]["error"].is_string(), "{doc}");
+    assert_eq!(files[1]["file"], "good.mic.opus");
+    assert!(files[1]["error"].is_null());
+    std::fs::remove_dir_all(&out_dir).unwrap();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn detect_lists_audio_processes() {
+    let out = ghi(&["detect"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(doc["schema"], "ghi.detect/1");
+    assert!(doc["processes"].is_array());
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn capture_is_unavailable_off_macos() {
+    let out_dir = temp_dir("record-capture");
+    let out = ghi(&[
+        "record",
+        "--out",
+        out_dir.to_str().unwrap(),
+        "--duration",
+        "1",
+    ]);
+    assert_eq!(out.status.code(), Some(3));
+    assert_eq!(error_doc(&out)["code"], "capture_unavailable");
+    std::fs::remove_dir_all(&out_dir).unwrap();
+}

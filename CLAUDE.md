@@ -41,6 +41,10 @@ cargo test -p ghi-speech -p ghi-cli --features ghi-cli/nemo
 uv sync --locked && uv run ruff check && uv run ruff format --check && uv run pytest -q
 ```
 
+Audio capture: `crates/ghi-audio` (rings, 16 kHz resample, AEC via `sonora`,
+Ogg Opus, meeting detect) + `native/macos/GhiAudioMac` (Swift, C ABI in its
+`include/ghi_audio_mac.h`, built by `ghi-audio/build.rs`); `ghi record|recover|detect`.
+
 Speech engines: `crates/ghi-speech` (NeMo-Speech.cpp FFI, feature `nemo`); models
 pinned in `crates/ghi-models/registry.toml`; decision record `Plans/docs/06`.
 

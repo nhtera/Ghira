@@ -15,6 +15,9 @@ pub const EVENT: &str = "ghi.event/1";
 pub const DIARIZATION: &str = "ghi.diarization/1";
 pub const NOTES: &str = "ghi.notes/1";
 pub const BENCH: &str = "ghi.bench/1";
+pub const RECORD: &str = "ghi.record/1";
+pub const DETECT: &str = "ghi.detect/1";
+pub const RECOVER: &str = "ghi.recover/1";
 
 /// Which pipeline pass produced a result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
@@ -56,13 +59,17 @@ pub enum ErrorCode {
     EngineUnavailable,
     BadInput,
     Internal,
+    /// Audio capture is not available: unsupported OS, or permission denied.
+    CaptureUnavailable,
 }
 
 impl ErrorCode {
     /// Process exit code for this error (formats.md §2).
     pub fn exit_code(self) -> u8 {
         match self {
-            ErrorCode::NotImplemented | ErrorCode::EngineUnavailable => 3,
+            ErrorCode::NotImplemented
+            | ErrorCode::EngineUnavailable
+            | ErrorCode::CaptureUnavailable => 3,
             ErrorCode::BadInput | ErrorCode::Internal => 1,
         }
     }
@@ -229,6 +236,111 @@ pub struct Bench {
 pub struct Stage {
     pub name: String,
     pub wall_s: f64,
+}
+
+/// `ghi record` result. Capture tooling for tests and soak runs; not part of
+/// the harness contract (formats.md §2, "Capture commands").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Record {
+    pub schema: String,
+    pub id: String,
+    /// `call` (mic + system) or `room` (mic only).
+    pub mode: String,
+    /// `wav` or `opus`.
+    pub format: String,
+    /// `capture` or `replay`.
+    pub source: String,
+    pub duration_s: f64,
+    pub tracks: Vec<RecordTrack>,
+    /// The mic + system mix (`<id>.wav`, WAV call recordings only).
+    pub mix: Option<String>,
+    pub route: String,
+    /// Whether echo cancellation ran for the ASR mic signal at the end.
+    pub aec: bool,
+    /// Echo return loss enhancement reported by the canceller, dB.
+    pub erle_db: Option<f64>,
+    pub markers: Vec<RecordMarker>,
+    pub events: Vec<RecordEvent>,
+    /// `duration`, `signal`, `source_ended`, `disk_full`, `writer_error`,
+    /// `track_lost` or `no_audio` (the device delivered nothing for 10 s).
+    pub stopped: String,
+    pub perf: Perf,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecordTrack {
+    /// `mic` or `system`.
+    pub track: String,
+    pub file: String,
+    pub duration_s: f64,
+    pub rms_dbfs: Option<f64>,
+    pub peak: f64,
+    /// Samples lost to ring overflow (capture thread too slow).
+    pub overrun_samples: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecordMarker {
+    pub t_s: f64,
+    pub kind: String,
+    /// Kind-specific detail: `Discard` seconds, `Gap` track and end.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecordEvent {
+    /// Recording time the event was handled, seconds.
+    pub t_s: f64,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// `ghi detect` result: processes using audio and what auto-detect would do.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Detect {
+    pub schema: String,
+    pub processes: Vec<DetectProcess>,
+    pub prompt: Option<DetectPrompt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DetectProcess {
+    pub pid: i32,
+    pub bundle_id: String,
+    pub input: bool,
+    pub output: bool,
+    /// The meeting app this process belongs to, if any.
+    pub app: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DetectPrompt {
+    pub app: String,
+    pub title: String,
+    pub pids: Vec<i32>,
+}
+
+/// `ghi recover` result: what could be decoded from each Ogg Opus track.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Recover {
+    pub schema: String,
+    pub files: Vec<RecoveredFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecoveredFile {
+    pub file: String,
+    pub wav: String,
+    pub duration_s: f64,
+    /// The stream ended with its end-of-stream page (a clean stop).
+    pub complete: bool,
+    pub bad_pages: u64,
+    pub truncated: bool,
+    /// Why nothing could be decoded (not an Ogg Opus stream, unreadable).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[cfg(test)]

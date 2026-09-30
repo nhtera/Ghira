@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Embedded in the `ghi` binary (__TEXT,__info_plist, see build.rs) so macOS
+     shows the Microphone and System Audio Recording prompts for `ghi record`.
+     Without NSAudioCaptureUsageDescription a process tap delivers only zeros. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.nhtera.ghira.cli</string>
+  <key>CFBundleName</key>
+  <string>ghi</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>ghi records your microphone for test recordings. Audio stays on this Mac.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>ghi records the call audio from other apps for test recordings. Audio stays on this Mac.</string>
+</dict>
+</plist>

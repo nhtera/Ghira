@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Merged into the app bundle's Info.plist by Tauri. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Ghira records your microphone to transcribe your meetings. Audio stays on this Mac.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Ghira records the call audio from your meeting app so both sides of the conversation are transcribed. Audio stays on this Mac.</string>
+</dict>
+</plist>
