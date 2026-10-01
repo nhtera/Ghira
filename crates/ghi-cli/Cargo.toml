@@ -17,7 +17,7 @@ path = "src/main.rs"
 [features]
 # Real speech engines (NeMo-Speech.cpp). Without it, engine commands exit 3
 # (`engine_unavailable`). Build the library first: tools/scripts/build-nemo.sh
-nemo = ["ghi-speech/nemo"]
+nemo = ["ghi-speech/nemo", "ghi-core/nemo"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -38,3 +38,4 @@ libc = "0.2"
 
 [dev-dependencies]
 hound = "3"
+tempfile = "3"

@@ -10,6 +10,7 @@
 //! on it.
 
 mod cloud;
+pub mod fetch;
 mod ip;
 mod secret;
 

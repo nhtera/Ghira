@@ -478,6 +478,72 @@ fn path_cstring(p: &Path) -> Result<CString> {
     cstring(&p.to_string_lossy())
 }
 
+/// A streaming recognition that keeps its model alive (an `Arc`), so it can
+/// be stored and moved without borrowing (the core's engine threads, phase 8).
+pub struct OwnedAsrStream {
+    // Field order: the stream is dropped (closed) before the model.
+    stream: NemoAsrStream<'static>,
+    _asr: std::sync::Arc<Asr>,
+}
+
+impl Asr {
+    /// Like [`Asr::stream`], holding a reference to the model.
+    pub fn stream_owned(self: &std::sync::Arc<Self>, opts: &AsrOptions) -> Result<OwnedAsrStream> {
+        let stream = self.stream(opts)?;
+        // SAFETY: the stream only needs the model to outlive it; the `Arc`
+        // stored next to it keeps the model alive, and it is dropped after
+        // the stream (field order).
+        let stream: NemoAsrStream<'static> = unsafe { std::mem::transmute(stream) };
+        Ok(OwnedAsrStream {
+            stream,
+            _asr: self.clone(),
+        })
+    }
+}
+
+impl AsrStream for OwnedAsrStream {
+    fn push(&mut self, pcm: &[f32], sample_rate: u32) -> Result<()> {
+        self.stream.push(pcm, sample_rate)
+    }
+    fn finish(&mut self) -> Result<()> {
+        self.stream.finish()
+    }
+    fn next_result(&mut self) -> Result<Option<AsrResult>> {
+        self.stream.next_result()
+    }
+}
+
+/// A diarization stream that keeps its model alive (see [`OwnedAsrStream`]).
+pub struct OwnedDiarStream {
+    stream: NemoDiarStream<'static>,
+    _model: std::sync::Arc<Diarizer>,
+}
+
+impl Diarizer {
+    /// Like [`Diarizer::stream`], holding a reference to the model.
+    pub fn stream_owned(self: &std::sync::Arc<Self>) -> Result<OwnedDiarStream> {
+        let stream = self.stream()?;
+        // SAFETY: as in `Asr::stream_owned`.
+        let stream: NemoDiarStream<'static> = unsafe { std::mem::transmute(stream) };
+        Ok(OwnedDiarStream {
+            stream,
+            _model: self.clone(),
+        })
+    }
+}
+
+impl DiarStream for OwnedDiarStream {
+    fn push(&mut self, pcm: &[f32], sample_rate: u32) -> Result<()> {
+        self.stream.push(pcm, sample_rate)
+    }
+    fn finish(&mut self) -> Result<()> {
+        self.stream.finish()
+    }
+    fn segments(&self) -> Result<Vec<SpeakerSegment>> {
+        self.stream.segments()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

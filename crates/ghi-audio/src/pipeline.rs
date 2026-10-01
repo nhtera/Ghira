@@ -89,6 +89,12 @@ impl AsrConsumer {
         self.inner.pop().ok()
     }
 
+    /// Never skip ahead: for a replay whose writer waits on
+    /// [`Pipeline::asr_backlog`] instead (no audio may be lost).
+    pub fn never_skip(&mut self) {
+        self.high_water = usize::MAX;
+    }
+
     /// Frames waiting.
     pub fn len(&self) -> usize {
         self.inner.slots()
@@ -145,6 +151,9 @@ pub struct StepReport {
     pub events: Vec<CaptureEvent>,
 }
 
+/// Capture blocks taken per track in one step (live capture delivers one or
+/// two per 10 ms step; this only bounds a replay).
+const MAX_BLOCKS_PER_STEP: usize = 100;
 /// A track that trails the leader by more than this is padded with silence.
 const STALL_SAMPLES: u64 = SAMPLE_RATE as u64 / 4;
 /// A track that never delivered gets this long before it counts as stalled.
@@ -266,6 +275,13 @@ impl<W: FrameSink> Pipeline<W> {
     /// [`SAMPLE_RATE`] for seconds of recorded (unpaused) time.
     pub fn position(&self) -> u64 {
         self.next_pos
+    }
+
+    /// ASR frames waiting for the reader. A replay that must not lose audio
+    /// (eval, soak) waits while this is high instead of letting the reader
+    /// skip ahead.
+    pub fn asr_backlog(&self) -> usize {
+        self.cfg.asr_capacity_frames.max(1) - self.asr.slots()
     }
 
     pub fn is_paused(&self) -> bool {
@@ -444,10 +460,18 @@ impl<W: FrameSink> Pipeline<W> {
     fn drain(&mut self) {
         for t in Track::ALL {
             let i = t.index();
-            while let Some((rate, host)) = self.rx[i]
-                .as_mut()
-                .and_then(|rx| rx.pop_into(&mut self.scratch))
+            // Bounded: a producer refilling as fast as we drain (a replay)
+            // must not make one step swallow minutes of audio.
+            let mut blocks = 0;
+            while let Some((rate, host)) = (blocks < MAX_BLOCKS_PER_STEP)
+                .then(|| {
+                    self.rx[i]
+                        .as_mut()
+                        .and_then(|rx| rx.pop_into(&mut self.scratch))
+                })
+                .flatten()
             {
+                blocks += 1;
                 if self.inactive() {
                     continue;
                 }

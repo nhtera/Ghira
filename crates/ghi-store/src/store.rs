@@ -149,6 +149,9 @@ pub struct Word {
 
 #[derive(Debug, Clone, Default)]
 pub struct NewSegment {
+    /// A gid chosen by the caller (live lines get theirs before they are
+    /// stored, so the UI can edit them at once); `None`: a new one.
+    pub gid: Option<String>,
     pub speaker_gid: Option<String>,
     pub t0_ms: i64,
     pub t1_ms: i64,
@@ -157,6 +160,8 @@ pub struct NewSegment {
     pub confidence: Option<f32>,
     /// Word timings; the word text is inside `text`.
     pub words: Vec<Word>,
+    /// The user's text (kept as written by later passes).
+    pub edited: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -189,6 +194,9 @@ pub struct Speaker {
     pub person_gid: Option<String>,
     pub color_slot: i64,
     pub is_me: bool,
+    pub not_person: bool,
+    /// Merged into this speaker (its lines moved there).
+    pub merged_into: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -793,8 +801,10 @@ impl Store {
         let m = Store::meeting_ref(&conn, meeting_gid)?;
         let dek = self.dek(&conn, m.id)?;
         let mut stmt = conn.prepare_cached(
-            "SELECT s.gid, s.label_idx, s.display_name_ct, p.gid, s.color_slot, s.is_me
+            "SELECT s.gid, s.label_idx, s.display_name_ct, p.gid, s.color_slot, s.is_me,
+                    s.not_person, t.gid
              FROM speakers s LEFT JOIN persons p ON p.id = s.person_id
+             LEFT JOIN speakers t ON t.id = s.merged_into
              WHERE s.meeting_id = ?1 ORDER BY s.label_idx, s.id",
         )?;
         let rows = stmt
@@ -806,23 +816,31 @@ impl Store {
                     r.get::<_, Option<String>>(3)?,
                     r.get::<_, i64>(4)?,
                     r.get::<_, bool>(5)?,
+                    r.get::<_, bool>(6)?,
+                    r.get::<_, Option<String>>(7)?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         rows.into_iter()
-            .map(|(gid, label_idx, ct, person_gid, color_slot, is_me)| {
-                let display_name = ct
-                    .map(|ct| open_text(&dek, &ct, &row_aad("speakers", "display_name_ct", &gid)))
-                    .transpose()?;
-                Ok(Speaker {
-                    gid,
-                    label_idx,
-                    display_name,
-                    person_gid,
-                    color_slot,
-                    is_me,
-                })
-            })
+            .map(
+                |(gid, label_idx, ct, person_gid, color_slot, is_me, not_person, merged_into)| {
+                    let display_name = ct
+                        .map(|ct| {
+                            open_text(&dek, &ct, &row_aad("speakers", "display_name_ct", &gid))
+                        })
+                        .transpose()?;
+                    Ok(Speaker {
+                        gid,
+                        label_idx,
+                        display_name,
+                        person_gid,
+                        color_slot,
+                        is_me,
+                        not_person,
+                        merged_into,
+                    })
+                },
+            )
             .collect()
     }
 
@@ -2046,8 +2064,8 @@ fn insert_segments(
     let first_lamport = Store::alloc_lamport(tx, segs.len() as i64)?;
     let mut speakers: HashMap<String, i64> = HashMap::new();
     let mut ins = tx.prepare_cached(
-        "INSERT INTO segments (gid, meeting_id, version, speaker_id, t0_ms, t1_ms, text_ct, lang, confidence, lamport)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO segments (gid, meeting_id, version, speaker_id, t0_ms, t1_ms, text_ct, lang, confidence, lamport, edited)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
     )?;
     let mut fts =
         tx.prepare_cached("INSERT INTO segments_fts (rowid, text_norm) VALUES (?1, ?2)")?;
@@ -2076,7 +2094,13 @@ fn insert_segments(
             }),
             None => None,
         };
-        let gid = new_gid();
+        let gid = match &s.gid {
+            Some(g) => {
+                check_gid(g)?;
+                g.clone()
+            }
+            None => new_gid(),
+        };
         let text = fold::nfc(&s.text);
         let ct = seal_text(dek, &text, &row_aad("segments", "text_ct", &gid));
         ins.execute(params![
@@ -2089,7 +2113,8 @@ fn insert_segments(
             ct,
             s.lang,
             s.confidence,
-            first_lamport + i as i64
+            first_lamport + i as i64,
+            s.edited
         ])?;
         let id = tx.last_insert_rowid();
         let norm = fold::fold(&text);

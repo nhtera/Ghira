@@ -81,6 +81,14 @@ pub struct TrackEncoder {
 }
 
 impl TrackEncoder {
+    /// Forgets the audio not yet in a written packet (a discard): pending
+    /// samples become silence (positions stay true) and the encoder's state
+    /// is reset.
+    pub fn forget_audio(&mut self) {
+        self.pending.fill(0.0);
+        let _ = self.enc.reset_state();
+    }
+
     /// Creates the encoder and returns it with the two header pages.
     pub fn new(track: Track, serial: u32, cfg: &EncoderConfig) -> io::Result<(Self, Vec<u8>)> {
         let mut enc =
@@ -319,6 +327,14 @@ impl<S: PageSink> FrameSink for OpusRecorder<S> {
         ) {
             self.flush()?;
         }
+        if matches!(marker.kind, MarkerKind::Discard { .. }) {
+            // Nothing heard before a discard may leak into the next packet:
+            // not the samples waiting for a full packet, nor the encoder's
+            // look-ahead.
+            for e in self.enc.iter_mut().flatten() {
+                e.forget_audio();
+            }
+        }
         self.sink.marker(marker)
     }
 }
@@ -435,6 +451,11 @@ fn decode_ogg_opus(bytes: &[u8]) -> io::Result<Decoded> {
         }
         let lost_pages = last_seq.is_some_and(|l| seq != l.wrapping_add(1));
         last_seq = Some(seq);
+        if lost_pages {
+            // The audio after a hole (lost or discarded pages) has nothing to
+            // do with the decoder's state from before it.
+            let _ = dec.reset_state();
+        }
 
         // Packets: runs of segments ending in one shorter than 255. A packet
         // continued from a lost page, or left open at the end, is dropped.

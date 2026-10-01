@@ -4,10 +4,13 @@
 
 pub mod bench;
 pub mod cloud;
+pub mod decode;
 pub mod detect;
 pub mod diarize;
+pub mod models;
 pub mod notes;
 pub mod record;
+pub mod session;
 pub mod store;
 pub mod transcribe;
 

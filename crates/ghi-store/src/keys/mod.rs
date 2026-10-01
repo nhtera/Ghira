@@ -279,6 +279,26 @@ pub trait KeyStore: Send + Sync {
     fn delete(&self) -> Result<(), StoreError>;
 }
 
+/// A key store that keeps the ring in memory only: for tests and throwaway
+/// tool runs (`ghi session run` into a temp store). The data is unreadable
+/// once the process exits.
+#[derive(Default)]
+pub struct MemoryKeyStore(std::sync::Mutex<Option<KeyRing>>);
+
+impl KeyStore for MemoryKeyStore {
+    fn load(&self) -> Result<Option<KeyRing>, StoreError> {
+        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).clone())
+    }
+    fn save(&self, ring: &KeyRing, _: Protection) -> Result<(), StoreError> {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(ring.clone());
+        Ok(())
+    }
+    fn delete(&self) -> Result<(), StoreError> {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        Ok(())
+    }
+}
+
 /// Loads the key ring, creating and saving one on first run.
 pub fn load_or_create(store: &dyn KeyStore, protection: Protection) -> Result<KeyRing, StoreError> {
     if let Some(k) = store.load()? {

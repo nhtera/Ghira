@@ -66,7 +66,7 @@ const DISK_STOP: u64 = 64 << 20;
 /// stopped instead of recording silence forever.
 const NO_AUDIO: Duration = Duration::from_secs(10);
 
-static STOP: AtomicBool = AtomicBool::new(false);
+pub(crate) static STOP: AtomicBool = AtomicBool::new(false);
 
 #[cfg(unix)]
 extern "C" fn on_signal(_: libc::c_int) {
@@ -74,7 +74,7 @@ extern "C" fn on_signal(_: libc::c_int) {
 }
 
 /// Ctrl-C / SIGTERM end the recording cleanly instead of killing it.
-fn install_signal_handlers() {
+pub(crate) fn install_signal_handlers() {
     #[cfg(unix)]
     for sig in [libc::SIGINT, libc::SIGTERM] {
         // SAFETY: the handler only stores to an atomic (async-signal-safe).

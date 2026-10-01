@@ -123,6 +123,20 @@ impl Sidecar {
     /// Send one request and wait for its reply. On timeout the worker is
     /// killed and reaped; after any error the sidecar must be discarded.
     pub fn request(&mut self, op: Op, timeout: Duration) -> Result<Reply> {
+        self.request_live(op, timeout, timeout, &mut |_, _| {})
+    }
+
+    /// Like [`Sidecar::request`] for long requests that report progress: the
+    /// worker is killed only after `idle` without a line (no progress means
+    /// it hung, whatever the machine's speed), or once `hard` has passed.
+    /// `on_progress` gets (prompt tokens done, output tokens).
+    pub fn request_live(
+        &mut self,
+        op: Op,
+        idle: Duration,
+        hard: Duration,
+        on_progress: &mut dyn FnMut(u32, u32),
+    ) -> Result<Reply> {
         let id = self.next_id;
         self.next_id += 1;
         let line = serde_json::to_string(&Request { id, op })
@@ -135,7 +149,9 @@ impl Sidecar {
             return Err(self.died(&format!("cannot write to worker: {e}")));
         }
 
-        let deadline = Instant::now() + timeout;
+        let started = Instant::now();
+        let hard_deadline = started + hard;
+        let mut deadline = (started + idle).min(hard_deadline);
         let mut noise = 0;
         loop {
             let raw = self.next_line(deadline)?;
@@ -152,6 +168,15 @@ impl Sidecar {
                     "reply id {} does not match request {id}",
                     reply.id
                 )));
+            }
+            if let Body::Progress {
+                tokens_in_done,
+                tokens_out,
+            } = reply.body
+            {
+                on_progress(tokens_in_done, tokens_out);
+                deadline = (Instant::now() + idle).min(hard_deadline);
+                continue;
             }
             return Ok(reply);
         }
@@ -342,7 +367,7 @@ pub fn worker_path() -> Result<PathBuf> {
 mod tests {
     use super::*;
 
-    const HELLO: &str = r#"echo '{"kind":"hello","protocol":1,"worker":"fake"}'"#;
+    const HELLO: &str = r#"echo '{"kind":"hello","protocol":2,"worker":"fake"}'"#;
     const T: Duration = Duration::from_secs(5);
 
     /// A fake worker: `/bin/sh -c "<hello>; <script>"`.
@@ -374,12 +399,59 @@ mod tests {
 
     #[test]
     fn hello_mismatch_is_rejected() {
-        let err = fake_raw(r#"echo '{"kind":"hello","protocol":2,"worker":"x"}'; sleep 5"#)
+        let err = fake_raw(r#"echo '{"kind":"hello","protocol":1,"worker":"x"}'; sleep 5"#)
             .err()
             .unwrap();
-        assert!(err.to_string().contains("protocol 2"), "{err}");
+        assert!(err.to_string().contains("protocol 1"), "{err}");
         let err = fake_raw("echo hi; sleep 5").err().unwrap();
         assert!(matches!(err, LlmError::Worker(_)), "{err}");
+    }
+
+    #[test]
+    fn progress_keeps_a_slow_request_alive_until_the_hard_cap() {
+        // 4 progress lines 0.15 s apart (0.6 s total) with a 0.3 s idle limit.
+        let p = r#"echo '{"id":1,"kind":"progress","tokens_in_done":512,"tokens_out":0}'"#;
+        let script = format!(
+            "read l; for i in 1 2 3 4; do {p}; sleep 0.15; done; echo '{{\"id\":1,\"kind\":\"health\",\"loaded\":true}}'"
+        );
+        let mut s = fake(&script).unwrap();
+        let mut seen = 0;
+        let r = s
+            .request_live(
+                Op::Health,
+                Duration::from_millis(300),
+                Duration::from_secs(5),
+                &mut |a, _| {
+                    assert_eq!(a, 512);
+                    seen += 1;
+                },
+            )
+            .unwrap();
+        assert_eq!((r.body, seen), (Body::Health { loaded: true }, 4));
+        // The same worker without progress is killed at the idle limit…
+        let mut s = fake("read l; sleep 30").unwrap();
+        let err = s
+            .request_live(
+                Op::Health,
+                Duration::from_millis(200),
+                Duration::from_secs(5),
+                &mut |_, _| {},
+            )
+            .unwrap_err();
+        assert!(matches!(err, LlmError::Timeout), "{err}");
+        // …and progress forever still ends at the hard cap.
+        let mut s = fake(&format!("read l; while true; do {p}; sleep 0.05; done")).unwrap();
+        let t = Instant::now();
+        let err = s
+            .request_live(
+                Op::Health,
+                Duration::from_millis(300),
+                Duration::from_millis(600),
+                &mut |_, _| {},
+            )
+            .unwrap_err();
+        assert!(matches!(err, LlmError::Timeout), "{err}");
+        assert!(t.elapsed() < Duration::from_secs(3));
     }
 
     #[test]

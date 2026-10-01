@@ -3,5 +3,19 @@
   "identifier": "default",
   "description": "Main window: core defaults plus Ghira's own commands. No shell, http, fs or opener plugins.",
   "windows": ["main"],
-  "permissions": ["core:default", "allow-app-version"]
+  "permissions": [
+    "core:default",
+    "allow-app-version",
+    "allow-start-recording",
+    "allow-stop-recording",
+    "allow-pause-recording",
+    "allow-resume-recording",
+    "allow-mark-moment",
+    "allow-discard-last",
+    "allow-rename-speaker",
+    "allow-merge-speakers",
+    "allow-split-speaker",
+    "allow-speaker-not-a-person",
+    "allow-import-recording"
+  ]
 }

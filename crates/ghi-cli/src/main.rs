@@ -168,6 +168,21 @@ enum Command {
         #[arg(long)]
         watch: Option<u64>,
     },
+    /// Model manager: hardware tier, installed models, verify, fetch, import (`ghi.models/1`).
+    Models {
+        #[command(subcommand)]
+        action: cmd::models::Action,
+    },
+    /// Probe or decode an audio file with the import decoders (`ghi.decode/1`).
+    Decode(cmd::decode::Args),
+    /// Record a meeting through the core pipeline into the store (replay or
+    /// live), printing `ghi.session-event/1` lines and a `ghi.session/1` summary.
+    Session(cmd::session::SessionArgs),
+    /// Run the queued jobs (notes, final pass, import) after crash recovery (`ghi.jobs/1`).
+    Jobs(cmd::session::JobsArgs),
+    /// Import an audio/video file as a meeting (`ghi.import/1`); --process
+    /// transcribes it and writes notes right away.
+    Import(cmd::session::ImportArgs),
 }
 
 #[derive(Subcommand)]
@@ -327,6 +342,11 @@ fn run(command: Command) -> Result<(), ErrorDoc> {
         }),
         Command::Recover { dir } => cmd::record::recover(&dir),
         Command::Detect { watch } => cmd::detect::run(watch),
+        Command::Models { action } => cmd::models::run(&action),
+        Command::Decode(args) => cmd::decode::run(&args),
+        Command::Session(args) => cmd::session::run(&args),
+        Command::Jobs(args) => cmd::session::jobs(&args),
+        Command::Import(args) => cmd::session::import(&args),
         Command::Store { dir, action } => match action {
             StoreAction::List => cmd::store::list(&dir),
             StoreAction::Search { query, limit } => cmd::store::search(&dir, &query, limit),

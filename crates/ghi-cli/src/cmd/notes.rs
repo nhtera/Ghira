@@ -456,40 +456,6 @@ pub fn ask(
 /// A stored meeting's current transcript as the engine's input. Segment ids
 /// are positions in `segments`; speakers are speaker gids, so an action
 /// item's owner maps straight back to a speaker row.
-fn stored_transcript(
-    store: &ghi_store::store::Store,
-    meeting: &str,
-) -> Result<(ghi_llm::Transcript, Vec<ghi_store::store::Segment>), ErrorDoc> {
-    let segs = store.segments(meeting).map_err(store_error)?;
-    let t = ghi_llm::Transcript::new(
-        segs.iter()
-            .enumerate()
-            .map(|(i, s)| ghi_llm::Segment {
-                id: i as u64,
-                t0_ms: s.t0_ms,
-                t1_ms: s.t1_ms,
-                speaker: s.speaker_gid.clone(),
-                text: s.text.clone(),
-                lang: s.lang.clone(),
-            })
-            .collect(),
-    )
-    .map_err(llm_error)?;
-    // Notes text names speakers as the app shows them, never by gid.
-    let names = store
-        .speakers(meeting)
-        .map_err(store_error)?
-        .into_iter()
-        .map(|sp| {
-            let name = sp
-                .display_name
-                .unwrap_or_else(|| format!("Speaker {}", sp.label_idx + 1));
-            (sp.gid, name)
-        })
-        .collect();
-    Ok((t.with_speaker_names(names), segs))
-}
-
 /// `ghi store notes <meeting>`: notes from the stored transcript, saved as AI
 /// note blocks and action items with time anchors (doc 05 §2.3).
 pub fn store_notes(
@@ -500,11 +466,12 @@ pub fn store_notes(
     model: &ModelArgs,
     cloud: &CloudArgs,
 ) -> Result<(), ErrorDoc> {
-    use ghi_store::store::{NewActionItem, NewNoteBlock, Provenance};
-
     let started = Instant::now();
     let store = open_store(dir)?;
-    let (t, segs) = stored_transcript(&store, meeting)?;
+    let internal = |e: String| ErrorDoc::new(ErrorCode::Internal, e);
+    // An unknown meeting is the caller's mistake (bad_input), not internal.
+    store.get_meeting(meeting).map_err(store_error)?;
+    let (t, segs) = ghi_core::notes_job::stored_transcript(&store, meeting).map_err(internal)?;
     if t.is_empty() {
         return Err(ErrorDoc::new(
             ErrorCode::BadInput,
@@ -512,24 +479,9 @@ pub fn store_notes(
         ));
     }
     let mut opts = Options::new(load_template(args)?, out_lang(lang, &t));
-    // What the user wrote, pinned or edited stays; the model is told not to repeat it.
-    opts.pinned = store
-        .note_blocks(meeting)
-        .map_err(store_error)?
-        .into_iter()
-        .filter(|b| b.pinned || b.provenance != Provenance::Ai)
-        .map(|b| b.body)
-        .collect();
-    // Kept action items too (done, edited or the user's), so they don't come
-    // back as new open items.
-    opts.pinned.extend(
-        store
-            .action_items(meeting)
-            .map_err(store_error)?
-            .into_iter()
-            .filter(|a| a.done || a.provenance != Provenance::Ai)
-            .map(|a| a.text),
-    );
+    // What the user wrote, pinned, edited or ticked off stays; the model is
+    // told not to repeat it.
+    opts.pinned = ghi_core::notes_job::kept_texts(&store, meeting).map_err(internal)?;
     // The meeting's own privacy switches gate a cloud send (RT-6).
     let m = store.get_meeting(meeting).map_err(store_error)?;
     let gates = [MeetingGate {
@@ -554,60 +506,8 @@ pub fn store_notes(
     };
     let run = out.run;
 
-    let anchors = |ids: &[u64]| -> Result<Vec<ghi_store::anchors::Anchor>, ErrorDoc> {
-        ids.iter()
-            .filter_map(|&i| segs.get(i as usize))
-            .map(|s| store.anchor_for_segment(meeting, s).map_err(store_error))
-            .collect()
-    };
     let n = &run.notes;
-    let mut blocks = Vec::new();
-    let mut block = |kind: &str, text: &str, ids: &[u64]| -> Result<(), ErrorDoc> {
-        blocks.push(NewNoteBlock {
-            kind: kind.to_string(),
-            provenance: Provenance::Ai,
-            body: text.to_string(),
-            anchors: anchors(ids)?,
-            pinned: false,
-        });
-        Ok(())
-    };
-    for i in &n.tldr {
-        block("tldr", &i.text, &i.citations)?;
-    }
-    for i in &n.decisions {
-        block("decision", &i.text, &i.citations)?;
-    }
-    for i in &n.open_questions {
-        block("question", &i.text, &i.citations)?;
-    }
-    for q in &n.key_quotes {
-        block("quote", &q.text, &q.citations)?;
-    }
-    for tp in &n.topics {
-        block("topic", &tp.title, &tp.citations)?;
-    }
-    for sec in &n.sections {
-        for i in &sec.items {
-            block(&format!("section:{}", sec.id), &i.text, &i.citations)?;
-        }
-    }
-    let mut actions = Vec::new();
-    for a in &n.action_items {
-        let all = anchors(&a.citations)?;
-        actions.push(NewActionItem {
-            text: a.text.clone(),
-            owner_speaker_gid: a.owner.clone(),
-            due_text: a.due.clone(),
-            anchor: all.first().cloned(),
-            anchors: all,
-            provenance: Provenance::Ai,
-            ..Default::default()
-        });
-    }
-    let r = store
-        .replace_ai_notes(meeting, blocks, actions)
-        .map_err(store_error)?;
+    let r = ghi_core::notes_job::save_notes(&store, meeting, n, &segs).map_err(internal)?;
     let mut extra = out.extra;
     extra.insert("meeting".into(), json!(meeting));
     extra.insert(

@@ -316,10 +316,91 @@ from arguments. Every action prints one JSON document:
   device without a key; a wrong password fails with `bad_input`.
 - Empty passwords are refused (`bad_input`): the archive is only as strong as its password.
 
+### Model manager (phase 8; not used by the harness)
+
+`ghi models <action> [--dir DIR]` (default `$GHI_MODELS_DIR`, else `./models`)
+manages the pinned models of `crates/ghi-models/registry.toml`. Each action
+prints one JSON document:
+
+- `status [--verify]` → `ghi.models/1`: `dir`, `tier` (`light|balanced|max`
+  from RAM: below 12 GiB, below 28 GiB, else), `hw{ram_bytes, chip, gpu}`,
+  `preset` (the tier's) and `presets[]` (`tier, asr_chunk_ms,
+  final_asr_chunk_ms, llm, ram_budget_bytes, speech_models[],
+  llm_while_recording, unload_speech_before_llm`), `models[{id, installed,
+  verified, size}]`. `installed` means present with the pinned size;
+  `verified` is `null` unless `--verify` ran the SHA-256 (then true/false).
+- `verify ID|all` → `ghi.models-verify/1`: `results[{id, ok, error}]`; exits 3
+  (`engine_unavailable`) if any is missing or fails.
+- `fetch ID [--strict-offline]` → `ghi.models-fetch/1`: `id, path,
+  downloaded_bytes, resumed_from, redirects, host`. The only network use:
+  HTTPS GETs of the pinned file from huggingface.co and its CDN (`*.hf.co`)
+  through `ghi-net`, then the model's registry mirrors; resumes a `.part`; the
+  file appears only after size and SHA-256 match. `--strict-offline` fails
+  (`bad_input`) before any connection. Progress goes to stderr.
+- `import FILE` → `ghi.models-import/1`: `id, path, size`. Offline install;
+  a file whose SHA-256 is not a registry entry's is refused (`bad_input`).
+
 Golden examples of each document live in `tools/eval/tests/fixtures/cli/`.
 `crates/ghi-cli` serializes its types against them in its unit tests, and the
 harness validates them against `ghi_eval/schemas/*.schema.json`, so a change on
 either side fails a test.
+
+### Import decoders (phase 8; not used by the harness)
+
+`ghi decode FILE [--probe] [--wav OUT.wav] [--channel N]` runs the import
+decoders of `ghi_audio::decode` and prints one `ghi.decode/1` document:
+`file`, `info{channels, sample_rate, duration_s, codec, container, backend}`
+(`duration_s` is `null` when the container does not say; `sample_rate` is the
+source's; `backend` is `symphonia|avfoundation|ogg-opus`).
+
+- `--probe` prints `info` only (no `output`/`perf`) and cannot be combined with
+  `--wav` or `--channel`.
+- Without `--probe` the file is decoded completely, streaming, to 16 kHz.
+  `output{wav, channel, sample_rate, frames, duration_s, peak}` describes what
+  was produced and `perf{wall_s, speed_x}` the decode speed (seconds of audio
+  per second of wall time). With `--wav` the audio is written as 16 kHz 16-bit
+  mono WAV: source channel `--channel N` (0-based), or the average of all
+  channels. `N` out of range is `bad_input`.
+- Backends: Ogg Opus (including `ghi record` output) by the `opus` crate;
+  WAV, AIFF, MP3, FLAC, Ogg Vorbis, AAC and ALAC in MP4/M4A/MOV (the audio track
+  of a video), ADTS and MKV by Symphonia; on macOS anything else the OS can
+  play (CAF, AC-3, ...) by AVFoundation. Other platforms report
+  `bad_input` ("format not supported on this platform yet") for those.
+- A missing file, an unreadable or unsupported format and corrupt data are
+  `bad_input` (exit 1); an I/O failure is `internal`.
+
+### Meetings through the core (phase 8; not used by the harness yet)
+
+Whole meetings headless through `ghi-core`: live transcript + speakers into
+the encrypted store at `--dir`, stop, then the jobs (notes from the live
+transcript, the final pass, final notes). Speech engines need the `nemo`
+feature; without it these exit 3 (`engine_unavailable`).
+
+- `ghi session --dir D (--replay mic.wav [system.wav] | live capture) [--mode room|call]
+  [--lang auto|vi|en] [--speed 1|0] [--duration S] [--discard-last S] [--process]
+  [--live-chunk-ms 560|1120]`
+  - Prints every core event as a `ghi.session-event/1` line:
+    `{"schema", "seq", "atMs", "event": {"type": ...}}`. Event types:
+    `stateChanged`, `transcriptPartial`, `transcriptFinal` (line with gid,
+    speaker id, times in ms, words), `speakerArrived|Confirmed|Renamed`,
+    `speakersMerged`, `speakerSplit`, `speakerNotAPerson`, `markAdded`,
+    `discardApplied`, `health` (`asrLagS`, `asrSkippedS`), `jobProgress`
+    (`stage`: decoding, refiningSpeakers, matchingVoices, improvingTranscript,
+    writingNotes), `notesReady` (`version` 1 live, 2 final), `error`.
+  - `--speed 1` replays in real time (lag figures); `--speed 0` as fast as the
+    engine goes, losing nothing (lossless: the pipeline waits for the engine).
+  - The last line is `ghi.session/1`: `meeting`, `status` (`processing`, or
+    `ready` after `--process`), `transcript_version`, `duration_s`, `lines`,
+    `speakers[{label, color_slot, is_me}]`, `jobs[{id, kind, result, wall_s}]`,
+    `perf{wall_s, peak_rss_mb}`.
+- `ghi jobs --dir D`: crash recovery (pending discards, meetings left
+  recording, half-done imports), then every queued job → `ghi.jobs/1`
+  (`recovered{discards, meetings}`, `jobs[...]`).
+- `ghi import <file> --dir D [--split-channels] [--lang ...] [--title T] [--process]`
+  → `ghi.import/1`: `meeting`, `duplicate` (same SHA-256 imported before),
+  `status`, `duration_s`, `channels`, `tracks`, `jobs`, `perf{decode_s, wall_s}`.
+  `--split-channels` keeps a stereo call recording's two channels as two
+  tracks (first = you).
 
 ## 3. Systems under test (adapters)
 

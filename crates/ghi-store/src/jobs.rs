@@ -207,6 +207,53 @@ impl Store {
         Ok(())
     }
 
+    /// Saves a running job's progress and resume point (`payload`, numbers
+    /// and identifiers only, like at enqueue).
+    pub fn checkpoint_job(
+        &self,
+        id: i64,
+        progress: f64,
+        payload: &serde_json::Value,
+    ) -> Result<()> {
+        check_payload(payload)?;
+        let n = self.conn().execute(
+            "UPDATE jobs SET progress = ?1, payload_json = ?2 WHERE id = ?3 AND state = 'running'",
+            params![progress.clamp(0.0, 1.0), payload.to_string(), id],
+        )?;
+        if n == 0 {
+            return Err(StoreError::Invalid(format!("job {id} is not running")));
+        }
+        Ok(())
+    }
+
+    /// Hands a running job back to the queue without counting the claim (it
+    /// was preempted, e.g. by a recording starting [RT-10]), saving its resume
+    /// point. A crash-interrupted job still counts its attempt.
+    pub fn release_job(&self, id: i64, payload: &serde_json::Value) -> Result<()> {
+        check_payload(payload)?;
+        let n = self.conn().execute(
+            "UPDATE jobs SET state = 'queued', attempts = max(attempts - 1, 0), payload_json = ?1
+             WHERE id = ?2 AND state = 'running'",
+            params![payload.to_string(), id],
+        )?;
+        if n == 0 {
+            return Err(StoreError::Invalid(format!("job {id} is not running")));
+        }
+        Ok(())
+    }
+
+    /// Queued or running jobs of `kind` for a meeting (to avoid duplicates).
+    pub fn active_job(&self, meeting_gid: &str, kind: &str) -> Result<Option<Job>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(&format!(
+            "{JOB_SELECT} WHERE m.gid = ?1 AND j.kind = ?2 AND j.state IN ('queued', 'running')
+             ORDER BY j.id LIMIT 1"
+        ))?;
+        Ok(stmt
+            .query_row(params![meeting_gid, kind], job_from_row)
+            .optional()?)
+    }
+
     pub fn complete_job(&self, id: i64) -> Result<()> {
         self.move_job(id, JobState::Done, None)
     }

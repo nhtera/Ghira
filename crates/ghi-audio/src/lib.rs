@@ -13,6 +13,7 @@
 //! desktop app has no stdout. Problems surface as [`CaptureEvent`]s.
 
 pub mod aec;
+pub mod decode;
 pub mod detect;
 pub mod encoder;
 #[cfg(target_os = "macos")]

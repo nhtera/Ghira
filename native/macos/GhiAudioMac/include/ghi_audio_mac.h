@@ -119,6 +119,33 @@ int32_t ghi_mac_route(uint32_t *output_kind, uint32_t *input_bluetooth);
 char *ghi_mac_audio_processes(void);
 void ghi_mac_free(char *s);
 
+// ---- File decoding (import fallback) ----------------------------------------
+// AVAssetReader based; the OS converts to planar float32 at 16 kHz per source
+// channel. Additive: GHI_MAC_ABI_VERSION is unchanged. One handle is used by one
+// thread at a time.
+#define GHI_MAC_ERR_NO_AUDIO -7    // no audio track the OS can decode
+#define GHI_MAC_ERR_READ_FAILED -8 // the reader failed mid-file
+#define GHI_MAC_ERR_NOT_FOUND -9   // no such file
+
+// Opens `path`. Source channel count, native sample rate, duration (-1 when
+// unknown) and the codec fourcc (lowercase, NUL-terminated within `codec_cap`)
+// are returned through the out parameters; the handle in `*out_handle`.
+int32_t ghi_mac_decode_open(const char *path, uint32_t *channels,
+                            uint32_t *sample_rate, int64_t *duration_ms,
+                            char *codec, uint32_t codec_cap, void **out_handle);
+
+// Reads up to `frames_cap` frames, planar (channel c at buf + c * frames_cap).
+// Returns the frames read, 0 at the end of the file or a negative status.
+// `*out_pos_16k` is the 16 kHz timeline index of the first frame returned.
+int64_t ghi_mac_decode_read(void *handle, float *buf, uint32_t frames_cap,
+                            uint64_t *out_pos_16k);
+
+// Restarts reading at `pos_16k` (16 kHz frames); the next read reports where
+// it landed.
+int32_t ghi_mac_decode_seek(void *handle, uint64_t pos_16k);
+
+void ghi_mac_decode_close(void *handle);
+
 #ifdef __cplusplus
 }
 #endif

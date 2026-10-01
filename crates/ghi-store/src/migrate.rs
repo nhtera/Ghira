@@ -53,6 +53,10 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 2,
         step: Step::Sql(include_str!("migrations/0002_ai_action_items.sql")),
     },
+    Migration {
+        version: 3,
+        step: Step::Sql(include_str!("migrations/0003_core_pipeline.sql")),
+    },
 ];
 
 /// The schema version this build expects.

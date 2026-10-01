@@ -40,7 +40,7 @@
 //! flush at checkpoints). After a crash, [`recover`] cuts the file back to
 //! the last page that authenticates.
 
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -275,6 +275,8 @@ pub struct BundleWriter {
     file: File,
     path: PathBuf,
     cipher: XChaCha20Poly1305,
+    /// The caller's aad (the header aad is rebuilt from it on rotation).
+    caller_aad: Vec<u8>,
     aad: Vec<u8>,
     prefix: [u8; PREFIX_LEN],
     offsets: Vec<u64>,
@@ -290,6 +292,10 @@ impl BundleWriter {
     /// directory entry durable. `aad` binds the pages to their owner
     /// (e.g. meeting gid + track kind); [`BundleReader`] needs the same value.
     pub fn create(path: &Path, key: &Dek, aad: &[u8]) -> Result<Self> {
+        Self::create_with(path, stream_cipher(&key.subkey(AUDIO_INFO)), aad)
+    }
+
+    fn create_with(path: &Path, cipher: XChaCha20Poly1305, aad: &[u8]) -> Result<Self> {
         let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
         let mut prefix = [0u8; PREFIX_LEN];
         OsRng.fill_bytes(&mut prefix);
@@ -309,7 +315,8 @@ impl BundleWriter {
         Ok(BundleWriter {
             file,
             path: path.to_path_buf(),
-            cipher: stream_cipher(&key.subkey(AUDIO_INFO)),
+            cipher,
+            caller_aad: aad.to_vec(),
             aad: header_aad(&prefix, aad),
             prefix,
             offsets: Vec::new(),
@@ -405,6 +412,129 @@ impl BundleWriter {
     pub fn page_count(&self) -> u32 {
         self.offsets.len() as u32 - u32::from(self.finished)
     }
+
+    /// The file's nonce prefix (hex). A rotation changes it, which is how a
+    /// recovery tells whether a pending discard was already applied.
+    pub fn prefix_hex(&self) -> String {
+        hex(&self.prefix)
+    }
+
+    /// Discard [RT-1]: keeps only the first `keep` pages and goes on writing
+    /// after them. The kept pages are re-sealed under a new nonce prefix into
+    /// a new file that replaces this one (appending after a cut would reuse
+    /// nonces). The old file's discarded pages are gone with it (crypto-shred
+    /// caveat as for deletes: freed blocks may survive on the disk).
+    pub fn rotate(&mut self, keep: u32) -> Result<()> {
+        self.check()?;
+        if self.finished {
+            return Err(StoreError::Invalid("bundle already finished".into()));
+        }
+        let have = self.offsets.len() as u32;
+        if keep > have {
+            return Err(StoreError::Invalid(format!(
+                "only {have} pages, cannot keep {keep}"
+            )));
+        }
+        if keep == have {
+            return Ok(());
+        }
+        let src = File::open(&self.path)?;
+        let tmp = rotating_path(&self.path);
+        let _ = fs::remove_file(&tmp);
+        let mut next = BundleWriter::create_with(&tmp, self.cipher.clone(), &self.caller_aad)?;
+        for i in 0..keep {
+            let page = read_page(
+                &src,
+                &self.cipher,
+                &self.prefix,
+                &self.aad,
+                self.offsets[i as usize],
+                i,
+                false,
+            )?;
+            next.append(&page)?;
+        }
+        next.sync(true)?;
+        swap_into_place(&tmp, &self.path)?;
+        next.path = self.path.clone();
+        *self = next;
+        Ok(())
+    }
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// The nonce prefix (hex) in a bundle file's header.
+pub fn file_prefix_hex(path: &Path) -> Result<String> {
+    let file = File::open(path)?;
+    Ok(hex(&read_header(&file)?))
+}
+
+/// `<bundle>.rotating`: where a rotation builds the replacement file.
+fn rotating_path(bundle: &Path) -> PathBuf {
+    let mut p = bundle.as_os_str().to_owned();
+    p.push(".rotating");
+    PathBuf::from(p)
+}
+
+/// Renames `tmp` over `dest` durably and drops `dest`'s stale index.
+fn swap_into_place(tmp: &Path, dest: &Path) -> Result<()> {
+    fs::rename(tmp, dest)?;
+    let _ = fs::remove_file(index_path(dest));
+    if let Some(dir) = dest.parent() {
+        sync_dir(if dir.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            dir
+        })?;
+    }
+    Ok(())
+}
+
+/// Reads and opens one record of a bundle.
+fn read_page(
+    file: &File,
+    cipher: &XChaCha20Poly1305,
+    prefix: &[u8; PREFIX_LEN],
+    aad: &[u8],
+    off: u64,
+    index: u32,
+    last: bool,
+) -> Result<Vec<u8>> {
+    let mut l = [0u8; 4];
+    read_exact_at(file, &mut l, off)?;
+    let len = u32::from_le_bytes(l) as usize;
+    if !(TAG_LEN..=MAX_PAGE_LEN + TAG_LEN).contains(&len) {
+        return Err(StoreError::Decrypt);
+    }
+    let mut ct = vec![0u8; len];
+    read_exact_at(file, &mut ct, off + 4).map_err(|_| StoreError::Decrypt)?;
+    stream_open(cipher, prefix, index, last, &page_aad(aad, index), &ct)
+}
+
+/// Cuts a closed (finished or recovered) bundle down to its first `keep`
+/// pages, re-sealed into a new finished file that replaces it. Returns the
+/// pages kept. Used to complete a discard after a crash; a no-op if the file
+/// already has no more than `keep` pages and is complete.
+pub fn truncate(path: &Path, key: &Dek, aad: &[u8], keep: u32) -> Result<u32> {
+    let r = BundleReader::open(path, key, aad)?;
+    let keep = keep.min(r.page_count());
+    if r.complete() && keep == r.page_count() {
+        return Ok(keep);
+    }
+    let tmp = rotating_path(path);
+    let _ = fs::remove_file(&tmp);
+    let mut w = BundleWriter::create(&tmp, key, aad)?;
+    for i in 0..keep {
+        w.append(&r.page(i)?)?;
+    }
+    w.finish()?;
+    let _ = fs::remove_file(index_path(&tmp));
+    swap_into_place(&tmp, path)?;
+    let _ = write_index(path, &w.offsets, w.pos);
+    Ok(keep)
 }
 
 /// Random-access reader over a bundle.
@@ -451,23 +581,14 @@ impl BundleReader {
     }
 
     fn read_record(&self, i: usize, last: bool) -> Result<Vec<u8>> {
-        let off = self.offsets[i];
-        let mut l = [0u8; 4];
-        read_exact_at(&self.file, &mut l, off)?;
-        let len = u32::from_le_bytes(l) as usize;
-        if !(TAG_LEN..=MAX_PAGE_LEN + TAG_LEN).contains(&len) {
-            return Err(StoreError::Decrypt);
-        }
-        let mut ct = vec![0u8; len];
-        read_exact_at(&self.file, &mut ct, off + 4).map_err(|_| StoreError::Decrypt)?;
-        let index = i as u32;
-        stream_open(
+        read_page(
+            &self.file,
             &self.cipher,
             &self.prefix,
-            index,
+            &self.aad,
+            self.offsets[i],
+            i as u32,
             last,
-            &page_aad(&self.aad, index),
-            &ct,
         )
     }
 
@@ -591,5 +712,63 @@ mod tests {
         assert!(w.finish().is_err());
         assert!(!w.finished);
         assert_eq!(w.page_count(), 1);
+    }
+}
+
+#[cfg(test)]
+mod rotate_tests {
+    use super::*;
+
+    fn key() -> Dek {
+        Dek::generate()
+    }
+
+    #[test]
+    fn rotate_keeps_the_first_pages_and_goes_on_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mic.ghb");
+        let k = key();
+        let mut w = BundleWriter::create(&path, &k, b"track").unwrap();
+        for i in 0..5u8 {
+            w.append(&[i; 10]).unwrap();
+        }
+        w.rotate(2).unwrap();
+        assert_eq!(w.page_count(), 2);
+        assert_eq!(
+            w.append(&[9; 10]).unwrap(),
+            2,
+            "continues after the kept pages"
+        );
+        w.finish().unwrap();
+        let r = BundleReader::open(&path, &k, b"track").unwrap();
+        assert!(r.complete());
+        let pages: Vec<u8> = (0..r.page_count()).map(|i| r.page(i).unwrap()[0]).collect();
+        assert_eq!(pages, [0, 1, 9]);
+        assert!(!rotating_path(&path).exists());
+        assert!(w.rotate(1).is_err(), "finished");
+    }
+
+    #[test]
+    fn truncate_cuts_a_closed_bundle_and_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("system.ghb");
+        let k = key();
+        let mut w = BundleWriter::create(&path, &k, b"t").unwrap();
+        for i in 0..4u8 {
+            w.append(&[i]).unwrap();
+        }
+        w.finish().unwrap();
+        assert_eq!(truncate(&path, &k, b"t", 3).unwrap(), 3);
+        assert_eq!(truncate(&path, &k, b"t", 3).unwrap(), 3);
+        let r = BundleReader::open(&path, &k, b"t").unwrap();
+        assert!(r.complete());
+        assert_eq!(r.page_count(), 3);
+        assert_eq!(r.page(2).unwrap(), [2]);
+        assert!(
+            BundleReader::open(&path, &k, b"other")
+                .unwrap()
+                .page(0)
+                .is_err()
+        );
     }
 }

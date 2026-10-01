@@ -20,6 +20,7 @@ pub mod anchors;
 pub mod backup;
 pub mod bundle;
 pub mod db;
+pub mod edits;
 pub mod export;
 pub mod fold;
 pub mod jobs;

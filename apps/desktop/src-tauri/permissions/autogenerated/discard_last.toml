@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-discard-last"
+description = "Enables the discard_last command without any pre-configured scope."
+commands.allow = ["discard_last"]
+
+[[permission]]
+identifier = "deny-discard-last"
+description = "Denies the discard_last command without any pre-configured scope."
+commands.deny = ["discard_last"]

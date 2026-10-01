@@ -24,6 +24,8 @@ use llama_cpp_2::token::data_array::LlamaTokenDataArray;
 
 /// Prompt tokens decoded per batch.
 const N_BATCH: usize = 512;
+/// A progress line every this many output tokens.
+const PROGRESS_EVERY: u32 = 16;
 /// `LLAMA_FLASH_ATTN_TYPE_ENABLED`; required for a quantized V cache.
 const FLASH_ATTN_ENABLED: i32 = 1;
 
@@ -116,7 +118,7 @@ fn main() {
         if matches!(req.op, Op::Shutdown) {
             break;
         }
-        let body = match catch_unwind(AssertUnwindSafe(|| w.handle(req.op))) {
+        let body = match catch_unwind(AssertUnwindSafe(|| w.handle(id, req.op))) {
             Ok(Ok(b)) => b,
             Ok(Err(message)) => Body::Error { message },
             Err(_) => Body::Error {
@@ -166,7 +168,7 @@ impl Worker {
         }
     }
 
-    fn handle(&mut self, op: Op) -> Result<Body, String> {
+    fn handle(&mut self, id: u64, op: Op) -> Result<Body, String> {
         match op {
             Op::Load {
                 model_path,
@@ -182,12 +184,27 @@ impl Worker {
                 temperature,
             } => {
                 let engine = self.engine.as_ref().ok_or("no model loaded")?;
+                let out = &mut self.out;
+                let mut progress = |tokens_in_done: u32, tokens_out: u32| {
+                    let line = serde_json::to_string(&Reply {
+                        id,
+                        body: Body::Progress {
+                            tokens_in_done,
+                            tokens_out,
+                        },
+                    })
+                    .expect("reply serializes");
+                    if writeln!(out, "{line}").and_then(|_| out.flush()).is_err() {
+                        std::process::exit(1);
+                    }
+                };
                 engine.complete(
                     &self.backend,
                     &messages,
                     schema.as_ref(),
                     max_tokens,
                     temperature,
+                    &mut progress,
                 )
             }
             Op::Count { text } => {
@@ -250,6 +267,7 @@ impl Engine {
         schema: Option<&serde_json::Value>,
         max_tokens: u32,
         temperature: f32,
+        progress: &mut dyn FnMut(u32, u32),
     ) -> Result<Body, String> {
         let t = Instant::now();
         let prompt_tokens = self.tokenize(&self.format.segments(messages))?;
@@ -290,6 +308,7 @@ impl Engine {
             }
             ctx.decode(&mut batch)
                 .map_err(|e| format!("decode failed: {e}"))?;
+            progress(pos as u32, 0);
         }
 
         // Token pieces are raw bytes and a character may span tokens, so the
@@ -310,6 +329,9 @@ impl Engine {
                 .map_err(|e| format!("detokenize failed: {e}"))?;
             bytes.extend_from_slice(&piece);
             tokens_out += 1;
+            if tokens_out.is_multiple_of(PROGRESS_EVERY) {
+                progress(tokens_in as u32, tokens_out);
+            }
             batch.clear();
             batch
                 .add(tok, pos, &[0], true)

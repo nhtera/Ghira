@@ -1,9 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Model registry, pinned downloads, SHA-256 checks and device tiers.
 //!
-//! Phase 3 has the registry (`registry.toml`, embedded at build time) and path
-//! resolution. Downloads go through `tools/scripts/fetch-models.sh` for now;
-//! the in-app downloader (through `ghi-net`) and tiers come later.
+//! The registry (`registry.toml`, embedded at build time), path resolution,
+//! hardware tiers and presets ([`tier`]), hash checks, status and offline
+//! import ([`verify`]), and pinned downloads through `ghi-net` ([`download`]).
+//! `tools/scripts/fetch-models.sh` stays as the dev download path.
+
+pub mod download;
+pub mod tier;
+pub mod verify;
+
+pub use download::{DownloadError, download};
+pub use tier::{
+    Hw, Preset, Tier, detect, llm_allowed_while_recording, preset, tier_for,
+    unload_speech_before_llm,
+};
+pub use verify::{
+    ImportError, ModelStatus, VerifyError, import_file, import_from, status, status_verified,
+    verify_file, verify_for_load,
+};
 
 use std::path::{Path, PathBuf};
 
@@ -31,6 +46,10 @@ pub struct Model {
     /// Chat template family for LLMs (`qwen3`); absent for other roles.
     #[serde(default)]
     pub chat_format: Option<String>,
+    /// Fallback sources tried in order after Hugging Face: base URLs (https)
+    /// that serve the pinned file as `<base>/<file>`. The hash still decides.
+    #[serde(default)]
+    pub mirrors: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -89,6 +108,15 @@ mod tests {
                 "{}: file name",
                 m.id
             );
+        }
+    }
+
+    #[test]
+    fn mirrors_are_https_when_present() {
+        for m in registry() {
+            for mirror in &m.mirrors {
+                assert!(mirror.starts_with("https://"), "{}: {mirror}", m.id);
+            }
         }
     }
 

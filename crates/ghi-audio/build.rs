@@ -70,6 +70,7 @@ fn main() {
         "CoreAudio",
         "AudioToolbox",
         "AVFoundation",
+        "CoreMedia",
         "IOKit",
         "Foundation",
     ] {

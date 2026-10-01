@@ -61,6 +61,16 @@ separate process); `ghi notes|ask|keys` and `ghi store notes`. Local model:
 (the golden tests skip without both). Cloud sends only go through `ghi-net`'s
 `CloudGrant`, bound to the exact previewed bytes.
 
+Core pipeline (phase 8): `crates/ghi-core` — `session` (capture → pump →
+bundles; ASR ring → `live` engine → `persist` → store; event bus `events`),
+`speakers`/`aligner` (arrival order, provisional, Me in call mode),
+discard [RT-1] (store transaction + bundle rotation), `jobs` (the job runner;
+recording preempts), `final_pass` (v2 + `carry` name carry-over + `vocab`),
+`notes_job`, `import`, `recover` (startup). Speech engines behind
+`engines::SpeechEngines` (NeMo with `nemo`, a scripted fake in tests).
+`ghi session|jobs|import`; the desktop has a thin command layer (`core.rs`)
+and the typed `coreEvent`.
+
 iOS spike (phase 7): `apps/mobile` (Tauri 2, iOS only) + `native/ios` (Swift
 audio/lifecycle and the Live Activity, C ABI in `GhiAudio/include/ghi_ios.h`).
 NeMo-Speech.cpp for iOS: `tools/scripts/build-nemo-ios.sh` (XCFrameworks in

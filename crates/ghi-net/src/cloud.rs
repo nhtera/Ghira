@@ -388,10 +388,10 @@ fn vet_addrs(addrs: &[SocketAddr], allow_lan: bool, relax: Relax) -> Vec<SocketA
 /// Resolves once and returns only vetted addresses; the connector connects to
 /// exactly these, so the name is never looked up a second time.
 #[derive(Debug)]
-struct VettedResolver {
-    allow_lan: bool,
-    relax: Relax,
-    blocked: Arc<AtomicBool>,
+pub(crate) struct VettedResolver {
+    pub(crate) allow_lan: bool,
+    pub(crate) relax: Relax,
+    pub(crate) blocked: Arc<AtomicBool>,
 }
 
 impl Resolver for VettedResolver {
@@ -421,7 +421,7 @@ impl Resolver for VettedResolver {
 
 /// The default TCP + TLS chain, counting every attempt.
 #[derive(Debug)]
-struct CountingConnector;
+pub(crate) struct CountingConnector;
 
 impl Connector<()> for CountingConnector {
     type Out = Box<dyn Transport>;

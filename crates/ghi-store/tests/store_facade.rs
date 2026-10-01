@@ -141,6 +141,8 @@ fn crud_round_trip_with_encrypted_columns() {
         .add_segment(
             &m.gid,
             NewSegment {
+                gid: None,
+                edited: false,
                 speaker_gid: Some(sp.clone()),
                 t0_ms: 100,
                 t1_ms: 900,

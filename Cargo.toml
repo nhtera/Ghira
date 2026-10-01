@@ -22,3 +22,8 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# Model files are hashed before every first load (RT-12); unoptimized SHA-256
+# would take ~25 s per 700 MB model in debug builds.
+[profile.dev.package.sha2]
+opt-level = 3

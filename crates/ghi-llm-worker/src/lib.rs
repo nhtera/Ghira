@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Protocol revision; bump on any incompatible change to the lines below.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 
 /// First line the worker writes: `{"kind":"hello","protocol":1,"worker":"0.1.0"}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +99,13 @@ pub enum Body {
     },
     Counted {
         tokens: u32,
+    },
+    /// Sent while a `complete` runs (after each prompt batch and every few
+    /// output tokens), with the request's id, before its final reply. The
+    /// parent treats it as a sign of life (protocol 2).
+    Progress {
+        tokens_in_done: u32,
+        tokens_out: u32,
     },
     Health {
         loaded: bool,

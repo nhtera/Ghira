@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mark-moment"
+description = "Enables the mark_moment command without any pre-configured scope."
+commands.allow = ["mark_moment"]
+
+[[permission]]
+identifier = "deny-mark-moment"
+description = "Denies the mark_moment command without any pre-configured scope."
+commands.deny = ["mark_moment"]
