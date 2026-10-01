@@ -159,11 +159,17 @@ pub struct NotesJob {
     pub version: u32,
     pub template: Template,
     pub llm: LlmFactory,
+    /// The local model is installed (else the job waits for it).
+    pub ready: crate::jobs::Ready,
 }
 
 impl JobHandler for NotesJob {
     fn kind(&self) -> &'static str {
         self.kind
+    }
+
+    fn ready(&self) -> bool {
+        (self.ready)()
     }
 
     /// The transcript is there without (new) notes: the meeting is usable.
@@ -180,8 +186,26 @@ impl JobHandler for NotesJob {
             return Ok(Outcome::Yield(ctx.job.payload.clone()));
         }
         let meeting = ctx.meeting()?;
+        // Notes from the live transcript are moot once the final pass made v2
+        // or is about to (its notes come next): one LLM run, not two.
+        if self.version == 1 {
+            let v2 = ctx
+                .store
+                .get_meeting(meeting)
+                .map_err(store_err)?
+                .transcript_version
+                >= 2;
+            let pending = |kind| ctx.store.active_job(meeting, kind).map_err(store_err);
+            if v2 || pending(NOTES_FINAL_JOB)?.is_some() {
+                return Ok(Outcome::Done);
+            }
+        }
         ctx.progress(Some(Stage::WritingNotes), 0.0);
         let (t, segs) = stored_transcript(ctx.store, meeting)?;
+        if t.is_empty() && self.version == 1 {
+            // Recorded without a live transcript: nothing to write yet.
+            return Ok(Outcome::Done);
+        }
         if !t.is_empty() {
             let mut opts = Options::new(
                 self.template.clone(),

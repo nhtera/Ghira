@@ -366,7 +366,19 @@ fn retention_deletes_audio_and_keeps_text() {
         .unwrap()
         .gid;
     let forever = common::meeting(&store, "vĩnh viễn");
-    for g in [&expired, &kept, &forever] {
+    // Expired, but its final pass waits (models not installed yet).
+    let waiting = store
+        .create_meeting(NewMeeting {
+            title: "chờ mô hình".into(),
+            audio_retained_until: Some(1_000),
+            ..Default::default()
+        })
+        .unwrap()
+        .gid;
+    store
+        .enqueue_job(Some(&waiting), "final_pass", 1, &serde_json::json!({}))
+        .unwrap();
+    for g in [&expired, &kept, &forever, &waiting] {
         store
             .add_segment(g, common::seg(0, 1000, "văn bản vẫn còn"))
             .unwrap();
@@ -378,6 +390,7 @@ fn retention_deletes_audio_and_keeps_text() {
     assert_eq!((report.meetings, report.tracks), (1, 1));
     assert!(!store.audio_available(&expired).unwrap());
     assert!(store.audio_available(&kept).unwrap() && store.audio_available(&forever).unwrap());
+    assert!(store.audio_available(&waiting).unwrap());
     assert!(
         !store
             .bundle_path(&expired, TrackKind::Mic)
@@ -390,7 +403,7 @@ fn retention_deletes_audio_and_keeps_text() {
     let r = store.resolve_anchor(&anchor).unwrap();
     assert_eq!(r.segments.len(), 1);
     assert!(!r.audio_available);
-    assert_eq!(store.search(&SearchQuery::new("van ban")).unwrap().len(), 3);
+    assert_eq!(store.search(&SearchQuery::new("van ban")).unwrap().len(), 4);
     // Idempotent.
     assert_eq!(store.retention_sweep(2_000).unwrap().meetings, 0);
     assert!(store.open_bundle(&expired, TrackKind::Mic).is_err());

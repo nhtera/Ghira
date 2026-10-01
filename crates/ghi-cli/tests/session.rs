@@ -16,7 +16,7 @@ fn root() -> PathBuf {
 
 #[cfg(not(feature = "nemo"))]
 #[test]
-fn without_speech_engines_a_session_is_engine_unavailable() {
+fn without_speech_engines_a_session_is_engine_unavailable_or_records_only() {
     let dir = tempfile::tempdir().unwrap();
     let wav = dir.path().join("a.wav");
     let spec = hound::WavSpec {
@@ -43,6 +43,30 @@ fn without_speech_engines_a_session_is_engine_unavailable() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
+
+    // As the app does while the models are missing: audio only, the jobs wait.
+    let out = Command::new(env!("CARGO_BIN_EXE_ghi"))
+        .args(["session", "--record-only", "--speed", "0", "--dir"])
+        .arg(dir.path().join("store"))
+        .arg("--replay")
+        .arg(&wav)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
+    assert_eq!(doc["schema"], "ghi.session/1");
+    assert_eq!(doc["lines"], 0);
+    assert_eq!(
+        doc["status"], "processing",
+        "jobs queued for when models arrive"
+    );
+    assert!(doc["duration_s"].as_f64().unwrap() > 0.9, "{doc}");
+    assert!(stdout.contains("\"modelsMissing\""), "{stdout}");
 }
 
 #[cfg(all(feature = "nemo", target_os = "macos"))]

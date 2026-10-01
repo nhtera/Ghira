@@ -11,7 +11,7 @@ use ghi_core::capture::{ReplayTrack, replay};
 use ghi_core::engines::{FakeEngines, Script, SpeechEngines};
 use ghi_core::events::{Event, bus};
 use ghi_core::final_pass::{FinalPassJob, VOCABULARY_SETTING};
-use ghi_core::jobs::JobRunner;
+use ghi_core::jobs::{JobRunner, always_ready};
 use ghi_core::live::Mode;
 use ghi_core::notes_job::{NOTES_FINAL_JOB, NotesJob};
 use ghi_core::session::{NOTES_LIVE_JOB, Session, SessionConfig};
@@ -91,16 +91,19 @@ fn notes_then_final_pass_then_final_notes() {
                 version: 1,
                 template: template.clone(),
                 llm: llm.clone(),
+                ready: always_ready(),
             }),
             Arc::new(FinalPassJob {
                 engines: Arc::new(move || Ok(final_engines.clone())),
                 chunk_s: 600.0,
+                ready: always_ready(),
             }),
             Arc::new(NotesJob {
                 kind: NOTES_FINAL_JOB,
                 version: 2,
                 template,
                 llm,
+                ready: always_ready(),
             }),
         ],
     );
@@ -118,7 +121,7 @@ fn notes_then_final_pass_then_final_notes() {
     .unwrap();
     let s = Session::start(
         store.clone(),
-        engines,
+        Some(engines),
         capture,
         SessionConfig {
             mode: Mode::Room,
@@ -198,4 +201,152 @@ fn notes_then_final_pass_then_final_notes() {
         })
         .collect();
     assert_eq!(versions, [1, 2]);
+}
+
+/// Models missing: the session records audio only, its jobs wait in the
+/// queue (no attempt spent), and transcript + notes come once they arrive.
+#[test]
+fn record_now_process_when_models_arrive() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let store = Arc::new(
+        Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap(),
+    );
+    let (tx, rx) = bus();
+    let installed = Arc::new(AtomicBool::new(false));
+    let ready: ghi_core::jobs::Ready = {
+        let i = installed.clone();
+        Arc::new(move || i.load(Ordering::SeqCst))
+    };
+    let engines: Arc<dyn SpeechEngines> = FakeEngines::new(script());
+    let llm: ghi_core::notes_job::LlmFactory =
+        Arc::new(|_| Ok(Box::new(OneLiner) as Box<dyn Llm + Send>));
+    let template = ghi_llm::template::builtin("general").unwrap();
+    let runner = JobRunner::new(
+        store.clone(),
+        tx.clone(),
+        vec![
+            Arc::new(NotesJob {
+                kind: NOTES_LIVE_JOB,
+                version: 1,
+                template: template.clone(),
+                llm: llm.clone(),
+                ready: ready.clone(),
+            }),
+            Arc::new(FinalPassJob {
+                engines: Arc::new(move || Ok(engines.clone())),
+                chunk_s: 600.0,
+                ready: ready.clone(),
+            }),
+            Arc::new(NotesJob {
+                kind: NOTES_FINAL_JOB,
+                version: 2,
+                template,
+                llm,
+                ready,
+            }),
+        ],
+    );
+    let capture = replay(
+        vec![ReplayTrack {
+            track: Track::Mic,
+            samples: (0..48_000 * 9)
+                .map(|i| (i as f32 * 0.03).sin() * 0.2)
+                .collect(),
+            sample_rate: 48_000,
+        }],
+        None,
+    )
+    .unwrap();
+    let s = Session::start(
+        store.clone(),
+        None,
+        capture,
+        SessionConfig {
+            mode: Mode::Room,
+            language: None,
+            title: "no models".into(),
+            queue_jobs: true,
+            // Ignored without engines (nothing to wait for).
+            lossless: true,
+        },
+        tx,
+        Some(runner.clone()),
+    )
+    .unwrap();
+    assert!(!s.transcribing());
+    let meeting = s.meeting().to_string();
+    let t = Instant::now();
+    // The source ends before the pump has drained it: wait for the clock.
+    while s.now_ms() < 8_900 {
+        assert!(
+            t.elapsed() < Duration::from_secs(20),
+            "the replay plays out"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    s.mark();
+    s.discard(1.0).unwrap();
+    let report = s.stop().unwrap();
+    assert_eq!(report.jobs.len(), 2);
+    assert!(report.duration_ms >= 8_900, "{}", report.duration_ms);
+    let spans = store.discarded_spans(&meeting).unwrap();
+    assert!(spans.len() == 1 && spans[0].0 >= 7_900, "{spans:?}");
+    assert!(store.segments(&meeting).unwrap().is_empty());
+    assert_eq!(
+        store.tracks(&meeting).unwrap().len(),
+        1,
+        "the audio is kept"
+    );
+
+    // No models: nothing runs, nothing fails.
+    assert_eq!(runner.run_pending(), 0);
+    for id in &report.jobs {
+        let j = store.job(*id).unwrap();
+        assert_eq!(
+            (j.state, j.attempts),
+            (ghi_store::jobs::JobState::Queued, 0)
+        );
+    }
+    assert_eq!(store.get_meeting(&meeting).unwrap().status, "processing");
+
+    // The models arrive.
+    installed.store(true, Ordering::SeqCst);
+    assert_eq!(
+        runner.run_pending(),
+        3,
+        "notes_live, final_pass, notes_final"
+    );
+    let m = store.get_meeting(&meeting).unwrap();
+    assert_eq!((m.status.as_str(), m.transcript_version), ("ready", 2));
+    let v2 = store.segments(&meeting).unwrap();
+    assert_eq!(v2.len(), 3, "transcribed from the stored audio");
+    assert!(v2.iter().all(|s| s.speaker_gid.is_some()));
+    let notes = store.note_blocks(&meeting).unwrap();
+    assert_eq!(notes.len(), 1);
+    let events: Vec<Event> = rx.try_iter().map(|e| e.event).collect();
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::Error {
+            kind: ghi_core::events::ErrorKind::ModelsMissing,
+            ..
+        }
+    )));
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, Event::TranscriptFinal { .. })),
+        "no live transcript"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, Event::DiscardApplied { .. }))
+    );
 }

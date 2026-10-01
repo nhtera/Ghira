@@ -43,6 +43,8 @@ pub type EnginesFactory = Arc<dyn Fn() -> Result<Arc<dyn SpeechEngines>, String>
 
 pub struct FinalPassJob {
     pub engines: EnginesFactory,
+    /// The speech models are installed (else the job waits for them).
+    pub ready: crate::jobs::Ready,
     /// Target ASR chunk length (seconds).
     pub chunk_s: f64,
 }
@@ -182,6 +184,10 @@ impl JobHandler for FinalPassJob {
         crate::session::FINAL_PASS_JOB
     }
 
+    fn ready(&self) -> bool {
+        (self.ready)()
+    }
+
     /// The live transcript and its notes stay; the meeting is usable.
     fn failed(&self, ctx: &JobCtx) {
         if let Ok(m) = ctx.meeting() {
@@ -213,6 +219,13 @@ impl JobHandler for FinalPassJob {
         if pcm.is_empty() {
             queue_notes(store, &meeting)?;
             return Ok(Outcome::Done);
+        }
+        let audio_ms =
+            pcm.values().map(Vec::len).max().unwrap_or(0) as i64 * 1000 / i64::from(SAMPLE_RATE);
+        if audio_ms > m.duration_ms {
+            store
+                .extend_meeting_duration(&meeting, audio_ms)
+                .map_err(err)?;
         }
         if ctx.preempted() {
             return restart();

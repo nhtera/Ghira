@@ -170,6 +170,15 @@ pub fn status(dir: &Path) -> Vec<ModelStatus> {
     status_impl(dir, false)
 }
 
+/// Every model in `ids` is in `dir` at its pinned size (an unknown id is
+/// not). Cheap, for "can this job run yet"; the hash is checked at load.
+pub fn installed(dir: &Path, ids: &[&str]) -> bool {
+    ids.iter().all(|id| {
+        crate::find(id)
+            .is_some_and(|m| fs::metadata(path_in(dir, &m)).is_ok_and(|md| md.len() == m.size))
+    })
+}
+
 /// Like [`status`], plus a full SHA-256 check of each installed file.
 pub fn status_verified(dir: &Path) -> Vec<ModelStatus> {
     status_impl(dir, true)
@@ -322,5 +331,24 @@ mod tests {
         fs::write(path_in(dir.path(), &m), DATA).unwrap();
         let s = status_verified(dir.path());
         assert!(!s[0].installed && s[0].verified.is_none());
+    }
+
+    #[test]
+    fn installed_needs_every_model_at_its_pinned_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let [a, b] = [registry().remove(0), registry().remove(1)];
+        let ids = [a.id.as_str(), b.id.as_str()];
+        assert!(!installed(dir.path(), &ids));
+        // Sparse files of the pinned size (the hash is checked at load).
+        for m in [&a, &b] {
+            File::create(path_in(dir.path(), m))
+                .unwrap()
+                .set_len(m.size)
+                .unwrap();
+        }
+        assert!(installed(dir.path(), &ids));
+        assert!(!installed(dir.path(), &[a.id.as_str(), "no-such-model"]));
+        File::create(path_in(dir.path(), &b)).unwrap(); // truncated: a download in progress
+        assert!(!installed(dir.path(), &ids));
     }
 }

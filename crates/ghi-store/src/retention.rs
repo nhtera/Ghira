@@ -6,6 +6,9 @@
 //! (transcript, notes, action items). Afterwards its anchors still resolve to
 //! segments, with `audio_available = false` (doc 05 §2.3).
 //!
+//! A meeting whose final pass is still queued or running keeps its audio (a
+//! recording made before the models arrived has no transcript without it).
+//!
 //! This removes the bundle files and the `tracks` rows (with tombstones). It is
 //! not a crypto-shred: the meeting's key must stay for the text. Use
 //! [`Store::delete_meeting`] to make everything unreadable.
@@ -31,6 +34,8 @@ impl Store {
                 "SELECT m.id, m.gid FROM meetings m
                  WHERE m.audio_retained_until IS NOT NULL AND m.audio_retained_until <= ?1
                    AND EXISTS (SELECT 1 FROM tracks t WHERE t.meeting_id = m.id)
+                   AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.meeting_id = m.id
+                       AND j.kind = 'final_pass' AND j.state IN ('queued', 'running'))
                  ORDER BY m.id",
             )?;
             let rows = stmt.query_map([now_ms_], |r| Ok((r.get(0)?, r.get(1)?)))?;

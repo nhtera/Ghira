@@ -16,8 +16,8 @@ pub use tier::{
     unload_speech_before_llm,
 };
 pub use verify::{
-    ImportError, ModelStatus, VerifyError, import_file, import_from, status, status_verified,
-    verify_file, verify_for_load,
+    ImportError, ModelStatus, VerifyError, import_file, import_from, installed, status,
+    status_verified, verify_file, verify_for_load,
 };
 
 use std::path::{Path, PathBuf};

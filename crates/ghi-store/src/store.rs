@@ -712,6 +712,12 @@ impl Store {
         self.update_meeting(gid, "duration_ms = ?1, status = 'done'", duration_ms)
     }
 
+    /// Raises the recorded duration to `duration_ms` (the final pass measures
+    /// the audio; recovery of a meeting without lines left it short).
+    pub fn extend_meeting_duration(&self, gid: &str, duration_ms: i64) -> Result<()> {
+        self.update_meeting(gid, "duration_ms = MAX(duration_ms, ?1)", duration_ms)
+    }
+
     /// Sets when the audio is deleted by [`Store::retention_sweep`] (`None` = keep).
     pub fn set_audio_retained_until(&self, gid: &str, until: Option<i64>) -> Result<()> {
         self.update_meeting(gid, "audio_retained_until = ?1", until)

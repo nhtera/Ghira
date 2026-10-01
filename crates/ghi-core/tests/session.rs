@@ -60,7 +60,7 @@ fn start(store: &Arc<Store>, events: ghi_core::events::EventTx) -> Session {
     .unwrap();
     Session::start(
         store.clone(),
-        FakeEngines::new(script()),
+        Some(FakeEngines::new(script()) as Arc<dyn ghi_core::engines::SpeechEngines>),
         capture,
         SessionConfig {
             mode: Mode::Room,
@@ -291,7 +291,7 @@ fn a_failed_start_resumes_jobs_and_leaves_no_meeting() {
     .unwrap();
     let r = Session::start(
         store.clone(),
-        Arc::new(Broken),
+        Some(Arc::new(Broken)),
         capture,
         SessionConfig {
             mode: Mode::Room,

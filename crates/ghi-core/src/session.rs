@@ -11,6 +11,11 @@
 //! → Processing (jobs) → Ready | Failed. At stop the meeting gets a
 //! `notes_live` job (notes from the live transcript, ≤3 min) and a
 //! `final_pass` job [RT-7].
+//!
+//! Without speech engines (models not installed yet) a session records
+//! only: audio, marks and discards work, there is no live transcript, and the
+//! jobs queued at stop wait until the models arrive ("record now, process
+//! later").
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -127,15 +132,18 @@ pub struct Session {
     /// The capture source ended by itself (a replay played out).
     source_ended: Arc<AtomicBool>,
     threads: Vec<JoinHandle<()>>,
+    /// A live transcript is being made (engines were given).
+    transcribing: bool,
     cfg: SessionConfig,
     hooks: Option<Arc<dyn RecordingHooks>>,
 }
 
 impl Session {
-    /// Creates the meeting and starts recording from `capture`.
+    /// Creates the meeting and starts recording from `capture`; with no
+    /// `engines`, records without a live transcript.
     pub fn start(
         store: Arc<Store>,
-        engines: Arc<dyn SpeechEngines>,
+        engines: Option<Arc<dyn SpeechEngines>>,
         mut capture: Capture,
         mut cfg: SessionConfig,
         events: EventTx,
@@ -155,6 +163,9 @@ impl Session {
         if cfg.mode == Mode::Call && !tracks.contains(&Track::System) {
             cfg.mode = Mode::Room;
         }
+        // Nothing reads the ASR ring without engines: never wait on it.
+        let live = engines.is_some();
+        cfg.lossless &= live;
         if let Some(h) = &hooks {
             h.recording_started();
         }
@@ -238,23 +249,26 @@ impl Session {
         let persist = Persist::new(store.clone(), meeting.clone(), events.clone());
         threads.push(spawn("ghi-persist", move || persist.run(persist_rx))?);
 
-        let engine = Engine::new(
-            LiveConfig {
-                meeting: meeting.clone(),
-                mode: cfg.mode,
-                language: cfg.language.clone(),
-            },
-            engines,
-            &tracks,
-            events.clone(),
-            persist_tx.clone(),
-        )
-        .map_err(|e| err("speech engine", e))?;
-        {
+        if let Some(engines) = engines {
+            let engine = Engine::new(
+                LiveConfig {
+                    meeting: meeting.clone(),
+                    mode: cfg.mode,
+                    language: cfg.language.clone(),
+                },
+                engines,
+                &tracks,
+                events.clone(),
+                persist_tx.clone(),
+            )
+            .map_err(|e| err("speech engine", e))?;
             let done = capture_done.clone();
             threads.push(spawn("ghi-engine", move || {
                 engine.run(asr_ring, engine_rx, done)
             })?);
+        } else {
+            // Speaker edits go nowhere: there are no live speakers.
+            drop((asr_ring, engine_rx));
         }
         {
             let ctx = PumpCtx {
@@ -274,6 +288,15 @@ impl Session {
 
         undo.armed = false;
         drop(undo);
+        if !live {
+            events.emit(Event::Error {
+                meeting: Some(meeting.clone()),
+                kind: ErrorKind::ModelsMissing,
+                message: "no speech engines (models missing): recording only; \
+                          the transcript and notes come once they are ready"
+                    .into(),
+            });
+        }
         *state.lock().unwrap_or_else(|e| e.into_inner()) = SessionState::Recording;
         events.emit(Event::StateChanged {
             meeting: meeting.clone(),
@@ -290,6 +313,7 @@ impl Session {
             position,
             source_ended,
             threads,
+            transcribing: live,
             cfg,
             hooks,
         })
@@ -314,6 +338,11 @@ impl Session {
     /// Meeting time reached by the recording (ms).
     pub fn now_ms(&self) -> i64 {
         (self.position.load(Ordering::Relaxed) * 1000 / u64::from(SAMPLE_RATE)) as i64
+    }
+
+    /// A live transcript is being made (false: recording only, models missing).
+    pub fn transcribing(&self) -> bool {
+        self.transcribing
     }
 
     /// A replay played out (live capture never ends by itself).
@@ -408,14 +437,16 @@ impl Session {
         let text_side = || -> Result<i64, SessionError> {
             // 2. The engine drops the text in progress and the discarded
             //    frames still in the ring.
-            let (tx, rx) = bounded(1);
-            self.engine
-                .send(EngineCmd::ResetAsr {
-                    mute_until: d.mute_until,
-                    reply: tx,
-                })
-                .map_err(|e| err("discard", e))?;
-            rx.recv_timeout(wait).map_err(|e| err("discard", e))?;
+            if self.transcribing {
+                let (tx, rx) = bounded(1);
+                self.engine
+                    .send(EngineCmd::ResetAsr {
+                        mute_until: d.mute_until,
+                        reply: tx,
+                    })
+                    .map_err(|e| err("discard", e))?;
+                rx.recv_timeout(wait).map_err(|e| err("discard", e))?;
+            }
             // 3. One store transaction for the text side (+ a pending audio row).
             let (tx, rx) = bounded(1);
             let keep = d

@@ -374,11 +374,12 @@ source's; `backend` is `symphonia|avfoundation|ogg-opus`).
 Whole meetings headless through `ghi-core`: live transcript + speakers into
 the encrypted store at `--dir`, stop, then the jobs (notes from the live
 transcript, the final pass, final notes). Speech engines need the `nemo`
-feature; without it these exit 3 (`engine_unavailable`).
+feature; without it these exit 3 (`engine_unavailable`), except
+`ghi session --record-only`.
 
 - `ghi session --dir D (--replay mic.wav [system.wav] | live capture) [--mode room|call]
   [--lang auto|vi|en] [--speed 1|0] [--duration S] [--discard-last S] [--process]
-  [--live-chunk-ms 560|1120]`
+  [--live-chunk-ms 560|1120] [--record-only]`
   - Prints every core event as a `ghi.session-event/1` line:
     `{"schema", "seq", "atMs", "event": {"type": ...}}`. Event types:
     `stateChanged`, `transcriptPartial`, `transcriptFinal` (line with gid,
@@ -389,6 +390,10 @@ feature; without it these exit 3 (`engine_unavailable`).
     writingNotes), `notesReady` (`version` 1 live, 2 final), `error`.
   - `--speed 1` replays in real time (lag figures); `--speed 0` as fast as the
     engine goes, losing nothing (lossless: the pipeline waits for the engine).
+  - `--record-only` records without speech engines, as the app does while the
+    models are missing: audio, marks and discards only, an `error` event with
+    `kind: modelsMissing`, `lines: 0`; the queued jobs make the transcript and
+    notes later (`ghi jobs`, or `--process` with engines).
   - The last line is `ghi.session/1`: `meeting`, `status` (`processing`, or
     `ready` after `--process`), `transcript_version`, `duration_s`, `lines`,
     `speakers[{label, color_slot, is_me}]`, `jobs[{id, kind, result, wall_s}]`,

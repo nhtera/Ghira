@@ -9,6 +9,9 @@
 //! - A crash leaves the job `running`; the store requeues it at the next open
 //!   (that one does count as an attempt).
 //! - Payloads hold numbers and identifiers only; handlers fetch content by gid.
+//! - A handler that isn't [`JobHandler::ready`] (its models aren't installed)
+//!   is skipped: its jobs wait in the queue without spending an attempt, and
+//!   run once the models arrive ("record now, process later").
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -68,8 +71,22 @@ impl JobCtx<'_> {
     }
 }
 
+/// Whether what a handler needs (its models) is installed. Cheap: called
+/// before every claim.
+pub type Ready = Arc<dyn Fn() -> bool + Send + Sync>;
+
+/// A [`Ready`] that always is (tests, explicit CLI model paths).
+pub fn always_ready() -> Ready {
+    Arc::new(|| true)
+}
+
 pub trait JobHandler: Send + Sync {
     fn kind(&self) -> &'static str;
+    /// False while the handler can't run (models missing): its jobs stay
+    /// queued. The runner looks again when woken and at least every 30 s.
+    fn ready(&self) -> bool {
+        true
+    }
     fn run(&self, ctx: &JobCtx) -> Result<Outcome, String>;
     /// The run failed (the job is `failed`): settle the meeting so it is not
     /// left `processing` forever.
@@ -127,6 +144,9 @@ impl JobRunner {
             return None;
         }
         for h in &self.handlers {
+            if !h.ready() {
+                continue;
+            }
             let job = match self.store.claim_next_job(h.kind(), JOB_PAYLOAD_VERSION) {
                 Ok(Some(j)) => j,
                 Ok(None) => continue,

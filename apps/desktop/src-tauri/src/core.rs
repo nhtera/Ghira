@@ -10,9 +10,9 @@
 //! store by `tools/scripts/check-no-dev-key.sh`).
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-use ghi_core::events::{Envelope, EventTx, bus};
+use ghi_core::events::{Envelope, ErrorKind, EventTx, bus};
 use ghi_core::jobs::JobRunner;
 use ghi_core::live::Mode;
 use ghi_core::session::{Session, SessionConfig};
@@ -78,6 +78,24 @@ fn platform_keystore(_dir: &Path) -> Result<Arc<dyn KeyStore>, String> {
     Err("no OS key store on this platform yet".into())
 }
 
+/// This machine's tier preset (the hardware is probed once).
+fn preset() -> &'static ghi_models::Preset {
+    static PRESET: OnceLock<ghi_models::Preset> = OnceLock::new();
+    PRESET.get_or_init(|| ghi_models::preset(ghi_models::tier_for(&ghi_models::detect())))
+}
+
+/// This build has speech engines and their models are installed. Without
+/// them a recording keeps the audio only and its jobs wait (doc 02 §L).
+fn speech_ready(models: &Path) -> bool {
+    let ids: Vec<&str> = preset().speech_models.iter().map(String::as_str).collect();
+    cfg!(feature = "nemo") && ghi_models::installed(models, &ids)
+}
+
+/// The notes model for this machine's tier is installed.
+fn llm_ready(models: &Path) -> bool {
+    ghi_models::installed(models, &[preset().llm_id])
+}
+
 /// Speech engines for a recording (live chunk) or the final pass (1120 ms).
 #[cfg(feature = "nemo")]
 fn engines(
@@ -92,8 +110,8 @@ fn engines(
         Ok::<_, String>(p)
     };
     let e = ghi_core::engines::NemoEngines::load(
-        &path("nemotron-3.5-asr")?,
-        &path("nemotron-3-diarization")?,
+        &path(&preset().speech_models[0])?,
+        &path(&preset().speech_models[1])?,
         chunk_ms,
         ghi_speech::nemo::Device::Gpu,
     )
@@ -153,16 +171,15 @@ impl Core {
         let template = ghi_llm::template::builtin("general").map_err(|e| e.to_string())?;
         // The notes model lives with the speech models in the app data dir.
         let llm_dir = models.clone();
+        let notes_ready: ghi_core::jobs::Ready = {
+            let dir = models.clone();
+            Arc::new(move || llm_ready(&dir))
+        };
         let llm: ghi_core::notes_job::LlmFactory = Arc::new(move |bytes| {
             let n_ctx = ((bytes / 3) as u32 * 6 / 5 + 6_144).clamp(8_192, 32_768);
-            let tier = ghi_models::tier_for(&ghi_models::detect());
-            ghi_llm::local::LocalLlm::open_registry_in(
-                &llm_dir,
-                ghi_models::preset(tier).llm_id,
-                n_ctx,
-            )
-            .map(|l| Box::new(l) as Box<dyn ghi_llm::Llm + Send>)
-            .map_err(|e| e.to_string())
+            ghi_llm::local::LocalLlm::open_registry_in(&llm_dir, preset().llm_id, n_ctx)
+                .map(|l| Box::new(l) as Box<dyn ghi_llm::Llm + Send>)
+                .map_err(|e| e.to_string())
         });
         let runner = JobRunner::new(
             store.clone(),
@@ -173,16 +190,22 @@ impl Core {
                     version: 1,
                     template: template.clone(),
                     llm: llm.clone(),
+                    ready: notes_ready.clone(),
                 }),
                 Arc::new(ghi_core::final_pass::FinalPassJob {
-                    engines: Arc::new(move || engines(&models, 1120)),
+                    engines: {
+                        let models = models.clone();
+                        Arc::new(move || engines(&models, 1120))
+                    },
                     chunk_s: 600.0,
+                    ready: Arc::new(move || speech_ready(&models)),
                 }),
                 Arc::new(ghi_core::notes_job::NotesJob {
                     kind: ghi_core::notes_job::NOTES_FINAL_JOB,
                     version: 2,
                     template,
                     llm,
+                    ready: notes_ready,
                 }),
             ],
         );
@@ -203,8 +226,22 @@ impl Core {
             return Err("a recording is already running".into());
         }
         let store = self.store()?;
-        let tier = ghi_models::tier_for(&ghi_models::detect());
-        let engines = engines(&self.models(), ghi_models::preset(tier).asr_chunk_ms)?;
+        // Models missing: record now, transcribe when they arrive. Engines
+        // that fail to load must not cost the recording either.
+        let models = self.models();
+        let engines = if speech_ready(&models) {
+            engines(&models, preset().asr_chunk_ms)
+                .inspect_err(|e| {
+                    self.events.emit(ghi_core::events::Event::Error {
+                        meeting: None,
+                        kind: ErrorKind::Engine,
+                        message: format!("speech engines: {e}"),
+                    })
+                })
+                .ok()
+        } else {
+            None
+        };
         let capture =
             ghi_core::capture::live(mode == Mode::Call, &[]).map_err(|e| e.to_string())?;
         let hooks = lock(&self.runner)

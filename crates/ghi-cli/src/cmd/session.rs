@@ -18,7 +18,7 @@ use ghi_core::capture::{self, ReplayTrack};
 use ghi_core::engines::SpeechEngines;
 use ghi_core::events::{EventTx, bus};
 use ghi_core::final_pass::FinalPassJob;
-use ghi_core::jobs::{JobHandler, JobRunner, Outcome};
+use ghi_core::jobs::{JobHandler, JobRunner, Outcome, always_ready};
 use ghi_core::live::Mode as LiveMode;
 use ghi_core::notes_job::{LlmFactory, NOTES_FINAL_JOB, NotesJob};
 use ghi_core::session::{NOTES_LIVE_JOB, Session, SessionConfig};
@@ -60,6 +60,11 @@ pub struct SessionArgs {
     /// Live ASR chunk in ms (560 Balanced/Max, 1120 Light).
     #[arg(long, default_value_t = 560)]
     pub live_chunk_ms: u32,
+    /// Record without speech engines, as the app does while the models are
+    /// missing: no live transcript; `ghi jobs` (or `--process`) makes it in a
+    /// build with speech engines.
+    #[arg(long)]
+    pub record_only: bool,
     #[command(flatten)]
     pub engine: EngineArgs,
     #[command(flatten)]
@@ -146,16 +151,19 @@ pub fn runner(
             version: 1,
             template: template.clone(),
             llm: llm.clone(),
+            ready: always_ready(),
         }),
         Arc::new(FinalPassJob {
             engines: Arc::new(move || engines(&engine, 1120).map_err(|e| e.message)),
             chunk_s: 600.0,
+            ready: always_ready(),
         }),
         Arc::new(NotesJob {
             kind: NOTES_FINAL_JOB,
             version: 2,
             template,
             llm,
+            ready: always_ready(),
         }),
     ];
     JobRunner::new(store, events, handlers)
@@ -239,7 +247,11 @@ pub fn run(args: &SessionArgs) -> Result<(), ErrorDoc> {
         let speed = (args.speed > 0.0).then_some(args.speed);
         capture::replay(replay, speed).map_err(|e| internal("replay", e))?
     };
-    let engines = engines(&args.engine, args.live_chunk_ms)?;
+    let engines = if args.record_only {
+        None
+    } else {
+        Some(engines(&args.engine, args.live_chunk_ms)?)
+    };
     let (tx, rx) = bus();
     let printer = print_events(rx);
     let runner = runner(store.clone(), tx.clone(), &args.engine, &args.model);

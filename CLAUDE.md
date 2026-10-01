@@ -66,7 +66,9 @@ bundles; ASR ring → `live` engine → `persist` → store; event bus `events`)
 `speakers`/`aligner` (arrival order, provisional, Me in call mode),
 discard [RT-1] (store transaction + bundle rotation), `jobs` (the job runner;
 recording preempts), `final_pass` (v2 + `carry` name carry-over + `vocab`),
-`notes_job`, `import`, `recover` (startup). Speech engines behind
+`notes_job`, `import`, `recover` (startup). Without speech models a
+session records only and its jobs wait until the models are installed
+(`JobHandler::ready`). Speech engines behind
 `engines::SpeechEngines` (NeMo with `nemo`, a scripted fake in tests).
 `ghi session|jobs|import`; the desktop has a thin command layer (`core.rs`)
 and the typed `coreEvent`.
