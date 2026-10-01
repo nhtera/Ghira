@@ -30,6 +30,33 @@ const STDERR_LINE_MAX: usize = 4096;
 const TAIL_SHOWN: usize = 12;
 const TAIL_WIDTH: usize = 300;
 
+/// Pids of the workers alive in this process, so the app can kill them on
+/// exit even while one is busy generating ([`kill_all`]).
+static LIVE: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+fn live() -> std::sync::MutexGuard<'static, Vec<u32>> {
+    LIVE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Kills every live worker process at once (app shutdown). The sidecars stay
+/// valid objects; their next request fails like after a crash.
+pub fn kill_all() {
+    for pid in live().drain(..) {
+        kill_pid(pid);
+    }
+}
+
+fn kill_pid(pid: u32) {
+    #[cfg(unix)]
+    // SAFETY: a plain signal to a child of ours that has not been reaped
+    // (reaped ones are removed from `LIVE` first).
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGKILL);
+    }
+    #[cfg(not(unix))]
+    let _ = pid;
+}
+
 type Tail = Arc<Mutex<VecDeque<String>>>;
 
 enum Line {
@@ -69,6 +96,7 @@ impl Sidecar {
         let mut child = cmd.spawn().map_err(|e| {
             LlmError::Worker(format!("cannot start {}: {e}", cmd.get_program().display()))
         })?;
+        live().push(child.id());
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
@@ -235,6 +263,8 @@ impl Sidecar {
         self.stdin = None;
         let _ = self.child.kill();
         let _ = self.child.wait();
+        let pid = self.child.id();
+        live().retain(|&p| p != pid);
     }
 }
 
@@ -452,6 +482,22 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, LlmError::Timeout), "{err}");
         assert!(t.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn live_workers_are_registered_and_can_be_killed_while_busy() {
+        let mut s = fake("read l; sleep 30").unwrap();
+        let pid = s.child.id();
+        assert!(live().contains(&pid));
+        // Busy: the request is in flight and nothing answers.
+        s.stdin
+            .as_mut()
+            .map(|i| writeln!(i, "{{}}").and_then(|_| i.flush()));
+        kill_pid(pid);
+        let err = s.request(Op::Health, T).unwrap_err();
+        assert!(matches!(err, LlmError::Worker(_)), "{err}");
+        assert!(!pid_alive(pid));
+        assert!(!live().contains(&pid), "reaped workers leave the registry");
     }
 
     #[test]

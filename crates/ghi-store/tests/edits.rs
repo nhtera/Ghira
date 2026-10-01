@@ -307,4 +307,19 @@ fn preempted_jobs_keep_their_attempts_and_resume_point() {
         Some(id)
     );
     assert_eq!(store.active_job(&m, "import").unwrap(), None);
+
+    // All active jobs at once, with their meeting, oldest first.
+    let other = store
+        .enqueue_job(Some(&m), "notes_live", 1, &json!({}))
+        .unwrap();
+    let done = store
+        .enqueue_job(Some(&m), "import", 1, &json!({}))
+        .unwrap();
+    store.cancel_job(done).unwrap();
+    let all = store.active_jobs().unwrap();
+    assert_eq!(all.iter().map(|j| j.id).collect::<Vec<_>>(), [id, other]);
+    assert!(
+        all.iter()
+            .all(|j| j.meeting_gid.as_deref() == Some(m.as_str()))
+    );
 }

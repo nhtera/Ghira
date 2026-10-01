@@ -707,6 +707,12 @@ impl Store {
         self.update_meeting(gid, "status = ?1", status)
     }
 
+    /// Records that the user confirmed everyone's consent to recording
+    /// (the voiceprint and cloud gates read it).
+    pub fn set_consent_confirmed(&self, gid: &str, confirmed: bool) -> Result<()> {
+        self.update_meeting(gid, "consent_confirmed = ?1", i64::from(confirmed))
+    }
+
     /// Records the final duration and marks the meeting `done`.
     pub fn finish_meeting(&self, gid: &str, duration_ms: i64) -> Result<()> {
         self.update_meeting(gid, "duration_ms = ?1, status = 'done'", duration_ms)

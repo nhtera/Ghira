@@ -23,15 +23,106 @@ export const commands = {
 	speakerNotAPerson: (id: number) => typedError<null, string>(__TAURI_INVOKE("speaker_not_a_person", { id })),
 	/**  Imports an audio/video file as a meeting (transcribed by the job runner). */
 	importRecording: (path: string, splitChannels: boolean) => typedError<Imported, string>(__TAURI_INVOKE("import_recording", { path, splitChannels })),
+	/**
+	 *  Quits; `stop`: stop the recording first (it is saved and processed at the
+	 *  next launch). Without `stop`, a running recording keeps the app open.
+	 */
+	quitApp: (stop: boolean) => typedError<null, string>(__TAURI_INVOKE("quit_app", { stop })),
+	/**  Library rows, newest first. */
+	listMeetings: (limit: number, offset: number) => typedError<MeetingRow[], string>(__TAURI_INVOKE("list_meetings", { limit, offset })),
+	setMeetingTitle: (meeting: string, title: string) => typedError<null, string>(__TAURI_INVOKE("set_meeting_title", { meeting, title })),
+	/**  The user's own lines of a meeting, in time order. */
+	noteLines: (meeting: string) => typedError<NoteLine[], string>(__TAURI_INVOKE("note_lines", { meeting })),
+	/**
+	 *  Adds a notepad line at meeting time `tMs` (invisible anchor: the line links
+	 *  to that moment). A tagged kind also leaves a mark there.
+	 */
+	addNoteLine: (meeting: string, text: string, tMs: number | null, kind: NoteKind) => typedError<NoteLine, string>(__TAURI_INVOKE("add_note_line", { meeting, text, tMs, kind })),
+	updateNoteLine: (meeting: string, line: string, text: string) => typedError<null, string>(__TAURI_INVOKE("update_note_line", { meeting, line, text })),
+	deleteNoteLine: (meeting: string, line: string) => typedError<null, string>(__TAURI_INVOKE("delete_note_line", { meeting, line })),
+	discardPreview: (seconds: number | null) => typedError<DiscardPreview, string>(__TAURI_INVOKE("discard_preview", { seconds })),
+	/**  The "Consent confirmed" toggle of a meeting [RT-14]. */
+	setConsentConfirmed: (meeting: string, confirmed: boolean) => typedError<null, string>(__TAURI_INVOKE("set_consent_confirmed", { meeting, confirmed })),
+	/**
+	 *  The recording in progress as it stands now (a reloaded webview, a second
+	 *  window): apply events with a greater `seq` after it. `None` when idle.
+	 */
+	sessionSnapshot: () => typedError<{
+	seq: number | null,
+	meeting: string,
+	state: SessionState,
+	nowMs: number | null,
+	/**  A live transcript is being made (false: models missing). */
+	transcribing: boolean,
+	/**  Speakers still in play (merged ones are gone). */
+	speakers: SpeakerInfo[],
+	/**  Final lines stored so far, in time order. */
+	lines: LineInfo[],
+	/**  Marks (ms), in time order. */
+	marks: (number | null)[],
+} | null, string>(__TAURI_INVOKE("session_snapshot")),
+	modelsStatus: () => typedError<ModelsStatus, string>(__TAURI_INVOKE("models_status")),
+	/**
+	 *  Downloads every missing model of this machine's tier, one after another,
+	 *  in the background (`modelDownload` events). A second call while running
+	 *  does nothing.
+	 */
+	downloadModels: () => typedError<null, string>(__TAURI_INVOKE("download_models")),
+	/**  Stops the download (the partial file stays; the next download resumes). */
+	cancelModelDownload: () => __TAURI_INVOKE<void>("cancel_model_download"),
+	getSettings: () => typedError<AppSettings, string>(__TAURI_INVOKE("get_settings")),
+	/**  Changes some settings and returns them all. */
+	updateSettings: (patch: SettingsPatch) => typedError<AppSettings, string>(__TAURI_INVOKE("update_settings", { patch })),
+	micPermission: () => __TAURI_INVOKE<Permission>("mic_permission"),
+	/**  Shows the OS prompt when undetermined (blocks until answered). */
+	requestMicPermission: () => typedError<Permission, string>(__TAURI_INVOKE("request_mic_permission")),
+	replyMeetingDetected: (app: string, reply: DetectReply) => typedError<null, string>(__TAURI_INVOKE("reply_meeting_detected", { app, reply })),
+	/**
+	 *  A token for `ghi-audio://localhost/<token>` (build the URL with
+	 *  `convertFileSrc(token, "ghi-audio")`). `track`: 0 mic, 1 system; default
+	 *  is the diarized track (system in a call, else the mic).
+	 */
+	issueAudioSample: (meeting: string, t0Ms: number | null, t1Ms: number | null, track: number | null) => typedError<string, string>(__TAURI_INVOKE("issue_audio_sample", { meeting, t0Ms, t1Ms, track })),
+	/**
+	 *  Brings the main window forward on `route` (a hash route, e.g. `/live`).
+	 *  Async: creating a window from a sync command deadlocks on Windows.
+	 */
+	showMain: (route: string | null) => typedError<null, string>(__TAURI_INVOKE("show_main", { route })),
 };
 
 /** Events */
 export const events = {
 	coreEvent: makeEvent<CoreEvent>("core-event"),
+	meetingDetected: makeEvent<MeetingDetected>("meeting-detected"),
 	menuAction: makeEvent<MenuAction>("menu-action"),
+	modelDownload: makeEvent<ModelDownload>("model-download"),
+	navigate: makeEvent<Navigate>("navigate"),
+	quitRequested: makeEvent<QuitRequested>("quit-requested"),
 };
 
 /* Types */
+/**
+ *  App settings the UI reads (stored in the encrypted store). Every field is
+ *  required in the TypeScript type; what the store lacks takes its default.
+ */
+export type AppSettings = {
+	/**  Onboarding finished (or skipped). */
+	onboardingDone: boolean,
+	/**  Ask to record when a meeting app starts using the mic. */
+	detectMeetings: boolean,
+	/**  ⌘M / Ctrl+M marks a moment from any app while recording. */
+	globalMarkShortcut: boolean,
+	/**
+	 *  Voice profile of the user ("Me"). Off until speaker embeddings exist
+	 *  (phase 14); the onboarding step is hidden while off.
+	 */
+	voiceProfilesMe: boolean,
+	/**  Saving other people's voices (consent dialog). Off for the alpha. */
+	voiceProfilesThirdParty: boolean,
+	/**  No network at all, model downloads included (doc 02 §L). */
+	strictOffline: boolean,
+};
+
 /**  Versions shown in Settings → About. */
 export type AppVersion = {
 	app: string,
@@ -40,6 +131,30 @@ export type AppVersion = {
 
 /**  Every core event, in order (`seq` is gap-free; on a gap, re-read state). */
 export type CoreEvent = Envelope;
+
+/**  The user's answer to a detection prompt. */
+export type DetectReply = 
+/**  Recording starts (the UI calls start_recording itself). */
+"start" | 
+/**  Quiet for this call (the 30 min cooldown already applies). */
+"notNow" | 
+/**  Never ask for this app again. */
+"never";
+
+/**  What "discard the last N seconds" would remove, shown before confirming [RT-1]. */
+export type DiscardPreview = {
+	/**  Where the cut lands (meeting ms). */
+	fromMs: number | null,
+	/**  Transcript lines that end after the cut. */
+	lines: string[],
+	/**  Notepad lines typed after the cut. */
+	notes: string[],
+	marks: number,
+};
+
+export type DownloadPhase = "downloading" | 
+/**  Checking the SHA-256 of the finished file. */
+"verifying" | "done" | "failed" | "cancelled";
 
 /**
  *  An event with its sequence number (gap-free per bus) and wall time, so a
@@ -60,7 +175,32 @@ track: number; text: string } | { type: "transcriptFinal"; meeting: string; line
 /**  A provisional speaker became "Speaker N". */
 { type: "speakerConfirmed"; meeting: string; speaker: SpeakerInfo } | { type: "speakerRenamed"; meeting: string; speaker: SpeakerInfo } | { type: "speakersMerged"; meeting: string; from: number; into: number } | { type: "speakerSplit"; meeting: string; from: number; speaker: SpeakerInfo } | { type: "speakerNotAPerson"; meeting: string; id: number } | { type: "markAdded"; meeting: string; tMs: number | null } | 
 /**  Everything from `from_ms` on was removed (audio, lines, marks, notes). */
-{ type: "discardApplied"; meeting: string; fromMs: number | null } | { type: "levelMeter"; meeting: string; micDbfs: number | null; systemDbfs: number | null } | { type: "health"; meeting: string; 
+{ type: "discardApplied"; meeting: string; fromMs: number | null } | 
+/**
+ *  RMS level of each track over the last ~100 ms (at most 10 per second,
+ *  only while audio flows). `None`: the track is not captured or no audio
+ *  passed in the window (paused, asleep); digital silence reads -100.
+ */
+{ type: "levelMeter"; meeting: string; micDbfs: number | null; systemDbfs: number | null } | 
+/**
+ *  The Mac went to sleep; the timeline stops (the gap is not recorded as
+ *  audio) until `Woke` [RT-10].
+ */
+{ type: "slept"; meeting: string } | { type: "woke"; meeting: string } | 
+/**  The system-audio tap was restarted (an output device change). */
+{ type: "systemAudioRestarted"; meeting: string } | 
+/**
+ *  The system track has been digital silence for `silent_s` seconds in a
+ *  call: a denied or broken tap (hint: record the room instead).
+ */
+{ type: "silentSystemTrack"; meeting: string; silentS: number | null } | { type: "diskLow"; meeting: string; freeBytes: number | null } | { type: "diskFull"; meeting: string } | 
+/**  A capture device vanished (0 = mic, 1 = system). */
+{ type: "trackLost"; meeting: string; track: number } | 
+/**
+ *  The audio route changed; `bluetooth_hfp`: the input is a Bluetooth
+ *  headset, whose mic drops the whole link to call quality.
+ */
+{ type: "routeChanged"; meeting: string; bluetoothHfp: boolean } | { type: "health"; meeting: string; 
 /**  Seconds the live transcript trails the audio. */
 asrLagS: number | null; 
 /**  Audio skipped by ASR so far (seconds; the final pass fills it). */
@@ -89,6 +229,44 @@ export type LineInfo = {
 	words: WordInfo[],
 };
 
+/**  A meeting app started using the microphone. */
+export type MeetingDetected = {
+	/**  Stable app key (`zoom`, `teams`, `chrome`, …), for the reply. */
+	app: string,
+	/**  Shown in the prompt ("Zoom"); browsers prompt generically. */
+	appName: string,
+	browser: boolean,
+};
+
+/**  What the library shows about a meeting's processing. */
+export type MeetingJob = {
+	/**  `notes_live`, `final_pass`, `notes_final`. */
+	kind: string,
+	/**  0..1. */
+	progress: number | null,
+	/**  Queued until its models are installed (record now, process later). */
+	waitingForModels: boolean,
+};
+
+export type MeetingRow = {
+	gid: string,
+	title: string,
+	/**  Unix ms. */
+	startedAt: number | null,
+	durationMs: number | null,
+	/**  `live`, `import`, … */
+	source: string,
+	/**  `call` or `room`. */
+	mode: string,
+	/**  `recording`, `done`, `processing`, `ready`, … */
+	status: string,
+	transcriptVersion: number | null,
+	cloudUsed: boolean,
+	consentConfirmed: boolean,
+	/**  The active job, if any. */
+	job: MeetingJob | null,
+};
+
 /**  A menu command for the UI. */
 export type MenuAction = 
 /**  ⌘⇧R: start or stop recording. */
@@ -100,6 +278,66 @@ export type MenuAction =
 /**  ⌘,: settings. */
 "settings";
 
+/**  Download progress for one model. */
+export type ModelDownload = {
+	model: string,
+	phase: DownloadPhase,
+	done: number | null,
+	total: number | null,
+	/**  Why it stopped (failed). */
+	error: string | null,
+};
+
+export type ModelInfo = {
+	id: string,
+	/**  `asr`, `diarization`, `llm`. */
+	role: string,
+	size: number | null,
+	installed: boolean,
+	/**  Bytes of an unfinished download (resumes from here). */
+	partialBytes: number | null,
+};
+
+export type ModelsStatus = {
+	/**  `light`, `balanced` or `max` (hardware tier). */
+	tier: string,
+	models: ModelInfo[],
+	downloading: boolean,
+};
+
+/**  The UI should go to `route` (a window was brought forward for it). */
+export type Navigate = {
+	route: string,
+};
+
+/**  The kinds a user line can carry (in-call tags feed the notes, brief D4). */
+export type NoteKind = "note" | "decision" | "action" | "question";
+
+/**  A line of the live notepad (a user note block at a point in meeting time). */
+export type NoteLine = {
+	gid: string,
+	text: string,
+	/**  Meeting time the line was typed at (ms), if anchored. */
+	tMs: number | null,
+	/**  `note` (typed), `decision`, `action`, `question` (tagged). */
+	kind: string,
+};
+
+/**  Microphone access as macOS reports it. */
+export type Permission = "granted" | "denied" | 
+/**  Not asked yet. */
+"undetermined" | 
+/**  Blocked by a policy (MDM, parental controls). */
+"restricted" | 
+/**  Not applicable on this platform (no macOS permission model). */
+"unsupported";
+
+/**
+ *  The user quit while recording: the UI asks "Stop and quit?" and answers
+ *  with `quit_app`.
+ */
+export type QuitRequested = Record<string, never>;
+
 /**  Recording mode (doc 02 §A). */
 export type RecordMode = 
 /**  Mic (you) + the call's audio. */
@@ -107,8 +345,36 @@ export type RecordMode =
 /**  One mic in a room. */
 "room";
 
+/**
+ *  Everything a reloaded webview needs to redraw a running session. `seq` is
+ *  the bus sequence number read before the rest was gathered: events with a
+ *  greater `seq` may repeat what is here (lines are told apart by `gid`).
+ */
+export type SessionSnapshot = {
+	seq: number | null,
+	meeting: string,
+	state: SessionState,
+	nowMs: number | null,
+	/**  A live transcript is being made (false: models missing). */
+	transcribing: boolean,
+	/**  Speakers still in play (merged ones are gone). */
+	speakers: SpeakerInfo[],
+	/**  Final lines stored so far, in time order. */
+	lines: LineInfo[],
+	/**  Marks (ms), in time order. */
+	marks: (number | null)[],
+};
+
 /**  SessionManager states (brief §7, the Record control). */
 export type SessionState = "idle" | "starting" | "recording" | "paused" | "stopping" | "processing" | "ready" | "failed";
+
+/**  A change to some settings; fields left out keep their value. */
+export type SettingsPatch = {
+	onboardingDone: boolean | null,
+	detectMeetings: boolean | null,
+	globalMarkShortcut: boolean | null,
+	strictOffline: boolean | null,
+};
 
 export type SpeakerInfo = {
 	/**  Session speaker id (stable for the meeting). */

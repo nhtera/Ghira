@@ -36,6 +36,10 @@ pub struct Core {
     /// slot itself is only locked briefly.
     lifecycle: Mutex<()>,
     runner: Mutex<Option<Arc<JobRunner>>>,
+    /// App settings as last read or written (system.rs).
+    settings: Mutex<Option<crate::system::AppSettings>>,
+    /// The runner's thread, joined (bounded) at shutdown.
+    runner_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
     events: EventTx,
 }
 
@@ -86,13 +90,13 @@ fn preset() -> &'static ghi_models::Preset {
 
 /// This build has speech engines and their models are installed. Without
 /// them a recording keeps the audio only and its jobs wait (doc 02 §L).
-fn speech_ready(models: &Path) -> bool {
+pub(crate) fn speech_ready(models: &Path) -> bool {
     let ids: Vec<&str> = preset().speech_models.iter().map(String::as_str).collect();
     cfg!(feature = "nemo") && ghi_models::installed(models, &ids)
 }
 
 /// The notes model for this machine's tier is installed.
-fn llm_ready(models: &Path) -> bool {
+pub(crate) fn llm_ready(models: &Path) -> bool {
     ghi_models::installed(models, &[preset().llm_id])
 }
 
@@ -147,16 +151,66 @@ impl Core {
             session: Mutex::new(None),
             lifecycle: Mutex::new(()),
             runner: Mutex::new(None),
+            runner_thread: Mutex::new(None),
+            settings: Mutex::new(None),
             events,
         })
     }
 
-    fn models(&self) -> PathBuf {
+    /// Opens the store, runs crash recovery and starts the jobs off the main
+    /// thread at launch, so the library and "recovered" states are there on
+    /// first paint (commands that need the store wait for it).
+    pub fn init_in_background(self: &Arc<Self>) {
+        let me = self.clone();
+        let _ = std::thread::Builder::new()
+            .name("ghi-store-open".into())
+            .spawn(move || {
+                if let Err(e) = me.store() {
+                    me.events.emit(ghi_core::events::Event::Error {
+                        meeting: None,
+                        kind: ErrorKind::Storage,
+                        message: format!("opening the store: {e}"),
+                    });
+                }
+            });
+    }
+
+    /// A recording is running (quitting must ask first).
+    pub fn recording(&self) -> bool {
+        lock(&self.session).is_some()
+    }
+
+    /// A recording is running or starting/stopping.
+    pub fn busy(&self) -> bool {
+        self.recording() || self.lifecycle.try_lock().is_err()
+    }
+
+    pub fn settings_cache(&self) -> &Mutex<Option<crate::system::AppSettings>> {
+        &self.settings
+    }
+
+    /// Stops the job runner for a quit (not a crash): the running job yields
+    /// at its next checkpoint, or — if it can't within `wait` (notes mid-LLM
+    /// call) — its claim goes back to the queue without spending an attempt.
+    /// Then the LLM worker processes are killed so none outlives the app.
+    pub fn shutdown(&self, wait: std::time::Duration) {
+        if let Some(r) = lock(&self.runner).as_ref() {
+            r.shutdown_and_release(wait);
+        }
+        ghi_llm::local::kill_workers();
+        if let Some(t) = lock(&self.runner_thread).take()
+            && t.is_finished()
+        {
+            let _ = t.join();
+        }
+    }
+
+    pub fn models(&self) -> PathBuf {
         self.data.join("models")
     }
 
     /// Opens the store on first use, runs crash recovery and starts the job runner.
-    fn store(&self) -> Result<Arc<Store>, String> {
+    pub fn store(&self) -> Result<Arc<Store>, String> {
         let mut slot = lock(&self.store);
         if let Some(s) = slot.as_ref() {
             return Ok(s.clone());
@@ -209,7 +263,7 @@ impl Core {
                 }),
             ],
         );
-        runner.spawn().map_err(|e| e.to_string())?;
+        *lock(&self.runner_thread) = Some(runner.spawn().map_err(|e| e.to_string())?);
         *lock(&self.runner) = Some(runner);
         *slot = Some(store.clone());
         Ok(store)
@@ -227,29 +281,33 @@ impl Core {
         }
         let store = self.store()?;
         // Models missing: record now, transcribe when they arrive. Engines
-        // that fail to load must not cost the recording either.
+        // that fail to load must not cost the recording either. They load
+        // after the jobs paused (the session calls this once recording is
+        // announced), so the notes LLM and NeMo are never resident together.
         let models = self.models();
-        let engines = if speech_ready(&models) {
-            engines(&models, preset().asr_chunk_ms)
+        let events = self.events.clone();
+        let load = move || {
+            if !speech_ready(&models) {
+                return Ok(None);
+            }
+            Ok(engines(&models, preset().asr_chunk_ms)
                 .inspect_err(|e| {
-                    self.events.emit(ghi_core::events::Event::Error {
+                    events.emit(ghi_core::events::Event::Error {
                         meeting: None,
                         kind: ErrorKind::Engine,
                         message: format!("speech engines: {e}"),
                     })
                 })
-                .ok()
-        } else {
-            None
+                .ok())
         };
         let capture =
             ghi_core::capture::live(mode == Mode::Call, &[]).map_err(|e| e.to_string())?;
         let hooks = lock(&self.runner)
             .clone()
             .map(|r| r as Arc<dyn ghi_core::session::RecordingHooks>);
-        let s = Session::start(
+        let s = Session::start_with_loader(
             store,
-            engines,
+            load,
             capture,
             SessionConfig {
                 mode,
@@ -287,6 +345,13 @@ impl Core {
     pub fn with_session<T>(&self, f: impl FnOnce(&Session) -> T) -> Result<T, String> {
         let s = lock(&self.session).clone().ok_or("nothing is recording")?;
         Ok(f(&s))
+    }
+
+    /// Wakes the job runner (models arrived, a job was queued).
+    pub fn notify_jobs(&self) {
+        if let Some(r) = lock(&self.runner).as_ref() {
+            r.notify();
+        }
     }
 
     pub fn import(

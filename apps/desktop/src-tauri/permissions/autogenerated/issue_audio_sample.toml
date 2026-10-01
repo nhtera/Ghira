@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-issue-audio-sample"
+description = "Enables the issue_audio_sample command without any pre-configured scope."
+commands.allow = ["issue_audio_sample"]
+
+[[permission]]
+identifier = "deny-issue-audio-sample"
+description = "Denies the issue_audio_sample command without any pre-configured scope."
+commands.deny = ["issue_audio_sample"]

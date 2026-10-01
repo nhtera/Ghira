@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Main window: core defaults plus Ghira's own commands. No shell, http, fs or opener plugins.",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -17,6 +19,26 @@
     "allow-merge-speakers",
     "allow-split-speaker",
     "allow-speaker-not-a-person",
-    "allow-import-recording"
+    "allow-import-recording",
+    "allow-quit-app",
+    "allow-list-meetings",
+    "allow-set-meeting-title",
+    "allow-note-lines",
+    "allow-add-note-line",
+    "allow-update-note-line",
+    "allow-delete-note-line",
+    "allow-discard-preview",
+    "allow-get-settings",
+    "allow-update-settings",
+    "allow-mic-permission",
+    "allow-request-mic-permission",
+    "allow-reply-meeting-detected",
+    "allow-issue-audio-sample",
+    "allow-show-main",
+    "allow-set-consent-confirmed",
+    "allow-session-snapshot",
+    "allow-models-status",
+    "allow-download-models",
+    "allow-cancel-model-download"
   ]
 }

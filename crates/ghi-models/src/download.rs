@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 
 use ghi_net::NetPolicy;
-use ghi_net::fetch::{FetchError, FetchOpts, FetchReport, Transport, fetch};
+use ghi_net::fetch::{Control, FetchError, FetchOpts, FetchReport, Progress, Transport, fetch};
 
 use crate::verify::verify_file;
 use crate::{Model, path_in};
@@ -19,6 +19,8 @@ pub enum DownloadError {
     Denied(String),
     /// Every source failed; the last error is kept.
     Failed(FetchError),
+    /// Stopped through [`Control::cancel`]; the `.part` is kept for a resume.
+    Cancelled,
     Io(String),
 }
 
@@ -27,6 +29,7 @@ impl std::fmt::Display for DownloadError {
         match self {
             DownloadError::Denied(d) => write!(f, "not allowed: {d}"),
             DownloadError::Failed(e) => write!(f, "download failed: {e}"),
+            DownloadError::Cancelled => f.write_str("download cancelled"),
             DownloadError::Io(d) => write!(f, "file error: {d}"),
         }
     }
@@ -56,15 +59,22 @@ fn host_of(url: &str) -> Option<String> {
 }
 
 /// Installs `m` into `dir`. A file already there that verifies is left alone
-/// (`downloaded == 0`). Resumes a `.part`; on a failed source, tries the next.
+/// (`downloaded == 0`). Resumes a `.part`; on a failed or stalled source
+/// (`ctl.idle_timeout`), tries the next, which continues from the same `.part`.
+/// `progress` is rate limited and ends with [`Progress::Verifying`]; `ctl.cancel`
+/// stops with [`DownloadError::Cancelled`], no further source tried.
 pub fn download(
     m: &Model,
     dir: &Path,
     policy: NetPolicy,
-    progress: &mut dyn FnMut(u64, u64),
+    ctl: &Control,
+    progress: &mut dyn FnMut(Progress<'_>),
     transport: &dyn Transport,
 ) -> Result<FetchReport, DownloadError> {
     let dest = path_in(dir, m);
+    if dest.exists() {
+        progress(Progress::Verifying);
+    }
     if verify_file(&dest, m).is_ok() {
         return Ok(FetchReport {
             downloaded: 0,
@@ -85,9 +95,11 @@ pub fn download(
             resume: true,
             // Mirror hosts come from the embedded registry, which is trusted.
             extra_hosts: m.mirrors.iter().filter_map(|b| host_of(b)).collect(),
+            control: ctl.clone(),
         };
         match fetch(policy, &url, &dest, &opts, progress, transport) {
             Ok(report) => return Ok(report),
+            Err(FetchError::Cancelled) => return Err(DownloadError::Cancelled),
             Err(FetchError::Denied(d)) if policy == NetPolicy::StrictOffline => {
                 return Err(DownloadError::Denied(d));
             }
@@ -179,7 +191,15 @@ mod tests {
             good: vec!["mirror.example.org"],
             urls: RefCell::new(vec![]),
         };
-        let r = download(&m, dir.path(), NetPolicy::Default, &mut |_, _| {}, &t).unwrap();
+        let r = download(
+            &m,
+            dir.path(),
+            NetPolicy::Default,
+            &Control::default(),
+            &mut |_| {},
+            &t,
+        )
+        .unwrap();
         assert_eq!(r.downloaded, DATA.len() as u64);
         assert_eq!(t.urls.borrow().len(), 2);
         verify_file(&path_in(dir.path(), &m), &m).unwrap();
@@ -193,7 +213,15 @@ mod tests {
             good: vec![],
             urls: RefCell::new(vec![]),
         };
-        let e = download(&m, dir.path(), NetPolicy::Default, &mut |_, _| {}, &t).unwrap_err();
+        let e = download(
+            &m,
+            dir.path(),
+            NetPolicy::Default,
+            &Control::default(),
+            &mut |_| {},
+            &t,
+        )
+        .unwrap_err();
         assert!(matches!(e, DownloadError::Failed(FetchError::Status(503))));
     }
 
@@ -205,9 +233,41 @@ mod tests {
             good: vec!["huggingface.co"],
             urls: RefCell::new(vec![]),
         };
-        let e = download(&m, dir.path(), NetPolicy::StrictOffline, &mut |_, _| {}, &t).unwrap_err();
+        let e = download(
+            &m,
+            dir.path(),
+            NetPolicy::StrictOffline,
+            &Control::default(),
+            &mut |_| {},
+            &t,
+        )
+        .unwrap_err();
         assert!(matches!(e, DownloadError::Denied(_)));
         assert!(t.urls.borrow().is_empty());
+    }
+
+    #[test]
+    fn same_size_file_with_a_bad_hash_is_downloaded_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = model(vec![]);
+        let mut bad = DATA.to_vec();
+        bad[0] ^= 1;
+        fs::write(path_in(dir.path(), &m), &bad).unwrap();
+        let t = Routed {
+            good: vec!["huggingface.co"],
+            urls: RefCell::new(vec![]),
+        };
+        let r = download(
+            &m,
+            dir.path(),
+            NetPolicy::Default,
+            &Control::default(),
+            &mut |_| {},
+            &t,
+        )
+        .unwrap();
+        assert_eq!(r.downloaded, DATA.len() as u64);
+        verify_file(&path_in(dir.path(), &m), &m).unwrap();
     }
 
     #[test]
@@ -219,7 +279,15 @@ mod tests {
             good: vec![],
             urls: RefCell::new(vec![]),
         };
-        let r = download(&m, dir.path(), NetPolicy::StrictOffline, &mut |_, _| {}, &t).unwrap();
+        let r = download(
+            &m,
+            dir.path(),
+            NetPolicy::StrictOffline,
+            &Control::default(),
+            &mut |_| {},
+            &t,
+        )
+        .unwrap();
         assert_eq!(r.downloaded, 0);
         assert!(t.urls.borrow().is_empty());
     }

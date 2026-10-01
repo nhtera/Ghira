@@ -18,9 +18,9 @@
 //! later").
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Sender, bounded, unbounded};
 use ghi_audio::encoder::{EncoderConfig, OpusRecorder};
@@ -30,9 +30,11 @@ use ghi_store::store::{NewMeeting, Store, TrackKind};
 
 use crate::capture::Capture;
 use crate::engines::SpeechEngines;
-use crate::events::{ErrorKind, Event, EventTx, SessionState};
+use crate::events::{
+    ErrorKind, Event, EventTx, LineInfo, SessionSnapshot, SessionState, SpeakerInfo, WordInfo,
+};
 use crate::live::{Engine, EngineCmd, LiveConfig, Mode, PersistMsg};
-use crate::pages::{BundlePages, Muted};
+use crate::pages::{BundlePages, Metered, Muted};
 use crate::persist::Persist;
 use crate::speakers::SpeakerId;
 
@@ -109,7 +111,22 @@ struct Discarding {
 pub trait RecordingHooks: Send + Sync {
     fn recording_started(&self);
     fn recording_stopped(&self);
+    /// Waits (at most `max`) for the job that was running when recording
+    /// started to yield, so its model is gone before the speech engines
+    /// load. Jobs yield at their safe points (the final pass between chunks;
+    /// the notes job only before it starts, so a run in progress may outlast
+    /// `max`). Returns whether nothing is running.
+    fn wait_idle(&self, _max: Duration) -> bool {
+        true
+    }
 }
+
+/// How long `start` waits for a running job to yield before loading engines.
+const JOB_YIELD_WAIT: Duration = Duration::from_secs(5);
+/// How long a second edit (discard, split, snapshot) waits for the first.
+const OP_WAIT: Duration = Duration::from_secs(15);
+/// The level meter reports at most this often.
+const LEVEL_EVERY: Duration = Duration::from_millis(100);
 
 /// What `stop` reports.
 #[derive(Debug, Clone, PartialEq)]
@@ -136,14 +153,37 @@ pub struct Session {
     transcribing: bool,
     cfg: SessionConfig,
     hooks: Option<Arc<dyn RecordingHooks>>,
+    /// Held by the multi-step operations (discard, split, snapshot) so they
+    /// never interleave.
+    ops: Mutex<()>,
 }
 
 impl Session {
     /// Creates the meeting and starts recording from `capture`; with no
-    /// `engines`, records without a live transcript.
+    /// `engines`, records without a live transcript. The engines are already
+    /// loaded: prefer [`Session::start_with_loader`], which loads them after
+    /// the jobs paused.
     pub fn start(
         store: Arc<Store>,
         engines: Option<Arc<dyn SpeechEngines>>,
+        capture: Capture,
+        cfg: SessionConfig,
+        events: EventTx,
+        hooks: Option<Arc<dyn RecordingHooks>>,
+    ) -> Result<Session, SessionError> {
+        Session::start_with_loader(store, move || Ok(engines), capture, cfg, events, hooks)
+    }
+
+    /// Like [`Session::start`], but the speech engines come from `load_engines`,
+    /// which runs after `hooks.recording_started()` (heavy jobs pause and get
+    /// [`JOB_YIELD_WAIT`] to release their models, so the LLM and the ASR are
+    /// not resident together on small machines) and after capture is being
+    /// pumped (the first seconds are not lost to the load). `Ok(None)` records
+    /// without a live transcript; `Err` abandons the start: jobs resume and
+    /// the half-made meeting is removed. `recording_started` is called once.
+    pub fn start_with_loader(
+        store: Arc<Store>,
+        load_engines: impl FnOnce() -> Result<Option<Arc<dyn SpeechEngines>>, SessionError>,
         mut capture: Capture,
         mut cfg: SessionConfig,
         events: EventTx,
@@ -163,9 +203,6 @@ impl Session {
         if cfg.mode == Mode::Call && !tracks.contains(&Track::System) {
             cfg.mode = Mode::Room;
         }
-        // Nothing reads the ASR ring without engines: never wait on it.
-        let live = engines.is_some();
-        cfg.lossless &= live;
         if let Some(h) = &hooks {
             h.recording_started();
         }
@@ -222,10 +259,10 @@ impl Session {
                     .map_err(|e| err("opening the audio file", e))?,
             );
         }
-        let recorder = Muted::new(
+        let recorder = Metered::new(Muted::new(
             OpusRecorder::new(BundlePages::new(writers), &tracks, EncoderConfig::default())
                 .map_err(|e| err("audio encoder", e))?,
-        );
+        ));
         let pcfg = PipelineConfig {
             route: capture.route,
             aec_enabled: cfg.mode == Mode::Call,
@@ -244,46 +281,73 @@ impl Session {
         let capture_done = Arc::new(AtomicBool::new(false));
         let position = Arc::new(AtomicU64::new(0));
         let source_ended = Arc::new(AtomicBool::new(false));
+        // Until the engines are known, a lossless replay waits for them.
+        let lossless = Arc::new(AtomicBool::new(cfg.lossless));
         let mut threads = Vec::new();
 
         let persist = Persist::new(store.clone(), meeting.clone(), events.clone());
         threads.push(spawn("ghi-persist", move || persist.run(persist_rx))?);
-
-        if let Some(engines) = engines {
-            let engine = Engine::new(
-                LiveConfig {
-                    meeting: meeting.clone(),
-                    mode: cfg.mode,
-                    language: cfg.language.clone(),
-                },
-                engines,
-                &tracks,
-                events.clone(),
-                persist_tx.clone(),
-            )
-            .map_err(|e| err("speech engine", e))?;
-            let done = capture_done.clone();
-            threads.push(spawn("ghi-engine", move || {
-                engine.run(asr_ring, engine_rx, done)
-            })?);
-        } else {
-            // Speaker edits go nowhere: there are no live speakers.
-            drop((asr_ring, engine_rx));
-        }
         {
             let ctx = PumpCtx {
-                lossless: cfg.lossless,
+                lossless: lossless.clone(),
                 store: store.clone(),
                 meeting: meeting.clone(),
                 events: events.clone(),
                 tracks: tracks.clone(),
                 position: position.clone(),
-                capture_done,
+                capture_done: capture_done.clone(),
                 source_ended: source_ended.clone(),
             };
             threads.push(spawn("ghi-pump", move || {
                 pump(ctx, pipeline, capture, pump_rx)
             })?);
+        }
+
+        // Audio is being pumped (and kept) while the engines load.
+        // The pump keeps the capture ring drained while a running job gets
+        // time to release its model.
+        if let Some(h) = &hooks {
+            h.wait_idle(JOB_YIELD_WAIT);
+        }
+        let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            load_engines().and_then(|engines| {
+                engines
+                    .map(|engines| {
+                        Engine::new(
+                            LiveConfig {
+                                meeting: meeting.clone(),
+                                mode: cfg.mode,
+                                language: cfg.language.clone(),
+                            },
+                            engines,
+                            &tracks,
+                            events.clone(),
+                            persist_tx.clone(),
+                        )
+                        .map_err(|e| err("speech engine", e))
+                    })
+                    .transpose()
+            })
+        }));
+        let engine = loaded
+            .unwrap_or_else(|_| Err(SessionError("loading the speech engines panicked".into())));
+        let engine = match engine {
+            Ok(e) => e,
+            Err(e) => return Err(abort(pump_tx, persist_tx, threads, e)),
+        };
+        let live = engine.is_some();
+        // Nothing reads the ASR ring without engines: never wait on it.
+        cfg.lossless &= live;
+        lossless.store(cfg.lossless, Ordering::Release);
+        if let Some(engine) = engine {
+            let done = capture_done;
+            match spawn("ghi-engine", move || engine.run(asr_ring, engine_rx, done)) {
+                Ok(t) => threads.push(t),
+                Err(e) => return Err(abort(pump_tx, persist_tx, threads, e)),
+            }
+        } else {
+            // Speaker edits go nowhere: there are no live speakers.
+            drop((asr_ring, engine_rx));
         }
 
         undo.armed = false;
@@ -316,6 +380,7 @@ impl Session {
             transcribing: live,
             cfg,
             hooks,
+            ops: Mutex::new(()),
         })
     }
 
@@ -391,8 +456,150 @@ impl Session {
         let _ = self.engine.send(EngineCmd::NotAPerson { id });
     }
 
+    /// Takes the lock of the multi-step operations; a second caller waits up
+    /// to [`OP_WAIT`] for the first, then gets an error.
+    fn op_lock(&self) -> Result<MutexGuard<'_, ()>, SessionError> {
+        let end = Instant::now() + OP_WAIT;
+        loop {
+            match self.ops.try_lock() {
+                Ok(g) => return Ok(g),
+                Err(TryLockError::Poisoned(p)) => return Ok(p.into_inner()),
+                Err(TryLockError::WouldBlock) if Instant::now() < end => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(TryLockError::WouldBlock) => {
+                    return Err(SessionError("another edit is still running".into()));
+                }
+            }
+        }
+    }
+
+    /// What a reloaded webview needs to redraw this session: state, speakers
+    /// (from the engine; from the store without one), the final lines and the
+    /// marks stored so far. Events with a `seq` above the snapshot's follow.
+    pub fn snapshot(&self) -> SessionSnapshot {
+        let wait = Duration::from_secs(10);
+        // Not interleaved with a discard (which would show half of itself).
+        let _op = self.op_lock().ok();
+        // Read before the engine is asked: every line announced up to `seq`
+        // reached the persist thread before the engine answers.
+        let seq = self.events.last_seq();
+        let live_speakers = self.transcribing.then(|| {
+            let (tx, rx) = bounded(1);
+            self.engine.send(EngineCmd::Snapshot { reply: tx }).ok()?;
+            rx.recv_timeout(wait).ok()
+        });
+        let mut gids: Vec<(SpeakerId, String)> = Vec::new();
+        if let Some(p) = &self.persist {
+            // The lines still waiting to be written, then who is who.
+            let (tx, rx) = bounded(1);
+            if p.send(PersistMsg::Flush(tx)).is_ok() {
+                let _ = rx.recv_timeout(wait);
+            }
+            let (tx, rx) = bounded(1);
+            if p.send(PersistMsg::SpeakerGids(tx)).is_ok()
+                && let Ok(v) = rx.recv_timeout(wait)
+            {
+                gids = v;
+            }
+        }
+        let stored = self.store.speakers(&self.meeting).unwrap_or_default();
+        let mut speakers = live_speakers.flatten();
+        if speakers.is_none() {
+            // No engine (or it did not answer): the store's speakers, numbered
+            // in order.
+            let own: Vec<_> = stored.iter().filter(|s| s.merged_into.is_none()).collect();
+            gids = own
+                .iter()
+                .zip(1u32..)
+                .map(|(s, id)| (id, s.gid.clone()))
+                .collect();
+            speakers = Some(
+                own.iter()
+                    .zip(1u32..)
+                    .map(|(s, id)| SpeakerInfo {
+                        id,
+                        label: match (&s.display_name, s.is_me, s.label_idx) {
+                            (Some(n), _, _) => n.clone(),
+                            (None, true, _) => "Me".into(),
+                            (None, false, i) if i < 0 => "Identifying…".into(),
+                            (None, false, i) => format!("Speaker {}", i + 1),
+                        },
+                        color_slot: s.color_slot.clamp(0, 8) as u8,
+                        is_me: s.is_me,
+                        provisional: !s.is_me && s.label_idx < 0,
+                        not_person: s.not_person,
+                        others: s.color_slot == 0,
+                    })
+                    .collect(),
+            );
+        }
+        let mut by_gid = std::collections::HashMap::new();
+        for (id, gid) in gids {
+            by_gid.entry(gid).or_insert(id);
+        }
+        let lines = self
+            .store
+            .segments(&self.meeting)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|seg| {
+                let words = self.store.segment_words(&seg.gid).unwrap_or_default();
+                LineInfo {
+                    speaker: seg
+                        .speaker_gid
+                        .as_ref()
+                        .and_then(|g| by_gid.get(g))
+                        .copied(),
+                    t0_ms: seg.t0_ms,
+                    t1_ms: seg.t1_ms,
+                    // Overlap is not stored: it shows again after a reload
+                    // only through the speakers' lanes.
+                    overlap: false,
+                    words: seg
+                        .text
+                        .split_whitespace()
+                        .zip(&words)
+                        .map(|(t, w)| WordInfo {
+                            text: t.to_string(),
+                            t0_ms: w.t0_ms,
+                            t1_ms: w.t1_ms,
+                            low_confidence: w
+                                .conf
+                                .is_some_and(|c| c < crate::aligner::LOW_CONFIDENCE),
+                        })
+                        .collect(),
+                    gid: seg.gid,
+                    text: seg.text,
+                }
+            })
+            .collect();
+        SessionSnapshot {
+            seq,
+            meeting: self.meeting.clone(),
+            state: self.state(),
+            now_ms: self.now_ms(),
+            transcribing: self.transcribing,
+            speakers: speakers.unwrap_or_default(),
+            lines,
+            marks: self
+                .store
+                .marks(&self.meeting)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|m| m.t_ms)
+                .collect(),
+        }
+    }
+
     /// Splits the given lines (segment gids) off `from` into a new speaker.
-    pub fn split(&self, from: SpeakerId, lines: Vec<String>) -> Option<SpeakerId> {
+    /// `Err`: the edit lock timed out or the engine did not answer.
+    pub fn split(
+        &self,
+        from: SpeakerId,
+        lines: Vec<String>,
+    ) -> Result<Option<SpeakerId>, SessionError> {
+        let _op = self.op_lock()?;
         let (tx, rx) = bounded(1);
         self.engine
             .send(EngineCmd::Split {
@@ -400,8 +607,10 @@ impl Session {
                 lines,
                 reply: tx,
             })
-            .ok()?;
-        rx.recv_timeout(Duration::from_secs(10)).ok().flatten()
+            .map_err(|e| err("split", e))?;
+        // `Ok(None)`: the engine refused (an unknown speaker, nothing to split).
+        rx.recv_timeout(Duration::from_secs(10))
+            .map_err(|e| err("split", e))
     }
 
     /// Discards the last `last_s` seconds [RT-1]: audio, lines, marks, notes
@@ -411,6 +620,7 @@ impl Session {
         if !last_s.is_finite() || last_s <= 0.0 {
             return Err(SessionError("discard: a positive number of seconds".into()));
         }
+        let _op = self.op_lock()?;
         let now_ms = self.now_ms();
         let t_cut_ms = (now_ms - (last_s.min(24.0 * 3600.0) * 1000.0) as i64).max(0);
         let wait = Duration::from_secs(30);
@@ -542,6 +752,22 @@ impl Session {
     }
 }
 
+/// Stops a half-started session's threads (the Undo guard in `start` then
+/// resumes the jobs and removes the meeting); returns `e`.
+fn abort(
+    pump: Sender<PumpCmd>,
+    persist: Sender<PersistMsg>,
+    threads: Vec<JoinHandle<()>>,
+    e: SessionError,
+) -> SessionError {
+    let _ = pump.send(PumpCmd::Stop);
+    drop(persist);
+    for t in threads {
+        let _ = t.join();
+    }
+    e
+}
+
 fn spawn(name: &str, f: impl FnOnce() + Send + 'static) -> Result<JoinHandle<()>, SessionError> {
     std::thread::Builder::new()
         .name(name.into())
@@ -550,7 +776,8 @@ fn spawn(name: &str, f: impl FnOnce() + Send + 'static) -> Result<JoinHandle<()>
 }
 
 struct PumpCtx {
-    lossless: bool,
+    /// Set once the engines are known (a replay waits for them until then).
+    lossless: Arc<AtomicBool>,
     store: Arc<Store>,
     meeting: String,
     events: EventTx,
@@ -560,10 +787,41 @@ struct PumpCtx {
     source_ended: Arc<AtomicBool>,
 }
 
+/// The UI event for a capture event the user should see (the pipeline already
+/// acted on it: sleep and wake stop and restart the timeline, so the gap is
+/// not recorded as audio, and the bundles carry the markers [RT-10]).
+fn lifecycle_event(meeting: &str, ev: ghi_audio::CaptureEvent) -> Option<Event> {
+    use ghi_audio::CaptureEvent as C;
+    let meeting = meeting.to_string();
+    Some(match ev {
+        C::Sleep => Event::Slept { meeting },
+        C::Wake => Event::Woke { meeting },
+        C::SystemRestarted => Event::SystemAudioRestarted { meeting },
+        C::SilentSystemTrack { silent_s } => Event::SilentSystemTrack { meeting, silent_s },
+        C::DiskLow { free_bytes } => Event::DiskLow {
+            meeting,
+            free_bytes,
+        },
+        C::DiskFull => Event::DiskFull { meeting },
+        C::TrackLost { track } => Event::TrackLost {
+            meeting,
+            track: track.index() as u8,
+        },
+        C::RouteChanged {
+            input_bluetooth_hfp,
+            ..
+        } => Event::RouteChanged {
+            meeting,
+            bluetooth_hfp: input_bluetooth_hfp,
+        },
+        _ => return None,
+    })
+}
+
 /// Steps the pipeline every 10 ms; owns the capture and the bundle writers.
 fn pump(
     ctx: PumpCtx,
-    mut pipeline: Pipeline<Muted<OpusRecorder<BundlePages>>>,
+    mut pipeline: Pipeline<Metered<Muted<OpusRecorder<BundlePages>>>>,
     mut capture: Capture,
     cmds: crossbeam_channel::Receiver<PumpCmd>,
 ) {
@@ -583,9 +841,20 @@ fn pump(
             message,
         })
     };
+    let mut last_level = Instant::now();
+    let mut level_shown = false;
     loop {
         let mut stop = false;
-        while let Ok(cmd) = cmds.try_recv() {
+        loop {
+            let cmd = match cmds.try_recv() {
+                Ok(cmd) => cmd,
+                Err(crossbeam_channel::TryRecvError::Empty) => break,
+                // The session is gone without a stop: wind down.
+                Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                    stop = true;
+                    break;
+                }
+            };
             match cmd {
                 PumpCmd::Pause => pipeline.pause(),
                 PumpCmd::Resume => pipeline.resume(),
@@ -596,7 +865,7 @@ fn pump(
                     // removes what is after the cut).
                     let now_ms = (pos * 1000 / u64::from(SAMPLE_RATE)) as i64;
                     pipeline.discard((now_ms - t_cut_ms).max(0) as f32 / 1000.0);
-                    let rec = pipeline.writer_mut();
+                    let rec = &mut pipeline.writer_mut().inner;
                     // Audio captured before the discard but not yet emitted
                     // (up to the pipeline's 0.25 s stall window) is muted.
                     let mute_until = pos + u64::from(SAMPLE_RATE) / 2;
@@ -614,6 +883,7 @@ fn pump(
                     let r = pipeline
                         .writer_mut()
                         .inner
+                        .inner
                         .sink_mut()
                         .release(&keep)
                         .map_err(|e| e.to_string());
@@ -625,7 +895,10 @@ fn pump(
         while let Ok(ev) = capture.events.try_recv() {
             pipeline.handle_event(ev);
         }
-        if ctx.lossless && pipeline.asr_backlog() > LOSSLESS_BACKLOG && !stop {
+        if ctx.lossless.load(Ordering::Acquire)
+            && pipeline.asr_backlog() > LOSSLESS_BACKLOG
+            && !stop
+        {
             // The engine is behind: let it catch up (the replay waits on the
             // full capture ring in turn).
             std::thread::sleep(Duration::from_millis(5));
@@ -633,9 +906,29 @@ fn pump(
         }
         let report = pipeline.step();
         for ev in report.events {
-            if let ghi_audio::CaptureEvent::Error { detail, .. } = &ev {
-                error(detail.clone());
+            match ev {
+                ghi_audio::CaptureEvent::Error { detail, .. } => error(detail),
+                ev => {
+                    if let Some(ev) = lifecycle_event(&ctx.meeting, ev) {
+                        ctx.events.emit(ev);
+                    }
+                }
             }
+        }
+        if last_level.elapsed() >= LEVEL_EVERY {
+            last_level = Instant::now();
+            let [mic_dbfs, system_dbfs] = pipeline.writer_mut().take_dbfs();
+            // Silent while no audio flows, apart from one "nothing" to clear
+            // the meters.
+            let any = mic_dbfs.is_some() || system_dbfs.is_some();
+            if any || level_shown {
+                ctx.events.emit(Event::LevelMeter {
+                    meeting: ctx.meeting.clone(),
+                    mic_dbfs,
+                    system_dbfs,
+                });
+            }
+            level_shown = any;
         }
         ctx.position.store(pipeline.position(), Ordering::Relaxed);
         if pipeline.writer_failed() {
@@ -653,10 +946,10 @@ fn pump(
     let _ = pipeline.step();
     ctx.position.store(pipeline.position(), Ordering::Relaxed);
     // Pages still held by a discard that never completed are written out.
-    if let Err(e) = pipeline.writer_mut().inner.sink_mut().release(&[]) {
+    if let Err(e) = pipeline.writer_mut().inner.inner.sink_mut().release(&[]) {
         error(format!("closing the audio: {e}"));
     }
-    let pages = match pipeline.finish().inner.finish() {
+    let pages = match pipeline.finish().inner.inner.finish() {
         Ok(p) => p,
         Err(e) => {
             error(format!("closing the audio: {e}"));
@@ -670,5 +963,69 @@ fn pump(
                 error(format!("closing the audio: {e}"));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::capture::{ReplayTrack, replay};
+    use crate::events::bus;
+    use ghi_store::keys::{MemoryKeyStore, Protection};
+
+    #[test]
+    fn edits_wait_for_the_edit_in_progress() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            Store::open(
+                tmp.path(),
+                Arc::new(MemoryKeyStore::default()),
+                Protection::default(),
+            )
+            .unwrap(),
+        );
+        let capture = replay(
+            vec![ReplayTrack {
+                track: Track::Mic,
+                samples: vec![0.1; 16_000 * 4],
+                sample_rate: 16_000,
+            }],
+            Some(1.0),
+        )
+        .unwrap();
+        let (tx, _rx) = bus();
+        let s = Session::start_with_loader(
+            store,
+            || Ok(None),
+            capture,
+            SessionConfig {
+                mode: Mode::Room,
+                language: None,
+                title: "t".into(),
+                queue_jobs: false,
+                lossless: false,
+            },
+            tx,
+            None,
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(1500));
+        let held = s.ops.lock().unwrap();
+        let done = AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            let d = scope.spawn(|| {
+                let r = s.discard(0.5);
+                done.store(true, Ordering::SeqCst);
+                r
+            });
+            let sp = scope.spawn(|| s.split(1, vec![]));
+            std::thread::sleep(Duration::from_millis(300));
+            assert!(!done.load(Ordering::SeqCst), "discard waits for the lock");
+            drop(held);
+            assert!(d.join().unwrap().is_ok());
+            // No engine: the split is a clean "nothing to split", not a hang.
+            assert!(sp.join().unwrap().is_err());
+        });
+        s.stop().unwrap();
     }
 }

@@ -20,5 +20,8 @@ ghi-models = { path = "../ghi-models" }
 ghi-net = { path = "../ghi-net" }
 regex = "1"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 proptest = "1"

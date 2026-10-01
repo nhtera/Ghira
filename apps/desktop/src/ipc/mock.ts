@@ -2,8 +2,24 @@
 // A scripted core for the browser: the same command and event types as the
 // real one (bindings.ts), replaying the sample meeting (brief §10) as a live
 // session. Times are compressed: one transcript line per `LINE_MS`.
+import library from "@ghi/ui/mocks/library.json";
 import sample from "@ghi/ui/mocks/sample-meeting.json";
-import type { AppVersion, CoreEvent, Event, MenuAction, RecordMode, SpeakerInfo, Stage } from "../bindings";
+import type {
+  AppSettings,
+  AppVersion,
+  CoreEvent,
+  Event,
+  MeetingDetected,
+  MeetingRow,
+  MenuAction,
+  ModelDownload,
+  Navigate,
+  NoteLine,
+  QuitRequested,
+  RecordMode,
+  SpeakerInfo,
+  Stage,
+} from "../bindings";
 import type { Commands, Ipc } from "./ipc";
 
 const LINE_MS = 1800;
@@ -105,6 +121,33 @@ function process(id: string) {
   }, 400 * (STAGES.length + 1));
 }
 
+// Library: the design's sample rows, plus meetings recorded in this session.
+const STATUS: Record<string, string> = { ready: "ready", cloud: "ready", final: "processing", needs: "ready", failed: "failed" };
+const rows: MeetingRow[] = library.rows.map((r, i) => ({
+  gid: `sample-${i}`,
+  title: r.ti,
+  startedAt: Date.now() - (r.g + 1) * 86_400_000,
+  durationMs: (parseInt(r.dur) || 30) * 60_000,
+  source: r.src,
+  mode: r.src === "room" ? "room" : "call",
+  status: STATUS[r.st] ?? "ready",
+  transcriptVersion: 2,
+  cloudUsed: r.st === "cloud",
+  consentConfirmed: false,
+  job: r.st === "final" ? { kind: "final_pass", progress: (("pct" in r ? r.pct : 0) ?? 0) / 100, waitingForModels: false } : null,
+}));
+const notes = new Map<string, NoteLine[]>();
+// Onboarding is skipped on the mock so the shell opens straight away.
+let settings: AppSettings = {
+  onboardingDone: true,
+  detectMeetings: true,
+  globalMarkShortcut: true,
+  voiceProfilesMe: false,
+  voiceProfilesThirdParty: false,
+  strictOffline: false,
+};
+let lineSeq = 0;
+
 const commands: Commands = {
   appVersion: () => Promise.resolve<AppVersion>({ app: "0.1.0", core: "0.1.0 (mock)" }),
   startRecording: (mode) => {
@@ -170,7 +213,113 @@ const commands: Commands = {
     return ok(null);
   },
   importRecording: () => ok({ meeting: `mock-${++meetings}`, duplicate: false, durationMs: 60_000 }),
+  quitApp: () => ok(null),
+  listMeetings: (limit, offset) => ok(rows.slice(offset, offset + limit)),
+  setMeetingTitle: (meeting, title) => {
+    const r = rows.find((x) => x.gid === meeting);
+    if (r) r.title = title;
+    return ok(null);
+  },
+  noteLines: (meeting) => ok([...(notes.get(meeting) ?? [])]),
+  addNoteLine: (meeting, text, tMs, kind) => {
+    const line: NoteLine = { gid: `note-${++lineSeq}`, text, tMs, kind };
+    notes.set(meeting, [...(notes.get(meeting) ?? []), line]);
+    if (kind !== "note" && session) emit({ type: "markAdded", meeting, tMs: tMs ?? 0 });
+    return ok(line);
+  },
+  updateNoteLine: (_meeting, gid, text) => {
+    for (const ls of notes.values()) for (const l of ls) if (l.gid === gid) l.text = text;
+    return ok(null);
+  },
+  deleteNoteLine: (_meeting, gid) => {
+    for (const [m, ls] of notes) notes.set(m, ls.filter((l) => l.gid !== gid));
+    return ok(null);
+  },
+  discardPreview: (seconds) => {
+    if (!session) return fail("nothing is recording");
+    const fromMs = Math.max(0, nowMs(session) - (seconds ?? 0) * 1000);
+    const lines = sample.transcript.slice(0, session.next).map((l) => l.x).slice(-2);
+    return ok({ fromMs, lines, notes: [], marks: 0 });
+  },
+  getSettings: () => ok(settings),
+  updateSettings: (patch) => {
+    const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v != null));
+    settings = { ...settings, ...defined, voiceProfilesMe: false, voiceProfilesThirdParty: false };
+    return ok(settings);
+  },
+  micPermission: () => Promise.resolve("granted"),
+  requestMicPermission: () => ok("granted"),
+  replyMeetingDetected: () => ok(null),
+  // The mock serves no audio; the UI handles a sample that doesn't load.
+  issueAudioSample: () => fail("no audio on the mock core"),
+  showMain: () => ok(null),
+  setConsentConfirmed: (meeting, confirmed) => {
+    const r = rows.find((x) => x.gid === meeting);
+    if (r) r.consentConfirmed = confirmed;
+    return ok(null);
+  },
+  sessionSnapshot: () =>
+    ok(
+      session
+        ? {
+            seq: seq - 1,
+            meeting: session.id,
+            state: session.pausedAt != null ? "paused" : "recording",
+            nowMs: nowMs(session),
+            transcribing: true,
+            speakers: [...session.arrived].map((i) => speaker(i, session!.mode)),
+            lines: [],
+            marks: [],
+          }
+        : null,
+    ),
+  modelsStatus: () => ok({ tier: "balanced", models: MODELS.map((m) => ({ ...m, installed: true, partialBytes: 0 })), downloading: false }),
+  // A short scripted download, so onboarding screens can be built and tested.
+  downloadModels: () => {
+    MODELS.forEach((m, i) => {
+      const total = m.size;
+      [0.25, 0.6, 1].forEach((f, k) =>
+        window.setTimeout(() => emitDownload({ model: m.id, phase: "downloading", done: total * f, total, error: null }), 300 * (i * 4 + k)),
+      );
+      window.setTimeout(() => emitDownload({ model: m.id, phase: "done", done: total, total, error: null }), 300 * (i * 4 + 3));
+    });
+    return ok(null);
+  },
+  cancelModelDownload: () => Promise.resolve(),
 };
+
+const MODELS = [
+  { id: "nemotron-3.5-asr", role: "asr", size: 1.2e9 },
+  { id: "nemotron-3-diarization", role: "diarization", size: 0.2e9 },
+  { id: "qwen3-4b", role: "llm", size: 2.5e9 },
+];
+
+const detectListeners = new Set<(e: MeetingDetected) => void>();
+const downloadListeners = new Set<(e: ModelDownload) => void>();
+const emitDownload = (e: ModelDownload) => downloadListeners.forEach((l) => l(e));
+
+/** Dev/test hook: emit any core event (capture conditions, errors, …). */
+export function simulateCoreEvent(event: Event) {
+  emit(event);
+}
+
+/** Dev/test hook: the app asks "Stop and quit?". */
+export function simulateQuitRequested() {
+  for (const l of quitListeners) l({});
+}
+const navigateListeners = new Set<(e: Navigate) => void>();
+const quitListeners = new Set<(e: QuitRequested) => void>();
+const on =
+  <T>(set: Set<(e: T) => void>) =>
+  (cb: (e: T) => void) => {
+    set.add(cb);
+    return Promise.resolve(() => void set.delete(cb));
+  };
+
+/** Dev/test hook: pretend a meeting app started using the mic. */
+export function simulateMeetingDetected(e: MeetingDetected = { app: "zoom", appName: "Zoom", browser: false }) {
+  for (const l of detectListeners) l(e);
+}
 
 export const mockIpc: Ipc = {
   kind: "mock",
@@ -183,5 +332,9 @@ export const mockIpc: Ipc = {
     menuListeners.add(cb);
     return Promise.resolve(() => void menuListeners.delete(cb));
   },
+  onMeetingDetected: on(detectListeners),
+  onNavigate: on(navigateListeners),
+  onQuitRequested: on(quitListeners),
+  onModelDownload: on(downloadListeners),
 };
 

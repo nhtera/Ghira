@@ -247,17 +247,25 @@ pub fn run(args: &SessionArgs) -> Result<(), ErrorDoc> {
         let speed = (args.speed > 0.0).then_some(args.speed);
         capture::replay(replay, speed).map_err(|e| internal("replay", e))?
     };
-    let engines = if args.record_only {
-        None
-    } else {
-        Some(engines(&args.engine, args.live_chunk_ms)?)
-    };
     let (tx, rx) = bus();
     let printer = print_events(rx);
     let runner = runner(store.clone(), tx.clone(), &args.engine, &args.model);
-    let session = Session::start(
+    // The engines load once the jobs paused; their error keeps its code.
+    let mut engine_error = None;
+    let session = Session::start_with_loader(
         store.clone(),
-        engines,
+        || {
+            if args.record_only {
+                return Ok(None);
+            }
+            engines(&args.engine, args.live_chunk_ms)
+                .map(Some)
+                .map_err(|e| {
+                    let msg = ghi_core::session::SessionError(e.message.clone());
+                    engine_error = Some(e);
+                    msg
+                })
+        },
         capture,
         SessionConfig {
             mode,
@@ -269,7 +277,11 @@ pub fn run(args: &SessionArgs) -> Result<(), ErrorDoc> {
         tx.clone(),
         Some(runner.clone()),
     )
-    .map_err(|e| internal("session", e))?;
+    .map_err(|e| {
+        engine_error
+            .take()
+            .unwrap_or_else(|| internal("session", e))
+    })?;
     let meeting = session.meeting().to_string();
     let deadline = args
         .duration

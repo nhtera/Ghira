@@ -156,10 +156,50 @@ pub enum Event {
         #[cfg_attr(feature = "specta", specta(type = f64))]
         from_ms: i64,
     },
+    /// RMS level of each track over the last ~100 ms (at most 10 per second,
+    /// only while audio flows). `None`: the track is not captured or no audio
+    /// passed in the window (paused, asleep); digital silence reads -100.
     LevelMeter {
         meeting: String,
         mic_dbfs: Option<f32>,
         system_dbfs: Option<f32>,
+    },
+    /// The Mac went to sleep; the timeline stops (the gap is not recorded as
+    /// audio) until `Woke` [RT-10].
+    Slept {
+        meeting: String,
+    },
+    Woke {
+        meeting: String,
+    },
+    /// The system-audio tap was restarted (an output device change).
+    SystemAudioRestarted {
+        meeting: String,
+    },
+    /// The system track has been digital silence for `silent_s` seconds in a
+    /// call: a denied or broken tap (hint: record the room instead).
+    SilentSystemTrack {
+        meeting: String,
+        silent_s: f32,
+    },
+    DiskLow {
+        meeting: String,
+        #[cfg_attr(feature = "specta", specta(type = f64))]
+        free_bytes: u64,
+    },
+    DiskFull {
+        meeting: String,
+    },
+    /// A capture device vanished (0 = mic, 1 = system).
+    TrackLost {
+        meeting: String,
+        track: u8,
+    },
+    /// The audio route changed; `bluetooth_hfp`: the input is a Bluetooth
+    /// headset, whose mic drops the whole link to call quality.
+    RouteChanged {
+        meeting: String,
+        bluetooth_hfp: bool,
     },
     Health {
         meeting: String,
@@ -188,6 +228,30 @@ pub enum Event {
         kind: ErrorKind,
         message: String,
     },
+}
+
+/// Everything a reloaded webview needs to redraw a running session. `seq` is
+/// the bus sequence number read before the rest was gathered: events with a
+/// greater `seq` may repeat what is here (lines are told apart by `gid`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSnapshot {
+    #[cfg_attr(feature = "specta", specta(type = f64))]
+    pub seq: u64,
+    pub meeting: String,
+    pub state: SessionState,
+    #[cfg_attr(feature = "specta", specta(type = f64))]
+    pub now_ms: i64,
+    /// A live transcript is being made (false: models missing).
+    pub transcribing: bool,
+    /// Speakers still in play (merged ones are gone).
+    pub speakers: Vec<SpeakerInfo>,
+    /// Final lines stored so far, in time order.
+    pub lines: Vec<LineInfo>,
+    /// Marks (ms), in time order.
+    #[cfg_attr(feature = "specta", specta(type = Vec<f64>))]
+    pub marks: Vec<i64>,
 }
 
 /// An event with its sequence number (gap-free per bus) and wall time, so a
@@ -228,6 +292,11 @@ pub fn bus() -> (EventTx, EventRx) {
 }
 
 impl EventTx {
+    /// Sequence number of the last event sent (0: none yet).
+    pub fn last_seq(&self) -> u64 {
+        *self.seq.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Sends an event; a bus nobody listens to drops it.
     pub fn emit(&self, event: Event) {
         let at_ms = std::time::SystemTime::now()
@@ -264,6 +333,22 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&e).unwrap()["state"],
             serde_json::json!("recording")
+        );
+        let e = Event::SilentSystemTrack {
+            meeting: "m1".into(),
+            silent_s: 30.0,
+        };
+        assert_eq!(
+            serde_json::to_value(&e).unwrap(),
+            serde_json::json!({"type": "silentSystemTrack", "meeting": "m1", "silentS": 30.0})
+        );
+        let e = Event::RouteChanged {
+            meeting: "m1".into(),
+            bluetooth_hfp: true,
+        };
+        assert_eq!(
+            serde_json::to_value(&e).unwrap()["bluetoothHfp"],
+            serde_json::json!(true)
         );
     }
 }

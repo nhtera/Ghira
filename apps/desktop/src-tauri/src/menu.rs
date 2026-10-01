@@ -60,6 +60,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .accelerator("Alt+CmdOrCtrl+M")
         .build(app)?;
     let name = app.package_info().name.clone();
+    let name_for_quit = name.clone();
     let app_menu = SubmenuBuilder::new(app, name)
         .about(None)
         .separator()
@@ -71,7 +72,13 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .hide_others()
         .show_all()
         .separator()
-        .quit()
+        // Not the built-in Quit: its `terminate:` bypasses ExitRequested, so a
+        // recording would be killed without asking (handled in on_event).
+        .item(
+            &MenuItemBuilder::with_id("quit", format!("Quit {name_for_quit}"))
+                .accelerator("CmdOrCtrl+Q")
+                .build(app)?,
+        )
         .build()?;
     let edit = SubmenuBuilder::new(app, "Edit")
         .undo()
@@ -103,6 +110,10 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 #[cfg(target_os = "macos")]
 pub fn on_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     let id = event.id().as_ref();
+    if id == "quit" {
+        crate::request_quit(app);
+        return;
+    }
     if id == "minimize" {
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.minimize();

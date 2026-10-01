@@ -101,3 +101,43 @@ describe("recording clock", () => {
     expect(elapsedMs(s, 10_000)).toBe(6000);
   });
 });
+
+describe("capture conditions", () => {
+  it("track sleep, silent system audio, disk and route", () => {
+    const s = run([
+      { type: "stateChanged", meeting: M, state: "starting" },
+      { type: "slept", meeting: M },
+      { type: "silentSystemTrack", meeting: M, silentS: 10 },
+      { type: "diskLow", meeting: M, freeBytes: 2e9 },
+      { type: "trackLost", meeting: M, track: 0 },
+      { type: "routeChanged", meeting: M, bluetoothHfp: true },
+    ]);
+    expect(s.capture).toEqual({ asleep: true, systemSilent: true, diskLowBytes: 2e9, diskFull: false, lostTracks: [0], bluetoothHfp: true });
+    const t = run([{ type: "woke", meeting: M }, { type: "systemAudioRestarted", meeting: M }], s);
+    expect([t.capture.asleep, t.capture.systemSilent]).toEqual([false, false]);
+  });
+});
+
+describe("snapshot", () => {
+  it("restores a session and skips events it already has", async () => {
+    const { fromSnapshot } = await import("./live");
+    const snap = {
+      seq: 10,
+      meeting: M,
+      state: "recording" as const,
+      nowMs: 5000,
+      transcribing: true,
+      speakers: [speaker(1, "Linh")],
+      lines: [line(1, 0, 1000, "a")],
+      marks: [500],
+    };
+    let s = fromSnapshot(snap, 100_000);
+    expect([s.meeting, s.lines.length, s.speakers[1].label, s.startedAtMs]).toEqual([M, 1, "Linh", 95_000]);
+    // An event from before the snapshot, and a line it already has: no change.
+    s = reduce(s, { seq: 9, atMs: 0, event: { type: "markAdded", meeting: M, tMs: 1 } });
+    s = reduce(s, { seq: 11, atMs: 0, event: { type: "transcriptFinal", meeting: M, line: line(1, 0, 1000, "a") } });
+    expect([s.marks, s.lines.length]).toEqual([[500], 1]);
+    s = reduce(s, { seq: 12, atMs: 0, event: { type: "transcriptFinal", meeting: M, line: line(1, 1000, 2000, "b") } });
+    expect(s.lines.length).toBe(2);
+  });
+});

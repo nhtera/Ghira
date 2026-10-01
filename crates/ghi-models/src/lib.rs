@@ -7,10 +7,12 @@
 //! `tools/scripts/fetch-models.sh` stays as the dev download path.
 
 pub mod download;
+pub mod required;
 pub mod tier;
 pub mod verify;
 
 pub use download::{DownloadError, download};
+pub use required::{RequiredModel, required_for_machine, required_for_tier};
 pub use tier::{
     Hw, Preset, Tier, detect, llm_allowed_while_recording, preset, tier_for,
     unload_speech_before_llm,

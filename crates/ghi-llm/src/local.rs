@@ -27,6 +27,13 @@ const COUNT_TIMEOUT: Duration = Duration::from_secs(20);
 /// the worker, which frees the model memory.
 ///
 /// [`unload`]: LocalLlm::unload
+/// Kills every local worker process now, even one busy generating. The
+/// desktop calls this at shutdown so no worker outlives the app (dropping a
+/// `LocalLlm` still shuts its worker down).
+pub fn kill_workers() {
+    crate::sidecar::kill_all();
+}
+
 pub struct LocalLlm {
     sidecar: Sidecar,
     engine: EngineInfo,

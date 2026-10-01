@@ -61,6 +61,19 @@ impl Capture {
         }
     }
 
+    /// Gives the caller a way to send capture events into the session too
+    /// (the desktop's own sleep/wake notifications, tests). Events already
+    /// queued move over; events a platform layer sends later are not
+    /// forwarded, so use it on replays.
+    pub fn event_sender(&mut self) -> mpsc::Sender<CaptureEvent> {
+        let (tx, rx) = mpsc::channel();
+        let old = std::mem::replace(&mut self.events, rx);
+        while let Ok(ev) = old.try_recv() {
+            let _ = tx.send(ev);
+        }
+        tx
+    }
+
     /// Stops the source (rings get no more audio).
     pub fn stop(&mut self) {
         match self.handle.take() {

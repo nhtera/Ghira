@@ -123,6 +123,56 @@ impl<W: ghi_audio::pipeline::FrameSink> ghi_audio::pipeline::FrameSink for Muted
     }
 }
 
+/// Floor of the level meter (digital silence reads this, not -inf).
+pub const LEVEL_FLOOR_DBFS: f32 = -100.0;
+
+/// Sums the energy of the frames the pipeline emits (raw 16 kHz tracks, before
+/// echo cancellation), so the pump reads levels without a second pass over
+/// the audio: 160 multiplies per track per 10 ms, on the thread that already
+/// handles the frame.
+pub struct Metered<W> {
+    pub inner: W,
+    sum_sq: [f64; 2],
+    count: [u32; 2],
+}
+
+impl<W> Metered<W> {
+    pub fn new(inner: W) -> Metered<W> {
+        Metered {
+            inner,
+            sum_sq: [0.0; 2],
+            count: [0; 2],
+        }
+    }
+
+    /// RMS in dBFS per track (mic, system) since the last call; `None` for a
+    /// track that saw no frame.
+    pub fn take_dbfs(&mut self) -> [Option<f32>; 2] {
+        let out = [0, 1].map(|i| {
+            (self.count[i] > 0).then(|| {
+                let ms = self.sum_sq[i] / f64::from(self.count[i]);
+                ((10.0 * ms.log10()) as f32).max(LEVEL_FLOOR_DBFS)
+            })
+        });
+        self.sum_sq = [0.0; 2];
+        self.count = [0; 2];
+        out
+    }
+}
+
+impl<W: ghi_audio::pipeline::FrameSink> ghi_audio::pipeline::FrameSink for Metered<W> {
+    fn frame(&mut self, track: Track, pos: u64, samples: &[f32]) -> io::Result<()> {
+        let i = track.index();
+        self.sum_sq[i] += samples.iter().map(|&s| f64::from(s * s)).sum::<f64>();
+        self.count[i] += samples.len() as u32;
+        self.inner.frame(track, pos, samples)
+    }
+
+    fn marker(&mut self, marker: &Marker) -> io::Result<()> {
+        self.inner.marker(marker)
+    }
+}
+
 fn store_io(e: ghi_store::StoreError) -> io::Error {
     io::Error::other(e.to_string())
 }

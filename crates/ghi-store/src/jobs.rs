@@ -254,6 +254,17 @@ impl Store {
             .optional()?)
     }
 
+    /// Every queued or running job, oldest first, in one query.
+    pub fn active_jobs(&self) -> Result<Vec<Job>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(&format!(
+            "{JOB_SELECT} WHERE j.state IN ('queued', 'running') ORDER BY j.id"
+        ))?;
+        Ok(stmt
+            .query_map([], job_from_row)?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn complete_job(&self, id: i64) -> Result<()> {
         self.move_job(id, JobState::Done, None)
     }

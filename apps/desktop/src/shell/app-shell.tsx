@@ -5,12 +5,14 @@
 import { Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { usePlatform } from "@ghi/ui";
+import type { CoreEvent } from "../bindings";
 import { ipc } from "../ipc";
 import { inTauri } from "../ipc/ipc";
 import { useLive } from "../state/live";
 import { useAppActions } from "./actions";
 import { CommandPalette } from "./command-palette";
 import { LiveAnnouncer } from "./live-announcer";
+import { QuitDialog } from "./quit-dialog";
 import { shortcutFor } from "./shortcuts";
 import { Sidebar } from "./sidebar";
 import { TitleBar } from "./title-bar";
@@ -23,16 +25,34 @@ export function AppShell() {
   const { run } = useAppActions();
   const navigate = useNavigate();
 
-  // Core events → live store; a stop sends the user back to the library.
+  // Core events → live store; a stop sends the user back to the library. A
+  // reloaded webview first restores the recording in progress (events it
+  // already has are skipped by `seq`).
+  const restore = useLive((s) => s.restore);
   useEffect(() => {
     let off: (() => void) | undefined;
     let alive = true;
-    void ipc.onCoreEvent((e) => apply(e)).then((u) => (alive ? (off = u) : u()));
+    // Listen first, then read the snapshot: nothing can fall between them.
+    // Events that arrive before the snapshot wait, then follow it.
+    let pending: CoreEvent[] | null = [];
+    void (async () => {
+      const u = await ipc.onCoreEvent((e) => (pending ? pending.push(e) : apply(e)));
+      if (!alive) return u();
+      off = u;
+      try {
+        const r = await ipc.commands.sessionSnapshot();
+        if (alive && r.status === "ok" && r.data) restore(r.data);
+      } finally {
+        const queued = pending ?? [];
+        pending = null;
+        queued.forEach(apply);
+      }
+    })();
     return () => {
       alive = false;
       off?.();
     };
-  }, [apply]);
+  }, [apply, restore]);
 
   // Listeners subscribe once and call the latest `run` (re-subscribing on
   // every state change could drop a menu event in between).
@@ -40,6 +60,19 @@ export function AppShell() {
   useEffect(() => {
     runRef.current = run;
   }, [run]);
+
+  // Rust brought the window forward for a route (tray, notifications).
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let alive = true;
+    void ipc
+      .onNavigate((e) => void navigate({ to: e.route as "/meetings" }))
+      .then((u) => (alive ? (off = u) : u()));
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, [navigate]);
 
   // The macOS menu (inside Tauri) sends the chords it owns.
   useEffect(() => {
@@ -78,6 +111,7 @@ export function AppShell() {
         </main>
       </div>
       <CommandPalette />
+      <QuitDialog />
       <LiveAnnouncer />
     </div>
   );

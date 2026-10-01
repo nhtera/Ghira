@@ -1518,11 +1518,14 @@ dependencies = [
 name = "ghi-desktop"
 version = "0.1.0"
 dependencies = [
+ "ghi-audio",
  "ghi-core",
  "ghi-llm",
  "ghi-models",
+ "ghi-net",
  "ghi-speech",
  "ghi-store",
+ "rand_core 0.6.4",
  "serde",
  "serde_json",
  "specta",
@@ -1540,6 +1543,7 @@ dependencies = [
  "ghi-models",
  "ghi-net",
  "ghi-text",
+ "libc",
  "proptest",
  "regex",
  "serde",

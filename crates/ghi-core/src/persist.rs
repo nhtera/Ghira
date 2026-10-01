@@ -136,6 +136,11 @@ impl Persist {
                 self.flush();
                 let _ = done.send(());
             }
+            PersistMsg::SpeakerGids(reply) => {
+                let mut v: Vec<_> = self.speakers.iter().map(|(k, g)| (*k, g.clone())).collect();
+                v.sort();
+                let _ = reply.send(v);
+            }
         }
     }
 

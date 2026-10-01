@@ -115,6 +115,8 @@ pub enum PersistMsg {
         reply: Sender<Result<i64, String>>,
     },
     Flush(Sender<()>),
+    /// The store gid of every session speaker made so far (for snapshots).
+    SpeakerGids(Sender<Vec<(SpeakerId, String)>>),
 }
 
 /// Commands from the session to the engine thread.
@@ -135,6 +137,10 @@ pub enum EngineCmd {
     },
     NotAPerson {
         id: SpeakerId,
+    },
+    /// The speakers in play (merged ones left out), for a session snapshot.
+    Snapshot {
+        reply: Sender<Vec<SpeakerInfo>>,
     },
     /// A discard: drop the ASR text in progress, and treat frames before
     /// `mute_until` (timeline samples) as silence — they hold discarded
@@ -693,6 +699,16 @@ impl Engine {
                     });
                 }
                 let _ = reply.send(new);
+            }
+            EngineCmd::Snapshot { reply } => {
+                let _ = reply.send(
+                    self.tracker
+                        .speakers()
+                        .iter()
+                        .filter(|s| s.merged_into.is_none())
+                        .map(|s| speaker_info(&self.tracker, s.id))
+                        .collect(),
+                );
             }
             EngineCmd::ResetAsr { reply, .. } => {
                 for i in 0..self.asr.len() {

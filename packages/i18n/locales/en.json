@@ -672,7 +672,13 @@
     },
     "audioAccessOff": "System audio access is off. Calls record your mic only.",
     "turnOn": "Turn this on",
-    "commandFailed": "That didn’t work: {{message}}"
+    "commandFailed": "That didn’t work: {{message}}",
+    "quit": {
+      "title": "Stop recording and quit?",
+      "body": "The recording so far is saved. Its transcript and notes are finished the next time you open {{app}}.",
+      "stopAndQuit": "Stop and quit",
+      "keepRecording": "Keep recording"
+    }
   },
   "people": {
     "subtitle_mac": "{{people}} people · {{profiles}} voice profiles · encrypted on this Mac",

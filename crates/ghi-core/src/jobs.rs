@@ -16,7 +16,7 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ghi_store::jobs::Job;
 use ghi_store::store::Store;
@@ -99,6 +99,12 @@ pub struct JobRunner {
     handlers: Vec<Arc<dyn JobHandler>>,
     recording: AtomicUsize,
     preempt: AtomicBool,
+    /// Callers of `run_one` past the recording check (a job claimed or being
+    /// looked for). Raised before the check, so a recording that starts
+    /// meanwhile either sees it (`wait_idle` waits) or stops the claim.
+    running: AtomicUsize,
+    /// Id of the claimed job being run.
+    current: Mutex<Option<i64>>,
     wake: (Mutex<bool>, Condvar),
     shutdown: AtomicBool,
 }
@@ -116,6 +122,8 @@ impl JobRunner {
             handlers,
             recording: AtomicUsize::new(0),
             preempt: AtomicBool::new(false),
+            running: AtomicUsize::new(0),
+            current: Mutex::new(None),
             wake: (Mutex::new(false), Condvar::new()),
             shutdown: AtomicBool::new(false),
         })
@@ -134,13 +142,48 @@ impl JobRunner {
         self.notify();
     }
 
+    /// Clean quit: asks the running job to yield, waits up to `wait`, and if
+    /// it is still running puts its claim back in the queue without counting
+    /// the attempt (its last checkpoint is kept), so quitting never burns
+    /// attempts. Returns whether the runner went idle by itself. The caller
+    /// then exits (and calls `ghi_llm::local::kill_workers()`); a job that
+    /// still finishes before that settles against a released claim, which is
+    /// harmless.
+    pub fn shutdown_and_release(&self, wait: Duration) -> bool {
+        self.shutdown();
+        if self.wait_idle(wait) {
+            return true;
+        }
+        let id = *self.current.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(id) = id
+            && let Ok(job) = self.store.job(id)
+            && let Err(e) = self.store.release_job(id, &job.payload)
+        {
+            self.error(job.meeting_gid, format!("releasing job {id}: {e}"));
+        }
+        false
+    }
+
     fn recording(&self) -> bool {
-        self.recording.load(Ordering::Acquire) > 0
+        self.recording.load(Ordering::SeqCst) > 0
     }
 
     /// Runs one claimable job. `None`: nothing to do (or recording).
     pub fn run_one(&self) -> Option<(Job, Result<Outcome, String>)> {
-        if self.recording() || self.shutdown.load(Ordering::Acquire) {
+        if self.shutdown.load(Ordering::SeqCst) {
+            return None;
+        }
+        // Counted before the recording check (SeqCst with `recording_started`
+        // and `wait_idle`): no window where a claim is under way unseen.
+        struct Running<'a>(&'a AtomicUsize);
+        impl Drop for Running<'_> {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+        self.running.fetch_add(1, Ordering::SeqCst);
+        let _running = Running(&self.running);
+        if self.recording() {
             return None;
         }
         for h in &self.handlers {
@@ -162,7 +205,9 @@ impl JobRunner {
                 preempt: &self.preempt,
             };
             ctx.progress(None, 0.0);
+            *self.current.lock().unwrap_or_else(|e| e.into_inner()) = Some(job.id);
             let r = h.run(&ctx);
+            *self.current.lock().unwrap_or_else(|e| e.into_inner()) = None;
             let settled = match &r {
                 Ok(Outcome::Done) => self.store.complete_job(job.id),
                 Ok(Outcome::Yield(payload)) => self.store.release_job(job.id, payload),
@@ -230,8 +275,19 @@ impl JobRunner {
 
 impl RecordingHooks for JobRunner {
     fn recording_started(&self) {
-        self.recording.fetch_add(1, Ordering::AcqRel);
+        self.recording.fetch_add(1, Ordering::SeqCst);
         self.preempt.store(true, Ordering::Release);
+    }
+
+    fn wait_idle(&self, max: Duration) -> bool {
+        let end = Instant::now() + max;
+        while self.running.load(Ordering::SeqCst) > 0 {
+            if Instant::now() >= end {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        true
     }
 
     fn recording_stopped(&self) {
@@ -252,6 +308,7 @@ impl RecordingHooks for JobRunner {
 mod tests {
     use super::*;
     use crate::events::bus;
+    use ghi_store::jobs::JobState;
     use ghi_store::keys::{MemoryKeyStore, Protection};
     use ghi_store::store::NewMeeting;
     use serde_json::json;
@@ -287,6 +344,61 @@ mod tests {
         fn run(&self, _: &JobCtx) -> Result<Outcome, String> {
             Err("nope".into())
         }
+    }
+
+    /// Ignores the preempt flag until told to stop (a model call in progress).
+    struct Stuck {
+        started: AtomicBool,
+        stop: AtomicBool,
+    }
+    impl JobHandler for Stuck {
+        fn kind(&self) -> &'static str {
+            "stuck"
+        }
+        fn run(&self, _: &JobCtx) -> Result<Outcome, String> {
+            self.started.store(true, Ordering::SeqCst);
+            while !self.stop.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Ok(Outcome::Done)
+        }
+    }
+
+    #[test]
+    fn wait_idle_sees_a_running_job_and_quit_releases_it_without_an_attempt() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            Store::open(
+                tmp.path(),
+                Arc::new(MemoryKeyStore::default()),
+                Protection::default(),
+            )
+            .unwrap(),
+        );
+        let m = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        let (tx, _rx) = bus();
+        let stuck = Arc::new(Stuck {
+            started: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+        });
+        let runner = JobRunner::new(store.clone(), tx, vec![stuck.clone()]);
+        let id = store.enqueue_job(Some(&m), "stuck", 1, &json!({})).unwrap();
+        let r = runner.clone();
+        let t = std::thread::spawn(move || r.run_one());
+        while !stuck.started.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        // A recording starts: the job is busy, so waiting times out.
+        runner.recording_started();
+        assert!(!runner.wait_idle(Duration::from_millis(100)));
+        assert_eq!(store.job(id).unwrap().attempts, 1);
+        // Quit: the claim goes back without counting the attempt.
+        assert!(!runner.shutdown_and_release(Duration::from_millis(100)));
+        let j = store.job(id).unwrap();
+        assert_eq!((j.state, j.attempts), (JobState::Queued, 0));
+        stuck.stop.store(true, Ordering::SeqCst);
+        t.join().unwrap();
+        assert!(runner.wait_idle(Duration::from_secs(1)));
     }
 
     #[test]

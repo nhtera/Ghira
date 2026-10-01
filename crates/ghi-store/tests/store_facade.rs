@@ -231,6 +231,13 @@ fn crud_round_trip_with_encrypted_columns() {
         ("Họp đã đổi tên", "done", 60_000)
     );
 
+    assert!(!m2.consent_confirmed);
+    store.set_consent_confirmed(&m.gid, true).unwrap();
+    assert!(store.get_meeting(&m.gid).unwrap().consent_confirmed);
+    store.set_consent_confirmed(&m.gid, false).unwrap();
+    assert!(!store.get_meeting(&m.gid).unwrap().consent_confirmed);
+    assert!(store.set_consent_confirmed("nope", true).is_err());
+
     store.delete_note_block(&note.gid).unwrap();
     assert!(
         store

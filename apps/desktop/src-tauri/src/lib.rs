@@ -2,15 +2,22 @@
 //! Tauri shell. Commands are typed with tauri-specta; regenerate the TypeScript
 //! bindings with `GHI_UPDATE_BINDINGS=1 cargo test -p ghi-desktop`.
 
+mod audio_protocol;
 mod core;
+mod library;
 mod menu;
+mod models_cmd;
 mod navigation;
+mod system;
+mod windows;
 
 use std::sync::Arc;
+use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
+use tauri_specta::Event;
 
 /// Versions shown in Settings → About.
 #[derive(Debug, Clone, Serialize, Type)]
@@ -114,12 +121,21 @@ async fn mark_moment(core: CoreState<'_>) -> Result<f64, String> {
 /// Discards the last `seconds` [RT-1]; returns where the cut landed (ms).
 #[tauri::command]
 #[specta::specta]
-async fn discard_last(core: CoreState<'_>, seconds: f64) -> Result<f64, String> {
+async fn discard_last(
+    core: CoreState<'_>,
+    tokens: tauri::State<'_, Arc<audio_protocol::AudioTokens>>,
+    seconds: f64,
+) -> Result<f64, String> {
+    let tokens = tokens.inner().clone();
     blocking(&core, move |c| {
         c.with_session(|s| {
-            s.discard(seconds)
+            let cut = s
+                .discard(seconds)
                 .map(|t| t as f64)
-                .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string());
+            // Samples issued before may cover audio that is gone now.
+            tokens.revoke_meeting(s.meeting());
+            cut
         })?
     })
     .await
@@ -145,7 +161,10 @@ async fn split_speaker(
     from: u32,
     lines: Vec<String>,
 ) -> Result<Option<u32>, String> {
-    blocking(&core, move |c| c.with_session(|s| s.split(from, lines))).await
+    blocking(&core, move |c| {
+        c.with_session(|s| s.split(from, lines).map_err(|e| e.to_string()))?
+    })
+    .await
 }
 
 #[tauri::command]
@@ -173,6 +192,49 @@ async fn import_recording(
     })
 }
 
+/// The UI should go to `route` (a window was brought forward for it).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[serde(rename_all = "camelCase")]
+pub struct Navigate {
+    pub route: String,
+}
+
+/// The user quit while recording: the UI asks "Stop and quit?" and answers
+/// with `quit_app`.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[serde(rename_all = "camelCase")]
+pub struct QuitRequested {}
+
+/// A user asked to quit: while recording, the main window comes forward and
+/// asks "Stop and quit?" (`quit_app` answers); otherwise the app exits.
+pub(crate) fn request_quit<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let core = app.state::<Arc<core::Core>>();
+    if core.recording() {
+        if let Ok(w) = windows::main(app, None) {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+        let _ = QuitRequested {}.emit(app);
+    } else {
+        app.exit(0);
+    }
+}
+
+/// Quits; `stop`: stop the recording first (it is saved and processed at the
+/// next launch). Without `stop`, a running recording keeps the app open.
+#[tauri::command]
+#[specta::specta]
+async fn quit_app(app: tauri::AppHandle, core: CoreState<'_>, stop: bool) -> Result<(), String> {
+    if core.recording() {
+        if !stop {
+            return Ok(());
+        }
+        blocking(&core, |c| c.stop().map(|_| ())).await?;
+    }
+    app.exit(0);
+    Ok(())
+}
+
 fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new()
         .commands(tauri_specta::collect_commands![
@@ -187,11 +249,35 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             merge_speakers,
             split_speaker,
             speaker_not_a_person,
-            import_recording
+            import_recording,
+            quit_app,
+            library::list_meetings,
+            library::set_meeting_title,
+            library::note_lines,
+            library::add_note_line,
+            library::update_note_line,
+            library::delete_note_line,
+            library::discard_preview,
+            library::set_consent_confirmed,
+            library::session_snapshot,
+            models_cmd::models_status,
+            models_cmd::download_models,
+            models_cmd::cancel_model_download,
+            system::get_settings,
+            system::update_settings,
+            system::mic_permission,
+            system::request_mic_permission,
+            system::reply_meeting_detected,
+            audio_protocol::issue_audio_sample,
+            windows::show_main
         ])
         .events(tauri_specta::collect_events![
             core::CoreEvent,
-            menu::MenuAction
+            menu::MenuAction,
+            system::MeetingDetected,
+            models_cmd::ModelDownload,
+            Navigate,
+            QuitRequested
         ])
 }
 
@@ -210,40 +296,85 @@ pub fn export_bindings(path: &str) {
 pub fn run() {
     let builder = specta_builder();
 
-    tauri::Builder::default()
+    let tokens = Arc::new(audio_protocol::AudioTokens::default());
+    let protocol_tokens = tokens.clone();
+    let app = tauri::Builder::default()
         .plugin(navigation::guard())
         .invoke_handler(builder.invoke_handler())
+        // Short audio spans for the webview, by token only (audio_protocol.rs).
+        .register_asynchronous_uri_scheme_protocol("ghi-audio", move |ctx, request, responder| {
+            let core = ctx.app_handle().state::<Arc<core::Core>>().inner().clone();
+            let tokens = protocol_tokens.clone();
+            std::thread::spawn(move || {
+                // A bug while decoding must still answer (or the request hangs).
+                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    audio_protocol::respond(core.store().ok(), &tokens, &request)
+                }));
+                responder.respond(r.unwrap_or_else(|_| audio_protocol::server_error()));
+            });
+        })
         .setup(move |app| {
             builder.mount_events(app);
-            app.manage(Arc::new(core::Core::new(app.handle())?));
+            let core = Arc::new(core::Core::new(app.handle())?);
+            core.init_in_background();
+            let detection = Arc::new(system::Detection::default());
+            system::spawn_detection(app.handle().clone(), core.clone(), detection.clone());
+            app.manage(core);
+            app.manage(detection);
+            app.manage(tokens);
+            app.manage(Arc::new(models_cmd::Downloads::default()));
             #[cfg(target_os = "macos")]
             {
                 app.set_menu(menu::build(app.handle())?)?;
                 app.on_menu_event(menu::on_event);
             }
             // Created here rather than in tauri.conf.json so `window.open` can
-            // be denied; the navigation guard plugin covers in-place navigation.
-            let window = tauri::WebviewWindowBuilder::new(
-                app,
-                "main",
-                tauri::WebviewUrl::App("index.html".into()),
-            )
-            .title("Ghira")
-            .inner_size(1280.0, 800.0)
-            // Brief §8: the layout works down to 960×640 (compact mode).
-            .min_inner_size(960.0, 640.0)
-            .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny);
-            // mac: content under a transparent title bar (the sidebar leaves
-            // room for the traffic lights; headers are drag regions).
-            #[cfg(target_os = "macos")]
-            let window = window
-                .title_bar_style(tauri::TitleBarStyle::Overlay)
-                .hidden_title(true);
-            window.build()?;
+            // be denied (windows.rs).
+            windows::main(app.handle(), None)?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running the Ghira desktop app");
+        .build(tauri::generate_context!())
+        .expect("error while building the Ghira desktop app");
+    app.run(|app, event| match event {
+        // Closing the main window while recording asks first (until the
+        // menu-bar item exists, phase 10c, closing it would leave the
+        // recording without any window).
+        RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::CloseRequested { api, .. },
+            ..
+        } if label == "main" && app.state::<Arc<core::Core>>().recording() => {
+            api.prevent_close();
+            request_quit(app);
+        }
+        RunEvent::ExitRequested { api, code, .. } => {
+            let core = app.state::<Arc<core::Core>>();
+            // A user quit while recording asks first; quit_app answers.
+            if code.is_none() && core.recording() {
+                api.prevent_exit();
+                request_quit(app);
+                return;
+            }
+            core.shutdown(Duration::from_secs(5));
+        }
+        // Last chance (e.g. the system logging out): save the recording so
+        // it is processed at the next launch, then stop the jobs.
+        RunEvent::Exit => {
+            let core = app.state::<Arc<core::Core>>();
+            if core.recording() {
+                let _ = core.stop();
+            }
+            core.shutdown(Duration::from_secs(2));
+        }
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => {
+            if let Ok(w) = windows::main(app, None) {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }
+        _ => {}
+    });
 }
 
 #[cfg(test)]
@@ -253,6 +384,42 @@ mod tests {
         let v = super::app_version();
         assert_eq!(v.core, ghi_core::version());
         assert_eq!(v.app, env!("CARGO_PKG_VERSION"));
+    }
+
+    /// Every command the webview can call is declared in build.rs (so it
+    /// needs a grant) and granted to some window in capabilities/*.json; a
+    /// missing entry would only fail at runtime.
+    #[test]
+    fn every_command_is_declared_and_granted() {
+        let dir = env!("CARGO_MANIFEST_DIR");
+        let tmp = std::env::temp_dir().join(format!("ghi-cmds-{}.ts", std::process::id()));
+        super::export_bindings(tmp.to_str().unwrap());
+        let ts = std::fs::read_to_string(&tmp).unwrap();
+        let _ = std::fs::remove_file(&tmp);
+        let commands: Vec<&str> = ts
+            .split("__TAURI_INVOKE")
+            .skip(1)
+            // Calls only (`__TAURI_INVOKE<T>("name"` / `("name"`), not the import.
+            .filter(|s| s.starts_with('<') || s.starts_with('('))
+            .filter_map(|s| s.split('"').nth(1))
+            .collect();
+        assert!(commands.len() > 10, "{commands:?}");
+        let build = std::fs::read_to_string(format!("{dir}/build.rs")).unwrap();
+        let grants: String = std::fs::read_dir(format!("{dir}/capabilities"))
+            .unwrap()
+            .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+            .collect();
+        for c in commands {
+            assert!(
+                build.contains(&format!("\"{c}\"")),
+                "{c} is not declared in build.rs"
+            );
+            let grant = format!("\"allow-{}\"", c.replace('_', "-"));
+            assert!(
+                grants.contains(&grant),
+                "{c} is granted to no window ({grant})"
+            );
+        }
     }
 
     /// Keeps the committed bindings in sync; CI fails if they drift.

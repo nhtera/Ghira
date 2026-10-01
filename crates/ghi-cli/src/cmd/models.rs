@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use ghi_models::{Model, Preset, Tier};
 use ghi_net::NetPolicy;
-use ghi_net::fetch::UreqTransport;
+use ghi_net::fetch::{Control, Progress, UreqTransport};
 use serde_json::json;
 
 use crate::contract::{ErrorCode, ErrorDoc};
@@ -147,20 +147,28 @@ fn fetch(dir: &Path, id: &str, strict_offline: bool) -> Result<(), ErrorDoc> {
         NetPolicy::Default
     };
     let mut last_pct = u64::MAX;
-    let mut progress = |done: u64, total: u64| {
-        let pct = done * 100 / total.max(1);
-        if pct != last_pct {
-            last_pct = pct;
-            crate::warn(&format!("{id}: {pct}% ({done}/{total} bytes)"));
-        }
-    };
-    let report =
-        ghi_models::download(&model, dir, policy, &mut progress, &UreqTransport).map_err(|e| {
-            match e {
-                ghi_models::DownloadError::Denied(_) => bad(e.to_string()),
-                _ => ErrorDoc::new(ErrorCode::EngineUnavailable, e.to_string()),
+    let mut progress = |p: Progress<'_>| match p {
+        Progress::Bytes { done, total, .. } => {
+            let pct = done * 100 / total.max(1);
+            if pct != last_pct {
+                last_pct = pct;
+                crate::warn(&format!("{id}: {pct}% ({done}/{total} bytes)"));
             }
-        })?;
+        }
+        Progress::Verifying => crate::warn(&format!("{id}: verifying")),
+    };
+    let report = ghi_models::download(
+        &model,
+        dir,
+        policy,
+        &Control::default(),
+        &mut progress,
+        &UreqTransport,
+    )
+    .map_err(|e| match e {
+        ghi_models::DownloadError::Denied(_) => bad(e.to_string()),
+        _ => ErrorDoc::new(ErrorCode::EngineUnavailable, e.to_string()),
+    })?;
     crate::emit(&json!({
         "schema": "ghi.models-fetch/1",
         "id": model.id,

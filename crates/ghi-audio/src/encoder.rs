@@ -374,6 +374,9 @@ pub struct Decoded {
     pub complete: bool,
     /// Pages dropped for a bad checksum or structure.
     pub bad_pages: usize,
+    /// Position (16 kHz samples) of `samples[0]` in the whole stream: 0 for a
+    /// whole stream, the span start for [`decode_ogg_opus_span`].
+    pub start: u64,
     /// The data ended inside a page.
     pub truncated: bool,
 }
@@ -394,7 +397,21 @@ pub fn read_ogg_opus_detailed(mut reader: impl Read) -> io::Result<Decoded> {
     decode_ogg_opus(&bytes)
 }
 
+/// Decodes part of a stream without the audio before it: `bytes` holds the
+/// header pages (OpusHead, OpusTags) followed by consecutive audio pages, the
+/// first of which starts at granule `origin` (the end granule of the page
+/// before it). Positions inside the span stay true; nothing before it is
+/// materialized (a 3 s sample at minute 50 costs 3 s, not 50 minutes). The
+/// first ~20 ms may be rough: start one page early and trim.
+pub fn decode_ogg_opus_span(bytes: &[u8], origin: u64) -> io::Result<Decoded> {
+    decode_ogg_opus_from(bytes, origin)
+}
+
 fn decode_ogg_opus(bytes: &[u8]) -> io::Result<Decoded> {
+    decode_ogg_opus_from(bytes, 0)
+}
+
+fn decode_ogg_opus_from(bytes: &[u8], origin: u64) -> io::Result<Decoded> {
     let bad = |m: &str| io::Error::new(io::ErrorKind::InvalidData, m.to_string());
     let mut dec = Decoder::new(SAMPLE_RATE, Channels::Mono).map_err(opus_err)?;
     let mut out = Decoded::default();
@@ -505,7 +522,7 @@ fn decode_ogg_opus(bytes: &[u8]) -> io::Result<Decoded> {
             }
             // Keep positions true across lost pages: the granule says where
             // this page's audio must end.
-            let want_end = (g / GRANULE_PER_SAMPLE) as usize;
+            let want_end = (g.saturating_sub(origin) / GRANULE_PER_SAMPLE) as usize;
             let want_start = want_end.saturating_sub(page_samples);
             if (lost_pages || decoded_before < want_start) && decoded_before < want_start {
                 let fill = want_start - decoded_before;
@@ -516,12 +533,16 @@ fn decode_ogg_opus(bytes: &[u8]) -> io::Result<Decoded> {
         }
     }
 
-    let skip = pre_skip16.ok_or_else(|| bad("no OpusHead found"))?;
-    let mut samples = all.split_off(skip.min(all.len()));
+    let pre_skip = pre_skip16.ok_or_else(|| bad("no OpusHead found"))?;
+    // Pre-skip only trims the start of the whole stream; a span starts later.
+    let origin16 = (origin / GRANULE_PER_SAMPLE) as usize;
+    let skip = pre_skip.saturating_sub(origin16).min(all.len());
+    let mut samples = all.split_off(skip);
     if let Some(g) = end_granule {
-        let real = (g as usize / GRANULE_PER_SAMPLE as usize).saturating_sub(skip);
-        samples.truncate(real);
+        let real = (g.saturating_sub(origin) / GRANULE_PER_SAMPLE) as usize;
+        samples.truncate(real.saturating_sub(skip));
     }
+    out.start = (origin16 + skip).saturating_sub(pre_skip) as u64;
     out.samples = samples;
     Ok(out)
 }
@@ -631,6 +652,35 @@ mod tests {
         // Opus is perceptual, not waveform-exact: ~15 dB on two pure tones.
         assert!(snr > 12.0, "SNR {snr}");
         assert!(kbps < 30.0);
+    }
+
+    #[test]
+    fn a_span_decodes_alone_at_its_true_position() {
+        let x = tone(10.0);
+        let (bytes, _) = record(&x, Track::Mic);
+        let full = read_ogg_opus(&bytes[..]).unwrap();
+        let offs = page_offsets(&bytes);
+        let page = |i: usize| &bytes[offs[i]..*offs.get(i + 1).unwrap_or(&bytes.len())];
+        let granule = |i: usize| u64::from_le_bytes(page(i)[6..14].try_into().unwrap());
+        // Headers are pages 0 and 1; take two audio pages (~1 s each) from
+        // the middle, the first one as decoder warm-up.
+        let (first, last) = (offs.len() / 2, offs.len() / 2 + 1);
+        let mut span = [page(0), page(1)].concat();
+        for i in first..=last {
+            span.extend_from_slice(page(i));
+        }
+        let d = decode_ogg_opus_span(&span, granule(first - 1)).unwrap();
+        assert!(d.start > 0 && d.bad_pages == 0);
+        // Nothing before the span was materialized.
+        assert!(d.samples.len() < x.len() / 3, "{}", d.samples.len());
+        // After the warm-up page, the span matches the whole-stream decode.
+        let warm = 960;
+        let at = d.start as usize + warm;
+        let n = d.samples.len() - warm;
+        let snr = snr_db(&full[at..at + n], &d.samples[warm..]);
+        assert!(snr > 20.0, "span vs full decode: {snr:.1} dB");
+        // A whole stream still starts at 0.
+        assert_eq!(read_ogg_opus_detailed(&bytes[..]).unwrap().start, 0);
     }
 
     #[test]

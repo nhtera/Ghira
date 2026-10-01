@@ -321,3 +321,399 @@ fn a_failed_start_resumes_jobs_and_leaves_no_meeting() {
         "the runner is not blocked by a recording"
     );
 }
+
+/// Counts the hook calls and records what the count was when asked.
+#[derive(Default)]
+struct CountingHooks {
+    started: std::sync::atomic::AtomicUsize,
+    stopped: std::sync::atomic::AtomicUsize,
+}
+
+impl ghi_core::session::RecordingHooks for CountingHooks {
+    fn recording_started(&self) {
+        self.started
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+    fn recording_stopped(&self) {
+        self.stopped
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+fn config(mode: Mode) -> SessionConfig {
+    SessionConfig {
+        mode,
+        language: None,
+        title: "t".into(),
+        queue_jobs: false,
+        lossless: false,
+    }
+}
+
+fn mic_replay(samples: Vec<f32>, speed: Option<f64>) -> ghi_core::capture::Capture {
+    replay(
+        vec![ReplayTrack {
+            track: Track::Mic,
+            samples,
+            sample_rate: 16_000,
+        }],
+        speed,
+    )
+    .unwrap()
+}
+
+#[test]
+fn engines_load_after_recording_started_and_inside_the_undo_guard() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(tmp.path());
+    let (tx, _rx) = bus();
+    let hooks = Arc::new(CountingHooks::default());
+
+    // A load that fails: jobs resume once, no meeting is left.
+    let h = hooks.clone();
+    let r = Session::start_with_loader(
+        store.clone(),
+        || {
+            assert_eq!(h.started.load(SeqCst), 1, "recording started before load");
+            assert_eq!(h.stopped.load(SeqCst), 0);
+            Err(ghi_core::session::SessionError("no memory".into()))
+        },
+        mic_replay(vec![0.1; 16_000], None),
+        config(Mode::Room),
+        tx.clone(),
+        Some(hooks.clone() as Arc<dyn ghi_core::session::RecordingHooks>),
+    );
+    assert_eq!(r.err().unwrap().0, "no memory");
+    assert_eq!(
+        (hooks.started.load(SeqCst), hooks.stopped.load(SeqCst)),
+        (1, 1)
+    );
+    assert!(store.list_meetings(10, 0).unwrap().is_empty());
+
+    // A load that works: started once, stopped at stop.
+    let h = hooks.clone();
+    let s = Session::start_with_loader(
+        store.clone(),
+        || {
+            assert_eq!(h.started.load(SeqCst), 2);
+            Ok(Some(
+                FakeEngines::new(script()) as Arc<dyn ghi_core::engines::SpeechEngines>
+            ))
+        },
+        mic_replay(tone(2), Some(1.0)),
+        config(Mode::Room),
+        tx.clone(),
+        Some(hooks.clone() as Arc<dyn ghi_core::session::RecordingHooks>),
+    )
+    .unwrap();
+    assert!(s.transcribing());
+    s.stop().unwrap();
+    assert_eq!(
+        (hooks.started.load(SeqCst), hooks.stopped.load(SeqCst)),
+        (2, 2)
+    );
+
+    // Nothing to load: records without a transcript.
+    let s = Session::start_with_loader(
+        store.clone(),
+        || Ok(None),
+        mic_replay(tone(1), Some(1.0)),
+        config(Mode::Room),
+        tx,
+        None,
+    )
+    .unwrap();
+    assert!(!s.transcribing());
+    s.stop().unwrap();
+}
+
+#[test]
+fn concurrent_discards_and_splits_do_not_interleave() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(tmp.path());
+    let (tx, rx) = bus();
+    let s = start(&store, tx);
+    wait_finals(&rx, 3);
+    std::thread::scope(|scope| {
+        let a = scope.spawn(|| s.discard(1.0));
+        let b = scope.spawn(|| s.discard(2.0));
+        let c = scope.spawn(|| s.split(1, vec![]));
+        let (a, b) = (a.join().unwrap(), b.join().unwrap());
+        c.join().unwrap().unwrap();
+        assert!(a.is_ok() && b.is_ok(), "{a:?} {b:?}");
+    });
+    let meeting = s.meeting().to_string();
+    s.stop().unwrap();
+    // The store is consistent: audio and lines both end before the cuts.
+    let m = store.get_meeting(&meeting).unwrap();
+    assert!(m.duration_ms > 0);
+    assert!(
+        store
+            .open_bundle(&meeting, TrackKind::Mic)
+            .unwrap()
+            .complete()
+    );
+}
+
+#[test]
+fn snapshot_has_speakers_lines_and_marks_for_a_reloaded_webview() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(tmp.path());
+    let (tx, rx) = bus();
+    let s = start(&store, tx);
+    wait_finals(&rx, 3);
+    let t = s.mark();
+    let snap = s.snapshot();
+    assert_eq!(snap.meeting, s.meeting());
+    assert!(snap.transcribing);
+    assert_eq!(snap.state, SessionState::Recording);
+    assert!(snap.seq > 0);
+    assert_eq!(snap.marks, [t]);
+    assert_eq!(snap.speakers.len(), 2);
+    assert_eq!(
+        snap.speakers
+            .iter()
+            .map(|s| s.color_slot)
+            .collect::<Vec<_>>(),
+        [1, 2]
+    );
+    assert!(snap.speakers.iter().all(|s| !s.provisional));
+    let texts: Vec<&str> = snap.lines.iter().map(|l| l.text.as_str()).collect();
+    assert_eq!(
+        texts,
+        [
+            "xin chào mọi người",
+            "hôm nay chốt lịch beta",
+            "okay ship it"
+        ]
+    );
+    // Lines point at the session speaker ids the events used.
+    assert_eq!(snap.lines[0].speaker, snap.lines[2].speaker);
+    assert_ne!(snap.lines[0].speaker, snap.lines[1].speaker);
+    assert!(
+        snap.speakers
+            .iter()
+            .any(|s| Some(s.id) == snap.lines[0].speaker)
+    );
+    assert_eq!(snap.lines[1].words.len(), 5);
+    assert!(snap.lines.iter().all(|l| !l.gid.is_empty()));
+    // The shape the UI gets.
+    let v = serde_json::to_value(&snap).unwrap();
+    assert!(v["nowMs"].is_number() && v["lines"][0]["t0Ms"].is_number());
+    s.stop().unwrap();
+}
+
+#[test]
+fn snapshot_without_engines_is_just_state_and_marks() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(tmp.path());
+    let (tx, _rx) = bus();
+    let s = Session::start_with_loader(
+        store.clone(),
+        || Ok(None),
+        mic_replay(tone(3), Some(1.0)),
+        config(Mode::Room),
+        tx,
+        None,
+    )
+    .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    let t = s.mark();
+    let snap = s.snapshot();
+    assert!(!snap.transcribing);
+    assert!(snap.speakers.is_empty() && snap.lines.is_empty());
+    assert_eq!(snap.marks, [t]);
+    s.stop().unwrap();
+}
+
+/// Collects `LevelMeter` events until the replay is over.
+fn levels_of(samples: Vec<f32>) -> Vec<(Option<f32>, Option<f32>, u64)> {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(tmp.path());
+    let (tx, rx) = bus();
+    let s = Session::start_with_loader(
+        store,
+        || Ok(None),
+        mic_replay(samples, Some(1.0)),
+        config(Mode::Room),
+        tx,
+        None,
+    )
+    .unwrap();
+    while !s.source_ended() {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    s.stop().unwrap();
+    rx.try_iter()
+        .filter_map(|e| match e.event {
+            Event::LevelMeter {
+                mic_dbfs,
+                system_dbfs,
+                ..
+            } => Some((mic_dbfs, system_dbfs, e.at_ms as u64)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn level_meter_reports_rms_at_most_ten_times_a_second() {
+    // A 0.2-amplitude sine: RMS 0.1414 = -17 dBFS.
+    let samples: Vec<f32> = (0..16_000 * 2)
+        .map(|i| (i as f32 * 0.05).sin() * 0.2)
+        .collect();
+    let lv = levels_of(samples);
+    assert!(lv.len() >= 10, "{} level events in 2 s", lv.len());
+    for (mic, sys, _) in &lv {
+        let m = mic.expect("the mic flows");
+        assert!((-19.0..=-15.0).contains(&m), "{m}");
+        assert_eq!(*sys, None, "a room has no system track");
+    }
+    let span = lv.last().unwrap().2 - lv.first().unwrap().2;
+    assert!(
+        (lv.len() as u64 - 1) * 100 <= span + 20,
+        "{} events over {span} ms",
+        lv.len()
+    );
+
+    // Digital silence reads the floor, not -inf or None.
+    let lv = levels_of(vec![0.0; 16_000]);
+    assert!(!lv.is_empty());
+    assert!(lv.iter().all(|(m, _, _)| *m == Some(-100.0)));
+}
+
+#[test]
+fn capture_lifecycle_events_reach_the_bus_and_sleep_stops_the_timeline() {
+    use ghi_audio::{CaptureEvent as C, Route};
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(tmp.path());
+    let (tx, rx) = bus();
+    let mut capture = mic_replay(tone(1).repeat(8), Some(1.0));
+    let inject = capture.event_sender();
+    let s = Session::start_with_loader(store, || Ok(None), capture, config(Mode::Room), tx, None)
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+
+    inject.send(C::Sleep).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    let at_sleep = s.now_ms();
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(
+        s.now_ms(),
+        at_sleep,
+        "the sleeping Mac's time is not recorded"
+    );
+    inject.send(C::Wake).unwrap();
+    std::thread::sleep(Duration::from_millis(600));
+    assert!(s.now_ms() > at_sleep + 200, "the timeline resumes on wake");
+
+    for ev in [
+        C::SystemRestarted,
+        C::SilentSystemTrack { silent_s: 31.0 },
+        C::DiskLow { free_bytes: 123 },
+        C::DiskFull,
+        C::TrackLost {
+            track: Track::System,
+        },
+        C::RouteChanged {
+            route: Route::Bluetooth,
+            input_bluetooth_hfp: true,
+        },
+    ] {
+        inject.send(ev).unwrap();
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    s.stop().unwrap();
+    let seen: Vec<Event> = rx.try_iter().map(|e| e.event).collect();
+    let m = |f: fn(&Event) -> bool| seen.iter().filter(|e| f(e)).count();
+    assert_eq!(m(|e| matches!(e, Event::Slept { .. })), 1);
+    assert_eq!(m(|e| matches!(e, Event::Woke { .. })), 1);
+    assert_eq!(m(|e| matches!(e, Event::SystemAudioRestarted { .. })), 1);
+    assert!(
+        seen.iter()
+            .any(|e| matches!(e, Event::SilentSystemTrack { silent_s, .. } if *silent_s == 31.0))
+    );
+    assert!(seen.iter().any(|e| matches!(
+        e,
+        Event::DiskLow {
+            free_bytes: 123,
+            ..
+        }
+    )));
+    assert_eq!(m(|e| matches!(e, Event::DiskFull { .. })), 1);
+    assert!(
+        seen.iter()
+            .any(|e| matches!(e, Event::TrackLost { track: 1, .. }))
+    );
+    assert!(seen.iter().any(|e| matches!(
+        e,
+        Event::RouteChanged {
+            bluetooth_hfp: true,
+            ..
+        }
+    )));
+}
+
+/// A hook whose `wait_idle` takes long (a job that will not yield).
+struct SlowIdle(Duration);
+
+impl ghi_core::session::RecordingHooks for SlowIdle {
+    fn recording_started(&self) {}
+    fn recording_stopped(&self) {}
+    fn wait_idle(&self, _: Duration) -> bool {
+        std::thread::sleep(self.0);
+        false
+    }
+}
+
+#[test]
+fn waiting_for_a_job_to_yield_does_not_lose_live_audio() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(tmp.path());
+    let (tx, _rx) = bus();
+    // Longer than the capture ring (4 s): the pump must already be draining.
+    let s = Session::start_with_loader(
+        store,
+        || Ok(None),
+        mic_replay(tone(7).into_iter().step_by(3).collect(), Some(1.0)),
+        config(Mode::Room),
+        tx,
+        Some(Arc::new(SlowIdle(Duration::from_millis(4500)))),
+    )
+    .unwrap();
+    assert!(
+        s.now_ms() >= 4_000,
+        "the timeline ran during the wait: {} ms",
+        s.now_ms()
+    );
+    while !s.source_ended() {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let report = s.stop().unwrap();
+    // 7 s of audio at real time: nothing was dropped from the ring.
+    assert!(report.duration_ms >= 6_500, "{}", report.duration_ms);
+}
+
+#[test]
+fn a_panicking_loader_stops_the_pump_and_leaves_no_meeting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(tmp.path());
+    let (tx, _rx) = bus();
+    let hooks = Arc::new(CountingHooks::default());
+    let r = Session::start_with_loader(
+        store.clone(),
+        || panic!("model exploded"),
+        mic_replay(vec![0.1; 16_000 * 2], Some(1.0)),
+        config(Mode::Room),
+        tx,
+        Some(hooks.clone() as Arc<dyn ghi_core::session::RecordingHooks>),
+    );
+    assert!(r.err().unwrap().0.contains("panicked"));
+    assert_eq!(
+        hooks.stopped.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "jobs resume"
+    );
+    assert!(store.list_meetings(10, 0).unwrap().is_empty());
+}

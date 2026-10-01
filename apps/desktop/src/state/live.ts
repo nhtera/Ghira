@@ -3,7 +3,7 @@
 // store, not to the query cache). `reduce` is pure, so a recorded event
 // stream replays to the same state in tests.
 import { create } from "zustand";
-import type { CoreEvent, ErrorKind, LineInfo, SessionState, SpeakerInfo } from "../bindings";
+import type { CoreEvent, ErrorKind, LineInfo, SessionSnapshot, SessionState, SpeakerInfo } from "../bindings";
 
 export type LiveError = { kind: ErrorKind; message: string; atMs: number | null };
 
@@ -26,6 +26,20 @@ export type LiveState = {
   errors: LiveError[];
   /** Last applied `seq`: a gap means events were missed (re-read state). */
   seq: number | null;
+  /** Capture conditions shown as health notices (D4, D12). */
+  capture: {
+    /** The Mac slept mid-recording (the gap is marked; recording resumes on wake). */
+    asleep: boolean;
+    /** The system track is digital silence: system-audio access denied or broken. */
+    systemSilent: boolean;
+    /** Free disk bytes when low, `null` when fine. */
+    diskLowBytes: number | null;
+    diskFull: boolean;
+    /** Tracks whose device went away (0 mic, 1 system). */
+    lostTracks: number[];
+    /** The input is a Bluetooth headset in call mode (16 kHz quality). */
+    bluetoothHfp: boolean;
+  };
   /** Wall clock (unix ms) of the start, the current pause, and paused time so far. */
   startedAtMs: number | null;
   pausedAtMs: number | null;
@@ -45,6 +59,7 @@ export const initialLive: LiveState = {
   recordOnly: false,
   errors: [],
   seq: null,
+  capture: { asleep: false, systemSilent: false, diskLowBytes: null, diskFull: false, lostTracks: [], bluetoothHfp: false },
   startedAtMs: null,
   pausedAtMs: null,
   pausedTotalMs: 0,
@@ -59,8 +74,29 @@ export function elapsedMs(s: Pick<LiveState, "startedAtMs" | "pausedAtMs" | "pau
 const ACTIVE: SessionState[] = ["starting", "recording", "paused", "stopping"];
 export const isActive = (s: SessionState) => ACTIVE.includes(s);
 
+/**
+ * The live state from a snapshot (a reloaded webview, a second window). The
+ * clock restarts from the snapshot's meeting time.
+ */
+export function fromSnapshot(snap: SessionSnapshot, nowWall: number): LiveState {
+  return {
+    ...initialLive,
+    meeting: snap.meeting,
+    state: snap.state,
+    lines: snap.lines,
+    speakers: Object.fromEntries(snap.speakers.map((sp) => [sp.id, sp])),
+    marks: snap.marks.filter((m): m is number => m != null),
+    recordOnly: !snap.transcribing,
+    seq: snap.seq,
+    startedAtMs: nowWall - (snap.nowMs ?? 0),
+    pausedAtMs: snap.state === "paused" ? nowWall : null,
+  };
+}
+
 export function reduce(s: LiveState, env: CoreEvent): LiveState {
   const e = env.event;
+  // Already in the state (a snapshot raced with the event stream).
+  if (env.seq != null && s.seq != null && env.seq <= s.seq) return s;
   const seq = env.seq ?? s.seq;
   // Events of another meeting (a job finishing an older one) don't touch the live view.
   if ("meeting" in e && e.meeting && s.meeting && e.meeting !== s.meeting && e.type !== "stateChanged") {
@@ -86,7 +122,8 @@ export function reduce(s: LiveState, env: CoreEvent): LiveState {
       return { ...s, partial: { ...s.partial, [e.track]: e.text }, seq };
     case "transcriptFinal":
       // A final ends the words in progress (lines carry no track; the next
-      // partial comes within a chunk).
+      // partial comes within a chunk). A line already known (by gid) is skipped.
+      if (e.line.gid && s.lines.some((l) => l.gid === e.line.gid)) return { ...s, seq };
       return { ...s, lines: [...s.lines, e.line], partial: {}, seq };
     case "speakerArrived":
     case "speakerConfirmed":
@@ -126,16 +163,35 @@ export function reduce(s: LiveState, env: CoreEvent): LiveState {
         errors: [...s.errors, { kind: e.kind, message: e.message, atMs: env.atMs }],
         seq,
       };
+    case "slept":
+    case "woke":
+      return { ...s, capture: { ...s.capture, asleep: e.type === "slept" }, seq };
+    case "silentSystemTrack":
+    case "systemAudioRestarted":
+      return { ...s, capture: { ...s.capture, systemSilent: e.type === "silentSystemTrack" }, seq };
+    case "diskLow":
+      return { ...s, capture: { ...s.capture, diskLowBytes: e.freeBytes }, seq };
+    case "diskFull":
+      return { ...s, capture: { ...s.capture, diskFull: true }, seq };
+    case "trackLost":
+      return { ...s, capture: { ...s.capture, lostTracks: [...new Set([...s.capture.lostTracks, e.track])] }, seq };
+    case "routeChanged":
+      return { ...s, capture: { ...s.capture, bluetoothHfp: e.bluetoothHfp }, seq };
     case "jobProgress":
     case "notesReady":
       return { ...s, seq };
   }
 }
 
-type LiveStore = LiveState & { apply: (e: CoreEvent) => void; reset: () => void };
+type LiveStore = LiveState & {
+  apply: (e: CoreEvent) => void;
+  restore: (snap: SessionSnapshot) => void;
+  reset: () => void;
+};
 
 export const useLive = create<LiveStore>((set) => ({
   ...initialLive,
   apply: (e) => set((s) => reduce(s, e)),
+  restore: (snap) => set(fromSnapshot(snap, Date.now())),
   reset: () => set(initialLive),
 }));

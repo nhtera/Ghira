@@ -7,4 +7,8 @@ export const tauriIpc: Ipc = {
   commands,
   onCoreEvent: (cb) => events.coreEvent.listen((e) => cb(e.payload)),
   onMenuAction: (cb) => events.menuAction.listen((e) => cb(e.payload)),
+  onMeetingDetected: (cb) => events.meetingDetected.listen((e) => cb(e.payload)),
+  onNavigate: (cb) => events.navigate.listen((e) => cb(e.payload)),
+  onQuitRequested: (cb) => events.quitRequested.listen((e) => cb(e.payload)),
+  onModelDownload: (cb) => events.modelDownload.listen((e) => cb(e.payload)),
 };

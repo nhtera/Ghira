@@ -660,7 +660,13 @@
     },
     "audioAccessOff": "Quyền âm thanh hệ thống đang tắt. Cuộc gọi chỉ ghi được micro.",
     "turnOn": "Bật mục này",
-    "commandFailed": "Không thực hiện được: {{message}}"
+    "commandFailed": "Không thực hiện được: {{message}}",
+    "quit": {
+      "title": "Dừng ghi và thoát?",
+      "body": "Phần đã ghi được lưu lại. Bản ghi và ghi chú sẽ được hoàn tất lần sau bạn mở {{app}}.",
+      "stopAndQuit": "Dừng và thoát",
+      "keepRecording": "Tiếp tục ghi"
+    }
   },
   "people": {
     "subtitle_mac": "{{people}} người · {{profiles}} hồ sơ giọng nói · mã hoá trên máy này",
