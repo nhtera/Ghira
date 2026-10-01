@@ -29,6 +29,8 @@ export type ModelDownloadState = {
   error: string | null;
   totalBytes: number;
   start: () => void;
+  /** Re-read the status (a core error may mean a model went bad). */
+  refresh: () => void;
   cancel: () => void;
 };
 
@@ -79,7 +81,8 @@ export function useModelDownload(): ModelDownloadState {
     () =>
       (status?.models ?? []).map((m) => {
         const ev = events[m.id];
-        const installed = m.installed || ev?.phase === "done";
+        // A file that failed its checksum is installed but not good: it counts again until re-downloaded.
+        const installed = (m.installed && !m.damaged) || ev?.phase === "done";
         const total = m.size ?? ev?.total ?? 0;
         const got = installed ? total : Math.max(ev?.done ?? 0, m.partialBytes ?? 0);
         return {
@@ -131,5 +134,5 @@ export function useModelDownload(): ModelDownloadState {
     });
   }, [refresh]);
 
-  return { status, models, phase, percent, minutesLeft, error, totalBytes, start, cancel };
+  return { status, models, phase, percent, minutesLeft, error, totalBytes, start, cancel, refresh };
 }

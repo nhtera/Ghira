@@ -8,6 +8,7 @@ import type { SpeakerInfo } from "../../bindings";
 import { useShallow } from "zustand/react/shallow";
 import { elapsedMs, useLive } from "../../state/live";
 import { useSpeakerLabel, speakerNumber } from "../../state/speaker-label";
+import { SpeakerPopover } from "../speakers";
 import { useNow } from "./clock";
 import { laneModel } from "./logic";
 
@@ -34,7 +35,12 @@ export function SpeakerStrip({ defaultOpen = true }: { defaultOpen?: boolean }) 
         <ul aria-label={t("speakers.title")} className="m-0 flex min-w-0 flex-1 list-none flex-wrap gap-1.5 p-0">
           {list.map((s) => (
             <li key={s.id}>
-              <SpeakerChip state={chipState(s)} name={labelOf(s)} colorSlot={s.colorSlot} isMe={s.isMe} />
+              {/* Me and the shared Others lane have nothing to name or merge. */}
+              {s.isMe || s.others ? (
+                <SpeakerChip state={chipState(s)} name={labelOf(s)} colorSlot={s.colorSlot} isMe={s.isMe} />
+              ) : (
+                <SpeakerPopover speaker={s} chip={<SpeakerChip state={chipState(s)} name={labelOf(s)} colorSlot={s.colorSlot} isMe={s.isMe} />} />
+              )}
             </li>
           ))}
         </ul>

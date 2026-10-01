@@ -11,6 +11,7 @@ import { useLive } from "../state/live";
 import { useAppActions } from "./actions";
 import { DetectionPrompt } from "../features/detection/detection-prompt";
 import { ProcessingWatcher } from "../features/processing/processing-watcher";
+import { SystemStates } from "../features/system-states";
 import { CommandPalette } from "./command-palette";
 import { LiveAnnouncer } from "./live-announcer";
 import { shortcutFor } from "./shortcuts";
@@ -78,6 +79,7 @@ export function AppShell() {
       <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: compact ? "56px minmax(0,1fr)" : "216px minmax(0,1fr)" }}>
         <Sidebar compact={compact} />
         <main className="relative min-h-0 min-w-0 overflow-hidden">
+          <SystemStates />
           <Outlet />
         </main>
       </div>

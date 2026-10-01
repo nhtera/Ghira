@@ -8,9 +8,11 @@ mod library;
 mod menu;
 mod models_cmd;
 mod navigation;
+mod panels;
 mod recovery_cmd;
 mod speakers_cmd;
 mod system;
+mod tray;
 mod windows;
 
 use std::sync::Arc;
@@ -259,10 +261,18 @@ pub(crate) fn request_quit<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
             let _ = w.show();
             let _ = w.set_focus();
         }
-        let _ = QuitRequested {}.emit(app);
+        // Only the main window asks (the panels have no quit dialog).
+        let _ = QuitRequested {}.emit_to(app, "main");
     } else {
         app.exit(0);
     }
+}
+
+/// Quit from the popover (the menu bar has no app menu on Windows).
+#[tauri::command]
+#[specta::specta]
+fn request_quit_app(app: tauri::AppHandle) {
+    request_quit(&app);
 }
 
 /// Quits; `stop`: stop the recording first (it is saved and processed at the
@@ -297,6 +307,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             speaker_not_a_person,
             import_recording,
             quit_app,
+            request_quit_app,
             library::list_meetings,
             library::set_meeting_title,
             library::note_lines,
@@ -308,6 +319,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             library::session_snapshot,
             library::delete_meeting,
             library::retry_meeting,
+            library::take_recovered_meetings,
+            library::known_speaker_names,
             speakers_cmd::meeting_speakers,
             speakers_cmd::rename_meeting_speaker,
             recovery_cmd::has_recovery_key,
@@ -325,7 +338,13 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             system::request_mic_permission,
             system::reply_meeting_detected,
             audio_protocol::issue_audio_sample,
-            windows::show_main
+            windows::show_main,
+            panels::hide_popover,
+            panels::set_mini_compact,
+            panels::close_mini,
+            panels::open_mini_recorder,
+            panels::close_detect,
+            system::show_notification
         ])
         .events(tauri_specta::collect_events![
             core::CoreEvent,
@@ -354,8 +373,13 @@ pub fn run() {
 
     let tokens = Arc::new(audio_protocol::AudioTokens::default());
     let protocol_tokens = tokens.clone();
-    let app = tauri::Builder::default()
-        .plugin(navigation::guard())
+    let app = tauri::Builder::default().plugin(navigation::guard());
+    #[cfg(target_os = "macos")]
+    let app = app.plugin(tauri_nspanel::init());
+    let app = app
+        .plugin(tray::shortcut_plugin())
+        .plugin(tauri_plugin_notification::init());
+    let app = app
         .invoke_handler(builder.invoke_handler())
         // Short audio spans for the webview, by token only (audio_protocol.rs).
         .register_asynchronous_uri_scheme_protocol("ghi-audio", move |ctx, request, responder| {
@@ -371,7 +395,10 @@ pub fn run() {
         })
         .setup(move |app| {
             builder.mount_events(app);
-            let core = Arc::new(core::Core::new(app.handle())?);
+            let tray_app = app.handle().clone();
+            let core = Arc::new(core::Core::new(app.handle(), move |e| {
+                tray::on_event(&tray_app, e)
+            })?);
             core.init_in_background();
             let detection = Arc::new(system::Detection::default());
             system::spawn_detection(app.handle().clone(), core.clone(), detection.clone());
@@ -388,21 +415,27 @@ pub fn run() {
             // Created here rather than in tauri.conf.json so `window.open` can
             // be denied (windows.rs).
             windows::main(app.handle(), None)?;
+            tray::build(app.handle())?;
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building the Ghira desktop app");
     app.run(|app, event| match event {
-        // Closing the main window while recording asks first (until the
-        // menu-bar item exists, phase 10c, closing it would leave the
-        // recording without any window).
+        // Closing the main window hides it: the app lives in the menu bar
+        // (detection, the popover). While recording, the mini-recorder
+        // takes over. Quit is in the menu and the popover.
         RunEvent::WindowEvent {
             label,
             event: tauri::WindowEvent::CloseRequested { api, .. },
             ..
-        } if label == "main" && app.state::<Arc<core::Core>>().recording() => {
+        } if label == "main" => {
             api.prevent_close();
-            request_quit(app);
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.hide();
+            }
+            if app.state::<Arc<core::Core>>().recording() {
+                panels::open_mini(app);
+            }
         }
         RunEvent::ExitRequested { api, code, .. } => {
             let core = app.state::<Arc<core::Core>>();

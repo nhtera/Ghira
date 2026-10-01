@@ -33,6 +33,8 @@ export const commands = {
 	 *  next launch). Without `stop`, a running recording keeps the app open.
 	 */
 	quitApp: (stop: boolean) => typedError<null, string>(__TAURI_INVOKE("quit_app", { stop })),
+	/**  Quit from the popover (the menu bar has no app menu on Windows). */
+	requestQuitApp: () => __TAURI_INVOKE<void>("request_quit_app"),
 	/**  Library rows, newest first. */
 	listMeetings: (limit: number, offset: number) => typedError<MeetingRow[], string>(__TAURI_INVOKE("list_meetings", { limit, offset })),
 	setMeetingTitle: (meeting: string, title: string) => typedError<null, string>(__TAURI_INVOKE("set_meeting_title", { meeting, title })),
@@ -79,6 +81,16 @@ export const commands = {
 	deleteMeeting: (meeting: string) => typedError<null, string>(__TAURI_INVOKE("delete_meeting", { meeting })),
 	/**  Runs a meeting's failed jobs again (the library's "Failed · Retry"). */
 	retryMeeting: (meeting: string) => typedError<number, string>(__TAURI_INVOKE("retry_meeting", { meeting })),
+	/**
+	 *  Meetings recovered after a crash at this launch (D12 "recovered"; the
+	 *  notice shows once: the list is cleared when read).
+	 */
+	takeRecoveredMeetings: () => typedError<RecoveredMeeting[], string>(__TAURI_INVOKE("take_recovered_meetings")),
+	/**
+	 *  Names given to speakers in recent meetings, most recent first (rename
+	 *  autocomplete; the People list arrives in phase 14).
+	 */
+	knownSpeakerNames: () => typedError<string[], string>(__TAURI_INVOKE("known_speaker_names")),
 	/**
 	 *  The meeting's speakers (merged ones left out), with the middle 3 s of each
 	 *  one's longest line as the sample.
@@ -128,6 +140,18 @@ export const commands = {
 	 *  Async: creating a window from a sync command deadlocks on Windows.
 	 */
 	showMain: (route: string | null) => typedError<null, string>(__TAURI_INVOKE("show_main", { route })),
+	hidePopover: () => __TAURI_INVOKE<void>("hide_popover"),
+	/**  The mini-recorder as a full card or a small pill. */
+	setMiniCompact: (compact: boolean) => typedError<null, string>(__TAURI_INVOKE("set_mini_compact", { compact })),
+	closeMini: () => __TAURI_INVOKE<void>("close_mini"),
+	/**  Opens the mini-recorder from the live view ("Mini recorder"). */
+	openMiniRecorder: () => __TAURI_INVOKE<void>("open_mini_recorder"),
+	closeDetect: () => __TAURI_INVOKE<void>("close_detect"),
+	/**
+	 *  A system notification (notes ready, recovered); clicking it brings the
+	 *  app forward. The text comes localized from the UI.
+	 */
+	showNotification: (title: string, body: string) => typedError<null, string>(__TAURI_INVOKE("show_notification", { title, body })),
 };
 
 /** Events */
@@ -152,6 +176,8 @@ export type AppSettings = {
 	detectMeetings: boolean,
 	/**  ⌘M / Ctrl+M marks a moment from any app while recording. */
 	globalMarkShortcut: boolean,
+	/**  ⌘⇧R / Ctrl+Shift+R starts or stops recording from any app. */
+	globalRecordShortcut: boolean,
 	/**
 	 *  Voice profile of the user ("Me"). Off until speaker embeddings exist
 	 *  (phase 14); the onboarding step is hidden while off.
@@ -221,7 +247,13 @@ export type Event = { type: "stateChanged"; meeting: string; state: SessionState
 /**  0 = mic, 1 = system. */
 track: number; text: string } | { type: "transcriptFinal"; meeting: string; line: LineInfo } | { type: "speakerArrived"; meeting: string; speaker: SpeakerInfo } | 
 /**  A provisional speaker became "Speaker N". */
-{ type: "speakerConfirmed"; meeting: string; speaker: SpeakerInfo } | { type: "speakerRenamed"; meeting: string; speaker: SpeakerInfo } | { type: "speakersMerged"; meeting: string; from: number; into: number } | { type: "speakerSplit"; meeting: string; from: number; speaker: SpeakerInfo } | { type: "speakerNotAPerson"; meeting: string; id: number } | { type: "markAdded"; meeting: string; tMs: number | null } | 
+{ type: "speakerConfirmed"; meeting: string; speaker: SpeakerInfo } | { type: "speakerRenamed"; meeting: string; speaker: SpeakerInfo } | { type: "speakersMerged"; meeting: string; from: number; into: number } | 
+/**
+ *  `lines`: segment gids moved from `from` to the new speaker (each once).
+ *  If the store refuses the move, an `Error` event follows and the lines
+ *  stay with `from`.
+ */
+{ type: "speakerSplit"; meeting: string; from: number; speaker: SpeakerInfo; lines: string[] } | { type: "speakerNotAPerson"; meeting: string; id: number } | { type: "markAdded"; meeting: string; tMs: number | null } | 
 /**  Everything from `from_ms` on was removed (audio, lines, marks, notes). */
 { type: "discardApplied"; meeting: string; fromMs: number | null } | 
 /**
@@ -362,6 +394,8 @@ export type ModelInfo = {
 	installed: boolean,
 	/**  Bytes of an unfinished download (resumes from here). */
 	partialBytes: number | null,
+	/**  Failed its SHA-256 at load: download it again (D12). */
+	damaged: boolean,
 };
 
 export type ModelsStatus = {
@@ -416,6 +450,14 @@ export type RecordMode =
 /**  One mic in a room. */
 "room";
 
+/**  A meeting closed by crash recovery at this launch. */
+export type RecoveredMeeting = {
+	gid: string,
+	title: string,
+	/**  What was saved (ms). */
+	durationMs: number | null,
+};
+
 /**
  *  Everything a reloaded webview needs to redraw a running session. `seq` is
  *  the bus sequence number read before the rest was gathered: events with a
@@ -447,11 +489,12 @@ export type SessionState = "idle" | "starting" | "recording" | "paused" | "stopp
 
 /**  A change to some settings; fields left out keep their value. */
 export type SettingsPatch = {
-	onboardingDone: boolean | null,
-	detectMeetings: boolean | null,
-	globalMarkShortcut: boolean | null,
-	strictOffline: boolean | null,
-	meetingLanguage: MeetingLanguage | null,
+	onboardingDone?: boolean | null,
+	detectMeetings?: boolean | null,
+	globalMarkShortcut?: boolean | null,
+	globalRecordShortcut?: boolean | null,
+	strictOffline?: boolean | null,
+	meetingLanguage?: MeetingLanguage | null,
 };
 
 export type SpeakerInfo = {

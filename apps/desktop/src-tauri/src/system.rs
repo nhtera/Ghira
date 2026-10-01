@@ -15,7 +15,7 @@ use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
 use crate::core::Core;
@@ -35,6 +35,8 @@ pub struct AppSettings {
     pub detect_meetings: bool,
     /// ⌘M / Ctrl+M marks a moment from any app while recording.
     pub global_mark_shortcut: bool,
+    /// ⌘⇧R / Ctrl+Shift+R starts or stops recording from any app.
+    pub global_record_shortcut: bool,
     /// Voice profile of the user ("Me"). Off until speaker embeddings exist
     /// (phase 14); the onboarding step is hidden while off.
     pub voice_profiles_me: bool,
@@ -72,6 +74,7 @@ impl Default for AppSettings {
             onboarding_done: false,
             detect_meetings: true,
             global_mark_shortcut: true,
+            global_record_shortcut: true,
             voice_profiles_me: false,
             voice_profiles_third_party: false,
             strict_offline: false,
@@ -82,11 +85,12 @@ impl Default for AppSettings {
 
 /// A change to some settings; fields left out keep their value.
 #[derive(Debug, Clone, Default, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct SettingsPatch {
     pub onboarding_done: Option<bool>,
     pub detect_meetings: Option<bool>,
     pub global_mark_shortcut: Option<bool>,
+    pub global_record_shortcut: Option<bool>,
     pub strict_offline: Option<bool>,
     pub meeting_language: Option<MeetingLanguage>,
 }
@@ -142,10 +146,11 @@ pub async fn get_settings(core: CoreState<'_>) -> Result<AppSettings, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn update_settings(
+    app: tauri::AppHandle,
     core: CoreState<'_>,
     patch: SettingsPatch,
 ) -> Result<AppSettings, String> {
-    blocking(&core, move |c| {
+    let r = blocking(&core, move |c| {
         let cur = load_settings(c)?;
         let s = enforce(AppSettings {
             onboarding_done: patch.onboarding_done.unwrap_or(cur.onboarding_done),
@@ -153,6 +158,9 @@ pub async fn update_settings(
             global_mark_shortcut: patch
                 .global_mark_shortcut
                 .unwrap_or(cur.global_mark_shortcut),
+            global_record_shortcut: patch
+                .global_record_shortcut
+                .unwrap_or(cur.global_record_shortcut),
             strict_offline: patch.strict_offline.unwrap_or(cur.strict_offline),
             meeting_language: patch.meeting_language.unwrap_or(cur.meeting_language),
             ..cur
@@ -164,7 +172,10 @@ pub async fn update_settings(
         *c.settings_cache().lock().unwrap_or_else(|e| e.into_inner()) = Some(s.clone());
         Ok(s)
     })
-    .await
+    .await;
+    // Onboarding finished or the setting changed: (un)register ⌘⇧R.
+    crate::tray::sync_record_shortcut(&app);
+    r
 }
 
 /// Microphone access as macOS reports it.
@@ -318,7 +329,7 @@ pub async fn reply_meeting_detected(
 }
 
 /// Starts the detection poller (macOS; elsewhere a no-op until phase 13).
-pub fn spawn_detection<R: Runtime>(app: AppHandle<R>, core: Arc<Core>, detection: Arc<Detection>) {
+pub fn spawn_detection(app: AppHandle, core: Arc<Core>, detection: Arc<Detection>) {
     #[cfg(target_os = "macos")]
     {
         let _ = std::thread::Builder::new()
@@ -330,7 +341,7 @@ pub fn spawn_detection<R: Runtime>(app: AppHandle<R>, core: Arc<Core>, detection
 }
 
 #[cfg(target_os = "macos")]
-fn detection_loop<R: Runtime>(app: AppHandle<R>, core: Arc<Core>, detection: Arc<Detection>) {
+fn detection_loop(app: AppHandle, core: Arc<Core>, detection: Arc<Detection>) {
     use ghi_audio::detect::{DetectConfig, DetectState, Detector};
     // The store opens in the background at launch; detection starts after
     // (and keeps retrying if it can't open yet, e.g. a locked keychain).
@@ -371,12 +382,22 @@ fn detection_loop<R: Runtime>(app: AppHandle<R>, core: Arc<Core>, detection: Arc
             p
         };
         if let Some(p) = prompt {
-            let _ = MeetingDetected {
+            let detected = MeetingDetected {
                 app: p.app.key().into(),
                 app_name: p.app.display_name().into(),
                 browser: p.app.is_browser(),
+            };
+            // In the main window only when the user is looking at it; else
+            // (hidden, behind a full-screen call, another Space) the panel.
+            let main_focused = app
+                .get_webview_window("main")
+                .and_then(|w| w.is_focused().ok())
+                .unwrap_or(false);
+            if main_focused {
+                let _ = detected.emit_to(&app, "main");
+            } else {
+                crate::panels::open_detect(&app, detected);
             }
-            .emit(&app);
         }
     }
 }
@@ -398,4 +419,19 @@ mod tests {
         let s = from_stored(Some(serde_json::json!({ "onboardingDone": true })));
         assert!(s.onboarding_done && !s.strict_offline);
     }
+}
+
+/// A system notification (notes ready, recovered); clicking it brings the
+/// app forward. The text comes localized from the UI.
+#[tauri::command]
+#[specta::specta]
+pub fn show_notification(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    let clip = |s: String, n: usize| s.chars().take(n).collect::<String>();
+    app.notification()
+        .builder()
+        .title(clip(title, 120))
+        .body(clip(body, 400))
+        .show()
+        .map_err(|e| e.to_string())
 }

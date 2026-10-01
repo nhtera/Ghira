@@ -430,3 +430,58 @@ pub async fn retry_meeting(core: CoreState<'_>, meeting: String) -> Result<u32, 
     })
     .await
 }
+
+/// A meeting closed by crash recovery at this launch.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveredMeeting {
+    pub gid: String,
+    pub title: String,
+    /// What was saved (ms).
+    pub duration_ms: f64,
+}
+
+/// Meetings recovered after a crash at this launch (D12 "recovered"; the
+/// notice shows once: the list is cleared when read).
+#[tauri::command]
+#[specta::specta]
+pub async fn take_recovered_meetings(core: CoreState<'_>) -> Result<Vec<RecoveredMeeting>, String> {
+    blocking(&core, |c| {
+        let store = c.store()?;
+        Ok(c.take_recovered()
+            .into_iter()
+            .filter_map(|gid| store.get_meeting(&gid).ok())
+            .map(|m| RecoveredMeeting {
+                gid: m.gid,
+                title: m.title,
+                duration_ms: m.duration_ms as f64,
+            })
+            .collect())
+    })
+    .await
+}
+
+/// Names given to speakers in recent meetings, most recent first (rename
+/// autocomplete; the People list arrives in phase 14).
+#[tauri::command]
+#[specta::specta]
+pub async fn known_speaker_names(core: CoreState<'_>) -> Result<Vec<String>, String> {
+    blocking(&core, |c| {
+        let store = c.store()?;
+        let mut names: Vec<String> = Vec::new();
+        for m in store.list_meetings(30, 0).map_err(|e| e.to_string())? {
+            for s in store.speakers(&m.gid).map_err(|e| e.to_string())? {
+                if let Some(n) = s.display_name
+                    && !s.is_me
+                    && !s.not_person
+                    && !names.iter().any(|x| x.to_lowercase() == n.to_lowercase())
+                {
+                    names.push(n);
+                }
+            }
+        }
+        names.truncate(100);
+        Ok(names)
+    })
+    .await
+}

@@ -8,6 +8,7 @@ import { Button, TranscriptLine, wordsFromText } from "@ghi/ui";
 import type { LineInfo, SpeakerInfo } from "../../bindings";
 import { speakerNumber, useSpeakerLabel } from "../../state/speaker-label";
 import { useLive } from "../../state/live";
+import { LineSpeakerPicker } from "../speakers";
 import { isFollowing } from "./logic";
 
 type Speaker = ReturnType<typeof toSpeaker>;
@@ -16,13 +17,27 @@ const toSpeaker = (label: string, s: SpeakerInfo) => ({ label, colorSlot: s.colo
 /** One final line; unchanged lines don't re-render as new ones arrive. */
 const Row = memo(
   function Row({ line, speaker, marked }: { line: LineInfo; speaker: Speaker | null; marked: boolean }) {
+    const { t } = useTranslation();
+    const [picking, setPicking] = useState(false);
+    const box = useRef<HTMLDivElement>(null);
+    // The picker's anchor isn't focusable: put focus back on the line's button.
+    const closePicker = () => {
+      setPicking(false);
+      requestAnimationFrame(() => box.current?.querySelector<HTMLElement>(`button[aria-label="${t("speakers.line.changeSpeaker")}"]`)?.focus());
+    };
+    // A line can change speaker once it is stored (has a gid) and has one.
+    const movable = Boolean(line.gid) && line.speaker != null && !speaker?.isMe;
     return (
-      <TranscriptLine
-        startMs={line.t0Ms ?? 0}
-        speaker={speaker}
-        words={line.words.length ? line.words.map((w) => ({ text: w.text, lowConfidence: w.lowConfidence })) : wordsFromText(line.text)}
-        marked={marked}
-      />
+      <div ref={box}>
+        <TranscriptLine
+          startMs={line.t0Ms ?? 0}
+          speaker={speaker}
+          words={line.words.length ? line.words.map((w) => ({ text: w.text, lowConfidence: w.lowConfidence })) : wordsFromText(line.text)}
+          marked={marked}
+          onChangeSpeaker={movable ? () => setPicking(true) : undefined}
+        />
+        {picking && line.speaker != null && <LineSpeakerPicker gid={line.gid} from={line.speaker} onClose={closePicker} />}
+      </div>
     );
   },
   (a, b) => a.line === b.line && a.marked === b.marked && a.speaker?.label === b.speaker?.label && a.speaker?.colorSlot === b.speaker?.colorSlot && a.speaker?.initial === b.speaker?.initial,

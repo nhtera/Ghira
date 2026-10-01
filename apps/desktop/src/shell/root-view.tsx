@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Above every route: core events feed the live store, and first launch goes
-// to onboarding until it is done.
+// Above every route: core events feed the live store. In the main window,
+// first launch goes to onboarding until it is done, and quitting while
+// recording asks. The small panels (popover, mini-recorder, detection prompt)
+// get neither: they are separate windows with their own few commands.
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
@@ -18,9 +20,12 @@ export const settingsQuery = {
   },
 };
 
+const PANEL_ROUTES = ["/popover", "/mini", "/detect"];
+
 export function RootView() {
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const panel = PANEL_ROUTES.some((p) => path.startsWith(p));
   const { data: settings } = useQuery(settingsQuery);
   const apply = useLive((s) => s.apply);
   // Core events → live store for every route (onboarding's test recording
@@ -53,15 +58,15 @@ export function RootView() {
   }, [apply, restore]);
 
   useEffect(() => {
-    if (settings && !settings.onboardingDone && !path.startsWith("/onboarding")) {
+    if (!panel && settings && !settings.onboardingDone && !path.startsWith("/onboarding")) {
       void navigate({ to: "/onboarding/$step", params: { step: "welcome" } });
     }
-  }, [settings, path, navigate]);
+  }, [panel, settings, path, navigate]);
   return (
     <>
       <Outlet />
       {/* Here, not in the shell: quitting must ask during onboarding's test too. */}
-      <QuitDialog />
+      {!panel && <QuitDialog />}
     </>
   );
 }

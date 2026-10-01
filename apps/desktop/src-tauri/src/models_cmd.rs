@@ -31,6 +31,8 @@ pub struct ModelInfo {
     pub installed: bool,
     /// Bytes of an unfinished download (resumes from here).
     pub partial_bytes: f64,
+    /// Failed its SHA-256 at load: download it again (D12).
+    pub damaged: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -71,11 +73,13 @@ pub struct Downloads(Mutex<Option<Arc<AtomicBool>>>);
 
 fn status(core: &Core, downloads: &Downloads) -> ModelsStatus {
     let (tier, models) = ghi_models::required_for_machine(&core.models());
+    let damaged = crate::core::damaged_models();
     ModelsStatus {
         tier: format!("{tier:?}").to_lowercase(),
         models: models
             .into_iter()
             .map(|m| ModelInfo {
+                damaged: damaged.contains(&m.id),
                 id: m.id,
                 role: m.role,
                 size: m.size as f64,
@@ -169,7 +173,11 @@ fn run<R: Runtime>(app: &AppHandle<R>, core: &Core, cancel: &Arc<AtomicBool>) {
         ..Control::default()
     };
     let (_, required) = ghi_models::required_for_machine(&dir);
-    for r in required.into_iter().filter(|r| !r.installed) {
+    let damaged = crate::core::damaged_models();
+    for r in required
+        .into_iter()
+        .filter(|r| !r.installed || damaged.contains(&r.id))
+    {
         let Some(model) = ghi_models::find(&r.id) else {
             continue;
         };
@@ -190,6 +198,7 @@ fn run<R: Runtime>(app: &AppHandle<R>, core: &Core, cancel: &Arc<AtomicBool>) {
         let _ = std::fs::create_dir_all(&dir);
         match ghi_models::download(&model, &dir, policy, &ctl, &mut progress, &UreqTransport) {
             Ok(_) => {
+                crate::core::clear_damaged(&r.id);
                 emit(DownloadPhase::Done, r.size, None);
                 // Queued transcripts and notes can run now.
                 core.notify_jobs();

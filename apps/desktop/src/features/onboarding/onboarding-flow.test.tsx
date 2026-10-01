@@ -60,8 +60,8 @@ const models = (installed: boolean, partial = 0): ModelsStatus => ({
   tier: "balanced",
   downloading: false,
   models: [
-    { id: "asr-model", role: "asr", size: 1.2e9, installed, partialBytes: partial },
-    { id: "llm-model", role: "llm", size: 2.5e9, installed, partialBytes: 0 },
+    { id: "asr-model", role: "asr", size: 1.2e9, installed, partialBytes: partial, damaged: false },
+    { id: "llm-model", role: "llm", size: 2.5e9, installed, partialBytes: 0, damaged: false },
   ],
 });
 const send = (e: ModelDownload) => act(() => core.state.listener?.(e));

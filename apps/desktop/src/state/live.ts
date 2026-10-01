@@ -134,8 +134,13 @@ export function reduce(s: LiveState, env: CoreEvent): LiveState {
     case "speakerArrived":
     case "speakerConfirmed":
     case "speakerRenamed":
-    case "speakerSplit":
       return { ...s, speakers: { ...s.speakers, [e.speaker.id]: e.speaker }, seq };
+    case "speakerSplit": {
+      // The moved lines go to the new speaker (every window sees the same).
+      const moved = new Set(e.lines);
+      const lines = s.lines.map((l) => (moved.has(l.gid) ? { ...l, speaker: e.speaker.id } : l));
+      return { ...s, speakers: { ...s.speakers, [e.speaker.id]: e.speaker }, lines, seq };
+    }
     case "speakersMerged": {
       const speakers = { ...s.speakers };
       delete speakers[e.from];

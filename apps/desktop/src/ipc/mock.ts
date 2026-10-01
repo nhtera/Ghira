@@ -153,8 +153,12 @@ let settings: AppSettings = {
   voiceProfilesThirdParty: false,
   strictOffline: false,
   meetingLanguage: "auto",
+  globalRecordShortcut: true,
 };
 let lineSeq = 0;
+/** Speakers made by a split in this session (ids after the scripted ones). */
+const extraSpeakers: number[] = [];
+let recoveredShown = false;
 
 const commands: Commands = {
   appVersion: () => Promise.resolve<AppVersion>({ app: "0.1.0", core: "0.1.0 (mock)" }),
@@ -229,7 +233,20 @@ const commands: Commands = {
     emit({ type: "speakersMerged", meeting: session.id, from, into });
     return ok(null);
   },
-  splitSpeaker: () => (session ? ok(null) : fail("nothing is recording")),
+  splitSpeaker: (from, lines) => {
+    if (!session) return fail("nothing is recording");
+    if (!lines.length) return ok(null);
+    const id = Math.max(0, ...[...session.arrived].map((i) => i + 1), ...extraSpeakers) + 1;
+    extraSpeakers.push(id);
+    emit({
+      type: "speakerSplit",
+      meeting: session.id,
+      from,
+      speaker: { id, label: `Speaker ${id}`, colorSlot: SLOTS[(id - 1) % SLOTS.length], isMe: false, provisional: false, notPerson: false, others: false },
+      lines,
+    });
+    return ok(id);
+  },
   speakerNotAPerson: (id) => {
     if (!session) return fail("nothing is recording");
     emit({ type: "speakerNotAPerson", meeting: session.id, id });
@@ -306,7 +323,26 @@ const commands: Commands = {
           }
         : null,
     ),
-  modelsStatus: () => ok({ tier: "balanced", models: MODELS.map((m) => ({ ...m, installed: true, partialBytes: 0 })), downloading: false }),
+  modelsStatus: () =>
+    ok({ tier: "balanced", models: MODELS.map((m) => ({ ...m, installed: true, partialBytes: 0, damaged: false })), downloading: false }),
+  // `?recovered=1` in the URL pretends the last session crashed mid-meeting.
+  takeRecoveredMeetings: () => {
+    const once = new URLSearchParams(location.search).has("recovered") && !recoveredShown;
+    recoveredShown = true;
+    return ok(once ? [{ gid: "sample-0", title: rows[0]?.title ?? "", durationMs: 1_520_000 }] : []);
+  },
+  // Native windows and notifications don't exist in the browser.
+  hidePopover: () => Promise.resolve(),
+  setMiniCompact: () => ok(null),
+  closeMini: () => Promise.resolve(),
+  openMiniRecorder: () => Promise.resolve(),
+  closeDetect: () => Promise.resolve(),
+  showNotification: () => ok(null),
+  requestQuitApp: () => {
+    if (session) simulateQuitRequested();
+    return Promise.resolve();
+  },
+  knownSpeakerNames: () => ok(["Linh", "Minh", "Sarah", "An Tran", "Jordan", "Priya"]),
   // A short scripted download, so onboarding screens can be built and tested.
   downloadModels: () => {
     MODELS.forEach((m, i) => {

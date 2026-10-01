@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-mini-recorder"
+description = "Enables the open_mini_recorder command without any pre-configured scope."
+commands.allow = ["open_mini_recorder"]
+
+[[permission]]
+identifier = "deny-open-mini-recorder"
+description = "Denies the open_mini_recorder command without any pre-configured scope."
+commands.deny = ["open_mini_recorder"]

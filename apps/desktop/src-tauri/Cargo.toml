@@ -22,7 +22,9 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # No shell or http plugins: the webview never touches the network or spawns
 # processes; all I/O goes through Rust commands and `ghi-net`.
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 specta = "=2.0.0-rc.25"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
@@ -36,6 +38,11 @@ ghi-speech = { path = "../../../crates/ghi-speech" }
 ghi-store = { path = "../../../crates/ghi-store" }
 serde_json = "1"
 rand_core = { version = "0.6", features = ["getrandom"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Non-activating panels for the menu-bar popover and the mini-recorder.
+tauri-nspanel = "2.1"
+objc2-app-kit = { version = "0.3", features = ["NSWindow"] }
 
 [lints]
 workspace = true

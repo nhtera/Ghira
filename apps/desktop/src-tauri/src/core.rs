@@ -36,6 +36,9 @@ pub struct Core {
     /// slot itself is only locked briefly.
     lifecycle: Mutex<()>,
     runner: Mutex<Option<Arc<JobRunner>>>,
+    /// Meetings closed by crash recovery at this launch (D12 "recovered"),
+    /// until the user dismisses the notice.
+    recovered: Mutex<Vec<String>>,
     /// App settings as last read or written (system.rs).
     settings: Mutex<Option<crate::system::AppSettings>>,
     /// The runner's thread, joined (bounded) at shutdown.
@@ -82,6 +85,35 @@ fn platform_keystore(_dir: &Path) -> Result<Arc<dyn KeyStore>, String> {
     Err("no OS key store on this platform yet".into())
 }
 
+/// Models whose file failed its SHA-256 at load (D12 "model damaged"): the UI
+/// offers a re-download; a successful download clears the mark.
+static DAMAGED: Mutex<std::collections::BTreeSet<String>> =
+    Mutex::new(std::collections::BTreeSet::new());
+
+pub(crate) fn damaged_models() -> std::collections::BTreeSet<String> {
+    lock(&DAMAGED).clone()
+}
+
+pub(crate) fn clear_damaged(id: &str) {
+    lock(&DAMAGED).remove(id);
+}
+
+/// Verifies a model before native code parses it, remembering damage.
+pub(crate) fn checked_model(models: &Path, id: &str) -> Result<PathBuf, String> {
+    let m = ghi_models::find(id).ok_or_else(|| format!("{id} is not in the registry"))?;
+    let p = ghi_models::path_in(models, &m);
+    ghi_models::verify_for_load(&p, &m).map_err(|e| {
+        if matches!(
+            e,
+            ghi_models::VerifyError::Hash | ghi_models::VerifyError::Size { .. }
+        ) {
+            lock(&DAMAGED).insert(id.to_string());
+        }
+        format!("model {id}: {e}")
+    })?;
+    Ok(p)
+}
+
 /// Store setting holding the onboarding test recording's meeting id.
 const TEST_MEETING_KEY: &str = "test_capture_meeting";
 
@@ -109,13 +141,8 @@ fn engines(
     models: &Path,
     chunk_ms: u32,
 ) -> Result<Arc<dyn ghi_core::engines::SpeechEngines>, String> {
-    let path = |id: &str| {
-        let m = ghi_models::find(id).ok_or_else(|| format!("{id} is not in the registry"))?;
-        let p = ghi_models::path_in(models, &m);
-        // Checked against its pinned SHA-256 before native code parses it.
-        ghi_models::verify_for_load(&p, &m).map_err(|e| format!("model {id}: {e}"))?;
-        Ok::<_, String>(p)
-    };
+    // Checked against their pinned SHA-256 before native code parses them.
+    let path = |id: &str| checked_model(models, id);
     let e = ghi_core::engines::NemoEngines::load(
         &path(&preset().speech_models[0])?,
         &path(&preset().speech_models[1])?,
@@ -136,7 +163,11 @@ fn engines(
 
 impl Core {
     /// Starts forwarding core events to the webview.
-    pub fn new<R: Runtime>(app: &AppHandle<R>) -> Result<Core, String> {
+    /// `on_event` also sees every event (the tray follows the session).
+    pub fn new<R: Runtime>(
+        app: &AppHandle<R>,
+        on_event: impl Fn(&ghi_core::events::Event) + Send + 'static,
+    ) -> Result<Core, String> {
         let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
         let (events, rx) = bus();
         let handle = app.clone();
@@ -144,6 +175,7 @@ impl Core {
             .name("ghi-events".into())
             .spawn(move || {
                 for env in rx {
+                    on_event(&env.event);
                     let _ = CoreEvent(env).emit(&handle);
                 }
             })
@@ -156,6 +188,7 @@ impl Core {
             runner: Mutex::new(None),
             runner_thread: Mutex::new(None),
             settings: Mutex::new(None),
+            recovered: Mutex::new(Vec::new()),
             events,
         })
     }
@@ -186,6 +219,11 @@ impl Core {
     /// A recording is running or starting/stopping.
     pub fn busy(&self) -> bool {
         self.recording() || self.lifecycle.try_lock().is_err()
+    }
+
+    /// Takes the meetings recovered at launch (the notice is shown once).
+    pub fn take_recovered(&self) -> Vec<String> {
+        std::mem::take(&mut *lock(&self.recovered))
     }
 
     pub fn settings_cache(&self) -> &Mutex<Option<crate::system::AppSettings>> {
@@ -229,7 +267,8 @@ impl Core {
             let _ = store.delete_meeting(&test);
             let _ = store.set_setting(TEST_MEETING_KEY, &serde_json::Value::Null);
         }
-        ghi_core::recover::recover(&store)?;
+        let recovered = ghi_core::recover::recover(&store)?;
+        *lock(&self.recovered) = recovered.meetings;
         let models = self.models();
         let template = ghi_llm::template::builtin("general").map_err(|e| e.to_string())?;
         // The notes model lives with the speech models in the app data dir.
@@ -240,9 +279,13 @@ impl Core {
         };
         let llm: ghi_core::notes_job::LlmFactory = Arc::new(move |bytes| {
             let n_ctx = ((bytes / 3) as u32 * 6 / 5 + 6_144).clamp(8_192, 32_768);
-            ghi_llm::local::LocalLlm::open_registry_in(&llm_dir, preset().llm_id, n_ctx)
-                .map(|l| Box::new(l) as Box<dyn ghi_llm::Llm + Send>)
-                .map_err(|e| e.to_string())
+            {
+                // Marks a damaged file for the UI (the worker checks it too).
+                checked_model(&llm_dir, preset().llm_id)?;
+                ghi_llm::local::LocalLlm::open_registry_in(&llm_dir, preset().llm_id, n_ctx)
+            }
+            .map(|l| Box::new(l) as Box<dyn ghi_llm::Llm + Send>)
+            .map_err(|e| e.to_string())
         });
         let runner = JobRunner::new(
             store.clone(),

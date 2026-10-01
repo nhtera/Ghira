@@ -13,7 +13,10 @@ import { AppShell } from "./shell/app-shell";
 import { RootView } from "./shell/root-view";
 import { LiveScreen } from "./routes/live";
 import { MeetingsScreen } from "./routes/meetings";
+import { DetectScreen } from "./routes/detect";
+import { MiniScreen } from "./routes/mini";
 import { OnboardingScreen } from "./routes/onboarding";
+import { PopoverScreen } from "./routes/popover";
 import { AskScreen, ImportScreen, MeetingDetailScreen, PeopleScreen } from "./routes/simple";
 import { SETTINGS_SECTIONS, SettingsScreen, type SettingsSection } from "./routes/settings";
 
@@ -66,9 +69,17 @@ const onboarding = createRoute({
   component: OnboardingScreen,
 });
 
+// The menu-bar popover and the mini-recorder windows (outside the shell).
+const popover = createRoute({ getParentRoute: () => root, path: "/popover", component: PopoverScreen });
+const mini = createRoute({ getParentRoute: () => root, path: "/mini", component: MiniScreen });
+const detect = createRoute({ getParentRoute: () => root, path: "/detect", component: DetectScreen });
+
 const routeTree = root.addChildren([
   shell.addChildren([index, meetings, meetingDetail, live, people, ask, importRoute, settings]),
   onboarding,
+  popover,
+  mini,
+  detect,
 ]);
 
 export function makeRouter(history: RouterHistory = createHashHistory()) {

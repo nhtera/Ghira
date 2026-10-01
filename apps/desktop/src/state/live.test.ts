@@ -156,3 +156,16 @@ describe("session info", () => {
     expect(s.session).toEqual({ mode: "room", language: "vi", title: "Họp nhóm", consentConfirmed: false });
   });
 });
+
+describe("split", () => {
+  it("moves the split lines to the new speaker", () => {
+    const s = run([
+      { type: "stateChanged", meeting: M, state: "starting" },
+      { type: "speakerArrived", meeting: M, speaker: speaker(1, "Speaker 1") },
+      { type: "transcriptFinal", meeting: M, line: line(1, 0, 1000, "a") },
+      { type: "transcriptFinal", meeting: M, line: line(1, 1000, 2000, "b") },
+      { type: "speakerSplit", meeting: M, from: 1, speaker: speaker(2, "Speaker 2"), lines: ["g1000"] },
+    ]);
+    expect(s.lines.map((l) => [l.text, l.speaker])).toEqual([["a", 1], ["b", 2]]);
+  });
+});

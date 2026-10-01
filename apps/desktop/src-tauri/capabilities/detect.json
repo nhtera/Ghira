@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "detect",
+  "description": "Meeting-detection prompt panel: start recording, not now, never for this app.",
+  "windows": [
+    "detect"
+  ],
+  "permissions": [
+    "core:event:default",
+    "allow-get-settings",
+    "allow-session-snapshot",
+    "allow-start-recording",
+    "allow-reply-meeting-detected",
+    "allow-close-detect",
+    "allow-open-mini-recorder"
+  ]
+}

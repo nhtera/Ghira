@@ -179,7 +179,8 @@
       "go_one": "Move {{count}} line",
       "go_other": "Move {{count}} lines",
       "done_one": "Moved {{count}} line to {{name}}",
-      "done_other": "Moved {{count}} lines to {{name}}"
+      "done_other": "Moved {{count}} lines to {{name}}",
+      "none": "No lines were moved."
     },
     "notPerson": {
       "action": "Not a person (video, music)",
@@ -192,11 +193,13 @@
       "changeSpeaker": "Change speaker",
       "edited": "Edited",
       "moved": "Line moved to {{name}}",
-      "saved": "Transcript updated. Notes keep their citations."
+      "saved": "Transcript updated. Notes keep their citations.",
+      "pickTarget": "Move this line to"
     },
     "me": "Me",
     "acceptSuggestion": "Accept {{name}} as this speaker",
-    "numbered": "Speaker {{number}}"
+    "numbered": "Speaker {{number}}",
+    "saveVoiceNext": "You’ll confirm they agreed on the next step."
   },
   "common": {
     "accept": "Accept",
@@ -399,7 +402,8 @@
     "open": "Open {{app}}",
     "recent": "Recent",
     "next": "Next",
-    "recording": "Recording"
+    "recording": "Recording",
+    "quit": "Quit {{app}}"
   },
   "cloud": {
     "title": "Improve these notes with a cloud model?",
@@ -725,7 +729,9 @@
       "title": "{{app}} closed unexpectedly",
       "body": "Your recording of “{{title}}” was saved up to {{time}}.",
       "recover": "Recover and write notes",
-      "discard": "Discard recording"
+      "discard": "Discard recording",
+      "open": "Open meeting",
+      "discardQuestion": "Delete this recording and its transcript? This can’t be undone."
     },
     "permissionLost": "System audio access was turned off. {{app}} is recording your mic only, so the other people on the call are missing.",
     "micTaken": "Another app is using the microphone in exclusive mode. Close it, or turn off exclusive mode in Sound settings.",
@@ -738,7 +744,8 @@
     "update": {
       "title": "{{app}} {{version}} is ready",
       "body": "Restart when you’re not recording. Takes about 10 seconds.",
-      "restart": "Restart"
+      "restart": "Restart",
+      "deferred": "It will wait until your recording and notes are finished."
     },
     "locked": {
       "title": "{{app}} is locked",
@@ -755,7 +762,13 @@
       "body": "The recording so far is saved. Its transcript and notes are finished the next time you open {{app}}.",
       "stopAndQuit": "Stop and quit",
       "keepRecording": "Keep recording"
-    }
+    },
+    "dismiss": "Dismiss",
+    "storage": {
+      "title": "{{app}} can’t open your meetings",
+      "body": "Nothing can be saved right now. Your recordings on disk are not touched. Try again, and if it keeps happening, restart your computer."
+    },
+    "storageWrite": "Some of this recording couldn’t be saved to disk."
   },
   "people": {
     "subtitle_mac": "{{people}} people · {{profiles}} voice profiles · encrypted on this Mac",
@@ -1058,5 +1071,9 @@
     "clipping": "Too loud",
     "noMic": "No microphone",
     "noSystem": "No system audio"
+  },
+  "mini": {
+    "collapse": "Shrink to a pill",
+    "expand": "Expand"
   }
 }

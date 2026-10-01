@@ -206,6 +206,8 @@ pub struct Engine {
     now_pos: u64,
     /// Frames before this position are silence (a discard).
     mute_until: u64,
+    /// Lines of the split being applied (for its event).
+    split_lines: Vec<String>,
 }
 
 fn speaker_info(t: &SpeakerTracker, id: SpeakerId) -> SpeakerInfo {
@@ -275,6 +277,7 @@ impl Engine {
             next_pos: None,
             now_pos: 0,
             mute_until: 0,
+            split_lines: Vec::new(),
         })
     }
 
@@ -653,6 +656,7 @@ impl Engine {
                     meeting: meeting.clone(),
                     from: *from,
                     speaker: speaker_info(&self.tracker, *new),
+                    lines: std::mem::take(&mut self.split_lines),
                 },
                 Change::NotAPerson(id) => Event::SpeakerNotAPerson {
                     meeting: meeting.clone(),
@@ -692,10 +696,18 @@ impl Engine {
                     .split(from, self.now_pos as f64 / RATE, &mut ch);
                 if let Some(new) = new {
                     let from = self.tracker.canonical(from);
+                    // Each line once, as the store moves them.
+                    let mut moved = Vec::new();
+                    for l in lines {
+                        if !moved.contains(&l) {
+                            moved.push(l);
+                        }
+                    }
+                    self.split_lines = moved.clone();
                     let _ = self.persist.send(PersistMsg::Split {
                         from,
                         new: speaker_out(&self.tracker, new),
-                        lines,
+                        lines: moved,
                     });
                 }
                 let _ = reply.send(new);

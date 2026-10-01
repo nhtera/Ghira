@@ -168,7 +168,8 @@
       "body": "Chọn các dòng thuộc về người khác. {{app}} sẽ chuyển chúng sang người nói mới.",
       "otherName": "Tên người còn lại",
       "go_other": "Chuyển {{count}} dòng",
-      "done_other": "Đã chuyển {{count}} dòng sang {{name}}"
+      "done_other": "Đã chuyển {{count}} dòng sang {{name}}",
+      "none": "Không có dòng nào được chuyển."
     },
     "notPerson": {
       "action": "Không phải người (video, nhạc)",
@@ -181,11 +182,13 @@
       "changeSpeaker": "Đổi người nói",
       "edited": "Đã sửa",
       "moved": "Đã chuyển dòng sang {{name}}",
-      "saved": "Đã cập nhật bản ghi. Ghi chú vẫn giữ trích dẫn."
+      "saved": "Đã cập nhật bản ghi. Ghi chú vẫn giữ trích dẫn.",
+      "pickTarget": "Chuyển dòng này cho"
     },
     "me": "Tôi",
     "acceptSuggestion": "Chọn {{name}} làm người nói này",
-    "numbered": "Người nói {{number}}"
+    "numbered": "Người nói {{number}}",
+    "saveVoiceNext": "Bạn sẽ xác nhận họ đồng ý ở bước tiếp theo."
   },
   "common": {
     "accept": "Đồng ý",
@@ -383,7 +386,8 @@
     "open": "Mở {{app}}",
     "recent": "Gần đây",
     "next": "Tiếp theo",
-    "recording": "Đang ghi"
+    "recording": "Đang ghi",
+    "quit": "Thoát {{app}}"
   },
   "cloud": {
     "title": "Cải thiện ghi chú bằng mô hình cloud?",
@@ -708,7 +712,9 @@
       "title": "{{app}} bị đóng đột ngột",
       "body": "Bản ghi “{{title}}” đã được lưu đến {{time}}.",
       "recover": "Khôi phục và viết ghi chú",
-      "discard": "Bỏ bản ghi"
+      "discard": "Bỏ bản ghi",
+      "open": "Mở cuộc họp",
+      "discardQuestion": "Xóa bản ghi này và bản chép lời? Không hoàn tác được."
     },
     "permissionLost": "Quyền ghi âm thanh hệ thống đã bị tắt. {{app}} chỉ đang ghi micro, nên thiếu giọng những người khác.",
     "micTaken": "Một ứng dụng khác đang dùng micro ở chế độ độc quyền. Đóng ứng dụng đó hoặc tắt chế độ độc quyền trong cài đặt Âm thanh.",
@@ -721,7 +727,8 @@
     "update": {
       "title": "Đã có {{app}} {{version}}",
       "body": "Khởi động lại khi không ghi âm. Mất khoảng 10 giây.",
-      "restart": "Khởi động lại"
+      "restart": "Khởi động lại",
+      "deferred": "Sẽ chờ đến khi ghi âm và ghi chú xong."
     },
     "locked": {
       "title": "{{app}} đang khoá",
@@ -738,7 +745,13 @@
       "body": "Phần đã ghi được lưu lại. Bản ghi và ghi chú sẽ được hoàn tất lần sau bạn mở {{app}}.",
       "stopAndQuit": "Dừng và thoát",
       "keepRecording": "Tiếp tục ghi"
-    }
+    },
+    "dismiss": "Bỏ qua",
+    "storage": {
+      "title": "{{app}} không mở được các cuộc họp của bạn",
+      "body": "Hiện chưa thể lưu gì. Các bản ghi trên ổ đĩa không bị đụng đến. Hãy thử lại, nếu vẫn lỗi thì khởi động lại máy."
+    },
+    "storageWrite": "Một phần bản ghi này chưa lưu được vào ổ đĩa."
   },
   "people": {
     "subtitle_mac": "{{people}} người · {{profiles}} hồ sơ giọng nói · mã hoá trên máy này",
@@ -1024,5 +1037,9 @@
     "clipping": "Quá to",
     "noMic": "Không có micro",
     "noSystem": "Không có âm thanh hệ thống"
+  },
+  "mini": {
+    "collapse": "Thu nhỏ",
+    "expand": "Mở rộng"
   }
 }

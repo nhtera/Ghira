@@ -9,6 +9,12 @@ import { useProcessing } from "./processing-store";
 
 const toasted = new Set<string>();
 
+async function notify(meeting: string, title: string) {
+  const list = await ipc.commands.listMeetings(50, 0);
+  const body = (list.status === "ok" && list.data.find((m) => m.gid === meeting)?.title) || "";
+  await ipc.commands.showNotification(title, body);
+}
+
 export function ProcessingWatcher() {
   const { t } = useTranslation();
   const { show } = useToast();
@@ -23,6 +29,8 @@ export function ProcessingWatcher() {
         if (toasted.has(key)) return;
         toasted.add(key);
         show({ tone: "success", title: t("processing.notesReady") });
+        // The main window is hidden (the app lives in the menu bar): a toast alone would be missed.
+        if (document.hidden) void notify(env.event.meeting, t("processing.notesReady"));
       })
       .then((u) => (gone ? u() : (off = u)));
     return () => {

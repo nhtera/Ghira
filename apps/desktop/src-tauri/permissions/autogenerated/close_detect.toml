@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-close-detect"
+description = "Enables the close_detect command without any pre-configured scope."
+commands.allow = ["close_detect"]
+
+[[permission]]
+identifier = "deny-close-detect"
+description = "Denies the close_detect command without any pre-configured scope."
+commands.deny = ["close_detect"]

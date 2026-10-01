@@ -88,7 +88,7 @@ export function LibraryList({ rows, progress = {}, needsNames, onOpen, onDelete,
                     <div className={cn("flex flex-none items-center gap-0.5 pr-1.5", "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100")}>
                       {status.status === "failed" && onRetry && <RowAction icon="refresh" label={t("common.tryAgain")} onClick={() => onRetry(row.gid)} />}
                       <RowAction icon="open_in_new" label={t("common.open")} onClick={() => onOpen(row.gid)} />
-                      {/* No notes-to-Markdown command yet (PENDING-ui-library.md). */}
+                      {/* Copying notes as Markdown arrives with the meeting detail (phase 11). */}
                       <RowAction icon="content_copy" label={t("library.quick.copyNotes")} disabled />
                       <RowAction
                         icon="delete"

@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "mini",
+  "description": "Mini-recorder: the recording's controls and latest line.",
+  "windows": [
+    "mini"
+  ],
+  "permissions": [
+    "core:event:default",
+    "allow-session-snapshot",
+    "allow-get-settings",
+    "allow-show-main",
+    "core:window:allow-start-dragging",
+    "allow-stop-recording",
+    "allow-pause-recording",
+    "allow-resume-recording",
+    "allow-mark-moment",
+    "allow-set-mini-compact",
+    "allow-close-mini"
+  ]
+}

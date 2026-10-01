@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeetingDetected } from "../../bindings";
 
@@ -19,8 +25,13 @@ vi.mock("../../ipc", () => ({
     },
   },
 }));
-vi.mock("../../shell/actions", () => ({ useAppActions: () => ({ startRecording: h.start }) }));
-vi.mock("@ghi/ui", async (orig) => ({ ...(await orig<typeof import("@ghi/ui")>()), useToast: () => ({ show: vi.fn() }) }));
+vi.mock("../../shell/actions", () => ({
+  useAppActions: () => ({ startRecording: h.start }),
+}));
+vi.mock("@ghi/ui", async (orig) => ({
+  ...(await orig<typeof import("@ghi/ui")>()),
+  useToast: () => ({ show: vi.fn() }),
+}));
 
 import { DetectionPrompt } from "./detection-prompt";
 
@@ -38,8 +49,14 @@ afterEach(cleanup);
 describe("DetectionPrompt", () => {
   it("shows nothing until a meeting app is detected, and never takes focus", async () => {
     await detect();
-    expect(await screen.findByRole("region", { name: "Zoom call detected. Record it?" })).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toBe("Zoom call detected. Record it?");
+    expect(
+      await screen.findByRole("region", {
+        name: "Zoom call detected. Record it?",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe(
+      "Zoom call detected. Record it?",
+    );
     expect(document.activeElement).toBe(document.body);
   });
   it("Start records a call and replies start", async () => {
@@ -54,7 +71,9 @@ describe("DetectionPrompt", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Not now" }));
     await waitFor(() => expect(h.reply).toHaveBeenCalledWith("zoom", "notNow"));
     h.emit!(zoom);
-    fireEvent.click(await screen.findByRole("button", { name: "Never for Zoom" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Never for Zoom" }),
+    );
     await waitFor(() => expect(h.reply).toHaveBeenCalledWith("zoom", "never"));
     expect(h.start).not.toHaveBeenCalled();
   });

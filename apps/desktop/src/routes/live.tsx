@@ -11,6 +11,7 @@ import { useAppActions } from "../shell/actions";
 import { Page } from "../shell/page";
 import { useCompact } from "../shell/use-compact";
 import { DiscardPanel, FocusCaption, HeaderRecord, Health, LiveBanners, Levels, LiveToolbar, Notepad, SpeakerStrip, TranscriptView } from "../features/live";
+import { ipc } from "../ipc";
 import { isActive, useLive } from "../state/live";
 import { useUi } from "../state/ui";
 
@@ -26,6 +27,8 @@ export function LiveScreen() {
   const session = useLive((s) => s.session);
   const marks = useLive((s) => s.marks.length);
   const { run } = useAppActions();
+  // Opening a native window can't fail in a way the user can act on.
+  const openMini = () => void ipc.commands.openMiniRecorder();
   const pendingMode = useUi((s) => s.recordMode);
   const [layout, setLayout] = useState<Layout>("transcript");
   const [discard, setDiscard] = useState<number | null>(null);
@@ -53,6 +56,13 @@ export function LiveScreen() {
               <Button icon="star" onClick={() => void run("mark")} aria-label={compact ? t("live.mark") : undefined} title={compact ? t("live.mark") : undefined}>
                 {compact ? undefined : t("live.mark")}
               </Button>
+              <Button
+                icon="picture_in_picture_alt"
+                onClick={() => void openMini()}
+                aria-label={t("live.mini")}
+                title={t("live.mini")}
+                data-testid="mini-recorder"
+              />
               <Menu
                 label={t("live.more")}
                 trigger={<Button icon="more_horiz" aria-label={t("live.more")} />}

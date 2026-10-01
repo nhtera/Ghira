@@ -145,10 +145,14 @@ pub enum Event {
         from: u32,
         into: u32,
     },
+    /// `lines`: segment gids moved from `from` to the new speaker (each once).
+    /// If the store refuses the move, an `Error` event follows and the lines
+    /// stay with `from`.
     SpeakerSplit {
         meeting: String,
         from: u32,
         speaker: SpeakerInfo,
+        lines: Vec<String>,
     },
     SpeakerNotAPerson {
         meeting: String,

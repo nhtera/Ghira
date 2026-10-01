@@ -779,3 +779,42 @@ fn discard_from_cuts_at_the_approved_time_not_relative_to_now() {
     );
     s.stop().unwrap();
 }
+
+#[test]
+fn speaker_split_event_carries_the_moved_lines() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(tmp.path());
+    let (tx, rx) = bus();
+    let s = start(&store, tx);
+    let seen = wait_finals(&rx, 3);
+    let line = seen
+        .iter()
+        .find_map(|e| match e {
+            Event::TranscriptFinal { line, .. } => Some(line.clone()),
+            _ => None,
+        })
+        .unwrap();
+    let from = line.speaker.unwrap();
+    // A repeated gid is moved (and reported) once.
+    let new = s
+        .split(from, vec![line.gid.clone(), line.gid.clone()])
+        .unwrap()
+        .expect("split");
+    let moved = rx
+        .try_iter()
+        .find_map(|e| match e.event {
+            Event::SpeakerSplit {
+                from: f,
+                speaker,
+                lines,
+                ..
+            } => Some((f, speaker.id, lines)),
+            _ => None,
+        })
+        .expect("SpeakerSplit");
+    assert_eq!(moved, (from, new, vec![line.gid.clone()]));
+    let snap = s.snapshot();
+    let l = snap.lines.iter().find(|l| l.gid == line.gid).unwrap();
+    assert_eq!(l.speaker, Some(new), "the store moved it too");
+    s.stop().unwrap();
+}
