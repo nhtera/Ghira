@@ -5,6 +5,10 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Icon, Segmented, cn, type IconName, type ThemePreference } from "@ghi/ui";
 import type { Locale } from "@ghi/i18n";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { MeetingLanguage } from "../bindings";
+import { ipc } from "../ipc";
+import { settingsQuery } from "../shell/root-view";
 import { usePrefs } from "../state/prefs";
 
 export const SETTINGS_SECTIONS = ["general", "languages", "recording", "ai", "models", "privacy", "sync", "shortcuts"] as const;
@@ -23,7 +27,7 @@ const ICONS: Record<SettingsSection, IconName> = {
 
 export function SettingsScreen() {
   const { t } = useTranslation();
-  const { section } = useParams({ from: "/settings/$section" });
+  const { section } = useParams({ from: "/shell/settings/$section" });
   return (
     <div className="grid h-full min-h-0 grid-cols-[208px_minmax(0,1fr)]">
       <nav aria-label={t("settings.title")} className="flex flex-col gap-0.5 border-r border-line px-2.5 py-5">
@@ -56,6 +60,18 @@ export function SettingsScreen() {
 function General() {
   const { t } = useTranslation();
   const { theme, setTheme, language, setLanguage } = usePrefs();
+  const queryClient = useQueryClient();
+  const { data: settings } = useQuery(settingsQuery);
+  const setMeetingLanguage = async (meetingLanguage: MeetingLanguage) => {
+    const r = await ipc.commands.updateSettings({
+      meetingLanguage,
+      onboardingDone: null,
+      detectMeetings: null,
+      globalMarkShortcut: null,
+      strictOffline: null,
+    });
+    if (r.status === "ok") queryClient.setQueryData(settingsQuery.queryKey, r.data);
+  };
   return (
     <dl className="m-0 grid max-w-xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-4">
       <dt className="text-body">{t("settings.general.appearance")}</dt>
@@ -82,6 +98,21 @@ function General() {
             { value: "vi", label: "Tiếng Việt" },
           ]}
         />
+      </dd>
+      <dt className="text-body">{t("onboarding.languages.title")}</dt>
+      <dd className="m-0">
+        {settings && (
+          <Segmented<MeetingLanguage>
+            label={t("onboarding.languages.title")}
+            value={settings.meetingLanguage}
+            onChange={(v) => void setMeetingLanguage(v)}
+            options={[
+              { value: "auto", label: t("onboarding.languages.both") },
+              { value: "vi", label: t("onboarding.languages.vietnamese") },
+              { value: "en", label: t("onboarding.languages.english") },
+            ]}
+          />
+        )}
       </dd>
     </dl>
   );

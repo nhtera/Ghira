@@ -39,6 +39,17 @@
     "allow-session-snapshot",
     "allow-models-status",
     "allow-download-models",
-    "allow-cancel-model-download"
+    "allow-cancel-model-download",
+    "allow-delete-meeting",
+    "allow-meeting-speakers",
+    "allow-rename-meeting-speaker",
+    "allow-has-recovery-key",
+    "allow-create-recovery-key",
+    "allow-confirm-recovery-key",
+    "allow-cancel-recovery-key",
+    "allow-open-privacy-settings",
+    "allow-test-capture",
+    "allow-retry-meeting",
+    "allow-discard-from"
   ]
 }

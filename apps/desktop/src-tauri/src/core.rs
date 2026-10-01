@@ -82,6 +82,9 @@ fn platform_keystore(_dir: &Path) -> Result<Arc<dyn KeyStore>, String> {
     Err("no OS key store on this platform yet".into())
 }
 
+/// Store setting holding the onboarding test recording's meeting id.
+const TEST_MEETING_KEY: &str = "test_capture_meeting";
+
 /// This machine's tier preset (the hardware is probed once).
 fn preset() -> &'static ghi_models::Preset {
     static PRESET: OnceLock<ghi_models::Preset> = OnceLock::new();
@@ -220,6 +223,12 @@ impl Core {
         let store = Arc::new(
             Store::open(&dir, keystore(&dir)?, Protection::default()).map_err(|e| e.to_string())?,
         );
+        // A test recording interrupted by a quit or crash goes first, so
+        // recovery doesn't turn it into a meeting with jobs.
+        if let Some(test) = Self::pending_test(&store) {
+            let _ = store.delete_meeting(&test);
+            let _ = store.set_setting(TEST_MEETING_KEY, &serde_json::Value::Null);
+        }
         ghi_core::recover::recover(&store)?;
         let models = self.models();
         let template = ghi_llm::template::builtin("general").map_err(|e| e.to_string())?;
@@ -275,6 +284,68 @@ impl Core {
         language: Option<String>,
         title: String,
     ) -> Result<String, String> {
+        self.start_with(mode, language, title, true)
+    }
+
+    /// The onboarding's test recording: a short session whose meeting is
+    /// deleted afterwards (levels and a line of transcript reach the UI as
+    /// usual core events for the returned meeting id).
+    pub fn start_test(self: &Arc<Self>, seconds: u32) -> Result<String, String> {
+        let id = self.start_with(Mode::Call, None, String::new(), false)?;
+        // Remembered in the store too: a quit or crash during the test must
+        // not leave it behind as a meeting (deleted at the next launch,
+        // before crash recovery would process it).
+        let store = self.store()?;
+        store
+            .set_setting(TEST_MEETING_KEY, &serde_json::json!(id))
+            .map_err(|e| e.to_string())?;
+        let me = self.clone();
+        let meeting = id.clone();
+        std::thread::Builder::new()
+            .name("ghi-test-capture".into())
+            .spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(u64::from(
+                    seconds.clamp(3, 30),
+                )));
+                me.end_test(&meeting);
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(id)
+    }
+
+    /// Stops the test recording if it is still the one running (checked and
+    /// stopped under the lifecycle lock, so a real recording is never hit)
+    /// and deletes its meeting.
+    fn end_test(&self, meeting: &str) {
+        {
+            let _lifecycle = lock(&self.lifecycle);
+            let current = lock(&self.session).as_ref().map(|s| s.meeting() == meeting);
+            if current == Some(true) {
+                let _ = self.stop_locked();
+            }
+        }
+        if let Ok(store) = self.store() {
+            let _ = store.delete_meeting(meeting);
+            let _ = store.set_setting(TEST_MEETING_KEY, &serde_json::Value::Null);
+        }
+    }
+
+    /// The test recording's meeting, if one is running or was left behind.
+    fn pending_test(store: &Store) -> Option<String> {
+        store
+            .get_setting(TEST_MEETING_KEY)
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_str().map(String::from))
+    }
+
+    fn start_with(
+        &self,
+        mode: Mode,
+        language: Option<String>,
+        title: String,
+        queue_jobs: bool,
+    ) -> Result<String, String> {
         let _lifecycle = lock(&self.lifecycle);
         if lock(&self.session).is_some() {
             return Err("a recording is already running".into());
@@ -313,7 +384,7 @@ impl Core {
                 mode,
                 language,
                 title,
-                queue_jobs: true,
+                queue_jobs,
                 lossless: false,
             },
             self.events.clone(),
@@ -327,6 +398,19 @@ impl Core {
 
     pub fn stop(&self) -> Result<ghi_core::session::StopReport, String> {
         let _lifecycle = lock(&self.lifecycle);
+        let report = self.stop_locked();
+        // Stopping the onboarding test (quit, menu): it is not a meeting.
+        if let (Ok(r), Ok(store)) = (&report, self.store())
+            && Self::pending_test(&store).as_deref() == Some(r.meeting.as_str())
+        {
+            let _ = store.delete_meeting(&r.meeting);
+            let _ = store.set_setting(TEST_MEETING_KEY, &serde_json::Value::Null);
+        }
+        report
+    }
+
+    /// `stop` with the lifecycle lock already held.
+    fn stop_locked(&self) -> Result<ghi_core::session::StopReport, String> {
         let mut s = lock(&self.session).take().ok_or("nothing is recording")?;
         // Wait for commands still using the session (a discard, a split).
         let session = loop {

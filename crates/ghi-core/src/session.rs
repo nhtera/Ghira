@@ -362,6 +362,12 @@ impl Session {
             });
         }
         *state.lock().unwrap_or_else(|e| e.into_inner()) = SessionState::Recording;
+        events.emit(Event::SessionStarted {
+            meeting: meeting.clone(),
+            mode: cfg.mode.as_str().into(),
+            language: cfg.language.clone(),
+            title: cfg.title.clone(),
+        });
         events.emit(Event::StateChanged {
             meeting: meeting.clone(),
             state: SessionState::Recording,
@@ -580,6 +586,14 @@ impl Session {
             state: self.state(),
             now_ms: self.now_ms(),
             transcribing: self.transcribing,
+            mode: self.cfg.mode.as_str().into(),
+            language: self.cfg.language.clone(),
+            title: self.cfg.title.clone(),
+            consent_confirmed: self
+                .store
+                .get_meeting(&self.meeting)
+                .map(|m| m.consent_confirmed)
+                .unwrap_or(false),
             speakers: speakers.unwrap_or_default(),
             lines,
             marks: self
@@ -620,9 +634,35 @@ impl Session {
         if !last_s.is_finite() || last_s <= 0.0 {
             return Err(SessionError("discard: a positive number of seconds".into()));
         }
+        self.discard_inner(|now_ms| {
+            Ok((now_ms - (last_s.min(24.0 * 3600.0) * 1000.0) as i64).max(0))
+        })
+    }
+
+    /// Like [`Session::discard`], from an absolute meeting time: everything
+    /// from `t_cut_ms` on goes. A UI that previewed a span and confirms later
+    /// passes the cut it showed, so what is removed is what was approved.
+    /// Rejects a cut before 0 or after the time the recording has reached.
+    pub fn discard_from(&self, t_cut_ms: i64) -> Result<i64, SessionError> {
+        self.discard_inner(|now_ms| {
+            if t_cut_ms < 0 || t_cut_ms > now_ms {
+                return Err(SessionError(format!(
+                    "discard: {t_cut_ms} ms is outside the recording (0..{now_ms} ms)"
+                )));
+            }
+            Ok(t_cut_ms)
+        })
+    }
+
+    /// `cut` maps the meeting time reached (read under the edit lock) to the
+    /// cut position.
+    fn discard_inner(
+        &self,
+        cut: impl FnOnce(i64) -> Result<i64, SessionError>,
+    ) -> Result<i64, SessionError> {
         let _op = self.op_lock()?;
         let now_ms = self.now_ms();
-        let t_cut_ms = (now_ms - (last_s.min(24.0 * 3600.0) * 1000.0) as i64).max(0);
+        let t_cut_ms = cut(now_ms)?;
         let wait = Duration::from_secs(30);
         // 1. The pump flushes, picks the pages to keep and holds new ones.
         let (tx, rx) = bounded(1);

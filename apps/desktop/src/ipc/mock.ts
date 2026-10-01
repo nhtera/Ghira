@@ -111,11 +111,18 @@ function tick(s: Session) {
 
 const STAGES: Stage[] = ["decoding", "refiningSpeakers", "matchingVoices", "improvingTranscript", "writingNotes"];
 
+function setRow(id: string, patch: Partial<MeetingRow>) {
+  const r = rows.find((x) => x.gid === id);
+  if (r) Object.assign(r, patch);
+}
+
 function process(id: string) {
+  setRow(id, { status: "processing", job: { kind: "final_pass", progress: 0, waitingForModels: false } });
   STAGES.forEach((stage, i) => {
     window.setTimeout(() => emit({ type: "jobProgress", meeting: id, job: 1, kind: "final_pass", stage, progress: 1 }), 400 * (i + 1));
   });
   window.setTimeout(() => {
+    setRow(id, { status: "ready", job: null, transcriptVersion: 2 });
     emit({ type: "notesReady", meeting: id, version: 2 });
     emit({ type: "stateChanged", meeting: id, state: "ready" });
   }, 400 * (STAGES.length + 1));
@@ -145,6 +152,7 @@ let settings: AppSettings = {
   voiceProfilesMe: false,
   voiceProfilesThirdParty: false,
   strictOffline: false,
+  meetingLanguage: "auto",
 };
 let lineSeq = 0;
 
@@ -154,7 +162,21 @@ const commands: Commands = {
     if (session) return fail("a recording is already running");
     const id = `mock-${++meetings}`;
     session = { id, mode, startedAt: Date.now(), pausedMs: 0, pausedAt: null, timers: [], next: 0, arrived: new Set() };
+    rows.unshift({
+      gid: id,
+      title: "",
+      startedAt: Date.now(),
+      durationMs: 0,
+      source: "live",
+      mode,
+      status: "recording",
+      transcriptVersion: 0,
+      cloudUsed: false,
+      consentConfirmed: false,
+      job: null,
+    });
     emit({ type: "stateChanged", meeting: id, state: "starting" });
+    emit({ type: "sessionStarted", meeting: id, mode, language: null, title: "" });
     emit({ type: "stateChanged", meeting: id, state: "recording" });
     const s = session;
     s.timers.push(window.setTimeout(() => tick(s), 600));
@@ -166,6 +188,7 @@ const commands: Commands = {
     s.timers.forEach(clearTimeout);
     const durationMs = nowMs(s);
     session = null;
+    setRow(s.id, { durationMs });
     emit({ type: "stateChanged", meeting: s.id, state: "stopping" });
     emit({ type: "stateChanged", meeting: s.id, state: "processing" });
     process(s.id);
@@ -235,6 +258,12 @@ const commands: Commands = {
     for (const [m, ls] of notes) notes.set(m, ls.filter((l) => l.gid !== gid));
     return ok(null);
   },
+  discardFrom: (fromMs) => {
+    if (!session) return fail("nothing is recording");
+    const cut = Math.max(0, fromMs ?? 0);
+    emit({ type: "discardApplied", meeting: session.id, fromMs: cut });
+    return ok(cut);
+  },
   discardPreview: (seconds) => {
     if (!session) return fail("nothing is recording");
     const fromMs = Math.max(0, nowMs(session) - (seconds ?? 0) * 1000);
@@ -270,6 +299,10 @@ const commands: Commands = {
             speakers: [...session.arrived].map((i) => speaker(i, session!.mode)),
             lines: [],
             marks: [],
+            mode: session.mode,
+            language: null,
+            title: "",
+            consentConfirmed: false,
           }
         : null,
     ),
@@ -286,6 +319,57 @@ const commands: Commands = {
     return ok(null);
   },
   cancelModelDownload: () => Promise.resolve(),
+  retryMeeting: (meeting) => {
+    const r = rows.find((x) => x.gid === meeting);
+    if (r?.status === "failed") {
+      r.status = "processing";
+      process(meeting);
+      return ok(1);
+    }
+    return ok(0);
+  },
+  deleteMeeting: (meeting) => {
+    const i = rows.findIndex((r) => r.gid === meeting);
+    if (i >= 0) rows.splice(i, 1);
+    return ok(null);
+  },
+  meetingSpeakers: () =>
+    ok(
+      // Unnamed after processing, as "Name your speakers" expects.
+      [0, 1, 2, 3].map((i) => ({
+        gid: `spk-${i}`,
+        name: null,
+        number: i + 1,
+        colorSlot: [1, 2, 4, 8][i],
+        isMe: i === 0,
+        notPerson: false,
+        lines: 3,
+        sampleT0Ms: i * 10_000,
+        sampleT1Ms: i * 10_000 + 3000,
+      })),
+    ),
+  renameMeetingSpeaker: () => ok(null),
+  hasRecoveryKey: () => ok(false),
+  // A fixed sample phrase (the real one comes from the store's word list).
+  createRecoveryKey: () => Promise.resolve(Array.from({ length: 24 }, (_, i) => `word${i + 1}`)),
+  confirmRecoveryKey: (words) => ok(words.length === 24 && words.every((w, i) => w === `word${i + 1}`)),
+  cancelRecoveryKey: () => Promise.resolve(),
+  openPrivacySettings: () => ok(null),
+  // Levels and one line for 3 s, then the test meeting goes away.
+  testCapture: () => {
+    const id = `test-${++meetings}`;
+    emit({ type: "stateChanged", meeting: id, state: "starting" });
+    emit({ type: "stateChanged", meeting: id, state: "recording" });
+    for (let k = 0; k < 6; k++) {
+      window.setTimeout(() => emit({ type: "levelMeter", meeting: id, micDbfs: -22 + k, systemDbfs: -26 + k }), 300 * k);
+    }
+    window.setTimeout(() => emit({ type: "transcriptPartial", meeting: id, track: 0, text: "Okay, bắt đầu nhé." }), 1200);
+    window.setTimeout(() => {
+      emit({ type: "stateChanged", meeting: id, state: "stopping" });
+      emit({ type: "stateChanged", meeting: id, state: "ready" });
+    }, 3000);
+    return ok(id);
+  },
 };
 
 const MODELS = [
@@ -338,3 +422,11 @@ export const mockIpc: Ipc = {
   onModelDownload: on(downloadListeners),
 };
 
+
+// Playwright and the dev console drive the mock through these (mock only;
+// the Tauri build never loads this module).
+(window as unknown as { __ghiMock: object }).__ghiMock = {
+  simulateCoreEvent,
+  simulateMeetingDetected,
+  simulateQuitRequested,
+};

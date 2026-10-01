@@ -30,7 +30,7 @@ test("records a meeting on the mocked core", async ({ page }) => {
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Live" })).toBeVisible();
   await expect(page.getByRole("main").locator("ol > li").first()).toContainText("Okay, bắt đầu nhé.", { timeout: 5000 });
   // A new speaker turn is announced once ("Me: …"), not every line.
-  await expect(page.locator("[aria-live=polite]")).toContainText("Me: Okay");
+  await expect(page.getByTestId("speaker-announcer")).toContainText("Me: Okay");
   await page.keyboard.press("Control+M");
   await expect(page.getByText("1 marked")).toBeVisible();
   await page.getByRole("button", { name: "Stop" }).click();
@@ -40,9 +40,10 @@ test("records a meeting on the mocked core", async ({ page }) => {
 
 test("switches language and theme", async ({ page }) => {
   await open(page, "/settings/general");
+  const appLanguage = page.getByRole("group", { name: "App language" }).or(page.getByRole("radiogroup", { name: "App language" }));
   await page.getByRole("radio", { name: "Dark" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("radio", { name: "Tiếng Việt" }).click();
+  await appLanguage.getByRole("radio", { name: "Tiếng Việt" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "vi");
   await expect(page.getByRole("navigation", { name: "Điều hướng chính" }).getByRole("link", { name: "Cuộc họp" })).toBeVisible();
   // Kept across reloads.

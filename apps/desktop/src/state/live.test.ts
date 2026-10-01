@@ -130,6 +130,10 @@ describe("snapshot", () => {
       speakers: [speaker(1, "Linh")],
       lines: [line(1, 0, 1000, "a")],
       marks: [500],
+      mode: "call",
+      language: null,
+      title: "Standup",
+      consentConfirmed: true,
     };
     let s = fromSnapshot(snap, 100_000);
     expect([s.meeting, s.lines.length, s.speakers[1].label, s.startedAtMs]).toEqual([M, 1, "Linh", 95_000]);
@@ -139,5 +143,16 @@ describe("snapshot", () => {
     expect([s.marks, s.lines.length]).toEqual([[500], 1]);
     s = reduce(s, { seq: 12, atMs: 0, event: { type: "transcriptFinal", meeting: M, line: line(1, 1000, 2000, "b") } });
     expect(s.lines.length).toBe(2);
+  });
+});
+
+describe("session info", () => {
+  it("comes with sessionStarted", () => {
+    const s = run([
+      { type: "stateChanged", meeting: M, state: "starting" },
+      { type: "sessionStarted", meeting: M, mode: "room", language: "vi", title: "Họp nhóm" },
+      { type: "stateChanged", meeting: M, state: "recording" },
+    ]);
+    expect(s.session).toEqual({ mode: "room", language: "vi", title: "Họp nhóm", consentConfirmed: false });
   });
 });

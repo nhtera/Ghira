@@ -44,4 +44,4 @@ export function initI18n(lng: Locale = "en"): I18n {
 
 export { i18next };
 
-export { formatClock, formatDate, formatTime } from "./format";
+export { formatBytes, formatClock, formatDate, formatTime } from "./format";

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Screens whose content arrives in phases 10–11 (People, Ask, Import,
-// meeting detail, onboarding): the frame with their real title and subtitle.
+// meeting detail): the frame with their real title and subtitle.
 import { useParams } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { usePlatform } from "@ghi/ui";
@@ -23,11 +23,6 @@ export function ImportScreen() {
 
 export function MeetingDetailScreen() {
   const { t } = useTranslation();
-  const { tab } = useParams({ from: "/meetings/$id/$tab" });
+  const { tab } = useParams({ from: "/shell/meetings/$id/$tab" });
   return <Page title={tab === "transcript" ? t("notes.transcriptTab") : t("notes.tab")} />;
-}
-
-export function OnboardingScreen() {
-  const { t } = useTranslation();
-  return <Page title={t("onboarding.steps.welcome")} />;
 }

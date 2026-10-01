@@ -8,6 +8,8 @@ mod library;
 mod menu;
 mod models_cmd;
 mod navigation;
+mod recovery_cmd;
+mod speakers_cmd;
 mod system;
 mod windows;
 
@@ -86,7 +88,27 @@ async fn start_recording(
         RecordMode::Call => ghi_core::live::Mode::Call,
         RecordMode::Room => ghi_core::live::Mode::Room,
     };
-    blocking(&core, move |c| c.start(mode, language, title)).await
+    blocking(&core, move |c| {
+        // No language given: the user's default for new meetings.
+        let language = language.or_else(|| {
+            system::load_settings(c)
+                .ok()
+                .and_then(|s| s.meeting_language.hint())
+        });
+        c.start(mode, language, title)
+    })
+    .await
+}
+
+/// The onboarding's 10 s test: records briefly and deletes the meeting
+/// afterwards; returns its id so the UI can follow its events.
+#[tauri::command]
+#[specta::specta]
+async fn test_capture(core: CoreState<'_>, seconds: u32) -> Result<String, String> {
+    let core = core.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || core.start_test(seconds))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -116,6 +138,29 @@ async fn resume_recording(core: CoreState<'_>) -> Result<(), String> {
 #[specta::specta]
 async fn mark_moment(core: CoreState<'_>) -> Result<f64, String> {
     core.with_session(|s| s.mark() as f64)
+}
+
+/// Discards everything from `from_ms` (meeting time) on [RT-1]: the span the
+/// user saw in the preview, however long they took to confirm.
+#[tauri::command]
+#[specta::specta]
+async fn discard_from(
+    core: CoreState<'_>,
+    tokens: tauri::State<'_, Arc<audio_protocol::AudioTokens>>,
+    from_ms: f64,
+) -> Result<f64, String> {
+    let tokens = tokens.inner().clone();
+    blocking(&core, move |c| {
+        c.with_session(|s| {
+            let cut = s
+                .discard_from(from_ms.max(0.0) as i64)
+                .map(|t| t as f64)
+                .map_err(|e| e.to_string());
+            tokens.revoke_meeting(s.meeting());
+            cut
+        })?
+    })
+    .await
 }
 
 /// Discards the last `seconds` [RT-1]; returns where the cut landed (ms).
@@ -245,6 +290,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             resume_recording,
             mark_moment,
             discard_last,
+            discard_from,
             rename_speaker,
             merge_speakers,
             split_speaker,
@@ -260,6 +306,16 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             library::discard_preview,
             library::set_consent_confirmed,
             library::session_snapshot,
+            library::delete_meeting,
+            library::retry_meeting,
+            speakers_cmd::meeting_speakers,
+            speakers_cmd::rename_meeting_speaker,
+            recovery_cmd::has_recovery_key,
+            recovery_cmd::create_recovery_key,
+            recovery_cmd::confirm_recovery_key,
+            recovery_cmd::cancel_recovery_key,
+            system::open_privacy_settings,
+            test_capture,
             models_cmd::models_status,
             models_cmd::download_models,
             models_cmd::cancel_model_download,
@@ -323,6 +379,7 @@ pub fn run() {
             app.manage(detection);
             app.manage(tokens);
             app.manage(Arc::new(models_cmd::Downloads::default()));
+            app.manage(Arc::new(recovery_cmd::PendingRecovery::default()));
             #[cfg(target_os = "macos")]
             {
                 app.set_menu(menu::build(app.handle())?)?;

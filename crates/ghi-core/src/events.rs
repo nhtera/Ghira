@@ -108,6 +108,15 @@ pub enum Event {
         meeting: String,
         state: SessionState,
     },
+    /// Sent once when a session reaches Recording, right before the
+    /// `StateChanged { Recording }` that follows it. `mode` is "call" or
+    /// "room" as recorded (a call without system audio is a room).
+    SessionStarted {
+        meeting: String,
+        mode: String,
+        language: Option<String>,
+        title: String,
+    },
     TranscriptPartial {
         meeting: String,
         /// 0 = mic, 1 = system.
@@ -245,6 +254,12 @@ pub struct SessionSnapshot {
     pub now_ms: i64,
     /// A live transcript is being made (false: models missing).
     pub transcribing: bool,
+    /// "call" or "room" (after the call-without-system-audio fallback).
+    pub mode: String,
+    pub language: Option<String>,
+    pub title: String,
+    /// Everyone's consent to recording was confirmed (the live toggle).
+    pub consent_confirmed: bool,
     /// Speakers still in play (merged ones are gone).
     pub speakers: Vec<SpeakerInfo>,
     /// Final lines stored so far, in time order.
@@ -333,6 +348,17 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&e).unwrap()["state"],
             serde_json::json!("recording")
+        );
+        let e = Event::SessionStarted {
+            meeting: "m1".into(),
+            mode: "room".into(),
+            language: None,
+            title: "Standup".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&e).unwrap(),
+            serde_json::json!({"type": "sessionStarted", "meeting": "m1", "mode": "room",
+                               "language": null, "title": "Standup"})
         );
         let e = Event::SilentSystemTrack {
             meeting: "m1".into(),

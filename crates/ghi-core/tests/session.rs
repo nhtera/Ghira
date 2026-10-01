@@ -164,6 +164,23 @@ fn a_room_meeting_ends_up_in_the_store_with_speakers_and_jobs() {
             _ => None,
         })
         .collect();
+    let started = events
+        .iter()
+        .position(|e| matches!(e, Event::SessionStarted { mode, title, .. } if mode == "room" && title == "standup"))
+        .expect("SessionStarted");
+    let recording = events
+        .iter()
+        .position(|e| {
+            matches!(
+                e,
+                Event::StateChanged {
+                    state: SessionState::Recording,
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    assert_eq!(started + 1, recording, "right before Recording");
     assert_eq!(
         states,
         [
@@ -467,6 +484,14 @@ fn snapshot_has_speakers_lines_and_marks_for_a_reloaded_webview() {
     let snap = s.snapshot();
     assert_eq!(snap.meeting, s.meeting());
     assert!(snap.transcribing);
+    assert_eq!(
+        (
+            snap.mode.as_str(),
+            snap.language.as_deref(),
+            snap.title.as_str()
+        ),
+        ("room", None, "standup")
+    );
     assert_eq!(snap.state, SessionState::Recording);
     assert!(snap.seq > 0);
     assert_eq!(snap.marks, [t]);
@@ -500,6 +525,7 @@ fn snapshot_has_speakers_lines_and_marks_for_a_reloaded_webview() {
     assert!(snap.lines.iter().all(|l| !l.gid.is_empty()));
     // The shape the UI gets.
     let v = serde_json::to_value(&snap).unwrap();
+    assert_eq!(v["mode"], "room");
     assert!(v["nowMs"].is_number() && v["lines"][0]["t0Ms"].is_number());
     s.stop().unwrap();
 }
@@ -716,4 +742,40 @@ fn a_panicking_loader_stops_the_pump_and_leaves_no_meeting() {
         "jobs resume"
     );
     assert!(store.list_meetings(10, 0).unwrap().is_empty());
+}
+
+#[test]
+fn discard_from_cuts_at_the_approved_time_not_relative_to_now() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(tmp.path());
+    let (tx, rx) = bus();
+    let s = start(&store, tx);
+    wait_finals(&rx, 3);
+    while !s.source_ended() || s.now_ms() < 8_900 {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // Confirmed later than previewed: the cut is still where it was shown.
+    assert_eq!(s.discard_from(5_000).unwrap(), 5_000);
+    let meeting = s.meeting().to_string();
+    assert!(
+        store
+            .segments(&meeting)
+            .unwrap()
+            .iter()
+            .all(|g| g.t0_ms < 5_000),
+        "the line after the cut is gone"
+    );
+    let now = s.now_ms();
+    assert!(s.discard_from(-1).is_err());
+    assert!(s.discard_from(now + 60_000).is_err(), "in the future");
+    // Consent shows in the snapshot.
+    assert!(!s.snapshot().consent_confirmed);
+    store.set_consent_confirmed(&meeting, true).unwrap();
+    let snap = s.snapshot();
+    assert!(snap.consent_confirmed);
+    assert_eq!(
+        serde_json::to_value(&snap).unwrap()["consentConfirmed"],
+        true
+    );
+    s.stop().unwrap();
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-create-recovery-key"
+description = "Enables the create_recovery_key command without any pre-configured scope."
+commands.allow = ["create_recovery_key"]
+
+[[permission]]
+identifier = "deny-create-recovery-key"
+description = "Denies the create_recovery_key command without any pre-configured scope."
+commands.deny = ["create_recovery_key"]

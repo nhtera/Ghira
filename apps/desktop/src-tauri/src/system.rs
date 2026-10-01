@@ -42,6 +42,28 @@ pub struct AppSettings {
     pub voice_profiles_third_party: bool,
     /// No network at all, model downloads included (doc 02 §L).
     pub strict_offline: bool,
+    /// Language of new meetings: `en`, `vi`, or `auto` (both, code-switching).
+    pub meeting_language: MeetingLanguage,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum MeetingLanguage {
+    En,
+    Vi,
+    #[default]
+    Auto,
+}
+
+impl MeetingLanguage {
+    /// The session's language hint (`None` = detect per utterance).
+    pub fn hint(self) -> Option<String> {
+        match self {
+            MeetingLanguage::En => Some("en".into()),
+            MeetingLanguage::Vi => Some("vi".into()),
+            MeetingLanguage::Auto => None,
+        }
+    }
 }
 
 impl Default for AppSettings {
@@ -53,6 +75,7 @@ impl Default for AppSettings {
             voice_profiles_me: false,
             voice_profiles_third_party: false,
             strict_offline: false,
+            meeting_language: MeetingLanguage::Auto,
         }
     }
 }
@@ -65,6 +88,7 @@ pub struct SettingsPatch {
     pub detect_meetings: Option<bool>,
     pub global_mark_shortcut: Option<bool>,
     pub strict_offline: Option<bool>,
+    pub meeting_language: Option<MeetingLanguage>,
 }
 
 /// The features behind these flags don't exist yet: always off.
@@ -130,6 +154,7 @@ pub async fn update_settings(
                 .global_mark_shortcut
                 .unwrap_or(cur.global_mark_shortcut),
             strict_offline: patch.strict_offline.unwrap_or(cur.strict_offline),
+            meeting_language: patch.meeting_language.unwrap_or(cur.meeting_language),
             ..cur
         });
         let v = serde_json::to_value(&s).map_err(|e| e.to_string())?;
@@ -189,6 +214,48 @@ pub async fn request_mic_permission() -> Result<Permission, String> {
     .map_err(|e| e.to_string());
     #[cfg(not(target_os = "macos"))]
     Ok(Permission::Unsupported)
+}
+
+/// A pane of the OS privacy settings, for a denied permission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum PrivacyPane {
+    Microphone,
+    /// "Screen & System Audio Recording" on macOS.
+    SystemAudio,
+    Notifications,
+}
+
+/// Opens System Settings on the pane where the user can turn access on.
+#[tauri::command]
+#[specta::specta]
+pub fn open_privacy_settings(pane: PrivacyPane) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        // Fixed URLs only: nothing from the webview reaches the command line.
+        let url = match pane {
+            PrivacyPane::Microphone => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+            }
+            PrivacyPane::SystemAudio => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+            }
+            PrivacyPane::Notifications => {
+                "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+            }
+        };
+        // Started, not awaited: a command must not block on another process.
+        std::process::Command::new("/usr/bin/open")
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = pane;
+        Err("not available on this platform yet".into())
+    }
 }
 
 /// A meeting app started using the microphone.

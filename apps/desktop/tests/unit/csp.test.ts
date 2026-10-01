@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// @vitest-environment node
 // RT-6: the production CSP allows no remote origins and no inline/eval scripts.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";

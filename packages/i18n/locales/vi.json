@@ -69,7 +69,10 @@
       },
       "lagDetail": "chậm {{seconds}} giây · tên có thể hiện muộn",
       "diskSpace": "Còn chỗ {{minutes}} phút",
-      "diskRow": "Còn {{free}} · khoảng {{minutes}} phút"
+      "diskRow": "Còn {{free}} · khoảng {{minutes}} phút",
+      "title": "Cần chú ý",
+      "recordOnly": "Đang chờ tải mô hình giọng nói",
+      "bluetoothHfp": "Tai nghe Bluetooth đang ở chế độ gọi: chất lượng âm thanh thấp hơn."
     },
     "localLine_mac": "Âm thanh và văn bản chỉ lưu trên máy này",
     "localLine_win": "Âm thanh và văn bản chỉ lưu trên máy này",
@@ -79,7 +82,8 @@
       "hint": "Hãy báo cho mọi người biết bạn đang ghi âm.",
       "copy": "Sao chép lời thông báo",
       "copied": "Đã sao chép. Dán vào khung chat cuộc họp.",
-      "message": "Mình đang ghi âm cuộc họp này bằng {{app}} để ghi chú. Âm thanh và ghi chú chỉ lưu trên máy của mình."
+      "message": "Mình đang ghi âm cuộc họp này bằng {{app}} để ghi chú. Âm thanh và ghi chú chỉ lưu trên máy của mình.",
+      "confirmed": "Đã xin phép ghi âm"
     },
     "noAudio_mac": "Không có âm thanh từ {{meetingApp}} trong {{seconds}} giây. Kiểm tra cuộc gọi có đang phát trên máy này.",
     "noAudio_win": "Không có âm thanh từ {{meetingApp}} trong {{seconds}} giây. Kiểm tra cuộc gọi có đang phát trên máy này.",
@@ -98,6 +102,35 @@
       "speakersAecOn": "Loa ngoài · đang khử vọng",
       "aecOnToast": "Âm thanh đang ra loa. Đã bật khử vọng để không ai bị đếm hai lần.",
       "aecOffToast": "Đã kết nối tai nghe. Đã tắt khử vọng."
+    },
+    "layout": "Bố cục",
+    "more": "Thêm thao tác",
+    "jumpToLive": "Về đoạn mới nhất",
+    "titleLabel": "Tên cuộc họp",
+    "titlePlaceholder": "Cuộc họp chưa đặt tên",
+    "meetingAppFallback": "cuộc họp",
+    "notepad": {
+      "label": "Thêm ghi chú",
+      "placeholder": "Gõ ghi chú, nhấn Enter",
+      "tags": "Gắn thẻ cho ghi chú",
+      "deleted": "Đã xóa ghi chú"
+    },
+    "discard": {
+      "menuItem_other": "Bỏ {{count}} phút vừa rồi…",
+      "question_other": "Bỏ {{count}} phút vừa rồi? Không thể hoàn tác.",
+      "confirm": "Bỏ đoạn này",
+      "summaryItems": "Sẽ xóa âm thanh và {{items}}.",
+      "summaryAudioOnly": "Chỉ xóa âm thanh. Phiên âm và ghi chú không bị ảnh hưởng.",
+      "lines_other": "{{count}} dòng phiên âm",
+      "notes_other": "{{count}} ghi chú",
+      "marks_other": "{{count}} đánh dấu"
+    },
+    "banner": {
+      "asleep": "Máy đã ngủ. Đoạn gián đoạn được đánh dấu, ghi âm tiếp tục khi máy thức dậy.",
+      "roomHint": "Chuyển sang chế độ Phòng để ghi mọi người qua micro.",
+      "micLost": "Micro đã bị ngắt. Hãy cắm lại để tiếp tục ghi giọng bạn.",
+      "systemLost": "Âm thanh hệ thống đã dừng. Những người khác trong cuộc gọi không được ghi.",
+      "diskFull": "Ổ đĩa đã đầy. Bản ghi không thể lưu thêm. Hãy giải phóng dung lượng ngay."
     }
   },
   "speakers": {
@@ -333,7 +366,9 @@
     "emptySearch": {
       "title": "Không có cuộc họp nào khớp “{{query}}”",
       "body": "Thử ít từ hơn. Gõ không dấu cũng được."
-    }
+    },
+    "deleteBusy": "Không xoá được khi đang ghi hoặc đang xử lý",
+    "nothingToRetry": "Không có gì để thử lại"
   },
   "tray": {
     "detected": {
@@ -383,7 +418,8 @@
       "permissions": "Quyền truy cập",
       "voice": "Giọng của bạn",
       "test": "Ghi thử",
-      "done": "Xong"
+      "done": "Xong",
+      "recovery": "Khóa khôi phục"
     },
     "welcome": {
       "title_mac": "Ghi chú cuộc họp, chỉ lưu trên máy này",
@@ -418,7 +454,16 @@
       "presetDetailRecommended": "RAM {{ram}} · tải {{download}} · khuyên dùng",
       "downloading": "Đang tải · {{percent}}% · còn khoảng {{minutes}} phút",
       "done": "Đã tải và kiểm tra",
-      "offline": "Không có mạng? Cứ ghi âm, {{app}} sẽ xử lý sau."
+      "offline": "Không có mạng? Cứ ghi âm, {{app}} sẽ xử lý sau.",
+      "tierDetail": "Tải {{download}}",
+      "recommended": "Phù hợp với máy này",
+      "strictOffline": "Đang bật chế độ ngoại tuyến hoàn toàn nên không tải được. Cứ ghi âm, {{app}} sẽ xử lý sau. Muốn tải, tắt chế độ này trong Cài đặt → Quyền riêng tư.",
+      "roles": {
+        "asr": "Chuyển giọng nói thành văn bản",
+        "diarization": "Nhận diện người nói",
+        "llm": "Viết ghi chú họp"
+      },
+      "started": "Đã bắt đầu tải."
     },
     "permissions": {
       "title": "Cho phép {{app}} nghe cuộc họp",
@@ -446,7 +491,11 @@
       "denied": "Đang tắt",
       "roomOnly": "Nếu không có quyền này, {{app}} chỉ ghi được ở chế độ Phòng họp (micro của bạn).",
       "micDenied_mac": "Micro đang tắt với {{app}}. Bật trong Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Micro.",
-      "micDenied_win": "Micro đang tắt với {{app}}. Bật trong Cài đặt → Quyền riêng tư & bảo mật → Micro."
+      "micDenied_win": "Micro đang tắt với {{app}}. Bật trong Cài đặt → Quyền riêng tư & bảo mật → Micro.",
+      "checkedInTest": "Kiểm tra ở bước thử",
+      "notNeeded": "Không cần",
+      "systemAudioNote": "macOS không cho {{app}} biết quyền này đã bật chưa. Bước ghi âm thử sẽ cho thấy.",
+      "askedLater": "Hỏi khi cần"
     },
     "osDialog": {
       "microphone": "“{{app}}” muốn truy cập micro.",
@@ -474,11 +523,34 @@
       "run": "Ghi thử",
       "running": "Đang thử…",
       "line": "Okay, bắt đầu nhé. This is a test of {{app}}.",
-      "ok": "Cả hai nguồn đều hoạt động"
+      "ok": "Cả hai nguồn đều hoạt động",
+      "systemSilent": "Không có âm thanh nào vào kênh hệ thống. Hãy phát một video rồi thử lại, hoặc kiểm tra quyền âm thanh hệ thống."
     },
     "done": {
       "title": "Sẵn sàng cho cuộc gọi tiếp theo",
-      "body": "Khi Zoom, Meet hoặc Teams bắt đầu, {{app}} sẽ hỏi bạn có muốn ghi không. Bạn cũng có thể bắt đầu bất cứ lúc nào:"
+      "body": "Khi Zoom, Meet hoặc Teams bắt đầu, {{app}} sẽ hỏi bạn có muốn ghi không. Bạn cũng có thể bắt đầu bất cứ lúc nào:",
+      "openLibrary": "Mở danh sách cuộc họp"
+    },
+    "progress": "Các bước thiết lập",
+    "stepOf": "Bước {{step}}/{{total}}",
+    "recovery": {
+      "title": "Giữ khóa khôi phục",
+      "body_mac": "Cuộc họp được mã hóa bằng một khóa lưu trong chuỗi khóa của máy Mac này. Nếu mất chuỗi khóa, bạn không mở lại được. Khóa khôi phục 24 từ sẽ cứu được chúng. Không bắt buộc.",
+      "body_win": "Cuộc họp được mã hóa bằng một khóa do Windows giữ trên máy này. Nếu mất khóa, bạn không mở lại được. Khóa khôi phục 24 từ sẽ cứu được chúng. Không bắt buộc.",
+      "wordsLabel": "Khóa khôi phục, 24 từ",
+      "create": "Tạo khóa khôi phục",
+      "later": "Để sau",
+      "saved": "Đã lưu khóa khôi phục.",
+      "shownOnce": "Chỉ hiện lúc này. Hãy chép ra giấy và cất ngoài máy tính.",
+      "alreadySet": "Đã có khóa khôi phục.",
+      "typeBack": "Gõ lại 24 từ để kiểm tra bạn đã chép đúng",
+      "mismatch": "Các từ chưa khớp. Hãy đối chiếu với danh sách rồi thử lại.",
+      "check": "Kiểm tra và lưu",
+      "print": "In"
+    },
+    "consent": {
+      "title": "Hãy báo cho mọi người biết bạn đang ghi âm",
+      "body": "Quy định ghi âm khác nhau theo quốc gia, bang và nơi làm việc, và nhiều nơi yêu cầu mọi người trong cuộc gọi đều biết. {{app}} không thể quyết định thay bạn, và đây không phải tư vấn pháp lý."
     }
   },
   "settings": {

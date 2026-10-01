@@ -70,7 +70,10 @@
       },
       "lagDetail": "{{seconds}} s behind · names may appear late",
       "diskSpace": "Space for {{minutes}} min",
-      "diskRow": "{{free}} free · about {{minutes}} min"
+      "diskRow": "{{free}} free · about {{minutes}} min",
+      "title": "Needs attention",
+      "recordOnly": "Waiting for speech models",
+      "bluetoothHfp": "Bluetooth headset in call mode: audio quality is lower."
     },
     "localLine_mac": "Audio and text stay on this Mac",
     "localLine_win": "Audio and text stay on this PC",
@@ -80,7 +83,8 @@
       "hint": "Let people know you're recording.",
       "copy": "Copy consent message",
       "copied": "Consent message copied. Paste it in the meeting chat.",
-      "message": "I'm recording this meeting with {{app}} to take notes. Audio and notes stay on my device."
+      "message": "I'm recording this meeting with {{app}} to take notes. Audio and notes stay on my device.",
+      "confirmed": "Consent confirmed"
     },
     "noAudio_mac": "No sound from {{meetingApp}} for {{seconds}} s. Check that the call is playing on this Mac.",
     "noAudio_win": "No sound from {{meetingApp}} for {{seconds}} s. Check that the call is playing on this PC.",
@@ -100,6 +104,40 @@
       "speakersAecOn": "Speakers · echo cancel on",
       "aecOnToast": "Sound is on the speakers. Echo cancellation is on, so nobody is counted twice.",
       "aecOffToast": "Headphones connected. Echo cancellation is off."
+    },
+    "layout": "Layout",
+    "more": "More actions",
+    "jumpToLive": "Jump to live",
+    "titleLabel": "Meeting title",
+    "titlePlaceholder": "Untitled meeting",
+    "meetingAppFallback": "the meeting",
+    "notepad": {
+      "label": "Add a note",
+      "placeholder": "Type a note, press Enter",
+      "tags": "Tag the next note",
+      "deleted": "Note deleted"
+    },
+    "discard": {
+      "menuItem_one": "Discard the last {{count}} minute…",
+      "menuItem_other": "Discard the last {{count}} minutes…",
+      "question_one": "Discard the last {{count}} minute? This can’t be undone.",
+      "question_other": "Discard the last {{count}} minutes? This can’t be undone.",
+      "confirm": "Discard",
+      "summaryItems": "Removes the audio and {{items}}.",
+      "summaryAudioOnly": "Removes the audio only. No transcript or notes are affected.",
+      "lines_one": "{{count}} transcript line",
+      "lines_other": "{{count}} transcript lines",
+      "notes_one": "{{count}} note",
+      "notes_other": "{{count}} notes",
+      "marks_one": "{{count}} mark",
+      "marks_other": "{{count}} marks"
+    },
+    "banner": {
+      "asleep": "The Mac went to sleep. The gap is marked and recording continues when it wakes.",
+      "roomHint": "Switch to Room mode to record everyone through the mic.",
+      "micLost": "The microphone was disconnected. Reconnect it to keep recording your voice.",
+      "systemLost": "System audio stopped. The other people on the call are not being recorded.",
+      "diskFull": "The disk is full. Recording has stopped saving. Free up space now."
     }
   },
   "speakers": {
@@ -344,7 +382,9 @@
     "emptySearch": {
       "title": "No meetings match “{{query}}”",
       "body": "Try fewer words. Accents are optional."
-    }
+    },
+    "deleteBusy": "Can't delete while it's recording or processing",
+    "nothingToRetry": "Nothing to retry"
   },
   "tray": {
     "detected": {
@@ -394,7 +434,8 @@
       "permissions": "Permissions",
       "voice": "Your voice",
       "test": "Test recording",
-      "done": "Done"
+      "done": "Done",
+      "recovery": "Recovery key"
     },
     "welcome": {
       "title_mac": "Meeting notes that stay on this Mac",
@@ -429,7 +470,16 @@
       "presetDetailRecommended": "{{ram}} RAM · {{download}} download · recommended",
       "downloading": "Downloading · {{percent}}% · about {{minutes}} min left",
       "done": "Downloaded and checked",
-      "offline": "No internet? Record now and {{app}} processes later."
+      "offline": "No internet? Record now and {{app}} processes later.",
+      "tierDetail": "{{download}} download",
+      "recommended": "Recommended for this computer",
+      "strictOffline": "Strict offline is on, so nothing is downloaded. Continue and record now, and {{app}} processes later. Turn it off in Settings → Privacy to download.",
+      "roles": {
+        "asr": "Speech to text",
+        "diarization": "Who said what",
+        "llm": "Meeting notes"
+      },
+      "started": "Download started."
     },
     "permissions": {
       "title": "Allow {{app}} to hear your meetings",
@@ -457,7 +507,11 @@
       "denied": "Off",
       "roomOnly": "Without it, {{app}} can record in Room mode only (your microphone).",
       "micDenied_mac": "Microphone is off for {{app}}. Turn it on in System Settings → Privacy & Security → Microphone.",
-      "micDenied_win": "Microphone is off for {{app}}. Turn it on in Settings → Privacy & security → Microphone."
+      "micDenied_win": "Microphone is off for {{app}}. Turn it on in Settings → Privacy & security → Microphone.",
+      "checkedInTest": "Checked in the test",
+      "notNeeded": "Not needed",
+      "systemAudioNote": "macOS doesn’t tell {{app}} whether this is on. The test recording shows it.",
+      "askedLater": "Asked when needed"
     },
     "osDialog": {
       "microphone": "“{{app}}” would like to access the microphone.",
@@ -485,11 +539,34 @@
       "run": "Run test",
       "running": "Testing…",
       "line": "Okay, bắt đầu nhé. This is a test of {{app}}.",
-      "ok": "Both sources are working"
+      "ok": "Both sources are working",
+      "systemSilent": "No sound reached the system track. Play a video and try again, or check system audio access."
     },
     "done": {
       "title": "You’re ready for your next call",
-      "body": "When Zoom, Meet or Teams starts, {{app}} asks if you want to record. You can also start any time:"
+      "body": "When Zoom, Meet or Teams starts, {{app}} asks if you want to record. You can also start any time:",
+      "openLibrary": "Open my meetings"
+    },
+    "progress": "Setup steps",
+    "stepOf": "Step {{step}} of {{total}}",
+    "recovery": {
+      "title": "Keep a recovery key",
+      "body_mac": "Your meetings are encrypted with a key kept in this Mac’s keychain. If the keychain is lost, they can’t be opened. A 24-word recovery key brings them back. It’s optional.",
+      "body_win": "Your meetings are encrypted with a key kept by Windows on this PC. If it is lost, they can’t be opened. A 24-word recovery key brings them back. It’s optional.",
+      "wordsLabel": "Recovery key, 24 words",
+      "create": "Create recovery key",
+      "later": "Set up later",
+      "saved": "Recovery key saved.",
+      "shownOnce": "Shown only now. Write it on paper and keep it away from this computer.",
+      "alreadySet": "A recovery key is already set up.",
+      "typeBack": "Type the 24 words back to check you wrote them down",
+      "mismatch": "Those words don’t match. Check them against the list and try again.",
+      "check": "Check and save",
+      "print": "Print"
+    },
+    "consent": {
+      "title": "Tell people you’re recording",
+      "body": "Recording rules differ by country, state and workplace, and in many places everyone on the call has to know. {{app}} can’t decide this for you, and this isn’t legal advice."
     }
   },
   "settings": {

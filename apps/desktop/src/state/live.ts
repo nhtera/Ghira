@@ -26,6 +26,8 @@ export type LiveState = {
   errors: LiveError[];
   /** Last applied `seq`: a gap means events were missed (re-read state). */
   seq: number | null;
+  /** What was started: mode, language hint (null = both), title. */
+  session: { mode: string; language: string | null; title: string; consentConfirmed: boolean } | null;
   /** Capture conditions shown as health notices (D4, D12). */
   capture: {
     /** The Mac slept mid-recording (the gap is marked; recording resumes on wake). */
@@ -59,6 +61,7 @@ export const initialLive: LiveState = {
   recordOnly: false,
   errors: [],
   seq: null,
+  session: null,
   capture: { asleep: false, systemSilent: false, diskLowBytes: null, diskFull: false, lostTracks: [], bluetoothHfp: false },
   startedAtMs: null,
   pausedAtMs: null,
@@ -87,6 +90,7 @@ export function fromSnapshot(snap: SessionSnapshot, nowWall: number): LiveState 
     speakers: Object.fromEntries(snap.speakers.map((sp) => [sp.id, sp])),
     marks: snap.marks.filter((m): m is number => m != null),
     recordOnly: !snap.transcribing,
+    session: { mode: snap.mode, language: snap.language, title: snap.title, consentConfirmed: snap.consentConfirmed },
     seq: snap.seq,
     startedAtMs: nowWall - (snap.nowMs ?? 0),
     pausedAtMs: snap.state === "paused" ? nowWall : null,
@@ -118,6 +122,8 @@ export function reduce(s: LiveState, env: CoreEvent): LiveState {
             : {};
       return { ...s, ...timing, meeting: e.meeting, state: e.state, seq };
     }
+    case "sessionStarted":
+      return { ...s, session: { mode: e.mode, language: e.language, title: e.title, consentConfirmed: false }, seq };
     case "transcriptPartial":
       return { ...s, partial: { ...s.partial, [e.track]: e.text }, seq };
     case "transcriptFinal":
@@ -187,6 +193,9 @@ type LiveStore = LiveState & {
   apply: (e: CoreEvent) => void;
   restore: (snap: SessionSnapshot) => void;
   reset: () => void;
+  /** After a successful setMeetingTitle / setConsentConfirmed. */
+  setSessionTitle: (title: string) => void;
+  setSessionConsent: (confirmed: boolean) => void;
 };
 
 export const useLive = create<LiveStore>((set) => ({
@@ -194,4 +203,6 @@ export const useLive = create<LiveStore>((set) => ({
   apply: (e) => set((s) => reduce(s, e)),
   restore: (snap) => set(fromSnapshot(snap, Date.now())),
   reset: () => set(initialLive),
+  setSessionTitle: (title) => set((s) => (s.session ? { session: { ...s.session, title } } : {})),
+  setSessionConsent: (consentConfirmed) => set((s) => (s.session ? { session: { ...s.session, consentConfirmed } } : {})),
 }));

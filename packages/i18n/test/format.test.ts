@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "vitest";
-import { formatClock, formatDate, formatTime } from "../src/format";
+import { formatBytes, formatClock, formatDate, formatTime } from "../src/format";
 
 test("dates and times per locale (brief §8)", () => {
   const d = new Date(2026, 8, 28, 14, 5);
@@ -14,4 +14,12 @@ test("meeting clock", () => {
   expect(formatClock(9_000)).toBe("0:09");
   expect(formatClock(2_527_000)).toBe("42:07");
   expect(formatClock(3_727_000)).toBe("1:02:07");
+});
+
+test("sizes use the locale's decimal separator", () => {
+  expect(formatBytes(1.2e9, "en")).toBe("1.2 GB");
+  expect(formatBytes(1.2e9, "vi")).toBe("1,2 GB");
+  expect(formatBytes(34e9, "en")).toBe("34 GB");
+  expect(formatBytes(340e6, "en")).toBe("340 MB");
+  expect(formatBytes(null, "en")).toBe("");
 });

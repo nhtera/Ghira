@@ -22,3 +22,13 @@ export function formatClock(ms: number): string {
   const ss = String(s % 60).padStart(2, "0");
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
+
+/** 1.2 GB / 1,2 GB, 340 MB (decimal units, the locale's separator). */
+export function formatBytes(bytes: number | null | undefined, l: Locale | string): string {
+  if (bytes == null || !Number.isFinite(bytes)) return "";
+  const gb = bytes >= 1e9;
+  const value = gb ? bytes / 1e9 : Math.max(1, bytes / 1e6);
+  const digits = gb && value < 10 ? 1 : 0;
+  const n = new Intl.NumberFormat(l === "vi" ? "vi-VN" : l === "en" ? "en-US" : l, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+  return `${n} ${gb ? "GB" : "MB"}`;
+}

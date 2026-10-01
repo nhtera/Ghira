@@ -27,7 +27,7 @@ export function LiveAnnouncer() {
     setMessage(t("shell.newSpeakerTurn", { name, text }));
   }, [lines, speakers, t, labelOf]);
   return (
-    <div aria-live="polite" aria-atomic="true" className="sr-only">
+    <div aria-live="polite" aria-atomic="true" className="sr-only" data-testid="speaker-announcer">
       {message}
     </div>
   );

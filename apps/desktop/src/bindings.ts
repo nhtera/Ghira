@@ -16,6 +16,11 @@ export const commands = {
 	markMoment: () => typedError<number | null, string>(__TAURI_INVOKE("mark_moment")),
 	/**  Discards the last `seconds` [RT-1]; returns where the cut landed (ms). */
 	discardLast: (seconds: number | null) => typedError<number | null, string>(__TAURI_INVOKE("discard_last", { seconds })),
+	/**
+	 *  Discards everything from `from_ms` (meeting time) on [RT-1]: the span the
+	 *  user saw in the preview, however long they took to confirm.
+	 */
+	discardFrom: (fromMs: number | null) => typedError<number | null, string>(__TAURI_INVOKE("discard_from", { fromMs })),
 	renameSpeaker: (id: number, name: string) => typedError<null, string>(__TAURI_INVOKE("rename_speaker", { id, name })),
 	mergeSpeakers: (from: number, into: number) => typedError<null, string>(__TAURI_INVOKE("merge_speakers", { from, into })),
 	/**  Moves the given lines (segment gids) to a new speaker; returns its id. */
@@ -54,6 +59,12 @@ export const commands = {
 	nowMs: number | null,
 	/**  A live transcript is being made (false: models missing). */
 	transcribing: boolean,
+	/**  "call" or "room" (after the call-without-system-audio fallback). */
+	mode: string,
+	language: string | null,
+	title: string,
+	/**  Everyone's consent to recording was confirmed (the live toggle). */
+	consentConfirmed: boolean,
 	/**  Speakers still in play (merged ones are gone). */
 	speakers: SpeakerInfo[],
 	/**  Final lines stored so far, in time order. */
@@ -61,6 +72,35 @@ export const commands = {
 	/**  Marks (ms), in time order. */
 	marks: (number | null)[],
 } | null, string>(__TAURI_INVOKE("session_snapshot")),
+	/**
+	 *  Deletes a meeting for good (crypto-shred: its key goes, so audio and text
+	 *  become unreadable). Not the one being recorded.
+	 */
+	deleteMeeting: (meeting: string) => typedError<null, string>(__TAURI_INVOKE("delete_meeting", { meeting })),
+	/**  Runs a meeting's failed jobs again (the library's "Failed · Retry"). */
+	retryMeeting: (meeting: string) => typedError<number, string>(__TAURI_INVOKE("retry_meeting", { meeting })),
+	/**
+	 *  The meeting's speakers (merged ones left out), with the middle 3 s of each
+	 *  one's longest line as the sample.
+	 */
+	meetingSpeakers: (meeting: string) => typedError<MeetingSpeaker[], string>(__TAURI_INVOKE("meeting_speakers", { meeting })),
+	/**  Names a speaker of a stored meeting (empty name: back to "Speaker N"). */
+	renameMeetingSpeaker: (meeting: string, speaker: string, name: string) => typedError<null, string>(__TAURI_INVOKE("rename_meeting_speaker", { meeting, speaker, name })),
+	/**  Whether a recovery key is set up. */
+	hasRecoveryKey: () => typedError<boolean, string>(__TAURI_INVOKE("has_recovery_key")),
+	/**  A new phrase to write down (not stored until confirmed). */
+	createRecoveryKey: () => __TAURI_INVOKE<string[]>("create_recovery_key"),
+	/**  Stores the pending phrase if `words` (the whole phrase, typed back) match. */
+	confirmRecoveryKey: (words: string[]) => typedError<boolean, string>(__TAURI_INVOKE("confirm_recovery_key", { words })),
+	/**  Forgets a phrase that was shown but not confirmed. */
+	cancelRecoveryKey: () => __TAURI_INVOKE<void>("cancel_recovery_key"),
+	/**  Opens System Settings on the pane where the user can turn access on. */
+	openPrivacySettings: (pane: PrivacyPane) => typedError<null, string>(__TAURI_INVOKE("open_privacy_settings", { pane })),
+	/**
+	 *  The onboarding's 10 s test: records briefly and deletes the meeting
+	 *  afterwards; returns its id so the UI can follow its events.
+	 */
+	testCapture: (seconds: number) => typedError<string, string>(__TAURI_INVOKE("test_capture", { seconds })),
 	modelsStatus: () => typedError<ModelsStatus, string>(__TAURI_INVOKE("models_status")),
 	/**
 	 *  Downloads every missing model of this machine's tier, one after another,
@@ -121,6 +161,8 @@ export type AppSettings = {
 	voiceProfilesThirdParty: boolean,
 	/**  No network at all, model downloads included (doc 02 §L). */
 	strictOffline: boolean,
+	/**  Language of new meetings: `en`, `vi`, or `auto` (both, code-switching). */
+	meetingLanguage: MeetingLanguage,
 };
 
 /**  Versions shown in Settings → About. */
@@ -169,7 +211,13 @@ export type Envelope = {
 
 export type ErrorKind = "permission" | "capture" | "engine" | "modelsMissing" | "storage" | "job";
 
-export type Event = { type: "stateChanged"; meeting: string; state: SessionState } | { type: "transcriptPartial"; meeting: string; 
+export type Event = { type: "stateChanged"; meeting: string; state: SessionState } | 
+/**
+ *  Sent once when a session reaches Recording, right before the
+ *  `StateChanged { Recording }` that follows it. `mode` is "call" or
+ *  "room" as recorded (a call without system audio is a room).
+ */
+{ type: "sessionStarted"; meeting: string; mode: string; language: string | null; title: string } | { type: "transcriptPartial"; meeting: string; 
 /**  0 = mic, 1 = system. */
 track: number; text: string } | { type: "transcriptFinal"; meeting: string; line: LineInfo } | { type: "speakerArrived"; meeting: string; speaker: SpeakerInfo } | 
 /**  A provisional speaker became "Speaker N". */
@@ -248,6 +296,8 @@ export type MeetingJob = {
 	waitingForModels: boolean,
 };
 
+export type MeetingLanguage = "en" | "vi" | "auto";
+
 export type MeetingRow = {
 	gid: string,
 	title: string,
@@ -265,6 +315,22 @@ export type MeetingRow = {
 	consentConfirmed: boolean,
 	/**  The active job, if any. */
 	job: MeetingJob | null,
+};
+
+export type MeetingSpeaker = {
+	gid: string,
+	/**  The user's name for them, if any. */
+	name: string | null,
+	/**  1-based number shown as "Speaker N" while unnamed. */
+	number: number,
+	/**  Palette slot 1..8 (0: Others). */
+	colorSlot: number,
+	isMe: boolean,
+	notPerson: boolean,
+	lines: number,
+	/**  A span of their speech for the sample (meeting ms, at most 3 s). */
+	sampleT0Ms: number | null,
+	sampleT1Ms: number | null,
 };
 
 /**  A menu command for the UI. */
@@ -332,6 +398,11 @@ export type Permission = "granted" | "denied" |
 /**  Not applicable on this platform (no macOS permission model). */
 "unsupported";
 
+/**  A pane of the OS privacy settings, for a denied permission. */
+export type PrivacyPane = "microphone" | 
+/**  "Screen & System Audio Recording" on macOS. */
+"systemAudio" | "notifications";
+
 /**
  *  The user quit while recording: the UI asks "Stop and quit?" and answers
  *  with `quit_app`.
@@ -357,6 +428,12 @@ export type SessionSnapshot = {
 	nowMs: number | null,
 	/**  A live transcript is being made (false: models missing). */
 	transcribing: boolean,
+	/**  "call" or "room" (after the call-without-system-audio fallback). */
+	mode: string,
+	language: string | null,
+	title: string,
+	/**  Everyone's consent to recording was confirmed (the live toggle). */
+	consentConfirmed: boolean,
 	/**  Speakers still in play (merged ones are gone). */
 	speakers: SpeakerInfo[],
 	/**  Final lines stored so far, in time order. */
@@ -374,6 +451,7 @@ export type SettingsPatch = {
 	detectMeetings: boolean | null,
 	globalMarkShortcut: boolean | null,
 	strictOffline: boolean | null,
+	meetingLanguage: MeetingLanguage | null,
 };
 
 export type SpeakerInfo = {

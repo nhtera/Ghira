@@ -10,25 +10,31 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import { AppShell } from "./shell/app-shell";
+import { RootView } from "./shell/root-view";
 import { LiveScreen } from "./routes/live";
 import { MeetingsScreen } from "./routes/meetings";
-import { AskScreen, ImportScreen, MeetingDetailScreen, OnboardingScreen, PeopleScreen } from "./routes/simple";
+import { OnboardingScreen } from "./routes/onboarding";
+import { AskScreen, ImportScreen, MeetingDetailScreen, PeopleScreen } from "./routes/simple";
 import { SETTINGS_SECTIONS, SettingsScreen, type SettingsSection } from "./routes/settings";
 
-const root = createRootRoute({ component: AppShell });
+// Root: global listeners only. The app shell (sidebar, title bar) is a
+// layout route; onboarding renders full-window outside it.
+const root = createRootRoute({ component: RootView });
+
+const shell = createRoute({ getParentRoute: () => root, id: "shell", component: AppShell });
 
 const index = createRoute({
-  getParentRoute: () => root,
+  getParentRoute: () => shell,
   path: "/",
   beforeLoad: () => {
     throw redirect({ to: "/meetings" });
   },
 });
 
-const meetings = createRoute({ getParentRoute: () => root, path: "/meetings", component: MeetingsScreen });
+const meetings = createRoute({ getParentRoute: () => shell, path: "/meetings", component: MeetingsScreen });
 
 const meetingDetail = createRoute({
-  getParentRoute: () => root,
+  getParentRoute: () => shell,
   path: "/meetings/$id/$tab",
   params: {
     parse: (p) => ({ id: p.id, tab: p.tab === "transcript" ? ("transcript" as const) : ("notes" as const) }),
@@ -37,13 +43,13 @@ const meetingDetail = createRoute({
   component: MeetingDetailScreen,
 });
 
-const live = createRoute({ getParentRoute: () => root, path: "/live", component: LiveScreen });
-const people = createRoute({ getParentRoute: () => root, path: "/people", component: PeopleScreen });
-const ask = createRoute({ getParentRoute: () => root, path: "/ask", component: AskScreen });
-const importRoute = createRoute({ getParentRoute: () => root, path: "/import", component: ImportScreen });
+const live = createRoute({ getParentRoute: () => shell, path: "/live", component: LiveScreen });
+const people = createRoute({ getParentRoute: () => shell, path: "/people", component: PeopleScreen });
+const ask = createRoute({ getParentRoute: () => shell, path: "/ask", component: AskScreen });
+const importRoute = createRoute({ getParentRoute: () => shell, path: "/import", component: ImportScreen });
 
 const settings = createRoute({
-  getParentRoute: () => root,
+  getParentRoute: () => shell,
   path: "/settings/$section",
   params: {
     parse: (p) => ({
@@ -60,7 +66,10 @@ const onboarding = createRoute({
   component: OnboardingScreen,
 });
 
-const routeTree = root.addChildren([index, meetings, meetingDetail, live, people, ask, importRoute, settings, onboarding]);
+const routeTree = root.addChildren([
+  shell.addChildren([index, meetings, meetingDetail, live, people, ask, importRoute, settings]),
+  onboarding,
+]);
 
 export function makeRouter(history: RouterHistory = createHashHistory()) {
   return createRouter({ routeTree, history, defaultPreload: false });

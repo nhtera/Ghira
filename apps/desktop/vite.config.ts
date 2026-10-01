@@ -20,6 +20,8 @@ export default defineConfig({
     watch: { ignored: ["**/src-tauri/**"] },
   },
   test: {
-    include: ["src/**/*.test.ts", "tests/unit/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}", "tests/unit/**/*.test.ts"],
+    environment: "happy-dom",
+    setupFiles: ["./src/test-setup.ts"],
   },
 });

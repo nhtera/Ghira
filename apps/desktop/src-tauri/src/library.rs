@@ -371,3 +371,62 @@ pub async fn session_snapshot(
     })
     .await
 }
+
+/// Deletes a meeting for good (crypto-shred: its key goes, so audio and text
+/// become unreadable). Not the one being recorded.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_meeting(
+    core: CoreState<'_>,
+    tokens: tauri::State<'_, std::sync::Arc<crate::audio_protocol::AudioTokens>>,
+    meeting: String,
+) -> Result<(), String> {
+    let tokens = tokens.inner().clone();
+    blocking(&core, move |c| {
+        if c.with_session(|s| s.meeting() == meeting).unwrap_or(false) {
+            return Err("stop the recording first".into());
+        }
+        let store = c.store()?;
+        // A job reading its audio would lose it mid-run.
+        let running = store
+            .active_jobs()
+            .map_err(|e| e.to_string())?
+            .iter()
+            .any(|j| {
+                j.meeting_gid.as_deref() == Some(meeting.as_str())
+                    && j.state == ghi_store::jobs::JobState::Running
+            });
+        if running {
+            return Err("this meeting is being processed; try again in a moment".into());
+        }
+        store.delete_meeting(&meeting).map_err(|e| e.to_string())?;
+        tokens.revoke_meeting(&meeting);
+        Ok(())
+    })
+    .await
+}
+
+/// Runs a meeting's failed jobs again (the library's "Failed · Retry").
+#[tauri::command]
+#[specta::specta]
+pub async fn retry_meeting(core: CoreState<'_>, meeting: String) -> Result<u32, String> {
+    blocking(&core, move |c| {
+        let store = c.store()?;
+        let err = |e: ghi_store::StoreError| e.to_string();
+        let mut n = 0;
+        for j in store.jobs_for_meeting(&meeting).map_err(err)? {
+            if j.state == ghi_store::jobs::JobState::Failed {
+                store.retry_job(j.id).map_err(err)?;
+                n += 1;
+            }
+        }
+        if n > 0 {
+            store
+                .set_meeting_status(&meeting, "processing")
+                .map_err(err)?;
+            c.notify_jobs();
+        }
+        Ok(n)
+    })
+    .await
+}
