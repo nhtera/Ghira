@@ -1,0 +1,62 @@
+{
+  "draft": {
+    "subj": {
+      "en": [
+        "Notes from today’s product sync",
+        "Product sync — beta scope: notes and next steps",
+        "Summary of the product sync on 28/09/2026"
+      ],
+      "vi": [
+        "Ghi chú buổi product sync hôm nay",
+        "Product sync — beta scope: ghi chú và việc tiếp theo",
+        "Tóm tắt buổi product sync ngày 28/09/2026"
+      ]
+    },
+    "open": {
+      "en": [
+        "Hi all, thanks for a quick and focused sync!",
+        "Hi all, here is a summary of today’s sync.",
+        "Dear all, please find below a summary of our meeting today."
+      ],
+      "vi": [
+        "Chào cả nhà, cảm ơn mọi người vì buổi sync gọn gàng!",
+        "Chào mọi người, đây là tóm tắt buổi sync hôm nay.",
+        "Kính gửi mọi người, dưới đây là tóm tắt cuộc họp hôm nay."
+      ]
+    },
+    "dec": {
+      "en": "We agreed on the November beta scope: live speaker rename, voice profiles with consent, and audio file import including Plaud.",
+      "vi": "Mình đã chốt scope beta tháng 11: đổi tên người nói trực tiếp, voice profile có consent, và import file audio gồm cả Plaud."
+    },
+    "actH": {
+      "en": "Next steps:",
+      "vi": "Việc tiếp theo:"
+    },
+    "close": {
+      "en": [
+        "Shout if I missed anything!",
+        "Let me know if anything is missing.",
+        "Please let me know if any corrections are needed."
+      ],
+      "vi": [
+        "Có gì thiếu thì nhắn mình nhé!",
+        "Nếu thiếu gì mọi người báo mình nhé.",
+        "Nếu cần chỉnh sửa, xin vui lòng phản hồi."
+      ]
+    },
+    "to": [
+      [
+        "Linh",
+        "linh.tran@studio.vn"
+      ],
+      [
+        "Minh",
+        "minh.nguyen@studio.vn"
+      ],
+      [
+        "Sarah",
+        "sarah@studio.vn"
+      ]
+    ]
+  }
+}

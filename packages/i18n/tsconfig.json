@@ -6,7 +6,15 @@
     "resolveJsonModule": true,
     "strict": true,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src", "locales"]
+  "include": [
+    "src",
+    "locales",
+    "test",
+    "scripts"
+  ]
 }

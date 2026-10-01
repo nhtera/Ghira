@@ -5,6 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
     "allow-app-version",
     "allow-start-recording",
     "allow-stop-recording",

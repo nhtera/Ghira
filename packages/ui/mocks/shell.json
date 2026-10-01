@@ -1,0 +1,23 @@
+{
+  "preset": {
+    "en": {
+      "preset": "Balanced",
+      "ram": "16 GB"
+    },
+    "vi": {
+      "preset": "Cân bằng",
+      "ram": "16 GB"
+    }
+  },
+  "storage": {
+    "en": {
+      "size": "3.1 GB"
+    },
+    "vi": {
+      "size": "3,1 GB"
+    }
+  },
+  "libraryCount": {
+    "count": 142
+  }
+}

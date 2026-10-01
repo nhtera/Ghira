@@ -1,6 +1,979 @@
 {
+  "nav": {
+    "meetings": "Meetings",
+    "live": "Live",
+    "people": "People",
+    "ask": "Ask",
+    "import": "Import",
+    "settings": "Settings",
+    "jump": "Search or jump to…",
+    "onDevice_mac": "On this Mac",
+    "onDevice_win": "On this PC",
+    "preset": "{{preset}} · {{ram}} RAM",
+    "storage": "{{size}} of meetings"
+  },
+  "privacy": {
+    "local": "Local only",
+    "recording": "Recording · Local only",
+    "paused": "Paused · Local only",
+    "cloudMeeting": "Cloud used for this meeting",
+    "cloudToday": "Cloud used today",
+    "networkLine_one": "Local only · {{count}} network request today",
+    "networkLine_other": "Local only · {{count}} network requests today",
+    "hiddenFromSharing": "Hidden from screen sharing"
+  },
+  "record": {
+    "mode": {
+      "call": "Call",
+      "room": "Room"
+    },
+    "languages": "VI + EN",
+    "checkingMic": "Checking microphone…",
+    "saving": "Saving…",
+    "micUnavailable": "Microphone unavailable",
+    "chooseMode": "Choose recording mode",
+    "controls": "Recording"
+  },
+  "live": {
+    "layoutTranscript": "Transcript",
+    "layoutFocus": "Focus",
+    "pause": "Pause",
+    "resume": "Resume",
+    "stop": "Stop",
+    "mini": "Mini recorder",
+    "timeline": "Timeline",
+    "badge": "Live",
+    "yourNotes": "Your notes",
+    "padHint": "Each line links to the moment you typed it",
+    "mark": "Mark moment",
+    "markedCount": "{{count}} marked",
+    "health": {
+      "allGood": "All good",
+      "lagShort": "Speakers {{seconds}} s behind",
+      "switchToFast": "Switch to Fast mode",
+      "transcription": {
+        "title": "Transcription",
+        "detail_mac": "On this Mac · {{seconds}} s behind",
+        "detail_win": "On this PC · {{seconds}} s behind"
+      },
+      "speakers": {
+        "title": "Speaker detection",
+        "detail": "{{seconds}} s behind"
+      },
+      "audio": {
+        "title": "Audio",
+        "detail": "Headphones · echo cancel off"
+      },
+      "disk": {
+        "title": "Disk",
+        "detail": "{{free}} free · about {{hours}} h"
+      },
+      "lagDetail": "{{seconds}} s behind · names may appear late",
+      "diskSpace": "Space for {{minutes}} min",
+      "diskRow": "{{free}} free · about {{minutes}} min"
+    },
+    "localLine_mac": "Audio and text stay on this Mac",
+    "localLine_win": "Audio and text stay on this PC",
+    "sourceMic": "Mic",
+    "sourceSystem": "System",
+    "consent": {
+      "hint": "Let people know you're recording.",
+      "copy": "Copy consent message",
+      "copied": "Consent message copied. Paste it in the meeting chat.",
+      "message": "I'm recording this meeting with {{app}} to take notes. Audio and notes stay on my device."
+    },
+    "noAudio_mac": "No sound from {{meetingApp}} for {{seconds}} s. Check that the call is playing on this Mac.",
+    "noAudio_win": "No sound from {{meetingApp}} for {{seconds}} s. Check that the call is playing on this PC.",
+    "checkSource": "Check audio source",
+    "paused": {
+      "title": "Paused. Nothing is being recorded.",
+      "subtitle": "Speakers and notes are kept."
+    },
+    "markedToast": "Marked {{time}}",
+    "speakerCount_one": "{{count}} speaker",
+    "speakerCount_other": "{{count}} speakers",
+    "deferredBanner": "Live transcript starts when speech models finish downloading. Audio is being recorded normally.",
+    "stopToOpen": "Stop recording to open another meeting.",
+    "audio": {
+      "headphones": "Headphones",
+      "headphonesAecOff": "Headphones · echo cancellation off",
+      "speakersAecOn": "Speakers · echo cancel on",
+      "aecOnToast": "Sound is on the speakers. Echo cancellation is on, so nobody is counted twice.",
+      "aecOffToast": "Headphones connected. Echo cancellation is off."
+    }
+  },
+  "speakers": {
+    "title": "Speakers",
+    "identifying": "Identifying speaker…",
+    "empty": "Speakers appear here in the order they talk.",
+    "voiceMatch": "voice match",
+    "whoIs": "Who is this?",
+    "rename": "Rename speaker",
+    "soundsLike": "Sounds like",
+    "mergeInto": "Merge into…",
+    "typeName": "Type a name",
+    "inPeople": "In People",
+    "newPerson": "New person",
+    "saveVoice": "Save voice to their profile",
+    "saveVoiceHint_mac": "{{app}} will recognize them in future meetings. Stored encrypted on this Mac. Delete it any time in People.",
+    "saveVoiceHint_win": "{{app}} will recognize them in future meetings. Stored encrypted on this PC. Delete it any time in People.",
+    "agreed": "{{name}} agreed to be recognized by voice",
+    "agreedUnnamed": "They agreed to be recognized by voice",
+    "consentOnFile": "{{name}} agreed on {{date}}",
+    "recognized": "Recognized {{name}} by voice",
+    "confirmed": "{{name}} confirmed on every line",
+    "renamed": "Renamed to {{name}} on every line",
+    "merged": "Merged into {{name}}",
+    "nameTitle": "Name your speakers",
+    "nameSubtitle_one": "{{count}} voice has no name yet. Names apply to the notes and transcript.",
+    "nameSubtitle_other": "{{count}} voices have no name yet. Names apply to the notes and transcript.",
+    "play3": "Play 3 s",
+    "playing": "Playing a 3 s sample",
+    "panel": "Speaker",
+    "linesInMeeting_one": "{{count}} line in this meeting",
+    "linesInMeeting_other": "{{count}} lines in this meeting",
+    "playSample": "Play 3 s sample",
+    "split": {
+      "action": "Split speaker…",
+      "title": "Split {{name}} into two people",
+      "body": "Pick the lines that belong to someone else. {{app}} moves them to a new speaker.",
+      "otherName": "Name of the other person",
+      "go_one": "Move {{count}} line",
+      "go_other": "Move {{count}} lines",
+      "done_one": "Moved {{count}} line to {{name}}",
+      "done_other": "Moved {{count}} lines to {{name}}"
+    },
+    "notPerson": {
+      "action": "Not a person (video, music)",
+      "done": "{{name}} marked as not a person. Lines are hidden from notes.",
+      "row": "Not a person · hidden from notes",
+      "restore": "This is a person"
+    },
+    "line": {
+      "edit": "Edit text",
+      "changeSpeaker": "Change speaker",
+      "edited": "Edited",
+      "moved": "Line moved to {{name}}",
+      "saved": "Transcript updated. Notes keep their citations."
+    },
+    "me": "Me",
+    "acceptSuggestion": "Accept {{name}} as this speaker",
+    "numbered": "Speaker {{number}}"
+  },
+  "common": {
+    "accept": "Accept",
+    "save": "Save",
+    "cancel": "Cancel",
+    "export": "Export",
+    "skip": "Skip",
+    "today": "Today",
+    "now": "now",
+    "continue": "Continue",
+    "back": "Back",
+    "copy": "Copy",
+    "yesterday": "Yesterday",
+    "openSystemSettings_mac": "Open System Settings",
+    "openSystemSettings_win": "Open Settings",
+    "tryAgain": "Try again",
+    "later": "Later",
+    "undo": "Undo",
+    "plusCount": "+{{count}}",
+    "fix": "Fix",
+    "delete": "Delete",
+    "open": "Open",
+    "language": "Language",
+    "remove": "Remove"
+  },
+  "notes": {
+    "tab": "Notes",
+    "transcriptTab": "Transcript",
+    "onlyMine": "My notes only",
+    "improveWithCloud": "Improve with cloud…",
+    "engineLocal_mac": "On this Mac · {{model}}",
+    "engineLocal_win": "On this PC · {{model}}",
+    "engineCloud": "Cloud-enhanced · {{provider}}",
+    "youWrote": "You wrote",
+    "writtenByApp": "Written by {{app}} from the transcript",
+    "editedKept": "Edited by you · kept on regenerate",
+    "notFound": "Not found in the transcript. Kept as your note.",
+    "unassigned": "Unassigned",
+    "tags": {
+      "decision": "Decision",
+      "action": "Action",
+      "question": "Question",
+      "tagged": "Tagged as {{tag}}. It goes into the notes."
+    },
+    "sections": {
+      "summary": "Summary",
+      "yourNotes": "Your notes, filled in",
+      "decisions": "Decisions",
+      "actionItems": "Action items",
+      "openQuestions": "Open questions",
+      "keyQuotes": "Key quotes"
+    }
+  },
+  "processing": {
+    "title_mac": "Writing your notes on this Mac",
+    "title_win": "Writing your notes on this PC",
+    "subtitle": "You can leave this page. You'll get a notification when notes are ready.",
+    "steps": {
+      "refiningSpeakers": "Refining speakers",
+      "matchingVoices": "Matching voices",
+      "improvingTranscript": "Improving transcript",
+      "writingNotes": "Writing notes",
+      "decoding": "Reading the recording"
+    },
+    "estimateSeconds": "~{{count}} s",
+    "estimateMinutes": "~{{count}} min",
+    "notesReady": "Notes are ready",
+    "state": {
+      "pending": "Pending",
+      "running": "Running",
+      "done": "Done",
+      "skipped": "Skipped",
+      "failed": "Failed"
+    },
+    "stepsLabel": "Steps to write your notes"
+  },
+  "detail": {
+    "back": "Meetings",
+    "findPlaceholder": "Find in transcript",
+    "lowConfidence": "Low confidence",
+    "playFrom": "Play from {{time}}",
+    "showInTranscript": "Show in transcript",
+    "skipSilence": "Skip silence",
+    "more": {
+      "changeTemplate": "Change template…",
+      "regenerate": "Regenerate notes",
+      "copyMarkdown": "Copy Markdown",
+      "draftEmail": "Draft follow-up email",
+      "exportDocx": "Export .docx",
+      "exportSubtitles": "Export subtitles (.srt / .vtt)",
+      "sendToObsidian": "Send to Obsidian folder"
+    },
+    "topics": {
+      "title": "Topics",
+      "subtitle": "Found by {{app}} · click to jump"
+    },
+    "failed": {
+      "title": "{{app}} couldn’t write notes for this meeting",
+      "body": "The notes model stopped during “Writing notes”. The transcript and audio are safe.",
+      "retryLocal_mac": "Try again on this Mac",
+      "retryLocal_win": "Try again on this PC",
+      "tryCloud": "Try with cloud…",
+      "step": "Failed"
+    },
+    "noMine": {
+      "title": "You didn’t write notes in this meeting",
+      "body": "Everything below was written by {{app}} from the transcript, using the {{template}} template."
+    },
+    "liveTag": "Tagged live",
+    "others": "Others",
+    "deferred": {
+      "title": "Recording saved. Notes are written after the models download.",
+      "body": "Speech models {{percent}}% downloaded. {{app}} continues by itself when you’re online."
+    }
+  },
+  "library": {
+    "subtitle_mac_one": "{{count}} meeting · all stored on this Mac",
+    "subtitle_mac_other": "{{count}} meetings · all stored on this Mac",
+    "subtitle_win_one": "{{count}} meeting · all stored on this PC",
+    "subtitle_win_other": "{{count}} meetings · all stored on this PC",
+    "newRecording": "New recording",
+    "searchPlaceholder": "Search notes and transcripts · accents optional",
+    "results_one": "{{count}} result · accents ignored, so “chot” finds “chốt”",
+    "results_other": "{{count}} results · accents ignored, so “chot” finds “chốt”",
+    "noMatches": "No meetings match. Try fewer words.",
+    "upNext": "Up next",
+    "askToRecord": "Ask to record when it starts",
+    "filters": {
+      "people": "People",
+      "source": "Source",
+      "template": "Template",
+      "date": "Date"
+    },
+    "groups": {
+      "lastWeek": "Last week"
+    },
+    "status": {
+      "ready": "Ready",
+      "processing": "Processing",
+      "needsSpeakerNames": "Needs speaker names",
+      "cloudEnhanced": "Cloud-enhanced",
+      "finalPass": "Final pass on {{device}}",
+      "recording": "Recording",
+      "failedRetry": "Failed · Retry",
+      "processingPercent": "Processing {{percent}}%",
+      "waitingSync": "Waiting for sync"
+    },
+    "empty": {
+      "title": "Record your first meeting",
+      "body_mac": "{{app}} listens to calls on this Mac or to the room around you. Everything stays here.",
+      "body_win": "{{app}} listens to calls on this PC or to the room around you. Everything stays here.",
+      "importFile": "Import a file",
+      "record": "Record call"
+    },
+    "selected": "{{count}} selected",
+    "clearSelection": "Clear",
+    "deleteQuestion_mac_one": "Delete {{count}} meeting? Audio, transcripts and notes are removed from this Mac.",
+    "deleteQuestion_mac_other": "Delete {{count}} meetings? Audio, transcripts and notes are removed from this Mac.",
+    "deleteQuestion_win_one": "Delete {{count}} meeting? Audio, transcripts and notes are removed from this PC.",
+    "deleteQuestion_win_other": "Delete {{count}} meetings? Audio, transcripts and notes are removed from this PC.",
+    "deleted": "{{count}} deleted",
+    "clearFilters": "Clear filters",
+    "quick": {
+      "copyNotes": "Copy notes"
+    },
+    "notesCopied": "Notes copied as Markdown",
+    "sources": {
+      "call": "Call",
+      "room": "Room",
+      "mobile": "Mobile",
+      "import": "Import"
+    },
+    "templates": {
+      "general": "General",
+      "oneOnOne": "1:1",
+      "clientCall": "Client call",
+      "standup": "Standup"
+    },
+    "noFilterMatches": "No meetings match these filters.",
+    "retrying_mac": "Retrying on this Mac…",
+    "retrying_win": "Retrying on this PC…",
+    "retryDone": "{{title}}: notes are ready",
+    "emptySearch": {
+      "title": "No meetings match “{{query}}”",
+      "body": "Try fewer words. Accents are optional."
+    }
+  },
+  "tray": {
+    "detected": {
+      "title": "{{meetingApp}} call detected. Record it?",
+      "subtitle": "{{title}} · from your calendar",
+      "start": "Start",
+      "notNow": "Not now",
+      "never": "Never for {{meetingApp}}"
+    },
+    "recordCall": "Record call",
+    "recordRoom": "Record room",
+    "open": "Open {{app}}",
+    "recent": "Recent",
+    "next": "Next",
+    "recording": "Recording"
+  },
+  "cloud": {
+    "title": "Improve these notes with a cloud model?",
+    "subtitle": "For this meeting only. {{app}} asks every time.",
+    "provider": "Provider",
+    "whatLeaves_mac": "What leaves this Mac",
+    "whatLeaves_win": "What leaves this PC",
+    "textOnly": "Transcript text only · {{words}} words · about {{tokens}} tokens",
+    "audio": "Audio",
+    "audioNever": "Audio never leaves this device",
+    "cost": "Estimated cost",
+    "redact": "Redact names, emails and phone numbers",
+    "before_mac": "On this Mac",
+    "before_win": "On this PC",
+    "after": "What is sent",
+    "send": "Send and improve",
+    "keepLocal": "Keep local",
+    "sending": "Sending transcript…",
+    "done": "Notes improved. The request is logged in Settings → AI.",
+    "keptLocal": "Kept local. Nothing was sent.",
+    "alwaysAsk": "Change this in Settings → AI. Every request is logged there.",
+    "redactionOff": "Names, emails and phone numbers will be sent as written.",
+    "sendingButton": "Sending…",
+    "close": "Done",
+    "failed": "Couldn’t reach {{provider}}. Local notes are kept."
+  },
+  "onboarding": {
+    "steps": {
+      "welcome": "Welcome",
+      "languages": "Languages",
+      "models": "Speech models",
+      "permissions": "Permissions",
+      "voice": "Your voice",
+      "test": "Test recording",
+      "done": "Done"
+    },
+    "welcome": {
+      "title_mac": "Meeting notes that stay on this Mac",
+      "title_win": "Meeting notes that stay on this PC",
+      "body": "{{app}} records your calls and in-person meetings, shows who said what, and writes notes you can check line by line.",
+      "promises": {
+        "onDevice_mac": "Audio is recorded and transcribed on this Mac.",
+        "onDevice_win": "Audio is recorded and transcribed on this PC.",
+        "noCloud": "Nothing is sent anywhere unless you choose cloud for one meeting.",
+        "citations": "Every AI sentence links to the moment it came from."
+      }
+    },
+    "getStarted": "Get started",
+    "skipForNow": "Skip for now",
+    "languages": {
+      "title": "Which languages do you speak in meetings?",
+      "body": "{{app}} understands both in one sentence, like “chốt scope cho bản beta”.",
+      "english": "English",
+      "vietnamese": "Tiếng Việt",
+      "both": "Both, often mixed"
+    },
+    "models": {
+      "title": "Download speech models",
+      "body_mac": "Models run on this Mac. You can continue while they download.",
+      "body_win": "Models run on this PC. You can continue while they download.",
+      "presets": {
+        "light": "Light",
+        "balanced": "Balanced",
+        "max": "Max"
+      },
+      "presetDetail": "{{ram}} RAM · {{download}} download",
+      "presetDetailRecommended": "{{ram}} RAM · {{download}} download · recommended",
+      "downloading": "Downloading · {{percent}}% · about {{minutes}} min left",
+      "done": "Downloaded and checked",
+      "offline": "No internet? Record now and {{app}} processes later."
+    },
+    "permissions": {
+      "title": "Allow {{app}} to hear your meetings",
+      "body_mac": "{{app}} asks for each one right before macOS does, so you know why.",
+      "body_win": "{{app}} asks for each one right before Windows does, so you know why.",
+      "microphone": {
+        "title": "Microphone",
+        "body": "Hears your voice and the room in in-person meetings."
+      },
+      "systemAudio": {
+        "title_mac": "Screen & System Audio Recording",
+        "title_win": "System audio",
+        "body": "Hears the other people on Zoom, Meet or Teams. {{app}} records sound only, never your screen."
+      },
+      "notifications": {
+        "title": "Notifications",
+        "body": "Asks “Record this call?” when a meeting starts. {{app}} never starts on its own."
+      },
+      "calendar": {
+        "title": "Calendar · optional",
+        "body": "Names meetings and suggests who is in them."
+      },
+      "allow": "Allow…",
+      "granted": "Allowed",
+      "denied": "Off",
+      "roomOnly": "Without it, {{app}} can record in Room mode only (your microphone).",
+      "micDenied_mac": "Microphone is off for {{app}}. Turn it on in System Settings → Privacy & Security → Microphone.",
+      "micDenied_win": "Microphone is off for {{app}}. Turn it on in Settings → Privacy & security → Microphone."
+    },
+    "osDialog": {
+      "microphone": "“{{app}}” would like to access the microphone.",
+      "microphoneBody": "{{app}} records meeting audio and keeps it on this Mac.",
+      "systemAudio": "“{{app}}” would like to record this computer’s audio.",
+      "systemAudioBody": "Grant access in System Settings → Privacy & Security → Screen & System Audio Recording.",
+      "notifications": "“{{app}}” would like to send you notifications.",
+      "calendar": "“{{app}}” would like to access your calendar.",
+      "dontAllow": "Don’t Allow",
+      "allow": "Allow"
+    },
+    "voice": {
+      "title": "Teach {{app}} your voice",
+      "body": "Read the passage aloud. It takes about 20 seconds, and it lets {{app}} label you as “Me” in every meeting.",
+      "passage": "Hôm nay mình họp về kế hoạch ra mắt bản beta. We will review the timeline, agree on owners, and write down every decision.",
+      "start": "Start reading",
+      "listening": "Listening…",
+      "done": "Your voice is saved",
+      "consent_mac": "I agree to store a voice profile of myself. It stays encrypted on this Mac and I can delete it in People.",
+      "consent_win": "I agree to store a voice profile of myself. It stays encrypted on this PC and I can delete it in People."
+    },
+    "test": {
+      "title": "Try a 10-second test",
+      "body": "Play any video or speak. You should see both levels move and a line of transcript.",
+      "run": "Run test",
+      "running": "Testing…",
+      "line": "Okay, bắt đầu nhé. This is a test of {{app}}.",
+      "ok": "Both sources are working"
+    },
+    "done": {
+      "title": "You’re ready for your next call",
+      "body": "When Zoom, Meet or Teams starts, {{app}} asks if you want to record. You can also start any time:"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "sections": {
+      "general": "General",
+      "languages": "Languages",
+      "recording": "Recording",
+      "ai": "AI",
+      "models": "Models",
+      "privacy": "Privacy",
+      "sync": "Sync",
+      "shortcuts": "Shortcuts"
+    },
+    "general": {
+      "appearance": "Appearance",
+      "themeSystem": "System",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "appLanguage": "App language",
+      "openAtLogin": "Open {{app}} at login",
+      "openAtLoginHint": "Needed so {{app}} can notice when a call starts.",
+      "showInTray_mac": "Show {{app}} in the menu bar",
+      "showInTray_win": "Show {{app}} in the system tray"
+    },
+    "languages": {
+      "meetingLanguages": "Languages spoken in meetings",
+      "notesLanguage": "Write notes in",
+      "sameAsMeeting": "Same as the meeting",
+      "english": "English",
+      "vietnamese": "Tiếng Việt",
+      "dateFormat": "Dates and times",
+      "accentSearch": "Search without accents",
+      "accentSearchHint": "“chot” finds “chốt”. Always on."
+    },
+    "recording": {
+      "detectApps": "Ask to record when these apps start a call",
+      "neverAuto": "{{app}} always asks first. It never starts recording on its own.",
+      "echoCancel": "Echo cancellation on speakers",
+      "echoCancelHint": "Keeps other people’s voices out of your mic, so nobody is counted twice.",
+      "appAudioOnly": "Record only the meeting app’s sound",
+      "appAudioOnlyHint": "Music and notifications from other apps are left out.",
+      "consentMessage": "Consent message",
+      "consentMessageHint": "Paste it in the meeting chat when you start recording."
+    },
+    "ai": {
+      "local": {
+        "title": "On this device",
+        "body": "Notes, summaries and answers are written by a model on this computer. Nothing leaves it."
+      },
+      "cloud": {
+        "title": "Cloud, only when you ask",
+        "body": "Better notes for long or mixed-language meetings. Sends transcript text for one meeting at a time, never audio."
+      },
+      "default": "Default",
+      "keyStore_mac": "Key stored in Keychain",
+      "keyStore_win": "Key stored in Credential Manager",
+      "changeKey": "Change key",
+      "rules": {
+        "title": "Rules for cloud requests",
+        "askBeforeSend": "Ask before each meeting is sent",
+        "neverSensitive": "Never send meetings tagged Sensitive"
+      },
+      "log": {
+        "title": "Request log",
+        "subtitle": "Every time text left this computer.",
+        "columns": {
+          "time": "Time",
+          "meeting": "Meeting",
+          "provider": "Provider",
+          "sent": "What was sent",
+          "tokens": "Tokens"
+        },
+        "sentRedacted": "Transcript, redacted",
+        "sentRaw": "Transcript"
+      }
+    },
+    "models": {
+      "presetTitle": "Speed and quality",
+      "presetHint_mac": "Recommended for this Mac: {{preset}} ({{ram}} memory).",
+      "presetHint_win": "Recommended for this PC: {{preset}} ({{ram}} memory).",
+      "title": "Models on this computer",
+      "columns": {
+        "purpose": "What it does",
+        "size": "Size",
+        "memory": "Memory",
+        "languages": "Languages",
+        "status": "Status"
+      },
+      "installFromFile": "Install from a file…",
+      "installFromFileHint": "For computers without internet. Every file is checked before use.",
+      "status": {
+        "installed": "Installed",
+        "downloading": "Downloading {{percent}}%",
+        "paused": "Paused at {{percent}}%",
+        "update": "Update available",
+        "preview": "Preview",
+        "incompatible": "Needs {{ram}} memory"
+      },
+      "actions": {
+        "download": "Download",
+        "pause": "Pause",
+        "resume": "Resume",
+        "update": "Update",
+        "remove": "Remove"
+      },
+      "actionFor": "{{action}} {{name}}",
+      "license": "License {{license}}"
+    },
+    "privacy": {
+      "encrypt": "Encrypt meetings on this computer",
+      "encryptHint": "Always on. The key never leaves this computer.",
+      "lock_mac": "Lock {{app}} with Touch ID",
+      "lock_win": "Lock {{app}} with Windows Hello",
+      "lockHint": "After 15 minutes away.",
+      "keepAudio": "Keep audio for",
+      "keepOptions": {
+        "days7": "7 days",
+        "days30": "30 days",
+        "forever": "Forever",
+        "never": "Don’t keep"
+      },
+      "keepAudioHint": "Transcripts and notes are kept either way.",
+      "learnVoices": "Learn voices from confirmed speakers",
+      "learnVoicesHint": "Only for people who agreed. Manage in People.",
+      "exportAll": "Export everything",
+      "exportAllHint": "Markdown, JSON and audio in one folder.",
+      "deleteAll": "Delete all meetings and voice data…",
+      "deleteConfirm_one": "Delete {{count}} meeting and {{profiles}} voice profiles? This can’t be undone.",
+      "deleteConfirm_other": "Delete {{count}} meetings and {{profiles}} voice profiles? This can’t be undone.",
+      "deleteEverything": "Delete everything"
+    },
+    "sync": {
+      "pairTitle": "Pair a phone",
+      "pairBody": "Open {{app}} on your phone and scan this code. Both need to be on the same Wi-Fi. No internet needed.",
+      "pairedDevices": "Paired devices",
+      "whatSyncs": "What syncs",
+      "phoneRecordings": "Send phone recordings here for the final pass",
+      "notes": "Notes and transcripts, both ways",
+      "voiceProfiles": "Voice profiles",
+      "voiceProfilesHint": "Lets your phone name speakers too.",
+      "localOnly": "Local network only. Nothing goes through the internet."
+    },
+    "shortcuts": {
+      "startStop": "Start or stop recording",
+      "markMoment": "Mark moment",
+      "commandPalette": "Command palette",
+      "searchMeetings": "Search meetings",
+      "notesTranscript": "Notes / Transcript",
+      "export": "Export",
+      "playPause": "Play or pause"
+    }
+  },
+  "system": {
+    "crash": {
+      "title": "{{app}} closed unexpectedly",
+      "body": "Your recording of “{{title}}” was saved up to {{time}}.",
+      "recover": "Recover and write notes",
+      "discard": "Discard recording"
+    },
+    "permissionLost": "System audio access was turned off. {{app}} is recording your mic only, so the other people on the call are missing.",
+    "micTaken": "Another app is using the microphone in exclusive mode. Close it, or turn off exclusive mode in Sound settings.",
+    "diskLow": "Only {{free}} left on this computer, about {{minutes}} minutes of recording.",
+    "modelDamaged": "The notes model file is damaged, so notes can’t be written yet. Your recordings are safe.",
+    "mutedInMeetingApp": "You’re muted in {{meetingApp}}. {{app}} still records the others.",
+    "recovered": "Recording recovered after {{app}} restarted. About {{seconds}} s may be missing at {{time}}.",
+    "manageStorage": "Manage storage",
+    "redownload": "Download again · {{size}}",
+    "update": {
+      "title": "{{app}} {{version}} is ready",
+      "body": "Restart when you’re not recording. Takes about 10 seconds.",
+      "restart": "Restart"
+    },
+    "locked": {
+      "title": "{{app}} is locked",
+      "body": "Your meetings are encrypted on this computer.",
+      "unlock_mac": "Unlock with Touch ID",
+      "unlock_win": "Unlock with Windows Hello",
+      "usePassword": "Use password"
+    },
+    "audioAccessOff": "System audio access is off. Calls record your mic only.",
+    "turnOn": "Turn this on",
+    "commandFailed": "That didn’t work: {{message}}"
+  },
+  "people": {
+    "subtitle_mac": "{{people}} people · {{profiles}} voice profiles · encrypted on this Mac",
+    "subtitle_win": "{{people}} people · {{profiles}} voice profiles · encrypted on this PC",
+    "unknown": {
+      "title": "Unknown voices",
+      "subtitle": "Heard in recent meetings. Name a voice once and {{app}} applies it everywhere.",
+      "allNamed": "Every voice has a name.",
+      "heardIn_one": "Heard in {{meeting}} · {{count}} line",
+      "heardIn_other": "Heard in {{meeting}} · {{count}} lines"
+    },
+    "notPerson": {
+      "title": "Not a person",
+      "subtitle": "A video, music or background audio"
+    },
+    "voiceProfile": {
+      "agreed": "Voice profile · agreed {{date}}",
+      "none": "No voice profile",
+      "self": "Your voice · enrolled"
+    },
+    "meetingsCount_one": "{{count}} meeting",
+    "meetingsCount_other": "{{count}} meetings",
+    "openCount": "{{count}} open",
+    "samples": {
+      "title": "Voice samples",
+      "subtitle": "{{app}} recognizes {{name}} from these. Play one to check it’s really them.",
+      "none": "No voice data is stored for {{name}}. {{app}} asks who is speaking each time."
+    },
+    "deleteVoice": {
+      "action": "Delete voice data…",
+      "question_one": "Delete {{name}}’s voice profile and {{samples}} samples? {{app}} stops recognizing {{name}}. Their name stays in {{count}} meeting.",
+      "question_other": "Delete {{name}}’s voice profile and {{samples}} samples? {{app}} stops recognizing {{name}}. Their name stays in {{count}} meetings.",
+      "confirm": "Delete voice data",
+      "done": "Voice data deleted. {{name}}’s name is kept in notes."
+    },
+    "addVoice": "Save a voice profile…",
+    "reRecordVoice": "Record your voice again…",
+    "nameInNotes": {
+      "title": "Name in notes",
+      "hint_one": "Separate from voice data. Removing the name turns their lines back into “Speaker N” in {{count}} meeting.",
+      "hint_other": "Separate from voice data. Removing the name turns their lines back into “Speaker N” in {{count}} meetings."
+    },
+    "removeName": {
+      "action": "Remove name from notes…",
+      "question_one": "Replace “{{name}}” with “Speaker N” in {{count}} meeting? Voice data is not affected.",
+      "question_other": "Replace “{{name}}” with “Speaker N” in {{count}} meetings? Voice data is not affected.",
+      "confirm": "Remove name"
+    },
+    "merge": {
+      "action": "Merge with…",
+      "hint": "Use when one person appears twice, like “Minh” and “Minh Nguyen”.",
+      "done": "Merged {{from}} into {{into}}"
+    },
+    "openActions": "Open action items",
+    "meetingsTogether": "Meetings together",
+    "noOpenActions": "Nothing open.",
+    "empty": {
+      "title": "People appear after your first meeting",
+      "body": "When you name a speaker, {{app}} adds them here. Voice profiles are saved only with their agreement."
+    },
+    "namedIn": "Named {{name}} in {{meeting}}",
+    "markedNotPerson": "Marked as not a person"
+  },
+  "consent": {
+    "title": "Save {{name}}’s voice?",
+    "lead": "{{app}} will recognize {{name}} in future meetings without asking you.",
+    "points": {
+      "biometric": "A voice profile is biometric data: a numeric summary of how someone sounds. It can’t be played back as audio.",
+      "local": "It stays encrypted on this computer. It is never uploaded, and reaches your phone only if you turn on voice sync.",
+      "deletable": "You can delete it any time in People, for example if {{name}} asks you to."
+    },
+    "ask": "Did {{name}} agree?",
+    "yes": "Yes, {{name}} agreed to be recognized by voice",
+    "notYet": "Not yet. Save the name only",
+    "record": "{{app}} keeps a note: “{{name}} agreed on {{date}}”.",
+    "pick": "Choose one to continue.",
+    "save": "Save voice profile",
+    "saveNameOnly": "Save name only",
+    "saved": "Voice profile saved. {{name}} agreed on {{date}}.",
+    "next": "You’ll confirm that {{name}} agreed on the next step.",
+    "self": {
+      "title": "Record your voice again",
+      "body": "Read the passage aloud. The new profile replaces the old one.",
+      "saved": "Your voice profile is updated."
+    }
+  },
+  "download": {
+    "resume": "Resume download",
+    "waiting": "Waiting for models",
+    "failed": {
+      "title": "Download stopped at {{percent}}%. The network connection was lost.",
+      "body": "{{app}} keeps what’s downloaded and resumes from here."
+    },
+    "recordLater": "Record now, process later",
+    "paused": "Paused at {{percent}}% · resumes when you’re online",
+    "deferToast": "Models continue downloading when you’re online. You can record now."
+  },
+  "export": {
+    "title": "Export notes",
+    "format": "Format",
+    "formats": {
+      "markdown": "Copy as Markdown",
+      "docx": "Word document (.docx)",
+      "txt": "Plain text (.txt)",
+      "subtitles": "Subtitles (.srt and .vtt)",
+      "obsidian": "Obsidian folder"
+    },
+    "include": "Include",
+    "parts": {
+      "summary": "Summary",
+      "yourNotes": "Your notes",
+      "decisions": "Decisions",
+      "actionItems": "Action items",
+      "openQuestions": "Open questions",
+      "transcript": "Transcript"
+    },
+    "timestamps": "Timestamps",
+    "preview": "Preview",
+    "go": {
+      "markdown": "Copy Markdown",
+      "docx": "Save .docx…",
+      "txt": "Save .txt…",
+      "subtitles": "Save .srt and .vtt…",
+      "obsidian": "Save to Obsidian"
+    },
+    "done_mac": "Exported. Nothing left this Mac.",
+    "done_win": "Exported. Nothing left this PC.",
+    "changeFolder": "Change folder…",
+    "subtitlesNote": "Subtitles contain speaker names and transcript only."
+  },
+  "email": {
+    "title": "Draft follow-up email",
+    "to": "To",
+    "tone": "Tone",
+    "tones": {
+      "friendly": "Friendly",
+      "neutral": "Neutral",
+      "formal": "Formal"
+    },
+    "includeActions": "Include action items",
+    "writtenLocally_mac": "Written on this Mac · {{model}} · nothing is sent",
+    "writtenLocally_win": "Written on this PC · {{model}} · nothing is sent",
+    "copy": "Copy email",
+    "openMail_mac": "Open in Mail",
+    "openMail_win": "Open in Outlook",
+    "copied": "Email copied",
+    "subject": "Subject"
+  },
+  "ask": {
+    "subtitle": "Answers come from your meetings and link to the moment something was said.",
+    "scopes": {
+      "thisMeeting": "This meeting",
+      "allMeetings": "All meetings",
+      "person": "A person",
+      "dateRange": "Date range"
+    },
+    "scopeLine": {
+      "thisMeeting": "Searching “{{title}}”",
+      "allMeetings_one": "Searching {{count}} meeting",
+      "allMeetings_other": "Searching {{count}} meetings",
+      "person_one": "Searching {{count}} meeting with {{name}}",
+      "person_other": "Searching {{count}} meetings with {{name}}",
+      "dateRange": "Searching {{range}}"
+    },
+    "ranges": {
+      "last7Days_one": "Last 7 days · {{count}} meeting",
+      "last7Days_other": "Last 7 days · {{count}} meetings",
+      "last30Days_one": "Last 30 days · {{count}} meeting",
+      "last30Days_other": "Last 30 days · {{count}} meetings",
+      "thisYear_one": "This year · {{count}} meeting",
+      "thisYear_other": "This year · {{count}} meetings"
+    },
+    "suggested": "Based on your recent meetings",
+    "placeholder": "Ask about your meetings",
+    "followUpPlaceholder": "Ask a follow-up",
+    "reading_one": "Reading {{count}} meeting…",
+    "reading_other": "Reading {{count}} meetings…",
+    "answeredLocal_mac_one": "Answered on this Mac · {{model}} · {{count}} meeting read",
+    "answeredLocal_mac_other": "Answered on this Mac · {{model}} · {{count}} meetings read",
+    "answeredLocal_win_one": "Answered on this PC · {{model}} · {{count}} meeting read",
+    "answeredLocal_win_other": "Answered on this PC · {{model}} · {{count}} meetings read",
+    "answeredCloud": "Answered with cloud · {{provider}} · transcript text only, logged in Settings → AI",
+    "cloudForThis": "Cloud for this question",
+    "onDevice_mac": "On this Mac",
+    "onDevice_win": "On this PC",
+    "notDiscussed": {
+      "title": "Not discussed in these meetings",
+      "body_one": "{{app}} found nothing about this in {{count}} meeting. Your note “{{note}}” in {{meeting}} has no match in the transcript either.",
+      "body_other": "{{app}} found nothing about this in {{count}} meetings. Your note “{{note}}” in {{meeting}} has no match in the transcript either.",
+      "search": "Search transcripts for “{{query}}”"
+    },
+    "newQuestion": "New question",
+    "audioDeleted_one": "Audio deleted after {{count}} day. The transcript line is kept.",
+    "audioDeleted_other": "Audio deleted after {{count}} days. The transcript line is kept.",
+    "empty": {
+      "title": "Ask works once you have a few meetings",
+      "body": "Record or import a meeting, then ask things like “What did we decide?”"
+    }
+  },
+  "import": {
+    "subtitle_mac": "Audio and video files are transcribed and written up on this Mac.",
+    "subtitle_win": "Audio and video files are transcribed and written up on this PC.",
+    "drop": {
+      "title": "Drop audio or video files here"
+    },
+    "chooseFiles": "Choose files…",
+    "formats": "MP3, M4A, WAV, MP4, MOV, OGG and Plaud exports · up to 12 hours each",
+    "dropHint_mac": "You can also drop files anywhere in this window or on {{app}} in the Dock.",
+    "dropHint_win": "You can also drop files anywhere in this window or on {{app}} in the taskbar.",
+    "dropOverlay": {
+      "title": "Drop to import into {{app}}",
+      "body": "Files are processed on this computer."
+    },
+    "staged": {
+      "title": "Ready to import"
+    },
+    "options": {
+      "title": "Options for these files",
+      "languages": {
+        "auto": "Auto-detect",
+        "english": "English",
+        "vietnamese": "Tiếng Việt",
+        "both": "Both, mixed"
+      },
+      "speakers": "Expected speakers",
+      "speakersAuto": "Auto",
+      "stereo": "Split stereo channels",
+      "stereoHint": "Zoom saves you and the others on separate channels. {{app}} uses that to tell speakers apart."
+    },
+    "importFiles_one": "Import {{count}} file",
+    "importFiles_other": "Import {{count}} files",
+    "queue": {
+      "title": "Queue",
+      "waiting": "Waiting",
+      "ready": "Ready",
+      "openNotes": "Open notes",
+      "empty": "Nothing in the queue. Imported files show up in Meetings when their notes are ready."
+    },
+    "stages": {
+      "converting": "Converting",
+      "transcribing": "Transcribing",
+      "findingSpeakers": "Finding speakers",
+      "writingNotes": "Writing notes"
+    },
+    "eta": {
+      "minutes": "about {{count}} min left",
+      "duration": "about {{duration}} left"
+    },
+    "done_one": "{{count}} file imported. Notes are ready.",
+    "done_other": "{{count}} files imported. Notes are ready.",
+    "keepWorking": "You can keep working or close this window. {{app}} tells you when each file is ready.",
+    "unsupported": "{{app}} can’t open {{format}} files. Import audio or video instead.",
+    "corrupt": "The audio can’t be read after {{time}}. Import the readable part?",
+    "corruptAction": "Import first {{minutes}} min",
+    "longFile_mac": "Long file. Takes about {{duration}} on this Mac and needs about {{space}}. You can keep working meanwhile.",
+    "longFile_win": "Long file. Takes about {{duration}} on this PC and needs about {{space}}. You can keep working meanwhile.",
+    "dup": {
+      "body": "Already in {{app}} as “{{title}}” ({{details}}).",
+      "importCopy": "Import as a copy"
+    },
+    "stereo": "Stereo · 2 channels",
+    "needsChoice": "Choose an option above",
+    "wontImport": "Won’t be imported",
+    "notification": {
+      "title": "Import finished"
+    },
+    "dockDrop": "Import into {{app}}",
+    "emptyTitle": "Nothing in the queue",
+    "emptyBody": "Imported files show up in Meetings when their notes are ready."
+  },
+  "palette": {
+    "placeholder": "Type a command or search meetings",
+    "goTo": "Go to",
+    "actions": "Actions",
+    "ask": "Ask “{{query}}”",
+    "noMatches": "No matches. Press ↵ to ask instead.",
+    "hint": "↑↓ move · ↵ open · esc close",
+    "darkTheme": "Switch to dark theme",
+    "lightTheme": "Switch to light theme",
+    "stopRecording": "Stop recording"
+  },
   "app": {
-    "name": "Ghira",
     "tagline": "Private meeting notes, on your device."
+  },
+  "shell": {
+    "notifications": "Notifications",
+    "mainNav": "Main",
+    "commandPalette": "Command palette",
+    "newSpeakerTurn": "{{name}}: {{text}}"
+  },
+  "citation": {
+    "showAt": "Show in transcript {{time}}",
+    "showAtBroken": "Show in transcript {{time}}. The audio was deleted.",
+    "showIndex": "Show source {{index}} in transcript",
+    "showIndexBroken": "Show source {{index}} in transcript. The audio was deleted."
+  },
+  "meter": {
+    "silent": "No speech",
+    "normal": "Normal",
+    "clipping": "Too loud",
+    "noMic": "No microphone",
+    "noSystem": "No system audio"
   }
 }

@@ -73,6 +73,20 @@ session records only and its jobs wait until the models are installed
 `ghi session|jobs|import`; the desktop has a thin command layer (`core.rs`)
 and the typed `coreEvent`.
 
+Desktop UI (phase 9): `packages/ui` (`@ghi/ui`: tokens from `tokens.json` →
+committed `tokens.css` via `gen:tokens`; bundled fonts `gen:fonts`; icons
+`gen:icons` into `icon-data.ts` (Material on mac, Fluent on Windows; notices in
+`THIRD_PARTY_NOTICES.md`); Radix-based primitives; the brief §7 components with
+`*.stories.tsx`), the story gallery (`pnpm --filter @ghi/ui gallery`), and
+`packages/i18n` (typed i18next keys, EN/VI, product name via `{{app}}`; the
+copy was extracted once from the design by `scripts/extract-from-design.mjs`).
+`apps/desktop/src`: TanStack Router (hash history), `ipc/` (tauri-specta
+commands/events; a scripted mock outside Tauri), Zustand live store, shell
+(sidebar, ⌘K palette, keyboard map; the macOS menu in `src-tauri/src/menu.rs`
+owns ⌘⇧R/⌘M/⌘K/⌘,). UI copy only from locale files (lint), text nodes only
+(RT-6). e2e also runs the gallery under the prod CSP, axe on every story, and
+macOS WebKit visual baselines (`--update-snapshots` after intended changes).
+
 iOS spike (phase 7): `apps/mobile` (Tauri 2, iOS only) + `native/ios` (Swift
 audio/lifecycle and the Live Activity, C ABI in `GhiAudio/include/ghi_ios.h`).
 NeMo-Speech.cpp for iOS: `tools/scripts/build-nemo-ios.sh` (XCFrameworks in

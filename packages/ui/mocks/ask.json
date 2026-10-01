@@ -1,0 +1,97 @@
+{
+  "questions": [
+    {
+      "id": "a1",
+      "en": "What did we decide about the beta scope?",
+      "vi": "Mình đã chốt gì về scope bản beta?"
+    },
+    {
+      "id": "a3",
+      "en": "What is Minh working on this week?",
+      "vi": "Tuần này Minh đang làm gì?"
+    },
+    {
+      "id": "nd",
+      "en": "Did anyone mention pricing tiers?",
+      "vi": "Có ai nhắc tới các gói giá không?"
+    }
+  ],
+  "followUps": {
+    "a1": {
+      "id": "a2",
+      "en": "Who owns each of those?",
+      "vi": "Ai phụ trách từng việc?"
+    },
+    "a2": {
+      "id": "a3",
+      "en": "What is Minh working on this week?",
+      "vi": "Tuần này Minh đang làm gì?"
+    }
+  },
+  "answers": {
+    "a1": {
+      "en": [
+        "Three things are in the November beta: live speaker rename",
+        4,
+        ", voice profiles saved only after a consent screen",
+        6,
+        ", and audio file import including Plaud",
+        8,
+        ". Minh estimates import at about two weeks",
+        9,
+        "."
+      ],
+      "vi": [
+        "Bản beta tháng 11 gồm ba thứ: đổi tên người nói trực tiếp",
+        4,
+        ", voice profile chỉ lưu sau màn hình consent",
+        6,
+        ", và import file audio, gồm cả Plaud",
+        8,
+        ". Minh ước lượng import mất khoảng hai tuần",
+        9,
+        "."
+      ]
+    },
+    "a2": {
+      "en": [
+        "Minh builds file import with the background queue",
+        9,
+        ". Linh updates the roadmap for the 15/11 deadline",
+        10,
+        ". Sarah sends the speaker panel mockups by Friday",
+        11,
+        ". Nobody owns the consent screen spec yet",
+        6,
+        "."
+      ],
+      "vi": [
+        "Minh làm import file kèm queue xử lý nền",
+        9,
+        ". Linh cập nhật roadmap theo deadline 15/11",
+        10,
+        ". Sarah gửi mockup speaker panel trước thứ Sáu",
+        11,
+        ". Spec màn hình consent chưa có ai nhận",
+        6,
+        "."
+      ]
+    },
+    "a3": {
+      "en": [
+        "Minh is building file import with a background queue, about two weeks of work",
+        9,
+        ". In Tuesday’s standup he said the CoreML export needs one more day",
+        "B",
+        "."
+      ],
+      "vi": [
+        "Minh đang làm import file kèm queue xử lý nền, khoảng hai tuần",
+        9,
+        ". Trong standup thứ Ba, Minh nói export CoreML cần thêm một ngày",
+        "B",
+        "."
+      ]
+    }
+  }
+}

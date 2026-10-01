@@ -1,0 +1,46 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* The app's whole stylesheet: Tailwind, bundled fonts, design tokens, base. */
+@import "tailwindcss";
+@import "./fonts.css";
+@import "./tokens/tokens.css";
+
+/* Apps import this through node_modules, which Tailwind doesn't scan. */
+@source "./";
+
+@layer base {
+  html {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  html:lang(vi) {
+    line-height: 1.5;
+  }
+  body {
+    margin: 0;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--accent-soft);
+  }
+}
+
+/* Live-word shimmer and level meters are the only continuous motion; all of
+   it stops here (brief §4, §8). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

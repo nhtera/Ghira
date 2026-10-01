@@ -1,0 +1,75 @@
+{
+  "files": [
+    {
+      "id": "f1",
+      "name": "Plaud_2026-09-27_0915.mp3",
+      "size": "86 MB",
+      "dur": "1 h 34 min",
+      "src": "Plaud NotePin",
+      "icon": "mic_external_on",
+      "kind": "ok",
+      "min": 9
+    },
+    {
+      "id": "f2",
+      "name": "zoom_0_Product review.m4a",
+      "size": "41 MB",
+      "dur": "44 min",
+      "src": "Zoom local recording",
+      "icon": "videocam",
+      "kind": "ok",
+      "stereo": true,
+      "min": 5
+    },
+    {
+      "id": "f3",
+      "name": "New Recording 12.m4a",
+      "size": "9 MB",
+      "dur": "11 min",
+      "src": "Voice Memos",
+      "icon": "graphic_eq",
+      "kind": "ok",
+      "min": 2
+    },
+    {
+      "id": "f4",
+      "name": "Offsite day 1.wav",
+      "size": "3.1 GB",
+      "dur": "5 h 12 min",
+      "src": "Audio file",
+      "icon": "audio_file",
+      "kind": "long",
+      "min": 100
+    },
+    {
+      "id": "f5",
+      "name": "Recording 0412.m4a",
+      "size": "14 MB",
+      "dur": "18 min",
+      "src": "Voice Memos",
+      "icon": "graphic_eq",
+      "kind": "corrupt",
+      "min": 1
+    },
+    {
+      "id": "f6",
+      "name": "Coffee with investor.mp3",
+      "size": "34 MB",
+      "dur": "37 min",
+      "src": "Plaud NotePin",
+      "icon": "mic_external_on",
+      "kind": "dup",
+      "min": 4
+    },
+    {
+      "id": "f7",
+      "name": "Q3 pricing notes.pdf",
+      "size": "2 MB",
+      "dur": "",
+      "src": "PDF",
+      "icon": "picture_as_pdf",
+      "kind": "unsup",
+      "min": 0
+    }
+  ]
+}

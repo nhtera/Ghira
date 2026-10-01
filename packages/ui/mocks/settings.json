@@ -1,0 +1,32 @@
+{
+  "dateSample": {
+    "en": "Sep 28, 2026 · 2:30 PM",
+    "vi": "28/09/2026 · 14:30"
+  },
+  "devices": {
+    "en": [
+      [
+        "iPhone 16",
+        "Synced 4 min ago",
+        1
+      ],
+      [
+        "Pixel 9",
+        "Last seen yesterday",
+        0
+      ]
+    ],
+    "vi": [
+      [
+        "iPhone 16",
+        "Đồng bộ 4 phút trước",
+        1
+      ],
+      [
+        "Pixel 9",
+        "Thấy lần cuối hôm qua",
+        0
+      ]
+    ]
+  }
+}

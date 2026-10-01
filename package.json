@@ -14,6 +14,7 @@
     "check:licenses": "node tools/scripts/check-js-licenses.mjs"
   },
   "devDependencies": {
+    "eslint-plugin-i18next": "^6.1.5",
     "spdx-expression-parse": "^5.0.0",
     "spdx-satisfies": "^6.0.0"
   }

@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: Apache-2.0
+// Locale formats from brief §8: Intl only, no date library.
+import type { Locale } from "./index";
+
+const tag = (l: Locale) => (l === "vi" ? "vi-VN" : "en-US");
+
+/** 28/09/2026 (vi) · Sep 28, 2026 (en). */
+export function formatDate(d: Date | number, l: Locale): string {
+  return new Intl.DateTimeFormat(tag(l), l === "vi" ? { day: "2-digit", month: "2-digit", year: "numeric" } : { month: "short", day: "numeric", year: "numeric" }).format(d);
+}
+
+/** 14:05 (vi, 24 h) · 2:05 PM (en). */
+export function formatTime(d: Date | number, l: Locale): string {
+  return new Intl.DateTimeFormat(tag(l), { hour: "numeric", minute: "2-digit", hour12: l !== "vi" }).format(d);
+}
+
+/** 42:07 or 1:02:07 (meeting time from milliseconds). */
+export function formatClock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}

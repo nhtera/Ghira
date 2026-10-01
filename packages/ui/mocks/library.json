@@ -1,0 +1,83 @@
+{
+  "moreGroups": {
+    "en": [
+      "Earlier in September",
+      "August"
+    ],
+    "vi": [
+      "Đầu tháng 9",
+      "Tháng 8"
+    ]
+  },
+  "rows": [
+    {
+      "g": 0,
+      "tm": "08:30",
+      "ti": "1:1 với Linh",
+      "src": "room",
+      "dur": "28 min",
+      "ppl": [
+        "Me",
+        "Linh"
+      ],
+      "sn": "Linh muốn thử quy trình review mới từ tuần sau.",
+      "st": "ready"
+    },
+    {
+      "g": 1,
+      "tm": "14:00",
+      "ti": "Client call — Acme onboarding",
+      "src": "call",
+      "dur": "55 min",
+      "ppl": [
+        "Me",
+        "Jordan",
+        "Priya"
+      ],
+      "sn": "Acme needs SSO before rolling out to 300 seats.",
+      "st": "cloud"
+    },
+    {
+      "g": 1,
+      "tm": "09:15",
+      "ti": "Workshop at Dreamplex",
+      "src": "mobile",
+      "dur": "1 h 34 min",
+      "ppl": [
+        "Me",
+        "Linh",
+        "?"
+      ],
+      "sn": "Nhóm thống nhất dùng Figma cho handoff, chốt lịch review thứ Năm.",
+      "st": "final",
+      "pct": 62
+    },
+    {
+      "g": 2,
+      "tm": "Thu",
+      "ti": "Coffee with investor",
+      "src": "import",
+      "dur": "37 min",
+      "ppl": [
+        "Me",
+        "?"
+      ],
+      "sn": "They asked about retention after month three.",
+      "st": "needs"
+    },
+    {
+      "g": 2,
+      "tm": "Tue",
+      "ti": "Standup",
+      "src": "call",
+      "dur": "12 min",
+      "ppl": [
+        "Me",
+        "Minh",
+        "Linh"
+      ],
+      "sn": "Minh bị chặn ở bước export CoreML, cần thêm một ngày.",
+      "st": "failed"
+    }
+  ]
+}

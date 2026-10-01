@@ -3,6 +3,7 @@
 //! bindings with `GHI_UPDATE_BINDINGS=1 cargo test -p ghi-desktop`.
 
 mod core;
+mod menu;
 mod navigation;
 
 use std::sync::Arc;
@@ -188,7 +189,10 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             speaker_not_a_person,
             import_recording
         ])
-        .events(tauri_specta::collect_events![core::CoreEvent])
+        .events(tauri_specta::collect_events![
+            core::CoreEvent,
+            menu::MenuAction
+        ])
 }
 
 /// Writes the TypeScript bindings for all commands to `path`.
@@ -212,18 +216,30 @@ pub fn run() {
         .setup(move |app| {
             builder.mount_events(app);
             app.manage(Arc::new(core::Core::new(app.handle())?));
+            #[cfg(target_os = "macos")]
+            {
+                app.set_menu(menu::build(app.handle())?)?;
+                app.on_menu_event(menu::on_event);
+            }
             // Created here rather than in tauri.conf.json so `window.open` can
             // be denied; the navigation guard plugin covers in-place navigation.
-            tauri::WebviewWindowBuilder::new(
+            let window = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
                 tauri::WebviewUrl::App("index.html".into()),
             )
             .title("Ghira")
-            .inner_size(1200.0, 800.0)
-            .min_inner_size(900.0, 600.0)
-            .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny)
-            .build()?;
+            .inner_size(1280.0, 800.0)
+            // Brief §8: the layout works down to 960×640 (compact mode).
+            .min_inner_size(960.0, 640.0)
+            .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny);
+            // mac: content under a transparent title bar (the sidebar leaves
+            // room for the traffic lights; headers are drag regions).
+            #[cfg(target_os = "macos")]
+            let window = window
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true);
+            window.build()?;
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -28,6 +28,7 @@ export const commands = {
 /** Events */
 export const events = {
 	coreEvent: makeEvent<CoreEvent>("core-event"),
+	menuAction: makeEvent<MenuAction>("menu-action"),
 };
 
 /* Types */
@@ -87,6 +88,17 @@ export type LineInfo = {
 	overlap: boolean,
 	words: WordInfo[],
 };
+
+/**  A menu command for the UI. */
+export type MenuAction = 
+/**  ⌘⇧R: start or stop recording. */
+"toggleRecording" | 
+/**  ⌘M: mark this moment. */
+"mark" | 
+/**  ⌘K: command palette. */
+"commandPalette" | 
+/**  ⌘,: settings. */
+"settings";
 
 /**  Recording mode (doc 02 §A). */
 export type RecordMode = 

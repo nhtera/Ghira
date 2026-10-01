@@ -1,0 +1,293 @@
+{
+  "notes": {
+    "summary": [
+      {
+        "en": "Beta scope for November is locked: live speaker rename, voice profiles with consent, and audio file import.",
+        "vi": "Chốt scope beta tháng 11: đổi tên người nói trực tiếp, voice profile có consent, import file audio.",
+        "c": [
+          12
+        ]
+      },
+      {
+        "en": "Testers' biggest complaint is speaker detection in in-person meetings.",
+        "vi": "Phàn nàn lớn nhất từ tester là nhận diện người nói khi họp trực tiếp.",
+        "c": [
+          1
+        ]
+      },
+      {
+        "en": "The new Nemotron model cuts diarization errors, but the CoreML export is not done yet.",
+        "vi": "Nemotron mới giảm lỗi phân tách người nói, nhưng chưa export được sang CoreML.",
+        "c": [
+          2
+        ]
+      }
+    ],
+    "yourNotes": [
+      {
+        "me": "beta scope nov",
+        "en": "Scope confirmed at the end of the call: live rename, consented voice profiles, file import.",
+        "vi": "Scope được chốt cuối buổi: đổi tên trực tiếp, voice profile có consent, import file.",
+        "c": [
+          12
+        ]
+      },
+      {
+        "me": "rename speakers live?",
+        "en": "Sarah: testers want to rename speakers during the call, not after. Agreed as a beta must-have.",
+        "vi": "Sarah: tester muốn đổi tên người nói ngay trong cuộc họp. Đồng ý là bắt buộc cho beta.",
+        "c": [
+          3,
+          4
+        ]
+      },
+      {
+        "me": "plaud import",
+        "en": "Half of the testers own a Plaud, so import is P0. Minh estimates about two weeks, including a background queue.",
+        "vi": "Một nửa tester dùng Plaud nên import là P0. Minh ước lượng khoảng hai tuần, gồm cả queue xử lý nền.",
+        "c": [
+          7,
+          9
+        ]
+      },
+      {
+        "me": "ask about pricing tiers",
+        "miss": true
+      }
+    ],
+    "decisions": [
+      {
+        "en": "Live speaker rename ships in the beta.",
+        "vi": "Đổi tên người nói trực tiếp có trong bản beta.",
+        "c": [
+          4
+        ]
+      },
+      {
+        "en": "Voice profiles are saved only after a consent screen.",
+        "vi": "Chỉ lưu voice profile sau màn hình xin consent.",
+        "c": [
+          6
+        ],
+        "edited": true
+      },
+      {
+        "en": "Audio file import, including Plaud, is P0.",
+        "vi": "Import file audio, gồm cả Plaud, là P0.",
+        "c": [
+          8
+        ]
+      }
+    ],
+    "actionItems": [
+      {
+        "o": 2,
+        "en": "Build file import with a background processing queue",
+        "vi": "Làm import file kèm queue xử lý nền",
+        "due": [
+          "~2 weeks",
+          "~2 tuần"
+        ],
+        "c": [
+          9
+        ]
+      },
+      {
+        "o": 1,
+        "en": "Update the roadmap for the 15/11 internal deadline",
+        "vi": "Cập nhật roadmap theo deadline nội bộ 15/11",
+        "due": [
+          "15/11",
+          "15/11"
+        ],
+        "c": [
+          10
+        ]
+      },
+      {
+        "o": 3,
+        "en": "Send updated speaker panel mockups",
+        "vi": "Gửi mockup speaker panel mới",
+        "due": [
+          "Fri",
+          "Thứ Sáu"
+        ],
+        "c": [
+          11
+        ]
+      },
+      {
+        "o": -1,
+        "en": "Spec the voice consent screen",
+        "vi": "Viết spec màn hình consent giọng nói",
+        "due": [
+          "",
+          ""
+        ],
+        "c": [
+          6
+        ]
+      }
+    ],
+    "openQuestions": [
+      {
+        "en": "When will the CoreML export of Nemotron be ready?",
+        "vi": "Khi nào export Nemotron sang CoreML xong?",
+        "c": [
+          2
+        ]
+      },
+      {
+        "en": "Which Plaud export formats does import need to support?",
+        "vi": "Import cần hỗ trợ những định dạng export nào của Plaud?",
+        "c": [
+          7
+        ]
+      }
+    ],
+    "keyQuotes": [
+      {
+        "i": 3
+      },
+      {
+        "i": 12
+      }
+    ]
+  },
+  "transcript": [
+    {
+      "t": 4,
+      "s": 0,
+      "x": "Okay, bắt đầu nhé. Hôm nay mình chốt scope cho bản beta tháng 11."
+    },
+    {
+      "t": 11,
+      "s": 1,
+      "x": "Em đã gom feedback từ 12 user test. Vấn đề lớn nhất là nhận diện người nói khi họp trực tiếp."
+    },
+    {
+      "t": 22,
+      "s": 2,
+      "x": "Bản Nemotron mới giảm lỗi nhiều, nhưng mình chưa export được sang CoreML.",
+      "low": "CoreML."
+    },
+    {
+      "t": 31,
+      "s": 3,
+      "x": "From the design side, people want to rename speakers during the call, not after."
+    },
+    {
+      "t": 38,
+      "s": 0,
+      "x": "Agreed. Live rename phải có trong beta."
+    },
+    {
+      "t": 44,
+      "s": 2,
+      "x": "Rename thì dễ. Khó là nhớ giọng qua các cuộc họp, cần voice profile."
+    },
+    {
+      "t": 53,
+      "s": 1,
+      "x": "Vậy mình cần màn hình xin consent trước khi lưu giọng nói."
+    },
+    {
+      "t": 61,
+      "s": 3,
+      "x": "Can we also support importing Plaud recordings? Half of our testers own one."
+    },
+    {
+      "t": 69,
+      "s": 0,
+      "x": "Yes, import file là P0. Minh ước lượng giúp anh được không?"
+    },
+    {
+      "t": 75,
+      "s": 2,
+      "x": "Khoảng hai tuần, gồm cả queue xử lý nền."
+    },
+    {
+      "t": 81,
+      "s": 1,
+      "x": "Deadline nội bộ là 15/11, em sẽ cập nhật roadmap."
+    },
+    {
+      "t": 88,
+      "s": 3,
+      "x": "I'll send the updated speaker panel mockups by Friday."
+    },
+    {
+      "t": 95,
+      "s": 0,
+      "x": "Tốt. Chốt lại: live rename, voice profile có consent, import file."
+    }
+  ],
+  "lineStartSeconds": [
+    104,
+    286,
+    572,
+    806,
+    988,
+    1144,
+    1378,
+    1586,
+    1794,
+    1950,
+    2106,
+    2288,
+    2470
+  ],
+  "durationSeconds": 2527,
+  "redaction": {
+    "raw": "Linh: Em đã gom feedback từ 12 user test, gửi qua linh.tran@studio.vn.\nSarah: Call me on +84 90 123 4567 if the mockups are late.",
+    "redacted": "[PERSON 2]: Em đã gom feedback từ 12 user test, gửi qua [EMAIL].\n[PERSON 4]: Call me on [PHONE] if the mockups are late."
+  },
+  "topics": [
+    [
+      0,
+      "Kickoff and agenda",
+      "Mở đầu và nội dung"
+    ],
+    [
+      860,
+      "User test findings",
+      "Kết quả user test"
+    ],
+    [
+      2285,
+      "Diarization model status",
+      "Tình trạng mô hình nhận diện"
+    ],
+    [
+      3760,
+      "Live speaker rename",
+      "Đổi tên người nói trực tiếp"
+    ],
+    [
+      4870,
+      "Voice profiles and consent",
+      "Voice profile và consent"
+    ],
+    [
+      6450,
+      "Plaud and file import",
+      "Plaud và import file"
+    ],
+    [
+      7815,
+      "Roadmap and deadlines",
+      "Roadmap và deadline"
+    ],
+    [
+      9330,
+      "Pricing tiers",
+      "Các gói giá"
+    ],
+    [
+      10300,
+      "Wrap-up",
+      "Chốt lại"
+    ]
+  ],
+  "longDurationSeconds": 10927
+}

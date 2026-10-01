@@ -1,6 +1,950 @@
 {
+  "nav": {
+    "meetings": "Cuộc họp",
+    "live": "Đang ghi",
+    "people": "Mọi người",
+    "ask": "Hỏi",
+    "import": "Nhập file",
+    "settings": "Cài đặt",
+    "jump": "Tìm hoặc chuyển tới…",
+    "onDevice_mac": "Trên máy này",
+    "onDevice_win": "Trên máy này",
+    "preset": "{{preset}} · RAM {{ram}}",
+    "storage": "{{size}} cuộc họp"
+  },
+  "privacy": {
+    "local": "Chỉ trên máy này",
+    "recording": "Đang ghi · Chỉ trên máy này",
+    "paused": "Tạm dừng · Chỉ trên máy này",
+    "cloudMeeting": "Đã dùng cloud cho cuộc họp này",
+    "cloudToday": "Hôm nay đã dùng cloud",
+    "networkLine_other": "Chỉ trên máy này · {{count}} yêu cầu mạng hôm nay",
+    "hiddenFromSharing": "Ẩn khi chia sẻ màn hình"
+  },
+  "record": {
+    "mode": {
+      "call": "Cuộc gọi",
+      "room": "Phòng họp"
+    },
+    "languages": "Việt + Anh",
+    "checkingMic": "Đang kiểm tra micro…",
+    "saving": "Đang lưu…",
+    "micUnavailable": "Không dùng được micro",
+    "chooseMode": "Chọn chế độ ghi",
+    "controls": "Ghi âm"
+  },
+  "live": {
+    "layoutTranscript": "Bản ghi",
+    "layoutFocus": "Tập trung",
+    "pause": "Tạm dừng",
+    "resume": "Tiếp tục",
+    "stop": "Dừng",
+    "mini": "Thu nhỏ",
+    "timeline": "Dòng thời gian",
+    "badge": "Trực tiếp",
+    "yourNotes": "Ghi chú của bạn",
+    "padHint": "Mỗi dòng gắn với thời điểm bạn gõ",
+    "mark": "Đánh dấu",
+    "markedCount": "{{count}} đánh dấu",
+    "health": {
+      "allGood": "Mọi thứ ổn",
+      "lagShort": "Nhận diện chậm {{seconds}} giây",
+      "switchToFast": "Chuyển sang chế độ Nhanh",
+      "transcription": {
+        "title": "Chuyển giọng nói",
+        "detail_mac": "Trên máy này · chậm {{seconds}} giây",
+        "detail_win": "Trên máy này · chậm {{seconds}} giây"
+      },
+      "speakers": {
+        "title": "Nhận diện người nói",
+        "detail": "chậm {{seconds}} giây"
+      },
+      "audio": {
+        "title": "Âm thanh",
+        "detail": "Tai nghe · tắt khử vọng"
+      },
+      "disk": {
+        "title": "Ổ đĩa",
+        "detail": "Còn {{free}} · khoảng {{hours}} giờ"
+      },
+      "lagDetail": "chậm {{seconds}} giây · tên có thể hiện muộn",
+      "diskSpace": "Còn chỗ {{minutes}} phút",
+      "diskRow": "Còn {{free}} · khoảng {{minutes}} phút"
+    },
+    "localLine_mac": "Âm thanh và văn bản chỉ lưu trên máy này",
+    "localLine_win": "Âm thanh và văn bản chỉ lưu trên máy này",
+    "sourceMic": "Mic",
+    "sourceSystem": "Hệ thống",
+    "consent": {
+      "hint": "Hãy báo cho mọi người biết bạn đang ghi âm.",
+      "copy": "Sao chép lời thông báo",
+      "copied": "Đã sao chép. Dán vào khung chat cuộc họp.",
+      "message": "Mình đang ghi âm cuộc họp này bằng {{app}} để ghi chú. Âm thanh và ghi chú chỉ lưu trên máy của mình."
+    },
+    "noAudio_mac": "Không có âm thanh từ {{meetingApp}} trong {{seconds}} giây. Kiểm tra cuộc gọi có đang phát trên máy này.",
+    "noAudio_win": "Không có âm thanh từ {{meetingApp}} trong {{seconds}} giây. Kiểm tra cuộc gọi có đang phát trên máy này.",
+    "checkSource": "Kiểm tra nguồn âm thanh",
+    "paused": {
+      "title": "Đã tạm dừng. Không có gì đang được ghi.",
+      "subtitle": "Người nói và ghi chú vẫn được giữ."
+    },
+    "markedToast": "Đã đánh dấu {{time}}",
+    "speakerCount_other": "{{count}} người nói",
+    "deferredBanner": "Bản ghi trực tiếp sẽ bắt đầu khi tải xong mô hình giọng nói. Âm thanh vẫn đang được ghi bình thường.",
+    "stopToOpen": "Dừng ghi để mở cuộc họp khác.",
+    "audio": {
+      "headphones": "Tai nghe",
+      "headphonesAecOff": "Tai nghe · tắt khử vọng",
+      "speakersAecOn": "Loa ngoài · đang khử vọng",
+      "aecOnToast": "Âm thanh đang ra loa. Đã bật khử vọng để không ai bị đếm hai lần.",
+      "aecOffToast": "Đã kết nối tai nghe. Đã tắt khử vọng."
+    }
+  },
+  "speakers": {
+    "title": "Người nói",
+    "identifying": "Đang nhận diện người nói…",
+    "empty": "Người nói hiện ở đây theo thứ tự lên tiếng.",
+    "voiceMatch": "khớp giọng",
+    "whoIs": "Đây là ai?",
+    "rename": "Đổi tên người nói",
+    "soundsLike": "Giống giọng",
+    "mergeInto": "Gộp vào…",
+    "typeName": "Nhập tên",
+    "inPeople": "Trong Mọi người",
+    "newPerson": "Người mới",
+    "saveVoice": "Lưu giọng vào hồ sơ của họ",
+    "saveVoiceHint_mac": "{{app}} sẽ nhận ra họ ở các cuộc họp sau. Lưu mã hoá trên máy này, xoá được bất cứ lúc nào.",
+    "saveVoiceHint_win": "{{app}} sẽ nhận ra họ ở các cuộc họp sau. Lưu mã hoá trên máy này, xoá được bất cứ lúc nào.",
+    "agreed": "{{name}} đồng ý được nhận diện qua giọng nói",
+    "agreedUnnamed": "Họ đồng ý được nhận diện qua giọng nói",
+    "consentOnFile": "{{name}} đã đồng ý ngày {{date}}",
+    "recognized": "Đã nhận ra giọng {{name}}",
+    "confirmed": "Đã xác nhận {{name}} trên mọi dòng",
+    "renamed": "Đã đổi tên thành {{name}} trên mọi dòng",
+    "merged": "Đã gộp vào {{name}}",
+    "nameTitle": "Đặt tên người nói",
+    "nameSubtitle_other": "{{count}} giọng nói chưa có tên. Tên sẽ áp dụng cho ghi chú và bản ghi.",
+    "play3": "Nghe 3 giây",
+    "playing": "Đang phát mẫu 3 giây",
+    "panel": "Người nói",
+    "linesInMeeting_other": "{{count}} dòng trong cuộc họp này",
+    "playSample": "Nghe mẫu 3 giây",
+    "split": {
+      "action": "Tách người nói…",
+      "title": "Tách {{name}} thành hai người",
+      "body": "Chọn các dòng thuộc về người khác. {{app}} sẽ chuyển chúng sang người nói mới.",
+      "otherName": "Tên người còn lại",
+      "go_other": "Chuyển {{count}} dòng",
+      "done_other": "Đã chuyển {{count}} dòng sang {{name}}"
+    },
+    "notPerson": {
+      "action": "Không phải người (video, nhạc)",
+      "done": "Đã đánh dấu {{name}} không phải người. Các dòng bị ẩn khỏi ghi chú.",
+      "row": "Không phải người · ẩn khỏi ghi chú",
+      "restore": "Đây là người"
+    },
+    "line": {
+      "edit": "Sửa chữ",
+      "changeSpeaker": "Đổi người nói",
+      "edited": "Đã sửa",
+      "moved": "Đã chuyển dòng sang {{name}}",
+      "saved": "Đã cập nhật bản ghi. Ghi chú vẫn giữ trích dẫn."
+    },
+    "me": "Tôi",
+    "acceptSuggestion": "Chọn {{name}} làm người nói này",
+    "numbered": "Người nói {{number}}"
+  },
+  "common": {
+    "accept": "Đồng ý",
+    "save": "Lưu",
+    "cancel": "Huỷ",
+    "export": "Xuất",
+    "skip": "Bỏ qua",
+    "today": "Hôm nay",
+    "now": "bây giờ",
+    "continue": "Tiếp tục",
+    "back": "Quay lại",
+    "copy": "Sao chép",
+    "yesterday": "Hôm qua",
+    "openSystemSettings_mac": "Mở Cài đặt hệ thống",
+    "openSystemSettings_win": "Mở Cài đặt",
+    "tryAgain": "Thử lại",
+    "later": "Để sau",
+    "undo": "Hoàn tác",
+    "plusCount": "+{{count}}",
+    "fix": "Sửa",
+    "delete": "Xoá",
+    "open": "Mở",
+    "language": "Ngôn ngữ",
+    "remove": "Gỡ"
+  },
+  "notes": {
+    "tab": "Ghi chú",
+    "transcriptTab": "Bản ghi",
+    "onlyMine": "Chỉ ghi chú của tôi",
+    "improveWithCloud": "Cải thiện bằng cloud…",
+    "engineLocal_mac": "Trên máy này · {{model}}",
+    "engineLocal_win": "Trên máy này · {{model}}",
+    "engineCloud": "Đã cải thiện bằng cloud · {{provider}}",
+    "youWrote": "Bạn viết",
+    "writtenByApp": "{{app}} viết từ bản ghi",
+    "editedKept": "Bạn đã sửa · giữ nguyên khi tạo lại",
+    "notFound": "Không tìm thấy trong transcript. Giữ nguyên ghi chú của bạn.",
+    "unassigned": "Chưa giao",
+    "tags": {
+      "decision": "Quyết định",
+      "action": "Việc cần làm",
+      "question": "Câu hỏi",
+      "tagged": "Đã gắn nhãn {{tag}}. Sẽ đưa vào ghi chú."
+    },
+    "sections": {
+      "summary": "Tóm tắt",
+      "yourNotes": "Ghi chú của bạn, đã bổ sung",
+      "decisions": "Quyết định",
+      "actionItems": "Việc cần làm",
+      "openQuestions": "Câu hỏi mở",
+      "keyQuotes": "Trích dẫn chính"
+    }
+  },
+  "processing": {
+    "title_mac": "Đang viết ghi chú trên máy này",
+    "title_win": "Đang viết ghi chú trên máy này",
+    "subtitle": "Bạn có thể rời trang này. {{app}} sẽ báo khi ghi chú xong.",
+    "steps": {
+      "refiningSpeakers": "Tinh chỉnh người nói",
+      "matchingVoices": "Đối chiếu giọng nói",
+      "improvingTranscript": "Cải thiện bản ghi",
+      "writingNotes": "Viết ghi chú",
+      "decoding": "Đọc bản ghi âm"
+    },
+    "estimateSeconds": "~{{count}} giây",
+    "estimateMinutes": "~{{count}} phút",
+    "notesReady": "Ghi chú đã xong",
+    "state": {
+      "pending": "Đang chờ",
+      "running": "Đang chạy",
+      "done": "Xong",
+      "skipped": "Bỏ qua",
+      "failed": "Lỗi"
+    },
+    "stepsLabel": "Các bước viết ghi chú"
+  },
+  "detail": {
+    "back": "Cuộc họp",
+    "findPlaceholder": "Tìm trong bản ghi",
+    "lowConfidence": "Độ tin cậy thấp",
+    "playFrom": "Phát từ {{time}}",
+    "showInTranscript": "Xem trong bản ghi",
+    "skipSilence": "Bỏ qua im lặng",
+    "more": {
+      "changeTemplate": "Đổi mẫu…",
+      "regenerate": "Tạo lại ghi chú",
+      "copyMarkdown": "Sao chép Markdown",
+      "draftEmail": "Soạn email follow-up",
+      "exportDocx": "Xuất .docx",
+      "exportSubtitles": "Xuất phụ đề (.srt / .vtt)",
+      "sendToObsidian": "Gửi vào thư mục Obsidian"
+    },
+    "topics": {
+      "title": "Chủ đề",
+      "subtitle": "{{app}} tự chia · bấm để chuyển tới"
+    },
+    "failed": {
+      "title": "{{app}} chưa viết được ghi chú cho cuộc họp này",
+      "body": "Mô hình viết ghi chú dừng ở bước “Viết ghi chú”. Bản ghi và âm thanh vẫn an toàn.",
+      "retryLocal_mac": "Thử lại trên máy này",
+      "retryLocal_win": "Thử lại trên máy này",
+      "tryCloud": "Thử bằng cloud…",
+      "step": "Lỗi"
+    },
+    "noMine": {
+      "title": "Bạn không ghi chú trong cuộc họp này",
+      "body": "Toàn bộ phần dưới do {{app}} viết từ bản ghi, theo mẫu {{template}}."
+    },
+    "liveTag": "Gắn nhãn khi họp",
+    "others": "Khác",
+    "deferred": {
+      "title": "Đã lưu bản ghi. Ghi chú sẽ được viết khi tải xong mô hình.",
+      "body": "Đã tải {{percent}}% mô hình giọng nói. {{app}} tự tiếp tục khi có mạng."
+    }
+  },
+  "library": {
+    "subtitle_mac_other": "{{count}} cuộc họp · tất cả lưu trên máy này",
+    "subtitle_win_other": "{{count}} cuộc họp · tất cả lưu trên máy này",
+    "newRecording": "Ghi mới",
+    "searchPlaceholder": "Tìm trong ghi chú và bản ghi · gõ không dấu cũng được",
+    "results_other": "{{count}} kết quả · không phân biệt dấu, “chot” ra “chốt”",
+    "noMatches": "Không có cuộc họp nào khớp. Thử ít từ hơn.",
+    "upNext": "Sắp tới",
+    "askToRecord": "Hỏi để ghi khi bắt đầu",
+    "filters": {
+      "people": "Mọi người",
+      "source": "Nguồn",
+      "template": "Mẫu",
+      "date": "Ngày"
+    },
+    "groups": {
+      "lastWeek": "Tuần trước"
+    },
+    "status": {
+      "ready": "Sẵn sàng",
+      "processing": "Đang xử lý",
+      "needsSpeakerNames": "Cần tên người nói",
+      "cloudEnhanced": "Đã dùng cloud",
+      "finalPass": "Xử lý cuối trên {{device}}",
+      "recording": "Đang ghi",
+      "failedRetry": "Lỗi · Thử lại",
+      "processingPercent": "Đang xử lý {{percent}}%",
+      "waitingSync": "Chờ đồng bộ"
+    },
+    "empty": {
+      "title": "Ghi cuộc họp đầu tiên",
+      "body_mac": "{{app}} nghe cuộc gọi trên máy này hoặc âm thanh trong phòng. Mọi thứ đều ở lại đây.",
+      "body_win": "{{app}} nghe cuộc gọi trên máy này hoặc âm thanh trong phòng. Mọi thứ đều ở lại đây.",
+      "importFile": "Nhập file",
+      "record": "Ghi cuộc gọi"
+    },
+    "selected": "Đã chọn {{count}}",
+    "clearSelection": "Bỏ chọn",
+    "deleteQuestion_mac_other": "Xoá {{count}} cuộc họp? Âm thanh, bản ghi và ghi chú sẽ bị xoá khỏi máy này.",
+    "deleteQuestion_win_other": "Xoá {{count}} cuộc họp? Âm thanh, bản ghi và ghi chú sẽ bị xoá khỏi máy này.",
+    "deleted": "Đã xoá {{count}}",
+    "clearFilters": "Xoá bộ lọc",
+    "quick": {
+      "copyNotes": "Sao chép ghi chú"
+    },
+    "notesCopied": "Đã sao chép ghi chú dạng Markdown",
+    "sources": {
+      "call": "Cuộc gọi",
+      "room": "Phòng họp",
+      "mobile": "Điện thoại",
+      "import": "Nhập file"
+    },
+    "templates": {
+      "general": "Chung",
+      "oneOnOne": "1:1",
+      "clientCall": "Gọi khách hàng",
+      "standup": "Standup"
+    },
+    "noFilterMatches": "Không có cuộc họp nào khớp bộ lọc.",
+    "retrying_mac": "Đang thử lại trên máy này…",
+    "retrying_win": "Đang thử lại trên máy này…",
+    "retryDone": "{{title}}: ghi chú đã xong",
+    "emptySearch": {
+      "title": "Không có cuộc họp nào khớp “{{query}}”",
+      "body": "Thử ít từ hơn. Gõ không dấu cũng được."
+    }
+  },
+  "tray": {
+    "detected": {
+      "title": "Phát hiện cuộc gọi {{meetingApp}}. Ghi lại không?",
+      "subtitle": "{{title}} · từ lịch của bạn",
+      "start": "Bắt đầu",
+      "notNow": "Để sau",
+      "never": "Không bao giờ với {{meetingApp}}"
+    },
+    "recordCall": "Ghi cuộc gọi",
+    "recordRoom": "Ghi phòng họp",
+    "open": "Mở {{app}}",
+    "recent": "Gần đây",
+    "next": "Tiếp theo",
+    "recording": "Đang ghi"
+  },
+  "cloud": {
+    "title": "Cải thiện ghi chú bằng mô hình cloud?",
+    "subtitle": "Chỉ cho cuộc họp này. {{app}} luôn hỏi trước.",
+    "provider": "Nhà cung cấp",
+    "whatLeaves_mac": "Dữ liệu rời khỏi máy",
+    "whatLeaves_win": "Dữ liệu rời khỏi máy",
+    "textOnly": "Chỉ văn bản bản ghi · {{words}} từ · khoảng {{tokens}} token",
+    "audio": "Âm thanh",
+    "audioNever": "Âm thanh không bao giờ rời khỏi máy",
+    "cost": "Chi phí ước tính",
+    "redact": "Ẩn tên, email và số điện thoại",
+    "before_mac": "Trên máy này",
+    "before_win": "Trên máy này",
+    "after": "Nội dung gửi đi",
+    "send": "Gửi và cải thiện",
+    "keepLocal": "Giữ trên máy",
+    "sending": "Đang gửi bản ghi…",
+    "done": "Đã cải thiện. Yêu cầu được ghi lại trong Cài đặt → AI.",
+    "keptLocal": "Giữ trên máy. Không có gì được gửi.",
+    "alwaysAsk": "Đổi trong Cài đặt → AI. Mọi yêu cầu đều được ghi lại ở đó.",
+    "redactionOff": "Tên, email và số điện thoại sẽ được gửi nguyên văn.",
+    "sendingButton": "Đang gửi…",
+    "close": "Xong",
+    "failed": "Không kết nối được {{provider}}. Ghi chú trên máy vẫn được giữ."
+  },
+  "onboarding": {
+    "steps": {
+      "welcome": "Chào mừng",
+      "languages": "Ngôn ngữ",
+      "models": "Mô hình giọng nói",
+      "permissions": "Quyền truy cập",
+      "voice": "Giọng của bạn",
+      "test": "Ghi thử",
+      "done": "Xong"
+    },
+    "welcome": {
+      "title_mac": "Ghi chú cuộc họp, chỉ lưu trên máy này",
+      "title_win": "Ghi chú cuộc họp, chỉ lưu trên máy này",
+      "body": "{{app}} ghi âm cuộc gọi và cuộc họp trực tiếp, cho biết ai nói gì, và viết ghi chú bạn có thể kiểm tra từng dòng.",
+      "promises": {
+        "onDevice_mac": "Âm thanh được ghi và chuyển thành chữ ngay trên máy này.",
+        "onDevice_win": "Âm thanh được ghi và chuyển thành chữ ngay trên máy này.",
+        "noCloud": "Không gửi gì ra ngoài, trừ khi bạn chọn dùng cloud cho một cuộc họp.",
+        "citations": "Mỗi câu do AI viết đều dẫn về đúng thời điểm gốc."
+      }
+    },
+    "getStarted": "Bắt đầu",
+    "skipForNow": "Để sau",
+    "languages": {
+      "title": "Bạn thường họp bằng ngôn ngữ nào?",
+      "body": "{{app}} hiểu cả hai trong cùng một câu, như “chốt scope cho bản beta”.",
+      "english": "English",
+      "vietnamese": "Tiếng Việt",
+      "both": "Cả hai, thường xen kẽ"
+    },
+    "models": {
+      "title": "Tải mô hình giọng nói",
+      "body_mac": "Mô hình chạy trên máy này. Bạn có thể tiếp tục trong lúc tải.",
+      "body_win": "Mô hình chạy trên máy này. Bạn có thể tiếp tục trong lúc tải.",
+      "presets": {
+        "light": "Nhẹ",
+        "balanced": "Cân bằng",
+        "max": "Tối đa"
+      },
+      "presetDetail": "RAM {{ram}} · tải {{download}}",
+      "presetDetailRecommended": "RAM {{ram}} · tải {{download}} · khuyên dùng",
+      "downloading": "Đang tải · {{percent}}% · còn khoảng {{minutes}} phút",
+      "done": "Đã tải và kiểm tra",
+      "offline": "Không có mạng? Cứ ghi âm, {{app}} sẽ xử lý sau."
+    },
+    "permissions": {
+      "title": "Cho phép {{app}} nghe cuộc họp",
+      "body_mac": "{{app}} giải thích từng quyền ngay trước khi macOS hỏi.",
+      "body_win": "{{app}} giải thích từng quyền ngay trước khi Windows hỏi.",
+      "microphone": {
+        "title": "Micro",
+        "body": "Nghe giọng bạn và cả phòng khi họp trực tiếp."
+      },
+      "systemAudio": {
+        "title_mac": "Ghi màn hình & âm thanh hệ thống",
+        "title_win": "Âm thanh hệ thống",
+        "body": "Nghe những người khác trên Zoom, Meet hoặc Teams. {{app}} chỉ ghi âm thanh, không bao giờ ghi màn hình."
+      },
+      "notifications": {
+        "title": "Thông báo",
+        "body": "Hỏi “Ghi cuộc gọi này?” khi cuộc họp bắt đầu. {{app}} không bao giờ tự ghi."
+      },
+      "calendar": {
+        "title": "Lịch · không bắt buộc",
+        "body": "Đặt tên cuộc họp và gợi ý người tham gia."
+      },
+      "allow": "Cho phép…",
+      "granted": "Đã cho phép",
+      "denied": "Đang tắt",
+      "roomOnly": "Nếu không có quyền này, {{app}} chỉ ghi được ở chế độ Phòng họp (micro của bạn).",
+      "micDenied_mac": "Micro đang tắt với {{app}}. Bật trong Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Micro.",
+      "micDenied_win": "Micro đang tắt với {{app}}. Bật trong Cài đặt → Quyền riêng tư & bảo mật → Micro."
+    },
+    "osDialog": {
+      "microphone": "“{{app}}” muốn truy cập micro.",
+      "microphoneBody": "{{app}} ghi âm cuộc họp và lưu trên máy này.",
+      "systemAudio": "“{{app}}” muốn ghi âm thanh của máy tính này.",
+      "systemAudioBody": "Cấp quyền trong Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Ghi màn hình & âm thanh hệ thống.",
+      "notifications": "“{{app}}” muốn gửi thông báo cho bạn.",
+      "calendar": "“{{app}}” muốn truy cập lịch của bạn.",
+      "dontAllow": "Không cho phép",
+      "allow": "Cho phép"
+    },
+    "voice": {
+      "title": "Cho {{app}} làm quen giọng bạn",
+      "body": "Đọc to đoạn dưới đây, khoảng 20 giây. {{app}} sẽ gắn nhãn bạn là “Tôi” trong mọi cuộc họp.",
+      "passage": "Hôm nay mình họp về kế hoạch ra mắt bản beta. We will review the timeline, agree on owners, and write down every decision.",
+      "start": "Bắt đầu đọc",
+      "listening": "Đang nghe…",
+      "done": "Đã lưu giọng của bạn",
+      "consent_mac": "Tôi đồng ý lưu hồ sơ giọng nói của mình. Hồ sơ được mã hoá trên máy này và tôi có thể xoá trong Mọi người.",
+      "consent_win": "Tôi đồng ý lưu hồ sơ giọng nói của mình. Hồ sơ được mã hoá trên máy này và tôi có thể xoá trong Mọi người."
+    },
+    "test": {
+      "title": "Ghi thử 10 giây",
+      "body": "Phát một video bất kỳ hoặc nói gì đó. Cả hai mức âm và một dòng bản ghi sẽ hiện ra.",
+      "run": "Ghi thử",
+      "running": "Đang thử…",
+      "line": "Okay, bắt đầu nhé. This is a test of {{app}}.",
+      "ok": "Cả hai nguồn đều hoạt động"
+    },
+    "done": {
+      "title": "Sẵn sàng cho cuộc gọi tiếp theo",
+      "body": "Khi Zoom, Meet hoặc Teams bắt đầu, {{app}} sẽ hỏi bạn có muốn ghi không. Bạn cũng có thể bắt đầu bất cứ lúc nào:"
+    }
+  },
+  "settings": {
+    "title": "Cài đặt",
+    "sections": {
+      "general": "Chung",
+      "languages": "Ngôn ngữ",
+      "recording": "Ghi âm",
+      "ai": "AI",
+      "models": "Mô hình",
+      "privacy": "Quyền riêng tư",
+      "sync": "Đồng bộ",
+      "shortcuts": "Phím tắt"
+    },
+    "general": {
+      "appearance": "Giao diện",
+      "themeSystem": "Theo hệ thống",
+      "themeLight": "Sáng",
+      "themeDark": "Tối",
+      "appLanguage": "Ngôn ngữ ứng dụng",
+      "openAtLogin": "Mở {{app}} khi đăng nhập",
+      "openAtLoginHint": "Cần để {{app}} nhận biết khi cuộc gọi bắt đầu.",
+      "showInTray_mac": "Hiện {{app}} trên thanh menu",
+      "showInTray_win": "Hiện {{app}} trong khay hệ thống"
+    },
+    "languages": {
+      "meetingLanguages": "Ngôn ngữ trong cuộc họp",
+      "notesLanguage": "Viết ghi chú bằng",
+      "sameAsMeeting": "Giống cuộc họp",
+      "english": "English",
+      "vietnamese": "Tiếng Việt",
+      "dateFormat": "Ngày giờ",
+      "accentSearch": "Tìm không dấu",
+      "accentSearchHint": "Gõ “chot” cũng ra “chốt”. Luôn bật."
+    },
+    "recording": {
+      "detectApps": "Hỏi để ghi khi các ứng dụng này bắt đầu cuộc gọi",
+      "neverAuto": "{{app}} luôn hỏi trước. Không bao giờ tự ghi.",
+      "echoCancel": "Khử tiếng vọng khi dùng loa",
+      "echoCancelHint": "Không để giọng người khác lọt vào micro, để không ai bị đếm hai lần.",
+      "appAudioOnly": "Chỉ ghi âm thanh của ứng dụng họp",
+      "appAudioOnlyHint": "Nhạc và thông báo từ ứng dụng khác được bỏ qua.",
+      "consentMessage": "Lời thông báo ghi âm",
+      "consentMessageHint": "Dán vào khung chat khi bắt đầu ghi."
+    },
+    "ai": {
+      "local": {
+        "title": "Trên máy này",
+        "body": "Ghi chú, tóm tắt và câu trả lời do mô hình trên máy này viết. Không có gì rời khỏi máy."
+      },
+      "cloud": {
+        "title": "Cloud, chỉ khi bạn yêu cầu",
+        "body": "Ghi chú tốt hơn cho cuộc họp dài hoặc xen ngôn ngữ. Chỉ gửi văn bản của từng cuộc họp, không bao giờ gửi âm thanh."
+      },
+      "default": "Mặc định",
+      "keyStore_mac": "Khoá lưu trong Keychain",
+      "keyStore_win": "Khoá lưu trong Credential Manager",
+      "changeKey": "Đổi khoá",
+      "rules": {
+        "title": "Quy tắc khi dùng cloud",
+        "askBeforeSend": "Hỏi trước mỗi lần gửi",
+        "neverSensitive": "Không bao giờ gửi cuộc họp gắn nhãn Nhạy cảm"
+      },
+      "log": {
+        "title": "Nhật ký yêu cầu",
+        "subtitle": "Mỗi lần văn bản rời khỏi máy này.",
+        "columns": {
+          "time": "Thời gian",
+          "meeting": "Cuộc họp",
+          "provider": "Nhà cung cấp",
+          "sent": "Nội dung gửi",
+          "tokens": "Token"
+        },
+        "sentRedacted": "Bản ghi, đã ẩn",
+        "sentRaw": "Bản ghi"
+      }
+    },
+    "models": {
+      "presetTitle": "Tốc độ và chất lượng",
+      "presetHint_mac": "Khuyên dùng cho máy này: {{preset}} (RAM {{ram}}).",
+      "presetHint_win": "Khuyên dùng cho máy này: {{preset}} (RAM {{ram}}).",
+      "title": "Mô hình trên máy này",
+      "columns": {
+        "purpose": "Chức năng",
+        "size": "Dung lượng",
+        "memory": "Bộ nhớ",
+        "languages": "Ngôn ngữ",
+        "status": "Trạng thái"
+      },
+      "installFromFile": "Cài từ file…",
+      "installFromFileHint": "Cho máy không có mạng. Mọi file đều được kiểm tra trước khi dùng.",
+      "status": {
+        "installed": "Đã cài",
+        "downloading": "Đang tải {{percent}}%",
+        "paused": "Tạm dừng ở {{percent}}%",
+        "update": "Có bản mới",
+        "preview": "Thử nghiệm",
+        "incompatible": "Cần RAM {{ram}}"
+      },
+      "actions": {
+        "download": "Tải",
+        "pause": "Tạm dừng",
+        "resume": "Tiếp tục",
+        "update": "Cập nhật",
+        "remove": "Gỡ"
+      },
+      "actionFor": "{{action}} {{name}}",
+      "license": "Giấy phép {{license}}"
+    },
+    "privacy": {
+      "encrypt": "Mã hoá cuộc họp trên máy này",
+      "encryptHint": "Luôn bật. Khoá không bao giờ rời khỏi máy.",
+      "lock_mac": "Khoá {{app}} bằng Touch ID",
+      "lock_win": "Khoá {{app}} bằng Windows Hello",
+      "lockHint": "Sau 15 phút không dùng.",
+      "keepAudio": "Giữ âm thanh trong",
+      "keepOptions": {
+        "days7": "7 ngày",
+        "days30": "30 ngày",
+        "forever": "Mãi mãi",
+        "never": "Không giữ"
+      },
+      "keepAudioHint": "Bản ghi và ghi chú vẫn được giữ.",
+      "learnVoices": "Học giọng từ người nói đã xác nhận",
+      "learnVoicesHint": "Chỉ với người đã đồng ý. Quản lý trong Mọi người.",
+      "exportAll": "Xuất toàn bộ",
+      "exportAllHint": "Markdown, JSON và âm thanh trong một thư mục.",
+      "deleteAll": "Xoá toàn bộ cuộc họp và dữ liệu giọng nói…",
+      "deleteConfirm_other": "Xoá {{count}} cuộc họp và {{profiles}} hồ sơ giọng nói? Không thể hoàn tác.",
+      "deleteEverything": "Xoá tất cả"
+    },
+    "sync": {
+      "pairTitle": "Ghép nối điện thoại",
+      "pairBody": "Mở {{app}} trên điện thoại và quét mã này. Hai máy cần cùng Wi-Fi, không cần internet.",
+      "pairedDevices": "Thiết bị đã ghép",
+      "whatSyncs": "Đồng bộ những gì",
+      "phoneRecordings": "Gửi bản ghi từ điện thoại về đây để xử lý cuối",
+      "notes": "Ghi chú và bản ghi, hai chiều",
+      "voiceProfiles": "Hồ sơ giọng nói",
+      "voiceProfilesHint": "Để điện thoại cũng gọi được tên người nói.",
+      "localOnly": "Chỉ qua mạng nội bộ. Không qua internet."
+    },
+    "shortcuts": {
+      "startStop": "Bắt đầu hoặc dừng ghi",
+      "markMoment": "Đánh dấu",
+      "commandPalette": "Bảng lệnh",
+      "searchMeetings": "Tìm cuộc họp",
+      "notesTranscript": "Ghi chú / Bản ghi",
+      "export": "Xuất",
+      "playPause": "Phát hoặc dừng"
+    }
+  },
+  "system": {
+    "crash": {
+      "title": "{{app}} bị đóng đột ngột",
+      "body": "Bản ghi “{{title}}” đã được lưu đến {{time}}.",
+      "recover": "Khôi phục và viết ghi chú",
+      "discard": "Bỏ bản ghi"
+    },
+    "permissionLost": "Quyền ghi âm thanh hệ thống đã bị tắt. {{app}} chỉ đang ghi micro, nên thiếu giọng những người khác.",
+    "micTaken": "Một ứng dụng khác đang dùng micro ở chế độ độc quyền. Đóng ứng dụng đó hoặc tắt chế độ độc quyền trong cài đặt Âm thanh.",
+    "diskLow": "Máy chỉ còn {{free}}, đủ khoảng {{minutes}} phút ghi âm.",
+    "modelDamaged": "File mô hình viết ghi chú bị hỏng nên chưa viết được ghi chú. Các bản ghi vẫn an toàn.",
+    "mutedInMeetingApp": "Bạn đang tắt tiếng trong {{meetingApp}}. {{app}} vẫn ghi giọng người khác.",
+    "recovered": "Đã khôi phục bản ghi sau khi {{app}} khởi động lại. Có thể thiếu khoảng {{seconds}} giây tại {{time}}.",
+    "manageStorage": "Quản lý dung lượng",
+    "redownload": "Tải lại · {{size}}",
+    "update": {
+      "title": "Đã có {{app}} {{version}}",
+      "body": "Khởi động lại khi không ghi âm. Mất khoảng 10 giây.",
+      "restart": "Khởi động lại"
+    },
+    "locked": {
+      "title": "{{app}} đang khoá",
+      "body": "Các cuộc họp được mã hoá trên máy này.",
+      "unlock_mac": "Mở khoá bằng Touch ID",
+      "unlock_win": "Mở khoá bằng Windows Hello",
+      "usePassword": "Dùng mật khẩu"
+    },
+    "audioAccessOff": "Quyền âm thanh hệ thống đang tắt. Cuộc gọi chỉ ghi được micro.",
+    "turnOn": "Bật mục này",
+    "commandFailed": "Không thực hiện được: {{message}}"
+  },
+  "people": {
+    "subtitle_mac": "{{people}} người · {{profiles}} hồ sơ giọng nói · mã hoá trên máy này",
+    "subtitle_win": "{{people}} người · {{profiles}} hồ sơ giọng nói · mã hoá trên máy này",
+    "unknown": {
+      "title": "Giọng chưa biết",
+      "subtitle": "Nghe được trong các cuộc họp gần đây. Đặt tên một lần, {{app}} áp dụng ở mọi nơi.",
+      "allNamed": "Mọi giọng nói đều đã có tên.",
+      "heardIn_other": "Nghe trong {{meeting}} · {{count}} dòng"
+    },
+    "notPerson": {
+      "title": "Không phải người",
+      "subtitle": "Video, nhạc hoặc âm thanh nền"
+    },
+    "voiceProfile": {
+      "agreed": "Hồ sơ giọng · đồng ý {{date}}",
+      "none": "Chưa có hồ sơ giọng",
+      "self": "Giọng của bạn · đã lưu"
+    },
+    "meetingsCount_other": "{{count}} cuộc họp",
+    "openCount": "{{count}} việc mở",
+    "samples": {
+      "title": "Mẫu giọng nói",
+      "subtitle": "{{app}} nhận ra {{name}} nhờ các mẫu này. Nghe thử để chắc đúng người.",
+      "none": "Không lưu dữ liệu giọng nào của {{name}}. Mỗi lần {{app}} sẽ hỏi ai đang nói."
+    },
+    "deleteVoice": {
+      "action": "Xoá dữ liệu giọng nói…",
+      "question_other": "Xoá hồ sơ giọng và {{samples}} mẫu của {{name}}? {{app}} sẽ không nhận ra {{name}} nữa. Tên vẫn giữ trong {{count}} cuộc họp.",
+      "confirm": "Xoá dữ liệu giọng",
+      "done": "Đã xoá dữ liệu giọng. Tên của {{name}} vẫn giữ trong ghi chú."
+    },
+    "addVoice": "Lưu hồ sơ giọng nói…",
+    "reRecordVoice": "Ghi lại giọng của bạn…",
+    "nameInNotes": {
+      "title": "Tên trong ghi chú",
+      "hint_other": "Tách biệt với dữ liệu giọng. Gỡ tên sẽ đổi các dòng của họ về “Người nói N” trong {{count}} cuộc họp."
+    },
+    "removeName": {
+      "action": "Gỡ tên khỏi ghi chú…",
+      "question_other": "Thay “{{name}}” bằng “Người nói N” trong {{count}} cuộc họp? Dữ liệu giọng không bị ảnh hưởng.",
+      "confirm": "Gỡ tên"
+    },
+    "merge": {
+      "action": "Gộp với…",
+      "hint": "Dùng khi một người xuất hiện hai lần, như “Minh” và “Minh Nguyễn”.",
+      "done": "Đã gộp {{from}} vào {{into}}"
+    },
+    "openActions": "Việc đang mở",
+    "meetingsTogether": "Các cuộc họp chung",
+    "noOpenActions": "Không có việc nào đang mở.",
+    "empty": {
+      "title": "Mọi người sẽ hiện sau cuộc họp đầu tiên",
+      "body": "Khi bạn đặt tên người nói, {{app}} thêm họ vào đây. Hồ sơ giọng chỉ được lưu khi họ đồng ý."
+    },
+    "namedIn": "Đã đặt tên {{name}} trong {{meeting}}",
+    "markedNotPerson": "Đã đánh dấu không phải người"
+  },
+  "consent": {
+    "title": "Lưu giọng của {{name}}?",
+    "lead": "{{app}} sẽ tự nhận ra {{name}} ở các cuộc họp sau.",
+    "points": {
+      "biometric": "Hồ sơ giọng nói là dữ liệu sinh trắc học: một bản tóm tắt dạng số về giọng của một người. Không thể phát lại thành âm thanh.",
+      "local": "Hồ sơ được mã hoá trên máy này. Không bao giờ được tải lên, chỉ sang điện thoại nếu bạn bật đồng bộ giọng.",
+      "deletable": "Bạn có thể xoá bất cứ lúc nào trong Mọi người, ví dụ khi {{name}} yêu cầu."
+    },
+    "ask": "{{name}} đã đồng ý chưa?",
+    "yes": "Có, {{name}} đồng ý được nhận diện qua giọng nói",
+    "notYet": "Chưa. Chỉ lưu tên",
+    "record": "{{app}} lưu lại: “{{name}} đồng ý ngày {{date}}”.",
+    "pick": "Chọn một để tiếp tục.",
+    "save": "Lưu hồ sơ giọng",
+    "saveNameOnly": "Chỉ lưu tên",
+    "saved": "Đã lưu hồ sơ giọng. {{name}} đồng ý ngày {{date}}.",
+    "next": "Bước tiếp theo bạn sẽ xác nhận {{name}} đã đồng ý.",
+    "self": {
+      "title": "Ghi lại giọng của bạn",
+      "body": "Đọc to đoạn dưới đây. Hồ sơ mới sẽ thay hồ sơ cũ.",
+      "saved": "Đã cập nhật giọng của bạn."
+    }
+  },
+  "download": {
+    "resume": "Tiếp tục tải",
+    "waiting": "Chờ mô hình",
+    "failed": {
+      "title": "Tải dừng ở {{percent}}%. Mất kết nối mạng.",
+      "body": "{{app}} giữ phần đã tải và tiếp tục từ đây."
+    },
+    "recordLater": "Ghi âm ngay, xử lý sau",
+    "paused": "Tạm dừng ở {{percent}}% · tự tiếp tục khi có mạng",
+    "deferToast": "Mô hình sẽ tiếp tục tải khi có mạng. Bạn có thể ghi âm ngay."
+  },
+  "export": {
+    "title": "Xuất ghi chú",
+    "format": "Định dạng",
+    "formats": {
+      "markdown": "Sao chép dạng Markdown",
+      "docx": "Tài liệu Word (.docx)",
+      "txt": "Văn bản thuần (.txt)",
+      "subtitles": "Phụ đề (.srt và .vtt)",
+      "obsidian": "Thư mục Obsidian"
+    },
+    "include": "Bao gồm",
+    "parts": {
+      "summary": "Tóm tắt",
+      "yourNotes": "Ghi chú của bạn",
+      "decisions": "Quyết định",
+      "actionItems": "Việc cần làm",
+      "openQuestions": "Câu hỏi mở",
+      "transcript": "Bản ghi"
+    },
+    "timestamps": "Mốc thời gian",
+    "preview": "Xem trước",
+    "go": {
+      "markdown": "Sao chép Markdown",
+      "docx": "Lưu .docx…",
+      "txt": "Lưu .txt…",
+      "subtitles": "Lưu .srt và .vtt…",
+      "obsidian": "Lưu vào Obsidian"
+    },
+    "done_mac": "Đã xuất. Không có gì rời khỏi máy.",
+    "done_win": "Đã xuất. Không có gì rời khỏi máy.",
+    "changeFolder": "Đổi thư mục…",
+    "subtitlesNote": "Phụ đề chỉ gồm tên người nói và bản ghi."
+  },
+  "email": {
+    "title": "Soạn email follow-up",
+    "to": "Gửi tới",
+    "tone": "Giọng văn",
+    "tones": {
+      "friendly": "Thân thiện",
+      "neutral": "Trung tính",
+      "formal": "Trang trọng"
+    },
+    "includeActions": "Kèm việc cần làm",
+    "writtenLocally_mac": "Viết trên máy này · {{model}} · không gửi gì đi",
+    "writtenLocally_win": "Viết trên máy này · {{model}} · không gửi gì đi",
+    "copy": "Sao chép email",
+    "openMail_mac": "Mở trong Mail",
+    "openMail_win": "Mở trong Outlook",
+    "copied": "Đã sao chép email",
+    "subject": "Tiêu đề"
+  },
+  "ask": {
+    "subtitle": "Câu trả lời lấy từ các cuộc họp và dẫn về đúng thời điểm được nói.",
+    "scopes": {
+      "thisMeeting": "Cuộc họp này",
+      "allMeetings": "Tất cả cuộc họp",
+      "person": "Một người",
+      "dateRange": "Khoảng thời gian"
+    },
+    "scopeLine": {
+      "thisMeeting": "Tìm trong “{{title}}”",
+      "allMeetings_other": "Tìm trong {{count}} cuộc họp",
+      "person_other": "Tìm trong {{count}} cuộc họp với {{name}}",
+      "dateRange": "Tìm trong {{range}}"
+    },
+    "ranges": {
+      "last7Days_other": "7 ngày qua · {{count}} cuộc họp",
+      "last30Days_other": "30 ngày qua · {{count}} cuộc họp",
+      "thisYear_other": "Năm nay · {{count}} cuộc họp"
+    },
+    "suggested": "Gợi ý từ các cuộc họp gần đây",
+    "placeholder": "Hỏi về các cuộc họp của bạn",
+    "followUpPlaceholder": "Hỏi tiếp",
+    "reading_other": "Đang đọc {{count}} cuộc họp…",
+    "answeredLocal_mac_other": "Trả lời trên máy này · {{model}} · đã đọc {{count}} cuộc họp",
+    "answeredLocal_win_other": "Trả lời trên máy này · {{model}} · đã đọc {{count}} cuộc họp",
+    "answeredCloud": "Trả lời bằng cloud · {{provider}} · chỉ gửi văn bản, ghi lại trong Cài đặt → AI",
+    "cloudForThis": "Cloud cho câu hỏi này",
+    "onDevice_mac": "Trên máy này",
+    "onDevice_win": "Trên máy này",
+    "notDiscussed": {
+      "title": "Không được nhắc đến trong các cuộc họp này",
+      "body_other": "{{app}} không tìm thấy nội dung này trong {{count}} cuộc họp. Ghi chú “{{note}}” của bạn trong {{meeting}} cũng không khớp với bản ghi.",
+      "search": "Tìm “{{query}}” trong bản ghi"
+    },
+    "newQuestion": "Câu hỏi mới",
+    "audioDeleted_other": "Âm thanh đã xoá sau {{count}} ngày. Dòng bản ghi vẫn giữ.",
+    "empty": {
+      "title": "Hỏi sẽ hữu ích khi bạn có vài cuộc họp",
+      "body": "Ghi âm hoặc nhập một cuộc họp, rồi hỏi kiểu “Mình đã chốt gì?”"
+    }
+  },
+  "import": {
+    "subtitle_mac": "File âm thanh và video được chuyển thành chữ và viết ghi chú trên máy này.",
+    "subtitle_win": "File âm thanh và video được chuyển thành chữ và viết ghi chú trên máy này.",
+    "drop": {
+      "title": "Thả file âm thanh hoặc video vào đây"
+    },
+    "chooseFiles": "Chọn file…",
+    "formats": "MP3, M4A, WAV, MP4, MOV, OGG và file xuất từ Plaud · tối đa 12 giờ mỗi file",
+    "dropHint_mac": "Bạn cũng có thể thả file vào bất kỳ đâu trong cửa sổ hoặc lên biểu tượng {{app}} trên Dock.",
+    "dropHint_win": "Bạn cũng có thể thả file vào bất kỳ đâu trong cửa sổ hoặc lên {{app}} trên thanh tác vụ.",
+    "dropOverlay": {
+      "title": "Thả để nhập vào {{app}}",
+      "body": "File được xử lý trên máy này."
+    },
+    "staged": {
+      "title": "Sẵn sàng nhập"
+    },
+    "options": {
+      "title": "Tuỳ chọn cho các file này",
+      "languages": {
+        "auto": "Tự nhận biết",
+        "english": "English",
+        "vietnamese": "Tiếng Việt",
+        "both": "Cả hai, xen kẽ"
+      },
+      "speakers": "Số người nói dự kiến",
+      "speakersAuto": "Tự động",
+      "stereo": "Tách kênh stereo",
+      "stereoHint": "Zoom lưu bạn và người khác trên hai kênh riêng. {{app}} dùng điều đó để phân biệt người nói."
+    },
+    "importFiles_other": "Nhập {{count}} file",
+    "queue": {
+      "title": "Hàng đợi",
+      "waiting": "Đang chờ",
+      "ready": "Xong",
+      "openNotes": "Mở ghi chú",
+      "empty": "Hàng đợi trống. File đã nhập sẽ hiện trong Cuộc họp khi có ghi chú."
+    },
+    "stages": {
+      "converting": "Chuyển định dạng",
+      "transcribing": "Chuyển giọng nói",
+      "findingSpeakers": "Tìm người nói",
+      "writingNotes": "Viết ghi chú"
+    },
+    "eta": {
+      "minutes": "còn khoảng {{count}} phút",
+      "duration": "còn khoảng {{duration}}"
+    },
+    "done_other": "Đã nhập {{count}} file. Ghi chú đã xong.",
+    "keepWorking": "Bạn có thể tiếp tục làm việc hoặc đóng cửa sổ. {{app}} sẽ báo khi từng file xong.",
+    "unsupported": "{{app}} không mở được file {{format}}. Hãy nhập âm thanh hoặc video.",
+    "corrupt": "Không đọc được âm thanh sau {{time}}. Nhập phần đọc được?",
+    "corruptAction": "Nhập {{minutes}} phút đầu",
+    "longFile_mac": "File dài. Mất khoảng {{duration}} trên máy này và cần khoảng {{space}}. Bạn vẫn làm việc bình thường.",
+    "longFile_win": "File dài. Mất khoảng {{duration}} trên máy này và cần khoảng {{space}}. Bạn vẫn làm việc bình thường.",
+    "dup": {
+      "body": "Đã có trong {{app}}: “{{title}}” ({{details}}).",
+      "importCopy": "Nhập bản sao"
+    },
+    "stereo": "Stereo · 2 kênh",
+    "needsChoice": "Chọn một tuỳ chọn ở trên",
+    "wontImport": "Sẽ không được nhập",
+    "notification": {
+      "title": "Đã nhập xong"
+    },
+    "dockDrop": "Nhập vào {{app}}",
+    "emptyTitle": "Hàng đợi trống",
+    "emptyBody": "File đã nhập sẽ hiện trong Cuộc họp khi có ghi chú."
+  },
+  "palette": {
+    "placeholder": "Gõ lệnh hoặc tìm cuộc họp",
+    "goTo": "Đi tới",
+    "actions": "Thao tác",
+    "ask": "Hỏi “{{query}}”",
+    "noMatches": "Không có kết quả. Nhấn ↵ để hỏi.",
+    "hint": "↑↓ chọn · ↵ mở · esc đóng",
+    "darkTheme": "Chuyển sang giao diện tối",
+    "lightTheme": "Chuyển sang giao diện sáng",
+    "stopRecording": "Dừng ghi"
+  },
   "app": {
-    "name": "Ghira",
     "tagline": "Ghi chú cuộc họp riêng tư, ngay trên máy bạn."
+  },
+  "shell": {
+    "notifications": "Thông báo",
+    "mainNav": "Điều hướng chính",
+    "commandPalette": "Bảng lệnh",
+    "newSpeakerTurn": "{{name}}: {{text}}"
+  },
+  "citation": {
+    "showAt": "Xem trong bản ghi {{time}}",
+    "showAtBroken": "Xem trong bản ghi {{time}}. Âm thanh đã bị xoá.",
+    "showIndex": "Xem nguồn {{index}} trong bản ghi",
+    "showIndexBroken": "Xem nguồn {{index}} trong bản ghi. Âm thanh đã bị xoá."
+  },
+  "meter": {
+    "silent": "Không có tiếng nói",
+    "normal": "Bình thường",
+    "clipping": "Quá to",
+    "noMic": "Không có micro",
+    "noSystem": "Không có âm thanh hệ thống"
   }
 }

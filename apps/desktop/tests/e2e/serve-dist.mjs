@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-// Serves the built frontend with the production CSP header, like the Tauri
+// Serves a built frontend with the production CSP header, like the Tauri
 // asset protocol does, so Playwright can check that the policy is enforced.
+// ROOT (default: the app's dist) and PORT (default 4173) pick what and where;
+// the component gallery is served the same way.
 import { createServer } from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = fileURLToPath(new URL("../../dist/", import.meta.url));
+const root = process.env.ROOT ? join(process.env.ROOT, "/") : fileURLToPath(new URL("../../dist/", import.meta.url));
 const conf = JSON.parse(readFileSync(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8"));
 const csp = conf.app.security.csp;
-const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
+const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".json": "application/json" };
 const port = Number(process.env.PORT ?? 4173);
 
 createServer((req, res) => {

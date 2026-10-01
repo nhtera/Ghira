@@ -15,6 +15,9 @@ const satisfies = require("spdx-satisfies");
 const allowed = [
   "Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib",
   "MPL-2.0", "OFL-1.1", "Unicode-3.0", "CC0-1.0",
+  // Public-domain equivalents, more permissive than MIT (phase 9: isbot via
+  // TanStack Router, tslib bundled by the UI libraries).
+  "0BSD", "Unlicense",
 ];
 
 function isAllowed(expression) {

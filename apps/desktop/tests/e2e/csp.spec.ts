@@ -13,7 +13,7 @@ test("CSP blocks remote images, fetches and sockets", async ({ page }) => {
   });
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Ghira" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Meetings" })).toBeVisible();
 
   const violations = await page.evaluate(async () => {
     const seen: string[] = [];
@@ -54,4 +54,20 @@ test("CSP blocks remote images, fetches and sockets", async ({ page }) => {
   expect(violations.seen.some((v) => v.startsWith("connect-src wss://example.com"))).toBe(true);
   expect(violations.seen.some((v) => v.startsWith("form-action"))).toBe(true);
   expect(remoteHits).toBe(0);
+});
+
+test("CSP blocks remote stylesheets (inline styles are allowed, remote ones not)", async ({ page }) => {
+  await page.route(/^https?:\/\/(?!127\.0\.0\.1)/, (route) => route.abort());
+  await page.goto("/");
+  const seen = await page.evaluate(async () => {
+    const out: string[] = [];
+    document.addEventListener("securitypolicyviolation", (e) => out.push(`${e.effectiveDirective} ${e.blockedURI}`));
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://example.com/x.css";
+    document.head.append(link);
+    await new Promise((r) => setTimeout(r, 300));
+    return out;
+  });
+  expect(seen.some((v) => v.startsWith("style-src-elem https://example.com") || v.startsWith("style-src https://example.com"))).toBe(true);
 });

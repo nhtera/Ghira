@@ -1,0 +1,114 @@
+{
+  "voiceSampleSources": [
+    [
+      "Product sync — beta scope",
+      "04:46"
+    ],
+    [
+      "1:1 với Linh",
+      "12:30"
+    ],
+    [
+      "Workshop at Dreamplex",
+      "08:02"
+    ]
+  ],
+  "people": [
+    {
+      "n": "Me",
+      "mt": 142,
+      "vp": "self",
+      "act": []
+    },
+    {
+      "n": "Linh",
+      "mt": 18,
+      "vp": "12/08",
+      "act": [
+        1
+      ]
+    },
+    {
+      "n": "Minh",
+      "mt": 14,
+      "vp": "12/08",
+      "act": [
+        0
+      ]
+    },
+    {
+      "n": "Sarah",
+      "mt": 9,
+      "vp": "02/09",
+      "act": [
+        2
+      ]
+    },
+    {
+      "n": "An Tran",
+      "mt": 3,
+      "vp": null,
+      "act": []
+    },
+    {
+      "n": "Jordan",
+      "mt": 2,
+      "vp": null,
+      "act": [],
+      "ext": [
+        [
+          "Send SSO requirements to Ghi team",
+          "Gửi yêu cầu SSO cho nhóm Ghi",
+          "Client call — Acme onboarding",
+          "Wed"
+        ]
+      ]
+    },
+    {
+      "n": "Priya",
+      "mt": 2,
+      "vp": null,
+      "act": []
+    }
+  ],
+  "unknown": [
+    {
+      "id": "u1",
+      "where": "Coffee with investor",
+      "ts": "04:12",
+      "lines": 14
+    },
+    {
+      "id": "u2",
+      "where": "Workshop at Dreamplex",
+      "ts": "31:40",
+      "lines": 22,
+      "sug": "An Tran",
+      "score": 0.74
+    }
+  ],
+  "speakerColors": {
+    "Me": "--s1",
+    "Linh": "--s2",
+    "Minh": "--s4",
+    "Sarah": "--s8",
+    "An Tran": "--s5",
+    "Jordan": "--s3",
+    "Priya": "--s7",
+    "Duc": "--s6"
+  },
+  "consentDates": {
+    "Me": 1,
+    "Linh": "12/08",
+    "Minh": "12/08",
+    "Sarah": "02/09"
+  },
+  "known": [
+    "Linh",
+    "Minh",
+    "Sarah",
+    "An Tran",
+    "Jordan",
+    "Priya"
+  ]
+}

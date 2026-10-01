@@ -1,0 +1,124 @@
+{
+  "presets": {
+    "light": {
+      "en": {
+        "ram": "8 GB",
+        "download": "2.1 GB"
+      },
+      "vi": {
+        "ram": "8 GB",
+        "download": "2,1 GB"
+      }
+    },
+    "balanced": {
+      "en": {
+        "ram": "16 GB",
+        "download": "7.8 GB"
+      },
+      "vi": {
+        "ram": "16 GB",
+        "download": "7,8 GB"
+      }
+    },
+    "max": {
+      "en": {
+        "ram": "32 GB",
+        "download": "19 GB"
+      },
+      "vi": {
+        "ram": "32 GB",
+        "download": "19 GB"
+      }
+    }
+  },
+  "models": [
+    {
+      "role": [
+        "Hears when someone speaks",
+        "Nhận biết khi có người nói"
+      ],
+      "m": "Silero VAD v5",
+      "size": "2 MB",
+      "ram": "< 50 MB",
+      "lang": "Any",
+      "st": "installed"
+    },
+    {
+      "role": [
+        "Live English transcript",
+        "Bản ghi tiếng Anh trực tiếp"
+      ],
+      "m": "Parakeet TDT 0.6B v3",
+      "size": "0.7 GB",
+      "ram": "~1 GB",
+      "lang": "EN + 24",
+      "st": "installed"
+    },
+    {
+      "role": [
+        "Vietnamese + English transcript",
+        "Bản ghi tiếng Việt + Anh"
+      ],
+      "m": "Whisper large-v3-turbo",
+      "size": "1.6 GB",
+      "ram": "~2 GB",
+      "lang": "99 incl. VI",
+      "st": "update"
+    },
+    {
+      "role": [
+        "Tells speakers apart, live",
+        "Phân biệt người nói, trực tiếp"
+      ],
+      "m": "Nemotron 3 Diarization",
+      "size": "0.4 GB",
+      "ram": "~0.5 GB",
+      "lang": "Any · ≤ 8",
+      "st": "preview"
+    },
+    {
+      "role": [
+        "Recognizes known voices",
+        "Nhận ra giọng quen"
+      ],
+      "m": "TitaNet-small",
+      "size": "40 MB",
+      "ram": "~0.1 GB",
+      "lang": "Any",
+      "st": "installed"
+    },
+    {
+      "role": [
+        "Writes notes and answers",
+        "Viết ghi chú và trả lời"
+      ],
+      "m": "Qwen3-8B (Q4_K_M)",
+      "size": "5.0 GB",
+      "ram": "~6 GB",
+      "lang": "Multilingual",
+      "st": "installed"
+    },
+    {
+      "role": [
+        "Semantic search",
+        "Tìm theo ý nghĩa"
+      ],
+      "m": "multilingual-e5-small",
+      "size": "0.1 GB",
+      "ram": "~0.2 GB",
+      "lang": "Multilingual",
+      "st": "downloading"
+    },
+    {
+      "role": [
+        "Larger notes model (Max)",
+        "Mô hình ghi chú lớn (Tối đa)"
+      ],
+      "m": "Qwen3-30B-A3B (Q4)",
+      "size": "17 GB",
+      "ram": "~19 GB",
+      "lang": "Multilingual",
+      "st": "incompatible"
+    }
+  ]
+}
