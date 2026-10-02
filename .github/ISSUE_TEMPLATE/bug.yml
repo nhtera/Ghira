@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never attach recordings, transcripts, notes or screenshots that show
+        meeting content or people's names.** Describe what happened instead.
+        Crash reports from Settings → About → Diagnostics contain no meeting
+        content; read them before attaching. Security issues: see SECURITY.md,
+        don't file them here.
+  - type: input
+    id: version
+    attributes:
+      label: Ghira version
+      description: Settings → About
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Mac model and macOS version
+      placeholder: MacBook Air M1 16 GB, macOS 15.6
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Recording, Live transcript, Speakers, Notes, Search, Playback, Import, Export, Cloud AI, Settings, Install / update, Other]
+    validations:
+      required: true
+  - type: dropdown
+    id: language
+    attributes:
+      label: Meeting language
+      options: [English, Vietnamese, Both, Not relevant]
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did, what happened, what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics (optional)
+      description: The relevant lines of a crash report or ghira.log, after reading them.
+      render: text

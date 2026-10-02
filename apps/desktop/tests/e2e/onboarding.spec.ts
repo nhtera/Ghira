@@ -53,6 +53,8 @@ test("walks every step and lands in the library", async ({ page }) => {
 
 test("Enter continues, Escape stays, Back goes back", async ({ page }) => {
   await open(page, "languages");
+  // The step's keys work once it has rendered.
+  await expect(page.getByRole("radio", { checked: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page).toHaveURL(/onboarding\/languages/);
   await page.keyboard.press("Enter");

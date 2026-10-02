@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Feature request
+description: An idea for Ghira
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation and what gets in the way (no meeting content, please).
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This works without sending meeting content off the device (or only as an explicit, per-meeting opt-in).

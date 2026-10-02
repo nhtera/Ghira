@@ -87,6 +87,25 @@ owns ⌘⇧R/⌘M/⌘K/⌘,). UI copy only from locale files (lint), text nodes 
 (RT-6). e2e also runs the gallery under the prod CSP, axe on every story, and
 macOS WebKit visual baselines (`--update-snapshots` after intended changes).
 
+Review flows (phase 11): desktop commands in `src-tauri/src/{detail,export_cmd,
+import_cmd,cloud_cmd,settings_cmd,dialogs}.rs`; full-meeting playback is a
+chunked WAV over `ghi-audio://` play tokens (`audio_protocol.rs`), waveforms
+cached sealed in the store (schema v4). Exports are rendered in
+`ghi-core/src/export.rs`; cloud plan → exact-bytes preview → send in
+`ghi-core/src/cloud.rs`; follow-up email in `ghi-core/src/email.rs`. Native
+dialogs are `rfd` in Rust: the webview never sees a file path. The UI uses the
+scripted mock (`ipc/mock*.ts`; `window.__ghiMock` hooks) for tests.
+
+Release (phase 12): `tools/release/stage-bundle.sh` (worker sidecar + NeMo
+dylibs into the bundle), `build-dmg.sh [--adhoc]`, `sign-manifest.sh`
+(owner, offline), `crash-safety.sh`, `net-audit.sh`, `mirror-models.sh`,
+`offline-models.sh`; `apps/desktop/src-tauri/tauri.release.conf.json` +
+`entitlements.plist`; `release.yml` signs only when Apple secrets exist.
+Updater: `crates/ghi-update` (minisign manifest, no downgrade, Team-ID check;
+inert until `FEED_URL` + `PUBLIC_KEYS` are set). Local crash reports + event
+log: `crates/ghi-diag` (no meeting content; tested). Acceptance:
+`tools/eval` `ghi-eval acceptance`. Checklists in `docs/release/`.
+
 iOS spike (phase 7): `apps/mobile` (Tauri 2, iOS only) + `native/ios` (Swift
 audio/lifecycle and the Live Activity, C ABI in `GhiAudio/include/ghi_ios.h`).
 NeMo-Speech.cpp for iOS: `tools/scripts/build-nemo-ios.sh` (XCFrameworks in

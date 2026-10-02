@@ -31,6 +31,7 @@ test("editing an AI sentence makes it yours; My notes only hides the rest", asyn
   await open(page);
   const notes = page.getByRole("textbox", { name: "Note", exact: true });
   const first = notes.first();
+  await expect(first).toBeVisible();
   const all = await notes.count();
   await first.click();
   await first.press("End");

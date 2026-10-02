@@ -16,10 +16,25 @@ const fn add_table(version: u32, sql: &'static str) -> Migration {
     }
 }
 
-static V2: [Migration; 2] = [
-    MIGRATIONS[0],
-    add_table(2, "CREATE TABLE extra2 (x INTEGER);"),
-];
+/// Today's schema: the "current" database the tests upgrade from (the store
+/// API writes today's columns).
+const BASE: &[Migration] = MIGRATIONS;
+
+/// The schema version after one more (test) migration.
+fn next() -> u32 {
+    migrate::latest_version() + 1
+}
+
+/// Today's migrations plus one more.
+fn plus(m: Migration) -> Vec<Migration> {
+    let mut v = MIGRATIONS.to_vec();
+    v.push(m);
+    v
+}
+
+fn v2() -> Vec<Migration> {
+    plus(add_table(next(), "CREATE TABLE extra2 (x INTEGER);"))
+}
 fn version(store: &Store, dir: &std::path::Path, master: &common::Keys) -> u32 {
     let _ = store;
     let conn = db::open(&dir.join("ghira.db"), &common::db_key(master)).unwrap();
@@ -30,17 +45,16 @@ fn failing(_: &rusqlite::Transaction) -> rusqlite::Result<()> {
     Err(rusqlite::Error::InvalidQuery)
 }
 
-static FAIL_V2: [Migration; 2] = [
-    MIGRATIONS[0],
-    Migration {
-        version: 2,
+fn fail_v2() -> Vec<Migration> {
+    plus(Migration {
+        version: next(),
         step: Step::Func(failing),
-    },
-];
+    })
+}
 
 /// Makes a failed upgrade, which leaves its snapshot behind.
 fn fail_upgrade(dir: &std::path::Path, master: &common::Keys) {
-    assert!(common::open_with(dir, master, &FAIL_V2).is_err());
+    assert!(common::open_with(dir, master, &fail_v2()).is_err());
 }
 
 #[test]
@@ -49,7 +63,7 @@ fn snapshots_exist_during_a_migration_and_are_deleted_after_success() {
     let master = common::keys();
     let snaps = tmp.path().join("snapshots");
 
-    let store = common::open_with(tmp.path(), &master, &MIGRATIONS[..1]).unwrap();
+    let store = common::open_with(tmp.path(), &master, BASE).unwrap();
     let m = common::meeting(&store, "Trước khi nâng cấp");
     drop(store);
     assert!(
@@ -66,21 +80,21 @@ fn snapshots_exist_during_a_migration_and_are_deleted_after_success() {
             .file_name()
             .unwrap()
             .to_string_lossy()
-            .ends_with("-pre-v0001.db")
+            .ends_with(&format!("-pre-v{:04}.db", migrate::latest_version()))
     );
 
     // ... and the next successful run deletes it (snapshots hold wrapped DEKs).
-    let store = common::open_with(tmp.path(), &master, &V2).unwrap();
+    let store = common::open_with(tmp.path(), &master, &v2()).unwrap();
     assert!(migrate::list_snapshots(&snaps).unwrap().is_empty());
     assert_eq!(store.get_meeting(&m).unwrap().title, "Trước khi nâng cấp");
-    assert_eq!(version(&store, tmp.path(), &master), 2);
+    assert_eq!(version(&store, tmp.path(), &master), next());
 }
 
 #[test]
 fn snapshots_are_encrypted_with_the_same_key() {
     let tmp = tempfile::tempdir().unwrap();
     let master = common::keys();
-    let store = common::open_with(tmp.path(), &master, &MIGRATIONS[..1]).unwrap();
+    let store = common::open_with(tmp.path(), &master, BASE).unwrap();
     common::meeting(&store, "Bí mật");
     drop(store);
     fail_upgrade(tmp.path(), &master);
@@ -110,7 +124,7 @@ fn snapshots_are_encrypted_with_the_same_key() {
 fn only_the_last_snapshots_are_kept() {
     let tmp = tempfile::tempdir().unwrap();
     let master = common::keys();
-    drop(common::open_with(tmp.path(), &master, &MIGRATIONS[..1]).unwrap());
+    drop(common::open_with(tmp.path(), &master, BASE).unwrap());
     for _ in 0..6 {
         std::thread::sleep(std::time::Duration::from_millis(3)); // distinct names
         fail_upgrade(tmp.path(), &master);
@@ -127,7 +141,7 @@ fn only_the_last_snapshots_are_kept() {
 fn a_snapshot_restores_the_pre_migration_database() {
     let tmp = tempfile::tempdir().unwrap();
     let master = common::keys();
-    let store = common::open_with(tmp.path(), &master, &MIGRATIONS[..1]).unwrap();
+    let store = common::open_with(tmp.path(), &master, BASE).unwrap();
     let keep = common::meeting(&store, "Giữ lại");
     drop(store);
     fail_upgrade(tmp.path(), &master);
@@ -139,14 +153,17 @@ fn a_snapshot_restores_the_pre_migration_database() {
     std::fs::copy(&snap, &kept_copy).unwrap();
     let snap = kept_copy;
 
-    let store = common::open_with(tmp.path(), &master, &MIGRATIONS[..1]).unwrap();
+    let store = common::open_with(tmp.path(), &master, BASE).unwrap();
     let later = common::meeting(&store, "Sau đó");
     drop(store);
 
     migrate::restore_snapshot(&snap, &tmp.path().join("ghira.db")).unwrap();
 
-    let store = common::open_with(tmp.path(), &master, &MIGRATIONS[..1]).unwrap();
-    assert_eq!(version(&store, tmp.path(), &master), 1);
+    let store = common::open_with(tmp.path(), &master, BASE).unwrap();
+    assert_eq!(
+        version(&store, tmp.path(), &master),
+        migrate::latest_version()
+    );
     assert_eq!(store.get_meeting(&keep).unwrap().title, "Giữ lại");
     assert!(matches!(
         store.get_meeting(&later),
@@ -158,19 +175,19 @@ fn a_snapshot_restores_the_pre_migration_database() {
 fn a_newer_database_is_refused_not_downgraded() {
     let tmp = tempfile::tempdir().unwrap();
     let master = common::keys();
-    drop(common::open_with(tmp.path(), &master, &V2).unwrap());
-    let Err(err) = common::open_with(tmp.path(), &master, &MIGRATIONS[..1]) else {
+    drop(common::open_with(tmp.path(), &master, &v2()).unwrap());
+    let Err(err) = common::open_with(tmp.path(), &master, BASE) else {
         panic!("an old build must not open a newer database");
     };
     assert!(matches!(err, StoreError::Invalid(_)), "{err}");
     // And the data is untouched.
     assert_eq!(
         version(
-            &common::open_with(tmp.path(), &master, &V2).unwrap(),
+            &common::open_with(tmp.path(), &master, &v2()).unwrap(),
             tmp.path(),
             &master
         ),
-        2
+        next()
     );
 }
 

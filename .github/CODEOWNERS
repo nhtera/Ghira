@@ -7,3 +7,10 @@
 /crates/ghi-net/              @nhtera
 /apps/desktop/src-tauri/tauri.conf.json      @nhtera
 /apps/desktop/src-tauri/capabilities/        @nhtera
+/tools/release/               @nhtera
+/crates/ghi-update/           @nhtera
+/crates/ghi-diag/             @nhtera
+/apps/desktop/src-tauri/entitlements.plist         @nhtera
+/apps/desktop/src-tauri/tauri.release.conf.json    @nhtera
+/SECURITY.md                  @nhtera
+/PRIVACY.md                   @nhtera

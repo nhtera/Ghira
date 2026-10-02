@@ -67,6 +67,25 @@ def cmd_run(args) -> int:
     return code or (1 if load_run(run_dir)["errors"] else 0)
 
 
+def cmd_acceptance(args) -> int:
+    from .acceptance import parse_external, run_acceptance
+
+    try:
+        report, json_path, md_path = run_acceptance(
+            args.dataset, args.system, gates_path=args.gates, out=args.out, stamp=args.stamp,
+            lang=args.lang, timeout=args.timeout, collar=args.collar,
+            external=parse_external(args.external), allow_partial=args.partial,
+            execute_runs=not args.aggregate_only,
+        )  # fmt: skip
+    except PrivacyLeak as exc:
+        _eprint(f"error: {exc}")
+        return 1
+    print(f"acceptance: {json_path}")
+    print(f"acceptance: {md_path}")
+    print(f"verdict: {report['verdict']}")
+    return 0 if report["verdict"] in ("pass", "pass_best_effort", "pass_partial") else 1
+
+
 def cmd_score(args) -> int:
     from .score import score_run
 
@@ -216,6 +235,35 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument(
         "--collar", type=float, default=0.25, help="DER collar in seconds (+- width); default 0.25"
     )
+
+    sp = add(
+        "acceptance",
+        cmd_acceptance,
+        "the doc 02 section 1 acceptance suite: final + live runs, gates, RT-7 timing, one report",
+    )
+    sp.add_argument("--dataset", type=Path, action="append", required=True,
+                    help="repeat for several datasets (their files are pooled)")  # fmt: skip
+    sp.add_argument("--system", required=True, help="ghi[:path] | files:<dir> | ...")
+    sp.add_argument(
+        "--out", type=Path, help="where the aggregate report goes (default <dataset>/runs)"
+    )
+    sp.add_argument("--gates", type=Path)
+    sp.add_argument("--lang", choices=["auto", "vi", "en"], default="auto")
+    sp.add_argument("--timeout", type=float, help="seconds per task and file")
+    sp.add_argument("--collar", type=float, default=0.25)
+    sp.add_argument("--stamp", help="run id suffix (default: the current time)")
+    sp.add_argument(
+        "--partial", action="store_true",
+        help="datasets need not cover every gate (public sets): gates without data give pass_partial, not incomplete",
+    )  # fmt: skip
+    sp.add_argument(
+        "--aggregate-only", action="store_true",
+        help="do not run; aggregate the runs of --stamp that already exist",
+    )  # fmt: skip
+    sp.add_argument(
+        "--external", action="append", default=[], metavar="ID=pass|fail",
+        help="record a result measured elsewhere: crash_safety, strict_offline_audit, vn_search",
+    )  # fmt: skip
 
     sp = add("score", cmd_score, "recompute scores.json for a run")
     sp.add_argument("--run", type=Path, required=True)

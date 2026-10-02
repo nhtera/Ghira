@@ -29,6 +29,8 @@ test("choose files → problems shown → import → queue → done with Open no
 
 test("files dragged over the window show the drop target", async ({ page }) => {
   await page.goto("/?platform=win#/import");
+  // The screen listens once it has mounted.
+  await expect(page.getByRole("button", { name: "Choose files…" })).toBeVisible();
   await page.evaluate(() => {
     const dt = new DataTransfer();
     dt.items.add(new File(["x"], "a.mp3"));
