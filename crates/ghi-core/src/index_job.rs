@@ -161,6 +161,9 @@ impl JobHandler for IndexJob {
             return Ok(Outcome::Yield(ctx.job.payload.clone()));
         }
         let meeting = ctx.meeting()?;
+        // Read before the text: if a rename or an edit lands while this runs,
+        // the store refuses the vectors (they carry the old text).
+        let index_gen = ctx.store.index_gen(meeting).map_err(store_err)?;
         let (version, chunks) = meeting_chunks(ctx.store, meeting)?;
         if chunks.is_empty() {
             return Ok(Outcome::Done);
@@ -191,10 +194,15 @@ impl JobHandler for IndexJob {
             }
         }
         drop(embedder); // frees the model
-        ctx.store
-            .put_embeddings(meeting, &model, version, rows)
-            .map_err(store_err)?;
-        Ok(Outcome::Done)
+        match ctx
+            .store
+            .put_embeddings(meeting, &model, version, index_gen, rows)
+        {
+            Ok(()) => Ok(Outcome::Done),
+            // The meeting changed meanwhile: nothing was stored; run again.
+            Err(ghi_store::StoreError::IndexStale) => Ok(Outcome::Yield(ctx.job.payload.clone())),
+            Err(e) => Err(store_err(e)),
+        }
     }
 }
 
@@ -481,6 +489,65 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_rename_while_indexing_stores_nothing_and_runs_again() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let (_tmp, store, m) = setup();
+        let an = store.speakers(&m).unwrap()[0].gid.clone();
+        let renamed = Arc::new(AtomicBool::new(false));
+        let (s2, flag) = (store.clone(), renamed.clone());
+        let job = IndexJob {
+            // Opened after the text was read: the rename lands mid-run.
+            embedder: Arc::new(move || {
+                if !flag.swap(true, Ordering::SeqCst) {
+                    s2.rename_speaker(&an, Some("Bình")).unwrap();
+                }
+                Ok(Box::new(FakeEmbedder::new()) as Box<dyn Embedder + Send>)
+            }),
+            ready: always_ready(),
+        };
+        let r = runner(&store, job);
+        queue_one(&store, &m).unwrap();
+        let (j, out) = r.run_one().unwrap();
+        assert_eq!(out, Ok(Outcome::Yield(j.payload.clone())));
+        assert!(
+            store
+                .embeddings(&m, FakeEmbedder::MODEL)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(store.job(j.id).unwrap().state, JobState::Queued);
+
+        assert_eq!(r.run_pending(), 1);
+        let rows = store.embeddings(&m, FakeEmbedder::MODEL).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(
+            store
+                .meetings_needing_embeddings(FakeEmbedder::MODEL, 10)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_text_edit_or_rename_makes_the_vectors_stale() {
+        let (_tmp, store, m) = setup();
+        let r = runner(&store, fake_job());
+        queue_one(&store, &m).unwrap();
+        r.run_pending();
+        assert_eq!(queue_missing_for(&store, FakeEmbedder::MODEL).unwrap(), 0);
+        let seg = store.segments(&m).unwrap()[0].gid.clone();
+        store
+            .update_segment_text(&seg, "Đã sửa lại câu này")
+            .unwrap();
+        assert_eq!(queue_missing_for(&store, FakeEmbedder::MODEL).unwrap(), 1);
+        r.run_pending();
+        assert_eq!(queue_missing_for(&store, FakeEmbedder::MODEL).unwrap(), 0);
+        let an = store.speakers(&m).unwrap()[0].gid.clone();
+        store.rename_speaker(&an, Some("Chi")).unwrap();
+        assert_eq!(queue_missing_for(&store, FakeEmbedder::MODEL).unwrap(), 1);
     }
 
     #[test]

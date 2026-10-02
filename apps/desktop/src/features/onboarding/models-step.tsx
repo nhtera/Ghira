@@ -121,7 +121,7 @@ export function ModelsStep({ nav, dl, strictOffline }: { nav: StepNav; dl: Model
         {dl.models.map((m) => (
           <ModelRow
             key={m.model.id}
-            purpose={t(`onboarding.models.roles.${m.model.role as "asr" | "diarization" | "llm"}`, { defaultValue: m.model.role })}
+            purpose={t(`onboarding.models.roles.${m.model.role as "asr" | "diarization" | "llm" | "embed" | "voice"}`)}
             name={m.model.id}
             size={formatBytes(m.model.size, i18n.language)}
             status={rowStatus(m, downloading)}

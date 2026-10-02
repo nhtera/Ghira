@@ -520,7 +520,9 @@
       "roles": {
         "asr": "Chuyển giọng nói thành văn bản",
         "diarization": "Nhận diện người nói",
-        "llm": "Viết ghi chú họp"
+        "llm": "Viết ghi chú họp",
+        "embed": "Tìm theo ý nghĩa",
+        "voice": "Nhận ra giọng nói"
       },
       "started": "Đã bắt đầu tải."
     },

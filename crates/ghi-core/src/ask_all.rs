@@ -641,7 +641,8 @@ mod tests {
                 vec,
             })
             .collect();
-        s.put_embeddings(&m, FakeEmbedder::MODEL, version, rows)
+        let index_gen = s.index_gen(&m).unwrap();
+        s.put_embeddings(&m, FakeEmbedder::MODEL, version, index_gen, rows)
             .unwrap();
         m
     }
@@ -740,6 +741,28 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(run(people), vec![a]);
+    }
+
+    /// People made by naming speakers (14c), not by `add_person`, scope Ask too.
+    #[test]
+    fn person_scope_works_for_people_made_by_renaming() {
+        let (_tmp, s) = open();
+        let a = meeting(&s, "Lan a", DAY, None, &["chốt ngân sách"]);
+        let b = meeting(&s, "Minh b", 5 * DAY, None, &["ngân sách giữ nguyên"]);
+        for m in [&a, &b] {
+            let sp = s.speakers(m).unwrap().remove(0);
+            s.rename_speaker(&sp.gid, Some(if m == &a { "Lan" } else { "Minh" }))
+                .unwrap();
+        }
+        let person = s.find_person_by_name("Lan").unwrap().unwrap();
+        let mut fake = FakeEmbedder::new();
+        let scope = Scope {
+            person_gids: vec![person],
+            ..Default::default()
+        };
+        let p = retrieve(&s, Some(&mut fake), "ngân sách", &scope, 10).unwrap();
+        let found: Vec<String> = p.into_iter().map(|p| p.meeting_gid).collect();
+        assert_eq!(found, vec![a]);
     }
 
     #[test]

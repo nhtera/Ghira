@@ -157,25 +157,35 @@ impl KeyRing {
 
     /// Unwraps with the current secret, or during a rotation the previous one.
     pub fn unwrap_dek(&self, wrapped: &[u8], meeting_gid: &str) -> Result<Dek, StoreError> {
-        match self.unwrap_with(&self.wrap, wrapped, meeting_gid) {
+        self.unwrap_aad(wrapped, &wrap_aad(meeting_gid))
+    }
+
+    /// Wraps a voice profile's key for `voice_profiles.key_wrapped`, bound to
+    /// the profile gid (AAD `voice:{gid}`).
+    pub fn wrap_voice_key(&self, key: &Dek, profile_gid: &str) -> Vec<u8> {
+        rowcrypt::seal(
+            &self.wrap_key(&self.wrap),
+            key.as_bytes(),
+            &voice_wrap_aad(profile_gid),
+        )
+    }
+
+    /// Like [`Self::unwrap_dek`], for a voice profile key.
+    pub fn unwrap_voice_key(&self, wrapped: &[u8], profile_gid: &str) -> Result<Dek, StoreError> {
+        self.unwrap_aad(wrapped, &voice_wrap_aad(profile_gid))
+    }
+
+    fn unwrap_aad(&self, wrapped: &[u8], aad: &[u8]) -> Result<Dek, StoreError> {
+        match self.unwrap_with(&self.wrap, wrapped, aad) {
             Err(StoreError::Decrypt) if self.prev_wrap.is_some() => {
-                self.unwrap_with(self.prev_wrap.as_ref().unwrap(), wrapped, meeting_gid)
+                self.unwrap_with(self.prev_wrap.as_ref().unwrap(), wrapped, aad)
             }
             r => r,
         }
     }
 
-    fn unwrap_with(
-        &self,
-        secret: &Secret,
-        wrapped: &[u8],
-        meeting_gid: &str,
-    ) -> Result<Dek, StoreError> {
-        let bytes = Zeroizing::new(rowcrypt::open(
-            &self.wrap_key(secret),
-            wrapped,
-            &wrap_aad(meeting_gid),
-        )?);
+    fn unwrap_with(&self, secret: &Secret, wrapped: &[u8], aad: &[u8]) -> Result<Dek, StoreError> {
+        let bytes = Zeroizing::new(rowcrypt::open(&self.wrap_key(secret), wrapped, aad)?);
         let arr: [u8; 32] = bytes
             .as_slice()
             .try_into()
@@ -258,6 +268,10 @@ impl KeyRing {
 
 fn wrap_aad(meeting_gid: &str) -> Vec<u8> {
     format!("dek:{meeting_gid}").into_bytes()
+}
+
+fn voice_wrap_aad(profile_gid: &str) -> Vec<u8> {
+    format!("voice:{profile_gid}").into_bytes()
 }
 
 /// How the stored master key is protected.

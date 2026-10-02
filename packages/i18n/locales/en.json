@@ -536,7 +536,9 @@
       "roles": {
         "asr": "Speech to text",
         "diarization": "Who said what",
-        "llm": "Meeting notes"
+        "llm": "Meeting notes",
+        "embed": "Search by meaning",
+        "voice": "Recognising voices"
       },
       "started": "Download started."
     },

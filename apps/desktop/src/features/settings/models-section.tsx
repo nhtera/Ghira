@@ -66,7 +66,7 @@ export function ModelsSection() {
             return (
               <div key={m.model.id}>
                 <ModelRow
-                  purpose={t(`onboarding.models.roles.${m.model.role as "asr" | "diarization" | "llm"}`, { defaultValue: m.model.role })}
+                  purpose={t(`onboarding.models.roles.${m.model.role as "asr" | "diarization" | "llm" | "embed" | "voice"}`)}
                   name={lic?.name ?? m.model.id}
                   size={formatBytes(m.model.size, i18n.language)}
                   license={lic?.license}

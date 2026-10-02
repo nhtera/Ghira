@@ -50,7 +50,9 @@ fn round_trip_is_exact_and_ordered() {
     let gid = ready_meeting(&store, "A");
     let v = version(&store, &gid);
     let rows = vec![chunk(1, 0.25), chunk(0, 0.75)];
-    store.put_embeddings(&gid, MODEL, v, rows).unwrap();
+    store
+        .put_embeddings(&gid, MODEL, v, store.index_gen(&gid).unwrap(), rows)
+        .unwrap();
     let got = store.embeddings(&gid, MODEL).unwrap();
     assert_eq!(got, vec![chunk(0, 0.75), chunk(1, 0.25)]);
     assert!(store.embeddings(&gid, "other-model").unwrap().is_empty());
@@ -79,14 +81,27 @@ fn reindexing_replaces_that_models_rows_only() {
             &gid,
             MODEL,
             v,
+            store.index_gen(&gid).unwrap(),
             vec![chunk(0, 1.0), chunk(1, 2.0), chunk(2, 3.0)],
         )
         .unwrap();
     store
-        .put_embeddings(&gid, "other", v, vec![chunk(0, 9.0)])
+        .put_embeddings(
+            &gid,
+            "other",
+            v,
+            store.index_gen(&gid).unwrap(),
+            vec![chunk(0, 9.0)],
+        )
         .unwrap();
     store
-        .put_embeddings(&gid, MODEL, v, vec![chunk(0, 4.0)])
+        .put_embeddings(
+            &gid,
+            MODEL,
+            v,
+            store.index_gen(&gid).unwrap(),
+            vec![chunk(0, 4.0)],
+        )
         .unwrap();
     assert_eq!(store.embeddings(&gid, MODEL).unwrap(), vec![chunk(0, 4.0)]);
     assert_eq!(
@@ -99,6 +114,7 @@ fn reindexing_replaces_that_models_rows_only() {
                 &gid,
                 MODEL,
                 v,
+                store.index_gen(&gid).unwrap(),
                 vec![
                     chunk(0, 1.0),
                     EmbeddingChunk {
@@ -137,7 +153,13 @@ fn needing_embeddings_follows_version_and_status() {
 
     let v = version(&store, &ready);
     store
-        .put_embeddings(&ready, MODEL, v, vec![chunk(0, 1.0)])
+        .put_embeddings(
+            &ready,
+            MODEL,
+            v,
+            store.index_gen(&ready).unwrap(),
+            vec![chunk(0, 1.0)],
+        )
         .unwrap();
     assert!(need(&store).is_empty());
     assert_eq!(
@@ -162,7 +184,13 @@ fn needing_embeddings_follows_version_and_status() {
     let v2 = version(&store, &ready);
     assert!(v2 > v);
     store
-        .put_embeddings(&ready, MODEL, v2, vec![chunk(0, 2.0)])
+        .put_embeddings(
+            &ready,
+            MODEL,
+            v2,
+            store.index_gen(&ready).unwrap(),
+            vec![chunk(0, 2.0)],
+        )
         .unwrap();
     assert!(need(&store).is_empty());
 }
@@ -176,7 +204,13 @@ fn gone_after_delete_meeting() {
     for g in [&keep, &gone] {
         let v = version(&store, g);
         store
-            .put_embeddings(g, MODEL, v, vec![chunk(0, 1.0)])
+            .put_embeddings(
+                g,
+                MODEL,
+                v,
+                store.index_gen(g).unwrap(),
+                vec![chunk(0, 1.0)],
+            )
             .unwrap();
     }
     store.delete_meeting(&gone).unwrap();
@@ -197,7 +231,13 @@ fn unreadable_after_the_key_is_shredded() {
     for g in [&keep, &shred] {
         let v = version(&store, g);
         store
-            .put_embeddings(g, MODEL, v, vec![chunk(0, 1.0)])
+            .put_embeddings(
+                g,
+                MODEL,
+                v,
+                store.index_gen(g).unwrap(),
+                vec![chunk(0, 1.0)],
+            )
             .unwrap();
     }
     // The crash window of a delete: key destroyed, rows not yet removed.
@@ -222,6 +262,7 @@ fn discarding_the_end_of_a_meeting_drops_chunks_that_reach_into_it() {
             &gid,
             MODEL,
             v,
+            store.index_gen(&gid).unwrap(),
             vec![chunk(0, 1.0), chunk(1, 2.0), chunk(2, 3.0)],
         )
         .unwrap();
@@ -230,4 +271,87 @@ fn discarding_the_end_of_a_meeting_drops_chunks_that_reach_into_it() {
         .discard_after(&gid, 70_000, 130_000, &[], false)
         .unwrap();
     assert_eq!(store.embeddings(&gid, MODEL).unwrap(), vec![chunk(0, 1.0)]);
+}
+
+// ---------------------------------------------------------- index generation
+
+#[test]
+fn vectors_built_before_a_change_are_refused_and_stale_rows_are_reindexed() {
+    use ghi_store::store::NewSpeaker;
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let gid = ready_meeting(&store, "A");
+    let v = version(&store, &gid);
+    let sp = store.add_speaker(&gid, NewSpeaker::default()).unwrap();
+    let g0 = store.index_gen(&gid).unwrap();
+    store
+        .put_embeddings(&gid, MODEL, v, g0, vec![chunk(0, 1.0)])
+        .unwrap();
+    assert!(
+        store
+            .meetings_needing_embeddings(MODEL, 10)
+            .unwrap()
+            .is_empty()
+    );
+
+    // Every change to what a chunk's text is built from bumps the generation,
+    // makes the stored rows stale, and refuses an indexer that read before it.
+    let seg = store.segments(&gid).unwrap()[0].gid.clone();
+    type Change<'a> = (&'a str, Box<dyn Fn() + 'a>);
+    let changes: Vec<Change> = vec![
+        (
+            "rename",
+            Box::new(|| store.rename_speaker(&sp, Some("An")).unwrap()),
+        ),
+        (
+            "edit text",
+            Box::new(|| store.update_segment_text(&seg, "đã sửa").unwrap()),
+        ),
+        (
+            "move line",
+            Box::new(|| store.set_segment_speaker(&seg, Some(&sp)).unwrap()),
+        ),
+        (
+            "not a person",
+            Box::new(|| store.set_speaker_not_person(&sp, true).unwrap()),
+        ),
+        ("me", Box::new(|| store.set_speaker_me(&sp).unwrap())),
+        (
+            "split",
+            Box::new(|| {
+                store
+                    .split_speaker(&sp, std::slice::from_ref(&seg), 1)
+                    .unwrap();
+            }),
+        ),
+    ];
+    for (what, change) in changes {
+        let before = store.index_gen(&gid).unwrap();
+        store
+            .put_embeddings(&gid, MODEL, v, before, vec![chunk(0, 1.0)])
+            .unwrap();
+        assert!(
+            store
+                .meetings_needing_embeddings(MODEL, 10)
+                .unwrap()
+                .is_empty(),
+            "{what}"
+        );
+        change();
+        assert!(store.index_gen(&gid).unwrap() > before, "{what}");
+        assert_eq!(
+            store.meetings_needing_embeddings(MODEL, 10).unwrap(),
+            vec![gid.clone()],
+            "{what}: stale rows are rebuilt"
+        );
+        assert!(
+            matches!(
+                store.put_embeddings(&gid, MODEL, v, before, vec![chunk(0, 2.0)]),
+                Err(StoreError::IndexStale)
+            ),
+            "{what}"
+        );
+        // Nothing was stored by the refused call.
+        assert_eq!(store.embeddings(&gid, MODEL).unwrap(), vec![chunk(0, 1.0)]);
+    }
 }

@@ -48,3 +48,17 @@ file = "Qwen3-Embedding-0.6B-Q8_0.gguf"
 sha256 = "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439"
 size = 639150592
 license = "Apache-2.0"
+
+# Speaker voiceprints (phase 14c): CAM++ zh_en common_advanced (3D-Speaker),
+# 192-d embeddings from 80-mel fbank, run by ghi-speech `voice` (tract).
+# Needed only for voice profiles, never by the final pass. The pinned host has
+# no licence card; the owner mirrors it with one (docs/release checklist).
+[[model]]
+id = "campplus-zh-en"
+role = "voice"
+repo = "csukuangfj/speaker-embedding-models"
+revision = "0743f301363dec56491a490f6d6cbc9d67f9a3bf"
+file = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
+sha256 = "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2"
+size = 28281164
+license = "Apache-2.0"

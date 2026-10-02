@@ -2414,6 +2414,14 @@
    ]
   },
   {
+   "name": "minisign-verify",
+   "version": "0.2.5",
+   "license": "MIT",
+   "licenseKeys": [
+    "MIT-3223a1"
+   ]
+  },
+  {
    "name": "miniz_oxide",
    "version": "0.8.9",
    "license": "MIT OR Zlib OR Apache-2.0",
@@ -2663,7 +2671,23 @@
    ]
   },
   {
+   "name": "objc2-local-authentication",
+   "version": "0.3.2",
+   "license": "Zlib OR Apache-2.0 OR MIT",
+   "licenseKeys": [
+    "Apache-2.0-b8ceb1"
+   ]
+  },
+  {
    "name": "objc2-quartz-core",
+   "version": "0.3.2",
+   "license": "Zlib OR Apache-2.0 OR MIT",
+   "licenseKeys": [
+    "Apache-2.0-b8ceb1"
+   ]
+  },
+  {
+   "name": "objc2-security",
    "version": "0.3.2",
    "license": "Zlib OR Apache-2.0 OR MIT",
    "licenseKeys": [
@@ -6245,6 +6269,15 @@
  ],
  "models": [
   {
+   "id": "campplus-zh-en",
+   "name": "csukuangfj/speaker-embedding-models",
+   "license": "Apache-2.0",
+   "url": "https://huggingface.co/csukuangfj/speaker-embedding-models",
+   "licenseKeys": [
+    "Apache-2.0-17c517"
+   ]
+  },
+  {
    "id": "nemotron-3-diarization",
    "name": "nvidia/Nemotron-3-Diarization",
    "license": "OpenMDW-1.1",
@@ -6263,6 +6296,15 @@
    "name": "Qwen/Qwen3-4B-GGUF",
    "license": "Apache-2.0",
    "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF",
+   "licenseKeys": [
+    "Apache-2.0-17c517"
+   ]
+  },
+  {
+   "id": "qwen3-embedding-0.6b",
+   "name": "Qwen/Qwen3-Embedding-0.6B-GGUF",
+   "license": "Apache-2.0",
+   "url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF",
    "licenseKeys": [
     "Apache-2.0-17c517"
    ]

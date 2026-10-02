@@ -98,6 +98,17 @@ jobs:
           cargo build --release --locked -p ghi-cli
           exe=""; [[ "$RUNNER_OS" == "Windows" ]] && exe=".exe"
           ./tools/scripts/check-no-dev-key.sh "target/release/ghi$exe" "target/release/ghi-desktop$exe"
+      # Speaker embedder (pure Rust, no native deps). Without the model the
+      # parity tests skip; the fbank test still runs.
+      - name: Voice embedder (tract)
+        run: |
+          cargo clippy --locked -p ghi-speech --features voice --all-targets -- -D warnings
+          cargo test --locked -p ghi-speech --features voice
+      # Voice profiles in core and the CLI (matching, learning, `ghi voice`).
+      - name: Voice profiles (core, CLI)
+        run: |
+          cargo clippy --locked -p ghi-core -p ghi-cli --features ghi-cli/voice --all-targets -- -D warnings
+          cargo test --locked -p ghi-core -p ghi-cli --features ghi-cli/voice
       - name: NeMo-Speech.cpp build
         shell: bash
         env:

@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Speech engines behind backend-neutral stream traits (RT-15).
 //!
-//! Backends: `nemo` (NeMo-Speech.cpp over FFI, feature `nemo`). The `sherpa`
+//! Backends: `nemo` (NeMo-Speech.cpp over FFI, feature `nemo`); `voice`
+//! (speaker embeddings, CAM++ over tract, feature `voice`). The `sherpa`
 //! backend (sherpa-onnx: zipformer-vi fallback, speaker embeddings) is not
 //! built yet. Audio is mono `f32` PCM; the engines resample 8–96 kHz input.
 
 #[cfg(feature = "nemo")]
 pub mod nemo;
+#[cfg(feature = "voice")]
+pub mod voice;
 
 /// Crate version, used by `ghi --version` and the About screen.
 pub fn version() -> &'static str {

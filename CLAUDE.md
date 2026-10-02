@@ -37,6 +37,11 @@ cargo deny check licenses bans advisories sources
 # speech engines (phase 3; needs tools/scripts/build-nemo.sh and fetch-models.sh first):
 cargo clippy -p ghi-speech -p ghi-cli --all-targets --features ghi-cli/nemo -- -D warnings
 cargo test -p ghi-speech -p ghi-cli --features ghi-cli/nemo
+# speaker embedder (phase 14c; parity tests skip without fetch-models.sh campplus-zh-en):
+cargo clippy -p ghi-speech --features voice --all-targets -- -D warnings
+cargo test -p ghi-speech --features voice
+cargo clippy -p ghi-core -p ghi-cli --features ghi-cli/voice --all-targets -- -D warnings
+cargo test -p ghi-core -p ghi-cli --features ghi-cli/voice
 # iOS spike (phase 7; needs Xcode + xcodegen):
 cargo clippy -p ghi-mobile --features nemo --target aarch64-apple-ios -- -D warnings
 apps/mobile/scripts/build-ios.sh --sim

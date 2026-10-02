@@ -129,6 +129,9 @@ pub struct Preset {
     /// Registry id of the embedding model for semantic search; `None` on
     /// Light, which keeps full-text search only.
     pub embed_id: Option<&'static str>,
+    /// Registry id of the speaker-voice model (voice profiles, phase 14c).
+    /// Not a speech model: the final pass never waits for it.
+    pub voice_id: &'static str,
     /// Memory Ghira plans to use at most on this tier.
     pub ram_budget_bytes: u64,
     /// Registry ids of the speech models (ASR, diarization).
@@ -147,6 +150,7 @@ pub fn preset(tier: Tier) -> Preset {
         final_asr_chunk_ms: 1120,
         llm_id: "qwen3-4b",
         embed_id: (tier != Tier::Light).then_some("qwen3-embedding-0.6b"),
+        voice_id: "campplus-zh-en",
         ram_budget_bytes,
         speech_models: vec!["nemotron-3.5-asr".into(), "nemotron-3-diarization".into()],
     }

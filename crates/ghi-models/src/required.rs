@@ -27,7 +27,9 @@ pub struct RequiredModel {
 }
 
 /// The models a tier needs: speech first, then the LLM, then the embedding
-/// model (Balanced and Max). Cheap: file sizes only.
+/// model (Balanced and Max), then the voice model. The voice model is not in
+/// `Preset::speech_models`: the final pass and `speech_ready` do not wait on
+/// it. Cheap: file sizes only.
 pub fn required_for_tier(dir: &Path, tier: Tier) -> Vec<RequiredModel> {
     let p = preset(tier);
     p.speech_models
@@ -35,6 +37,7 @@ pub fn required_for_tier(dir: &Path, tier: Tier) -> Vec<RequiredModel> {
         .map(String::as_str)
         .chain([p.llm_id])
         .chain(p.embed_id)
+        .chain([p.voice_id])
         .filter_map(find)
         .map(|m| {
             let dest = path_in(dir, &m);
@@ -77,7 +80,8 @@ mod tests {
                 "nemotron-3.5-asr",
                 "nemotron-3-diarization",
                 "qwen3-4b",
-                "qwen3-embedding-0.6b"
+                "qwen3-embedding-0.6b",
+                "campplus-zh-en"
             ]
         );
         let light = required_for_tier(dir.path(), Tier::Light);
@@ -91,5 +95,19 @@ mod tests {
         let r = all.iter().find(|r| r.id == "qwen3-4b").unwrap();
         assert_eq!((r.installed, r.partial_bytes), (false, 1234));
         assert_eq!(r.role, "llm");
+    }
+
+    #[test]
+    fn voice_model_is_listed_last_but_not_a_speech_model() {
+        let dir = tempfile::tempdir().unwrap();
+        for tier in [Tier::Light, Tier::Balanced, Tier::Max] {
+            let p = preset(tier);
+            assert_eq!(p.voice_id, "campplus-zh-en");
+            assert_eq!(find(p.voice_id).unwrap().role, "voice");
+            assert!(!p.speech_models.iter().any(|id| id == p.voice_id));
+            let all = required_for_tier(dir.path(), tier);
+            assert_eq!(all.last().unwrap().id, "campplus-zh-en");
+            assert_eq!(all.last().unwrap().role, "voice");
+        }
     }
 }

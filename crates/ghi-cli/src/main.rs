@@ -183,6 +183,12 @@ enum Command {
     /// Import an audio/video file as a meeting (`ghi.import/1`); --process
     /// transcribes it and writes notes right away.
     Import(cmd::session::ImportArgs),
+    /// Voice profiles: enroll Me, delete, compare two recordings (`ghi.voice-*/1`).
+    #[cfg(feature = "voice")]
+    Voice {
+        #[command(subcommand)]
+        action: cmd::voice::Action,
+    },
 }
 
 #[derive(Subcommand)]
@@ -347,6 +353,8 @@ fn run(command: Command) -> Result<(), ErrorDoc> {
         Command::Session(args) => cmd::session::run(&args),
         Command::Jobs(args) => cmd::session::jobs(&args),
         Command::Import(args) => cmd::session::import(&args),
+        #[cfg(feature = "voice")]
+        Command::Voice { action } => cmd::voice::run(&action),
         Command::Store { dir, action } => match action {
             StoreAction::List => cmd::store::list(&dir),
             StoreAction::Search { query, limit } => cmd::store::search(&dir, &query, limit),

@@ -550,6 +550,7 @@ impl Core {
                     },
                     chunk_s: 600.0,
                     ready: Arc::new(move || speech_ready(&models)),
+                    voice: None,
                 }),
                 Arc::new(ghi_core::notes_job::NotesJob {
                     kind: ghi_core::notes_job::NOTES_FINAL_JOB,

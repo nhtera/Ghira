@@ -138,6 +138,14 @@ mod tests {
     }
 
     #[test]
+    fn voice_model_is_registered() {
+        let m = find("campplus-zh-en").unwrap();
+        assert_eq!(m.role, "voice");
+        assert_eq!(m.license, "Apache-2.0");
+        assert_eq!(m.size, 28_281_164);
+    }
+
+    #[test]
     fn llm_declares_its_chat_format() {
         let m = find("qwen3-4b").unwrap();
         assert_eq!(m.role, "llm");

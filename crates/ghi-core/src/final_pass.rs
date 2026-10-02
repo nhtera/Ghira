@@ -11,8 +11,11 @@
 //! vocabulary → transcript v2 → `notes_final` queued.
 //!
 //! - Lines the user edited are kept as written; v2 lines under them are dropped.
-//! - Call mode: the mic track is Me (no voice matching yet); the far track is
-//!   diarized. Room mode: the mic track is diarized.
+//! - Call mode: the mic track is Me; the far track is diarized. Room mode:
+//!   the mic track is diarized.
+//! - Voice step (14c, `voice_step`): after the carry-over, unnamed clusters
+//!   are matched with Me's profile (room mode) and, with the third-party flag
+//!   on, others'; Me learns from the mic. Never blocks the pass.
 //! - Preempted by a recording, the pass yields and starts over later (it
 //!   is short next to the meeting: ~4 min for 60 min on an M4 Pro).
 
@@ -33,6 +36,7 @@ use crate::notes_job::NOTES_FINAL_JOB;
 use crate::session::JOB_PAYLOAD_VERSION;
 use crate::speakers::COLOR_ORDER;
 use crate::vocab::Vocabulary;
+use crate::voice_step::{Input as VoiceInput, VoiceStep};
 
 const RATE: f64 = SAMPLE_RATE as f64;
 /// Store setting holding the custom vocabulary (a JSON list of strings).
@@ -47,6 +51,8 @@ pub struct FinalPassJob {
     pub ready: crate::jobs::Ready,
     /// Target ASR chunk length (seconds).
     pub chunk_s: f64,
+    /// Voice matching (phase 14c); `None` leaves speakers as carried over.
+    pub voice: Option<VoiceStep>,
 }
 
 /// A v2 line before it is stored.
@@ -372,6 +378,12 @@ impl JobHandler for FinalPassJob {
         // The user's terms and the names they gave speakers (RT-14).
         let vocab =
             Some(Vocabulary::new(&crate::vocab::effective_terms(store)?)).filter(|v| !v.is_empty());
+        let me_spans: Vec<(i64, i64)> = lines
+            .iter()
+            .filter(|l| l.me)
+            .filter(|l| !discarded.iter().any(|&(a, b)| a < l.t1_ms && l.t0_ms < b))
+            .map(|l| (l.t0_ms, l.t1_ms))
+            .collect();
         let mut v2: Vec<NewSegment> = lines
             .into_iter()
             .filter(|l| {
@@ -422,6 +434,25 @@ impl JobHandler for FinalPassJob {
         v2.sort_by_key(|s| s.t0_ms);
         if ctx.preempted() {
             return restart();
+        }
+        // Names and Me are decided before the transcript is stored, so the
+        // notes that follow see them.
+        if let Some(voice) = &self.voice {
+            let input = VoiceInput {
+                meeting: &meeting,
+                // Without a far-side track a call is a room: nobody is Me.
+                call: call && diar_track != Track::Mic,
+                file_source: m.source == "file",
+                pcm: &pcm,
+                diar_track,
+                segs: &segs,
+                me_spans: &me_spans,
+                label_gid: &label_gid,
+                v2: &v2,
+            };
+            if !voice.run(ctx, &input)? {
+                return restart();
+            }
         }
         let lines = v2.len();
         store.replace_transcript(&meeting, v2).map_err(err)?;

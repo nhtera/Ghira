@@ -23,7 +23,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, Transaction};
 
 use crate::db;
-use crate::{Result, StoreError};
+use crate::store::{Store, now_ms};
+use crate::{Result, StoreError, new_gid};
 
 /// How many pre-migration snapshots are kept.
 pub const KEEP_SNAPSHOTS: usize = 3;
@@ -65,7 +66,88 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 5,
         step: Step::Sql(include_str!("migrations/0005_embeddings.sql")),
     },
+    Migration {
+        version: 6,
+        step: Step::Func(people_voice),
+    },
 ];
+
+/// Gives every person its `name_key`. Persons are not created by production
+/// code before this version, but if two have the same key the later ones are
+/// merged into the first (speakers and suggestions re-pointed, tombstone).
+fn fill_name_keys(tx: &Transaction) -> rusqlite::Result<()> {
+    let rows: Vec<(i64, String, String)> = tx
+        .prepare("SELECT id, gid, name FROM persons WHERE is_me = 0 ORDER BY id")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut first: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for (id, gid, name) in rows {
+        let key = crate::people::name_key(&name);
+        match first.get(&key) {
+            Some(keep) => {
+                tx.execute(
+                    "UPDATE speakers SET person_id = ?1 WHERE person_id = ?2",
+                    rusqlite::params![keep, id],
+                )?;
+                tx.execute(
+                    "UPDATE speakers SET suggest_person_id = ?1 WHERE suggest_person_id = ?2",
+                    rusqlite::params![keep, id],
+                )?;
+                let lamport = Store::alloc_lamport(tx, 1).map_err(|e| match e {
+                    StoreError::Db(e) => e,
+                    other => rusqlite::Error::ToSqlConversionFailure(other.to_string().into()),
+                })?;
+                tx.execute(
+                    "INSERT OR IGNORE INTO tombstones (gid, kind, lamport, deleted_at)
+                     VALUES (?1, 'person', ?2, ?3)",
+                    rusqlite::params![gid, lamport, now_ms()],
+                )?;
+                tx.execute("DELETE FROM persons WHERE id = ?1", [id])?;
+            }
+            None => {
+                tx.execute(
+                    "UPDATE persons SET name_key = ?1 WHERE id = ?2",
+                    rusqlite::params![key, id],
+                )?;
+                first.insert(key, id);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 0006: people and voice profiles. The old (never written) voice tables must
+/// be empty, because `voice_embeddings` is recreated.
+fn people_voice(tx: &Transaction) -> rusqlite::Result<()> {
+    for table in ["voice_profiles", "voice_embeddings"] {
+        let n: i64 = tx.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))?;
+        if n > 0 {
+            return Err(rusqlite::Error::ToSqlConversionFailure(
+                format!(
+                    "refusing to migrate: {table} has {n} row(s) written by an unknown \
+                     build, and this step would drop them"
+                )
+                .into(),
+            ));
+        }
+    }
+    tx.execute_batch(include_str!("migrations/0006_people_voice.sql"))?;
+    fill_name_keys(tx)?;
+    let lamport = Store::alloc_lamport(tx, 1).map_err(|e| match e {
+        StoreError::Db(e) => e,
+        other => rusqlite::Error::ToSqlConversionFailure(other.to_string().into()),
+    })?;
+    tx.execute(
+        "INSERT INTO persons (gid, name, color_slot, lamport, is_me, created_at)
+         VALUES (?1, '', 0, ?2, 1, ?3)",
+        rusqlite::params![new_gid(), lamport, now_ms()],
+    )?;
+    tx.execute(
+        "UPDATE speakers SET person_id = (SELECT id FROM persons WHERE is_me = 1) WHERE is_me = 1",
+        [],
+    )?;
+    Ok(())
+}
 
 /// The schema version this build expects.
 pub fn latest_version() -> u32 {

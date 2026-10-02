@@ -197,6 +197,17 @@ pub struct Speaker {
     pub not_person: bool,
     /// Merged into this speaker (its lines moved there).
     pub merged_into: Option<String>,
+    /// "Sounds like ..." from the final pass's voice matching.
+    pub suggestion: Option<SpeakerSuggestion>,
+}
+
+/// A voice-match suggestion on a speaker (never applied by itself).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpeakerSuggestion {
+    pub person_gid: String,
+    /// The person's name (empty for Me).
+    pub person_name: String,
+    pub score: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -320,6 +331,8 @@ pub struct Store {
     conn: Mutex<Connection>,
     /// Unwrapped DEKs by meeting rowid; zeroized on drop / on shred.
     deks: Mutex<HashMap<i64, Dek>>,
+    /// Unwrapped voice profile keys by profile rowid; zeroized on drop / delete.
+    voice_keys: Mutex<HashMap<i64, Dek>>,
     /// Exclusive lock on `<dir>/.lock`, held for the store's lifetime.
     _lock: File,
 }
@@ -390,6 +403,7 @@ impl Store {
             protection,
             conn: Mutex::new(conn),
             deks: Mutex::new(HashMap::new()),
+            voice_keys: Mutex::new(HashMap::new()),
             _lock: lock,
         };
         let include = matches!(
@@ -398,6 +412,7 @@ impl Store {
         );
         backup::exclude_from_backup(dir, !include)?;
         store.finish_pending_deletes();
+        store.finish_pending_voice_deletes();
         // A crash mid-rotation left the ring holding two wrap secrets: finish
         // (best effort; both secrets keep working until it succeeds).
         if store.ring().is_rotating() {
@@ -480,12 +495,16 @@ impl Store {
     }
 
     /// Lock order everywhere: connection, then ring, then DEK cache.
-    fn ring(&self) -> MutexGuard<'_, KeyRing> {
+    pub(crate) fn ring(&self) -> MutexGuard<'_, KeyRing> {
         self.ring.lock().unwrap_or_else(|p| p.into_inner())
     }
 
     fn deks(&self) -> MutexGuard<'_, HashMap<i64, Dek>> {
         self.deks.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    pub(crate) fn voice_keys(&self) -> MutexGuard<'_, HashMap<i64, Dek>> {
+        self.voice_keys.lock().unwrap_or_else(|p| p.into_inner())
     }
 
     /// The meeting's DEK (from the cache or unwrapped from `dek_wrapped`).
@@ -781,14 +800,33 @@ impl Store {
 
     // ------------------------------------------------ persons & speakers
 
+    /// Adds a person (named; not Me), or returns the one that already has this
+    /// name (by [`crate::people::name_key`]). Production code gets persons by
+    /// renaming speakers; this is for callers that hold only a name.
     pub fn add_person(&self, name: &str, color_slot: i64) -> Result<String> {
-        let gid = new_gid();
+        let name = fold::nfc(name.trim());
+        if name.is_empty() {
+            return Err(StoreError::Invalid("a person needs a name".into()));
+        }
         let mut conn = self.conn();
         let tx = conn.transaction()?;
+        let key = crate::people::name_key(&name);
+        let existing: Option<String> = tx
+            .query_row(
+                "SELECT gid FROM persons WHERE name_key = ?1 AND is_me = 0",
+                [&key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(gid) = existing {
+            return Ok(gid);
+        }
+        let gid = new_gid();
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tx.execute(
-            "INSERT INTO persons (gid, name, color_slot, lamport) VALUES (?1, ?2, ?3, ?4)",
-            params![gid, name, color_slot, lamport],
+            "INSERT INTO persons (gid, name, color_slot, lamport, created_at, name_key)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![gid, name, color_slot, lamport, now_ms(), key],
         )?;
         tx.commit()?;
         Ok(gid)
@@ -804,9 +842,14 @@ impl Store {
             .as_deref()
             .map(|n| seal_text(&dek, n, &row_aad("speakers", "display_name_ct", &gid)));
         let tx = conn.transaction()?;
-        let person_id = match &new.person_gid {
-            Some(p) => Some(id_of(&tx, "persons", p)?),
-            None => None,
+        // A Me speaker is always linked to the Me person.
+        let person_id = if new.is_me {
+            Some(crate::people::me_id(&tx)?)
+        } else {
+            match &new.person_gid {
+                Some(p) => Some(id_of(&tx, "persons", p)?),
+                None => None,
+            }
         };
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tx.execute(
@@ -818,23 +861,48 @@ impl Store {
         Ok(gid)
     }
 
+    /// Links a speaker to a person (or with `None` unlinks it). Me speakers
+    /// and "not a person" speakers can't be linked, nothing links to Me this
+    /// way (use [`Store::set_speaker_me`]), and a person left with no speaker
+    /// and no voice profile is removed.
     pub fn set_speaker_person(&self, speaker_gid: &str, person_gid: Option<&str>) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
+        let (sid, is_me, not_person, old): (i64, bool, bool, Option<i64>) = tx
+            .query_row(
+                "SELECT id, is_me, not_person, person_id FROM speakers WHERE gid = ?1",
+                [speaker_gid],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound {
+                kind: "speaker",
+                gid: speaker_gid.to_string(),
+            })?;
+        if is_me {
+            return Err(StoreError::Invalid(
+                "a Me speaker stays linked to Me".into(),
+            ));
+        }
         let person_id = match person_gid {
-            Some(p) => Some(id_of(&tx, "persons", p)?),
+            Some(p) => {
+                let id = id_of(&tx, "persons", p)?;
+                if not_person || id == crate::people::me_id(&tx)? {
+                    return Err(StoreError::Invalid(
+                        "this speaker can't be linked to that person".into(),
+                    ));
+                }
+                Some(id)
+            }
             None => None,
         };
         let lamport = Store::alloc_lamport(&tx, 1)?;
-        let n = tx.execute(
-            "UPDATE speakers SET person_id = ?1, lamport = ?2 WHERE gid = ?3",
-            params![person_id, lamport, speaker_gid],
+        tx.execute(
+            "UPDATE speakers SET person_id = ?1, lamport = ?2 WHERE id = ?3",
+            params![person_id, lamport, sid],
         )?;
-        if n == 0 {
-            return Err(StoreError::NotFound {
-                kind: "speaker",
-                gid: speaker_gid.to_string(),
-            });
+        if let Some(old) = old.filter(|o| Some(*o) != person_id) {
+            crate::people::gc_persons(&tx, &[old])?;
         }
         tx.commit()?;
         Ok(())
@@ -846,9 +914,10 @@ impl Store {
         let dek = self.dek(&conn, m.id)?;
         let mut stmt = conn.prepare_cached(
             "SELECT s.gid, s.label_idx, s.display_name_ct, p.gid, s.color_slot, s.is_me,
-                    s.not_person, t.gid
+                    s.not_person, t.gid, sp.gid, sp.name, s.suggest_score
              FROM speakers s LEFT JOIN persons p ON p.id = s.person_id
              LEFT JOIN speakers t ON t.id = s.merged_into
+             LEFT JOIN persons sp ON sp.id = s.suggest_person_id
              WHERE s.meeting_id = ?1 ORDER BY s.label_idx, s.id",
         )?;
         let rows = stmt
@@ -862,12 +931,27 @@ impl Store {
                     r.get::<_, bool>(5)?,
                     r.get::<_, bool>(6)?,
                     r.get::<_, Option<String>>(7)?,
+                    r.get::<_, Option<String>>(8)?,
+                    r.get::<_, Option<String>>(9)?,
+                    r.get::<_, Option<f64>>(10)?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         rows.into_iter()
             .map(
-                |(gid, label_idx, ct, person_gid, color_slot, is_me, not_person, merged_into)| {
+                |(
+                    gid,
+                    label_idx,
+                    ct,
+                    person_gid,
+                    color_slot,
+                    is_me,
+                    not_person,
+                    merged_into,
+                    suggest_gid,
+                    suggest_name,
+                    suggest_score,
+                )| {
                     let display_name = ct
                         .map(|ct| {
                             open_text(&dek, &ct, &row_aad("speakers", "display_name_ct", &gid))
@@ -882,6 +966,11 @@ impl Store {
                         is_me,
                         not_person,
                         merged_into,
+                        suggestion: suggest_gid.map(|person_gid| SpeakerSuggestion {
+                            person_gid,
+                            person_name: suggest_name.unwrap_or_default(),
+                            score: suggest_score.unwrap_or(0.0) as f32,
+                        }),
                     })
                 },
             )
@@ -1297,6 +1386,7 @@ impl Store {
             "UPDATE segments SET text_ct = ?1, edited = 1, lamport = ?2 WHERE id = ?3",
             params![ct, lamport, id],
         )?;
+        crate::embeddings::bump_index_gen(&tx, meeting_id)?;
         tx.execute("DELETE FROM segments_fts WHERE rowid = ?1", [id])?;
         tx.execute(
             "INSERT INTO segments_fts (rowid, text_norm) VALUES (?1, ?2)",
@@ -1819,6 +1909,9 @@ impl Store {
         let mut conn = self.conn();
         let m = Store::meeting_ref(&conn, gid)?;
         let tx = conn.transaction()?;
+        // Persons met only in this meeting go with it (unless they hold a
+        // voice profile): their names are not under the meeting key.
+        let persons = crate::people::persons_of_meeting(&tx, m.id)?;
         tx.execute(
             "DELETE FROM segments_fts WHERE rowid IN (SELECT id FROM segments WHERE meeting_id = ?1)",
             [m.id],
@@ -1828,6 +1921,7 @@ impl Store {
             [m.id],
         )?;
         tx.execute("DELETE FROM meetings WHERE id = ?1", [m.id])?;
+        crate::people::gc_persons(&tx, &persons)?;
         tx.commit()?;
         migrate::purge_snapshots(&snapshots_dir(&self.dir))?;
         compact_locked(&conn)
@@ -1887,7 +1981,7 @@ impl Store {
     ///
     /// `recovery.bin` is rewritten with the rotating ring (both secrets)
     /// before the re-wrap, so a phrase restore works at every step.
-    fn rotate_wraps(&self, begin: bool) -> Result<()> {
+    pub(crate) fn rotate_wraps(&self, begin: bool) -> Result<()> {
         if begin {
             self.begin_wrap_rotation()?;
         }
@@ -1905,11 +1999,29 @@ impl Store {
             let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
             rows.collect::<rusqlite::Result<_>>()?
         };
+        let voice_rows: Vec<(i64, String, Vec<u8>)> = {
+            let mut stmt = conn.prepare(
+                "SELECT id, gid, key_wrapped FROM voice_profiles
+                 WHERE key_wrapped <> zeroblob(length(key_wrapped))",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
         let tx = conn.transaction()?;
         {
             let mut upd = tx.prepare("UPDATE meetings SET dek_wrapped = ?1 WHERE id = ?2")?;
-            let total = rows.len();
+            let mut upd_voice =
+                tx.prepare("UPDATE voice_profiles SET key_wrapped = ?1 WHERE id = ?2")?;
+            let total = rows.len() + voice_rows.len();
             let mut rewrapped = 0;
+            for (id, gid, wrapped) in voice_rows {
+                // Same rule as for meeting keys below.
+                let Ok(key) = ring.unwrap_voice_key(&wrapped, &gid) else {
+                    continue;
+                };
+                upd_voice.execute(params![ring.wrap_voice_key(&key, &gid), id])?;
+                rewrapped += 1;
+            }
             for (id, gid, wrapped) in rows {
                 // A key neither secret opens was wrapped by a secret destroyed
                 // earlier: it is already unreadable, and must not block the
@@ -1935,7 +2047,7 @@ impl Store {
 
     /// Starts a wrap-secret rotation (new secret, old one kept) and saves the
     /// ring. No-op when one is already open.
-    fn begin_wrap_rotation(&self) -> Result<()> {
+    pub(crate) fn begin_wrap_rotation(&self) -> Result<()> {
         let mut ring = self.ring();
         if ring.is_rotating() {
             return Ok(());
@@ -2077,7 +2189,10 @@ impl Store {
     pub fn delete_all(self, keystore: &dyn KeyStore, protection: Protection) -> Result<()> {
         {
             let conn = self.conn();
-            conn.execute_batch("UPDATE meetings SET dek_wrapped = zeroblob(length(dek_wrapped));")?;
+            conn.execute_batch(
+                "UPDATE meetings SET dek_wrapped = zeroblob(length(dek_wrapped));
+                 UPDATE voice_profiles SET key_wrapped = zeroblob(length(key_wrapped));",
+            )?;
             db::checkpoint(&conn)?;
         }
         let Store { dir, conn, .. } = self;
@@ -2193,7 +2308,7 @@ fn from_json<T: serde::de::DeserializeOwned>(s: &str) -> Result<T> {
     serde_json::from_str(s).map_err(|e| StoreError::Invalid(e.to_string()))
 }
 
-fn compact_locked(conn: &Connection) -> Result<()> {
+pub(crate) fn compact_locked(conn: &Connection) -> Result<()> {
     conn.execute(
         "INSERT INTO segments_fts (segments_fts) VALUES ('optimize')",
         [],
@@ -2282,6 +2397,7 @@ fn insert_segments(
         return Ok(out);
     }
     let first_lamport = Store::alloc_lamport(tx, segs.len() as i64)?;
+    crate::embeddings::bump_index_gen(tx, meeting_id)?;
     let mut speakers: HashMap<String, i64> = HashMap::new();
     let mut ins = tx.prepare_cached(
         "INSERT INTO segments (gid, meeting_id, version, speaker_id, t0_ms, t1_ms, text_ct, lang, confidence, lamport, edited)

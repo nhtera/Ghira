@@ -7,9 +7,10 @@
 //! makes them unreadable, and the rows go with the meeting (cascade). They
 //! are derived data, tied to a `transcript_version` and a model id; rows of
 //! an older transcript version are never served and are rebuilt by the
-//! indexer ([`Store::meetings_needing_embeddings`]).
+//! indexer ([`Store::meetings_needing_embeddings`]), as are rows built from an
+//! older `index_gen` (the chunk text changed: a rename, a line edit).
 
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 
 use crate::rowcrypt::{self, Dek};
 use crate::store::Store;
@@ -71,18 +72,48 @@ fn open_vec(
     )
 }
 
+/// Marks the meeting's chunk text as changed (speaker names, line text, who
+/// spoke): vectors built from an older generation are stale, and an indexer
+/// that read the older one can't store ([`Store::put_embeddings`]).
+pub(crate) fn bump_index_gen(conn: &rusqlite::Connection, meeting_id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE meetings SET index_gen = index_gen + 1 WHERE id = ?1",
+        [meeting_id],
+    )?;
+    Ok(())
+}
+
 /// Statuses of a meeting whose transcript is complete enough to index.
 const INDEXABLE: &str = "m.status IN ('ready', 'done')";
 
 impl Store {
+    /// The meeting's index generation (see [`Store::put_embeddings`]).
+    pub fn index_gen(&self, meeting_gid: &str) -> Result<i64> {
+        self.conn()
+            .query_row(
+                "SELECT index_gen FROM meetings WHERE gid = ?1",
+                [meeting_gid],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound {
+                kind: "meeting",
+                gid: meeting_gid.to_string(),
+            })
+    }
+
     /// Replaces the meeting's rows for `model` with `chunks`, in one
     /// transaction. `version` is the transcript version the chunks were cut
-    /// from. Empty `chunks` just removes the model's rows.
+    /// from, and `index_gen` the [`Store::index_gen`] read *before* the text
+    /// was read: if the meeting's generation moved on (a rename, an edit, a
+    /// name removal), nothing is stored and the result is
+    /// [`StoreError::IndexStale`]. Empty `chunks` just removes the model's rows.
     pub fn put_embeddings(
         &self,
         meeting_gid: &str,
         model: &str,
         version: i64,
+        index_gen: i64,
         chunks: Vec<EmbeddingChunk>,
     ) -> Result<()> {
         let dim = chunks.first().map_or(0, |c| c.vec.len());
@@ -96,6 +127,14 @@ impl Store {
         let dek = self.dek(&conn, m.id)?;
         let key = dek.subkey(rowcrypt::ROWS_INFO);
         let tx = conn.transaction()?;
+        let current: i64 = tx.query_row(
+            "SELECT index_gen FROM meetings WHERE id = ?1",
+            [m.id],
+            |r| r.get(0),
+        )?;
+        if current != index_gen {
+            return Err(StoreError::IndexStale);
+        }
         tx.execute(
             "DELETE FROM embeddings WHERE meeting_id = ?1 AND model = ?2",
             params![m.id, model],
@@ -104,10 +143,11 @@ impl Store {
             let ct = rowcrypt::seal(&key, &encode(&c.vec), &aad(meeting_gid, c.chunk, model));
             tx.execute(
                 "INSERT INTO embeddings
-                     (meeting_id, chunk, t0_ms, t1_ms, transcript_version, model, dim, vec_ct)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                     (meeting_id, chunk, t0_ms, t1_ms, transcript_version, model, dim, vec_ct,
+                      index_gen)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
-                    m.id, c.chunk, c.t0_ms, c.t1_ms, version, model, dim as i64, ct
+                    m.id, c.chunk, c.t0_ms, c.t1_ms, version, model, dim as i64, ct, index_gen
                 ],
             )?;
         }
@@ -203,7 +243,8 @@ impl Store {
                            WHERE s.meeting_id = m.id AND s.version = m.transcript_version)
                AND NOT EXISTS (SELECT 1 FROM embeddings e
                                WHERE e.meeting_id = m.id AND e.model = ?1
-                                 AND e.transcript_version = m.transcript_version)
+                                 AND e.transcript_version = m.transcript_version
+                                 AND e.index_gen = m.index_gen)
              ORDER BY m.started_at DESC, m.id DESC
              LIMIT ?2"
         ))?;

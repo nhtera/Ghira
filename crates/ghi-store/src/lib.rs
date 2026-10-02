@@ -8,6 +8,8 @@
 //! - [`bundle`]: the only audio writer: encrypted ~1 s pages, crash-safe,
 //!   random access for playback.
 //! - [`embeddings`]: sealed transcript-chunk vectors for semantic search.
+//! - [`people`] / [`voice`]: persons linked from speaker names, Me, and
+//!   voice profiles with their own wrapped keys (crypto-shred delete).
 //! - [`fold`] / [`search`]: Vietnamese accent-insensitive FTS5 search over a
 //!   contentless index, with highlights on the original text.
 //! - [`keys`]: the master key in the OS keystore; [`recovery`]: the optional
@@ -28,12 +30,14 @@ pub mod fold;
 pub mod jobs;
 pub mod keys;
 pub mod migrate;
+pub mod people;
 pub mod recovery;
 pub mod retention;
 pub mod rowcrypt;
 pub mod search;
 pub mod store;
 pub mod tombstones;
+pub mod voice;
 
 use std::fmt;
 
@@ -69,6 +73,9 @@ pub enum StoreError {
     },
     /// Malformed input (bad recovery phrase, bad archive, ...).
     Invalid(String),
+    /// The meeting changed (a rename, an edit) while its vectors were being
+    /// built: nothing was stored; index it again.
+    IndexStale,
 }
 
 impl fmt::Display for StoreError {
@@ -90,6 +97,7 @@ impl fmt::Display for StoreError {
                 )
             }
             StoreError::Invalid(what) => write!(f, "invalid input: {what}"),
+            StoreError::IndexStale => f.write_str("the meeting changed while it was indexed"),
         }
     }
 }

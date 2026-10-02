@@ -19,10 +19,13 @@ pub mod live;
 pub mod notes_job;
 pub mod pages;
 pub mod persist;
+pub mod profiles;
 pub mod recover;
 pub mod session;
 pub mod speakers;
 pub mod vocab;
+pub mod voice_job;
+pub mod voice_step;
 
 /// Crate version, used by `ghi --version` and the About screen.
 pub fn version() -> &'static str {

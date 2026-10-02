@@ -13,6 +13,8 @@ pub mod record;
 pub mod session;
 pub mod store;
 pub mod transcribe;
+#[cfg(feature = "voice")]
+pub mod voice;
 
 use std::time::{Duration, Instant};
 

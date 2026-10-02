@@ -800,18 +800,22 @@ fn speaker_split_event_carries_the_moved_lines() {
         .split(from, vec![line.gid.clone(), line.gid.clone()])
         .unwrap()
         .expect("split");
-    let moved = rx
-        .try_iter()
-        .find_map(|e| match e.event {
-            Event::SpeakerSplit {
-                from: f,
-                speaker,
-                lines,
-                ..
-            } => Some((f, speaker.id, lines)),
-            _ => None,
-        })
-        .expect("SpeakerSplit");
+    // The event comes from the session thread: wait for it (bounded).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let moved = std::iter::from_fn(|| {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        rx.recv_timeout(left).ok()
+    })
+    .find_map(|e| match e.event {
+        Event::SpeakerSplit {
+            from: f,
+            speaker,
+            lines,
+            ..
+        } => Some((f, speaker.id, lines)),
+        _ => None,
+    })
+    .expect("SpeakerSplit");
     assert_eq!(moved, (from, new, vec![line.gid.clone()]));
     let snap = s.snapshot();
     let l = snap.lines.iter().find(|l| l.gid == line.gid).unwrap();

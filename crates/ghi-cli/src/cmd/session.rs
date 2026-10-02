@@ -157,6 +157,7 @@ pub fn runner(
             engines: Arc::new(move || engines(&engine, 1120).map_err(|e| e.message)),
             chunk_s: 600.0,
             ready: always_ready(),
+            voice: None,
         }),
         Arc::new(NotesJob {
             kind: NOTES_FINAL_JOB,

@@ -97,6 +97,7 @@ fn notes_then_final_pass_then_final_notes() {
                 engines: Arc::new(move || Ok(final_engines.clone())),
                 chunk_s: 600.0,
                 ready: always_ready(),
+                voice: None,
             }),
             Arc::new(NotesJob {
                 kind: NOTES_FINAL_JOB,
@@ -243,6 +244,7 @@ fn record_now_process_when_models_arrive() {
                 engines: Arc::new(move || Ok(engines.clone())),
                 chunk_s: 600.0,
                 ready: ready.clone(),
+                voice: None,
             }),
             Arc::new(NotesJob {
                 kind: NOTES_FINAL_JOB,

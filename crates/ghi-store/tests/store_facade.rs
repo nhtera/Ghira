@@ -168,7 +168,12 @@ fn crud_round_trip_with_encrypted_columns() {
     let segs = store.segments(&m.gid).unwrap();
     assert_eq!(segs, vec![seg.clone()]);
     let speakers = store.speakers(&m.gid).unwrap();
-    assert_eq!(speakers[0].person_gid.as_deref(), Some(person.as_str()));
+    // A Me speaker is always linked to the Me person, whatever was asked.
+    assert_eq!(
+        speakers[0].person_gid.as_deref(),
+        Some(store.me_person().unwrap().as_str())
+    );
+    assert_ne!(speakers[0].person_gid.as_deref(), Some(person.as_str()));
     assert_eq!(speakers[0].display_name.as_deref(), Some("Ánh"));
     // The display name is ciphertext in the database.
     store.checkpoint().unwrap();

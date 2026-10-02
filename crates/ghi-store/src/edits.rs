@@ -8,9 +8,10 @@
 
 use rusqlite::{OptionalExtension, params};
 
-use crate::rowcrypt::{row_aad, seal_text};
+use crate::rowcrypt::{self, row_aad, seal_text};
 use crate::store::{Store, TrackKind, id_of};
-use crate::{Result, StoreError, new_gid, tombstones};
+use crate::{Result, StoreError, fold, new_gid, tombstones};
+use crate::{embeddings, people};
 
 /// What a discard removed.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -55,22 +56,71 @@ fn kind_from(s: &str) -> Option<TrackKind> {
 }
 
 impl Store {
-    /// Sets (or with `None`/blank, clears) a speaker's display name.
+    /// Sets (or with `None`/blank, clears) a speaker's display name, and links
+    /// the speaker to the person with that name (created if new; accents and
+    /// case: see [`crate::people::name_key`]) or, when cleared, unlinks it.
+    /// "Not a person" speakers and Me are never linked by name. A person left
+    /// with no speaker and no voice profile is removed.
     pub fn rename_speaker(&self, speaker_gid: &str, name: Option<&str>) -> Result<()> {
+        self.rename_inner(speaker_gid, name, false).map(|_| ())
+    }
+
+    /// [`rename_speaker`](Store::rename_speaker) for an automatic match: only
+    /// while the speaker is still unnamed, not Me, not "not a person" and not
+    /// merged (the user may have edited since the match was computed). Returns
+    /// whether it applied.
+    pub fn rename_speaker_if_unnamed(&self, speaker_gid: &str, name: &str) -> Result<bool> {
+        self.rename_inner(speaker_gid, Some(name), true)
+    }
+
+    fn rename_inner(
+        &self,
+        speaker_gid: &str,
+        name: Option<&str>,
+        only_if_unnamed: bool,
+    ) -> Result<bool> {
         let mut conn = self.conn();
-        let (sid, meeting_id): (i64, i64) = conn
+        #[allow(clippy::type_complexity)]
+        let (sid, meeting_id, color_slot, is_me, not_person, old_person, named, merged): (
+            i64,
+            i64,
+            i64,
+            bool,
+            bool,
+            Option<i64>,
+            bool,
+            bool,
+        ) = conn
             .query_row(
-                "SELECT id, meeting_id FROM speakers WHERE gid = ?1",
+                "SELECT id, meeting_id, color_slot, is_me, not_person, person_id,
+                        display_name_ct IS NOT NULL, merged_into IS NOT NULL
+                 FROM speakers WHERE gid = ?1",
                 [speaker_gid],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                    ))
+                },
             )
             .optional()?
             .ok_or_else(|| StoreError::NotFound {
                 kind: "speaker",
                 gid: speaker_gid.to_string(),
             })?;
+        if only_if_unnamed && (named || is_me || not_person || merged) {
+            return Ok(false);
+        }
         let dek = self.dek(&conn, meeting_id)?;
         let name = name.map(str::trim).filter(|n| !n.is_empty());
+        let name = name.map(fold::nfc);
+        let name = name.as_deref();
         let ct = name.map(|n| {
             seal_text(
                 &dek,
@@ -84,8 +134,37 @@ impl Store {
             "UPDATE speakers SET display_name_ct = ?1, lamport = ?2 WHERE id = ?3",
             params![ct, lamport, sid],
         )?;
+        if name.is_some() {
+            // Named by the user: a "sounds like" suggestion is settled.
+            tx.execute(
+                "UPDATE speakers SET suggest_person_id = NULL, suggest_score = NULL WHERE id = ?1",
+                [sid],
+            )?;
+        }
+        if !is_me && !not_person {
+            let person = match name {
+                Some(n) => Some(people::find_or_create_person(&tx, n, color_slot, lamport)?),
+                None => None,
+            };
+            if person != old_person {
+                tx.execute(
+                    "UPDATE speakers SET person_id = ?1 WHERE id = ?2",
+                    params![person, sid],
+                )?;
+                if let Some(old) = old_person {
+                    people::gc_persons(&tx, &[old])?;
+                }
+            } else if let (Some(p), Some(n)) = (person, name) {
+                // Same person, maybe respelled ("minh" -> "Minh").
+                tx.execute(
+                    "UPDATE persons SET name = ?1, lamport = ?2 WHERE id = ?3 AND name <> ?1",
+                    params![n, lamport, p],
+                )?;
+            }
+        }
+        embeddings::bump_index_gen(&tx, meeting_id)?;
         tx.commit()?;
-        Ok(())
+        Ok(true)
     }
 
     /// Merges `from` into `into` (same meeting): `from`'s lines and action
@@ -113,6 +192,12 @@ impl Store {
             ));
         }
         let lamport = Store::alloc_lamport(&tx, 1)?;
+        let person_of = |id: i64| -> rusqlite::Result<Option<i64>> {
+            tx.query_row("SELECT person_id FROM speakers WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+        };
+        let (into_person, from_person) = (person_of(into)?, person_of(from)?);
         tx.execute(
             "UPDATE segments SET speaker_id = ?1, lamport = ?2 WHERE speaker_id = ?3",
             params![into, lamport, from],
@@ -122,15 +207,22 @@ impl Store {
             params![into, lamport, from],
         )?;
         tx.execute(
-            "UPDATE speakers SET merged_into = ?1, is_me = 0, lamport = ?2 WHERE id = ?3",
+            "UPDATE speakers SET merged_into = ?1, is_me = 0, person_id = NULL,
+                    suggest_person_id = NULL, suggest_score = NULL, lamport = ?2
+             WHERE id = ?3",
             params![into, lamport, from],
         )?;
+        let mut orphans: Vec<i64> = from_person.into_iter().collect();
         if from_me {
+            let me = people::me_id(&tx)?;
             tx.execute(
-                "UPDATE speakers SET is_me = 1, lamport = ?1 WHERE id = ?2",
-                params![lamport, into],
+                "UPDATE speakers SET is_me = 1, person_id = ?1, lamport = ?2 WHERE id = ?3",
+                params![me, lamport, into],
             )?;
+            orphans.extend(into_person);
         }
+        people::gc_persons(&tx, &orphans)?;
+        embeddings::bump_index_gen(&tx, m1)?;
         tx.commit()?;
         Ok(())
     }
@@ -168,6 +260,7 @@ impl Store {
             params![gid, meeting_id, label_idx, color_slot, lamport],
         )?;
         let new_id = tx.last_insert_rowid();
+        embeddings::bump_index_gen(&tx, meeting_id)?;
         for seg in segment_gids {
             let n = tx.execute(
                 "UPDATE segments SET speaker_id = ?1, lamport = ?2
@@ -204,20 +297,77 @@ impl Store {
         Ok(())
     }
 
+    /// Marks a speaker as "not a person" (a TV, a notification sound): it is
+    /// unlinked from its person (which goes if it has nothing else) and its
+    /// suggestion cleared. Setting it back links it again by its name.
     pub fn set_speaker_not_person(&self, speaker_gid: &str, not_person: bool) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        let lamport = Store::alloc_lamport(&tx, 1)?;
-        let n = tx.execute(
-            "UPDATE speakers SET not_person = ?1, lamport = ?2 WHERE gid = ?3",
-            params![not_person, lamport, speaker_gid],
-        )?;
-        if n == 0 {
-            return Err(StoreError::NotFound {
+        let (sid, meeting_id, color_slot, is_me, old_person, name_ct): (
+            i64,
+            i64,
+            i64,
+            bool,
+            Option<i64>,
+            Option<Vec<u8>>,
+        ) = tx
+            .query_row(
+                "SELECT id, meeting_id, color_slot, is_me, person_id, display_name_ct
+                 FROM speakers WHERE gid = ?1",
+                [speaker_gid],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound {
                 kind: "speaker",
                 gid: speaker_gid.to_string(),
-            });
+            })?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        tx.execute(
+            "UPDATE speakers SET not_person = ?1, lamport = ?2 WHERE id = ?3",
+            params![not_person, lamport, sid],
+        )?;
+        if not_person {
+            tx.execute(
+                "UPDATE speakers SET suggest_person_id = NULL, suggest_score = NULL WHERE id = ?1",
+                [sid],
+            )?;
+            if !is_me {
+                tx.execute("UPDATE speakers SET person_id = NULL WHERE id = ?1", [sid])?;
+                if let Some(old) = old_person {
+                    people::gc_persons(&tx, &[old])?;
+                }
+            }
+        } else if let (false, Some(ct)) = (is_me, name_ct) {
+            let name = self
+                .dek(&tx, meeting_id)
+                .and_then(|dek| {
+                    rowcrypt::open_text(
+                        &dek,
+                        &ct,
+                        &row_aad("speakers", "display_name_ct", speaker_gid),
+                    )
+                })
+                .ok()
+                .filter(|n| !n.trim().is_empty());
+            if let Some(n) = name {
+                let p = people::find_or_create_person(&tx, &n, color_slot, lamport)?;
+                tx.execute(
+                    "UPDATE speakers SET person_id = ?1 WHERE id = ?2",
+                    params![p, sid],
+                )?;
+            }
         }
+        embeddings::bump_index_gen(&tx, meeting_id)?;
         tx.commit()?;
         Ok(())
     }
@@ -238,6 +388,12 @@ impl Store {
                 "cannot move segment {segment_gid}"
             )));
         }
+        let meeting_id: i64 = tx.query_row(
+            "SELECT meeting_id FROM segments WHERE gid = ?1",
+            [segment_gid],
+            |r| r.get(0),
+        )?;
+        embeddings::bump_index_gen(&tx, meeting_id)?;
         tx.commit()?;
         Ok(())
     }
@@ -262,6 +418,7 @@ impl Store {
         let m = Store::meeting_ref(&conn, meeting_gid)?;
         let tx = conn.transaction()?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
+        embeddings::bump_index_gen(&tx, m.id)?;
         let mut rep = DiscardReport::default();
 
         tombstones::write_where(
