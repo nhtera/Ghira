@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AskAnswer, MeetingDetail } from "../../bindings";
 import { ipc } from "../../ipc";
+import { AskError } from "../ask/ask-error";
 import { CitationLink } from "../citation/citation-link";
 import { CloudSheet } from "../cloud-sheet/cloud-sheet";
 import { providerName } from "../cloud-sheet/provider-names";
@@ -70,15 +71,7 @@ function AnswerCard({
           <Elapsed since={entry.startedAt} />
         </p>
       )}
-      {entry.state === "error" && (
-        <p
-          role="alert"
-          className="text-small m-0 flex items-start gap-2 rounded-panel border border-line2 bg-surface p-3 text-rec-ink"
-        >
-          <Icon name="error" size={16} className="shrink-0" />
-          {t("system.commandFailed", { message: entry.error ?? "" })}
-        </p>
-      )}
+      {entry.state === "error" && <AskError error={entry.error ?? ""} />}
       {entry.state === "done" && a && !a.answered && (
         <div
           data-testid="ask-not-discussed"

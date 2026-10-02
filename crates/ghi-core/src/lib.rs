@@ -2,6 +2,7 @@
 //! Session manager, job queue, aligner and pipeline orchestration.
 
 pub mod aligner;
+pub mod ask_all;
 pub mod capture;
 pub mod carry;
 pub mod cloud;

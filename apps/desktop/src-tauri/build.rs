@@ -69,6 +69,8 @@ fn main() {
             "cancel_recovery_key",
             "open_privacy_settings",
             "test_capture",
+            "related_meetings",
+            "ask_all_meetings",
             "set_app_lock",
             "unlock",
             "lock_now",

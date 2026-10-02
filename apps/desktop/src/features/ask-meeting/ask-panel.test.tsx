@@ -140,11 +140,19 @@ describe("AskPanel", () => {
 
   it("shows errors from the core", async () => {
     commands.askMeeting.mockReturnValue(
-      Promise.resolve({ status: "error", error: "notes are being written" }),
+      Promise.resolve({ status: "error", error: "busyNotes" }),
     );
     ask("anything");
+    expect((await screen.findByTestId("ask-busy")).textContent).toContain(
+      "Notes are being written",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    commands.askMeeting.mockReturnValue(
+      Promise.resolve({ status: "error", error: "model exploded" }),
+    );
+    ask("again");
     expect((await screen.findByRole("alert")).textContent).toContain(
-      "notes are being written",
+      "model exploded",
     );
   });
 

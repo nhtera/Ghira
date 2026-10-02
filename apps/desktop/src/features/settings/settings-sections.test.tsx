@@ -125,7 +125,8 @@ describe("delete everything, double submit", () => {
     const input = screen.getByLabelText("Type DELETE to confirm") as HTMLInputElement;
     await user.type(input, "DELETE{Enter}");
     await waitFor(() => expect(input.disabled).toBe(false));
-    expect(await screen.findByText(/store is busy/)).toBeTruthy();
+    // The toast also announces the text in a live region: two matches.
+    expect((await screen.findAllByText(/store is busy/)).length).toBeGreaterThan(0);
     await user.type(input, "{Enter}");
     await waitFor(() => expect(del).toHaveBeenCalledTimes(2));
   });

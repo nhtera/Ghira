@@ -3,7 +3,7 @@
 // by day, multi-select with a bulk bar, delete with Undo, and the in-place
 // stepper / "Name your speakers" for meetings being processed.
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, EmptyState, Icon, shortcutLabel, useToast, usePlatform } from "@ghi/ui";
@@ -16,7 +16,9 @@ import { useMeetings } from "../features/library/use-meetings";
 import { usePendingDelete } from "../features/library/use-pending-delete";
 import { ExportSheet } from "../features/export/export-sheet";
 import { SearchResults, type OpenHit } from "../features/search/search-results";
+import { RelatedSection } from "../features/search/related-section";
 import { useLibrarySearch } from "../features/search/use-library-search";
+import { useRelated } from "../features/search/use-related";
 import { useTemplates } from "../state/meeting-queries";
 import { SHORTCUTS, matchChord } from "../shell/shortcuts";
 import { NameSpeakers } from "../features/processing/name-speakers";
@@ -58,7 +60,8 @@ export function MeetingsScreen() {
   const clearFinished = useProcessing((s) => s.clearFinished);
   const templates = useTemplates();
 
-  const [text, setText] = useState("");
+  const { q: initialQuery } = useSearch({ from: "/shell/meetings" });
+  const [text, setText] = useState(initialQuery ?? "");
   const [filters, setFilters] = useState<LibraryFilters>(NO_FILTERS);
   const [picked, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [exporting, setExporting] = useState<string[] | null>(null);
@@ -68,6 +71,7 @@ export function MeetingsScreen() {
   const now = useMemo(() => new Date(), []);
   const rows = useMemo(() => applyFilters(all, filters, now), [all, filters, now]);
   const search = useLibrarySearch(text, filters);
+  const related = useRelated(text, filters);
   const visibleIds = useMemo(() => new Set(rows.map((r) => r.gid)), [rows]);
   // Meetings that went away or are filtered out drop out of the selection.
   const selected = useMemo(() => new Set([...picked].filter((id) => visibleIds.has(id))), [picked, visibleIds]);
@@ -77,6 +81,13 @@ export function MeetingsScreen() {
     () => search.hits.filter((h) => !hidden.has(h.meeting) && (!loadedIds.has(h.meeting) || visibleIds.has(h.meeting))),
     [search.hits, loadedIds, visibleIds, hidden],
   );
+
+  // Related passages follow the same rules as keyword hits; meetings already in the hits are left out.
+  const relatedShown = useMemo(
+    () => related.filter((h) => !hidden.has(h.meeting.meeting) && (!loadedIds.has(h.meeting.meeting) || visibleIds.has(h.meeting.meeting))),
+    [related, loadedIds, visibleIds, hidden],
+  );
+  const hitMeetings = useMemo(() => new Set(hits.map((h) => h.meeting)), [hits]);
 
   // ⌘F focuses the search; ⌘A selects every shown row; Esc clears the selection.
   useEffect(() => {
@@ -195,7 +206,11 @@ export function MeetingsScreen() {
                   ref={searchRef}
                   type="search"
                   value={text}
-                  onChange={(e) => setText(e.target.value)}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    // The `?q=` from Ask was only the starting text: drop it so Back doesn't bring it back.
+                    if (initialQuery) void navigate({ to: "/meetings", search: {}, replace: true });
+                  }}
                   onKeyDown={(e) => e.key === "Escape" && text && (e.stopPropagation(), setText(""))}
                   placeholder={t("library.searchPlaceholder")}
                   aria-label={t("library.searchPlaceholder")}
@@ -242,6 +257,7 @@ export function MeetingsScreen() {
                     />
                   )
                 )}
+                <RelatedSection hits={relatedShown} exclude={hitMeetings} onOpen={openHit} />
               </div>
             ) : rows.length === 0 && filtering ? (
               <div className="min-h-0 flex-1 overflow-auto">

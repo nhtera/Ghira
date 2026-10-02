@@ -200,6 +200,9 @@ impl JobHandler for IndexJob {
 
 /// Queues an `embed_index` job for the meeting unless one is already waiting.
 pub fn queue_one(store: &Store, meeting: &str) -> Result<(), String> {
+    if !enabled(store) {
+        return Ok(());
+    }
     if store
         .active_job(meeting, EMBED_INDEX_JOB)
         .map_err(store_err)?
@@ -222,6 +225,35 @@ pub fn queue_one(store: &Store, meeting: &str) -> Result<(), String> {
 /// Returns how many meetings were looked at; the runner needs a `notify`.
 pub fn queue_missing(store: &Store) -> Result<usize, String> {
     queue_missing_for(store, MODEL_ID)
+}
+
+/// Store setting: this machine indexes meetings for semantic search (the
+/// app sets it per hardware tier; Light machines search by keywords only).
+pub const ENABLED_SETTING: &str = "embeddings.enabled";
+
+/// Whether embeddings are on (see [`ENABLED_SETTING`]; off unless set).
+pub fn enabled(store: &Store) -> bool {
+    store
+        .get_setting(ENABLED_SETTING)
+        .ok()
+        .flatten()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+/// Turns indexing on or off; off also cancels the queued index jobs.
+pub fn set_enabled(store: &Store, on: bool) -> Result<(), String> {
+    store
+        .set_setting(ENABLED_SETTING, &serde_json::json!(on))
+        .map_err(store_err)?;
+    if !on {
+        for j in store.active_jobs().map_err(store_err)? {
+            if j.kind == EMBED_INDEX_JOB && j.state == ghi_store::jobs::JobState::Queued {
+                store.cancel_job(j.id).map_err(store_err)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// [`queue_missing`] for another model id (tests).
@@ -300,6 +332,7 @@ mod tests {
             )
             .unwrap(),
         );
+        set_enabled(&store, true).unwrap();
         let m = store
             .create_meeting(NewMeeting {
                 title: "Họp".into(),
@@ -477,5 +510,19 @@ mod tests {
         let empty = store.create_meeting(NewMeeting::default()).unwrap().gid;
         store.set_meeting_status(&empty, "ready").unwrap();
         assert_eq!(queue_missing_for(&store, "x").unwrap(), 1);
+    }
+
+    #[test]
+    fn indexing_is_off_unless_the_machine_turns_it_on() {
+        let (_tmp, store, m) = setup();
+        set_enabled(&store, false).unwrap();
+        queue_one(&store, &m).unwrap();
+        assert!(store.active_job(&m, EMBED_INDEX_JOB).unwrap().is_none());
+        set_enabled(&store, true).unwrap();
+        queue_one(&store, &m).unwrap();
+        assert!(store.active_job(&m, EMBED_INDEX_JOB).unwrap().is_some());
+        // Turning it off cancels what was queued.
+        set_enabled(&store, false).unwrap();
+        assert!(store.active_job(&m, EMBED_INDEX_JOB).unwrap().is_none());
     }
 }

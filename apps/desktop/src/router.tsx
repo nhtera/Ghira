@@ -17,7 +17,8 @@ import { DetectScreen } from "./routes/detect";
 import { MiniScreen } from "./routes/mini";
 import { OnboardingScreen } from "./routes/onboarding";
 import { PopoverScreen } from "./routes/popover";
-import { AskScreen, PeopleScreen } from "./routes/simple";
+import { AskScreen } from "./routes/ask";
+import { PeopleScreen } from "./routes/simple";
 import { ImportScreen } from "./routes/import";
 import { MeetingDetailScreen } from "./routes/meeting-detail";
 import { SETTINGS_SECTIONS, SettingsScreen, type SettingsSection } from "./routes/settings";
@@ -36,7 +37,13 @@ const index = createRoute({
   },
 });
 
-const meetings = createRoute({ getParentRoute: () => shell, path: "/meetings", component: MeetingsScreen });
+const meetings = createRoute({
+  getParentRoute: () => shell,
+  path: "/meetings",
+  // `q`: start with this text in the library search (from Ask).
+  validateSearch: (s: Record<string, unknown>): { q?: string } => (typeof s.q === "string" && s.q ? { q: s.q } : {}),
+  component: MeetingsScreen,
+});
 
 const meetingDetail = createRoute({
   getParentRoute: () => shell,
@@ -55,7 +62,13 @@ const meetingDetail = createRoute({
 
 const live = createRoute({ getParentRoute: () => shell, path: "/live", component: LiveScreen });
 const people = createRoute({ getParentRoute: () => shell, path: "/people", component: PeopleScreen });
-const ask = createRoute({ getParentRoute: () => shell, path: "/ask", component: AskScreen });
+const ask = createRoute({
+  getParentRoute: () => shell,
+  path: "/ask",
+  // `meeting`: adds the "This meeting" scope.
+  validateSearch: (s: Record<string, unknown>): { meeting?: string } => (typeof s.meeting === "string" && s.meeting ? { meeting: s.meeting } : {}),
+  component: AskScreen,
+});
 const importRoute = createRoute({ getParentRoute: () => shell, path: "/import", component: ImportScreen });
 
 const settings = createRoute({

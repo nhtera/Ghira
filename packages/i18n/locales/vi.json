@@ -1202,6 +1202,31 @@
       "byProvider": "Trả lời bởi {{provider}}",
       "cloudFailed": "yêu cầu đám mây thất bại ({{reason}}); đã trả lời trên thiết bị này",
       "answeredLocal": "Trả lời trên thiết bị này"
+    },
+    "scopeLabel": "Tìm trong",
+    "rangeMenu": "Chọn khoảng thời gian",
+    "thread": "Câu hỏi và câu trả lời",
+    "openAt": "Mở {{title}} lúc {{time}}",
+    "suggestions": {
+      "decided": "Gần đây mình đã chốt những gì?",
+      "actions": "Việc cần làm nào vẫn chưa xong?",
+      "themes": "Chủ đề nào được nhắc nhiều nhất?"
+    },
+    "keywordOnly": "Chỉ tìm theo từ khoá. Tìm theo ý nghĩa cần bộ mô hình lớn hơn (Cài đặt → Mô hình).",
+    "related": {
+      "title": "Liên quan theo ý nghĩa"
+    },
+    "busy": {
+      "busyRecording": "Việc này sẽ làm được sau khi dừng ghi âm.",
+      "busyNotes": "Đang viết ghi chú. Hãy thử lại sau giây lát.",
+      "noModel": "Mô hình ghi chú chưa được cài (Cài đặt → Mô hình)."
+    },
+    "thinking": "Đang suy nghĩ…",
+    "openMeeting": "Mở {{title}}",
+    "rangeShort": {
+      "last7Days": "7 ngày qua",
+      "last30Days": "30 ngày qua",
+      "thisYear": "Năm nay"
     }
   },
   "import": {

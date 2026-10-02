@@ -201,6 +201,10 @@ fn run<R: Runtime>(app: &AppHandle<R>, core: &Core, cancel: &Arc<AtomicBool>) {
                 crate::core::clear_damaged(&r.id);
                 emit(DownloadPhase::Done, r.size, None);
                 // Queued transcripts and notes can run now.
+                // Meetings recorded before the embedding model arrived.
+                if let Ok(store) = core.store_even_locked() {
+                    let _ = ghi_core::index_job::queue_missing(&store);
+                }
                 core.notify_jobs();
             }
             Err(ghi_models::DownloadError::Cancelled) => {

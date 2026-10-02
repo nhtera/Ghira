@@ -109,6 +109,8 @@
     "allow-lock-state",
     "allow-lock-now",
     "allow-unlock",
-    "allow-set-app-lock"
+    "allow-set-app-lock",
+    "allow-ask-all-meetings",
+    "allow-related-meetings"
   ]
 }

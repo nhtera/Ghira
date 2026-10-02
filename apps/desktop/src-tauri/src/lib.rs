@@ -2,6 +2,7 @@
 //! Tauri shell. Commands are typed with tauri-specta; regenerate the TypeScript
 //! bindings with `GHI_UPDATE_BINDINGS=1 cargo test -p ghi-desktop`.
 
+mod ask_cmd;
 mod audio_protocol;
 mod cloud_cmd;
 mod core;
@@ -379,6 +380,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             lock_cmd::lock_now,
             lock_cmd::unlock,
             lock_cmd::set_app_lock,
+            ask_cmd::ask_all_meetings,
+            ask_cmd::related_meetings,
             system::show_notification
         ])
         .events(tauri_specta::collect_events![
@@ -534,6 +537,16 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_indexer_and_the_query_embedder_use_the_tier_embedding_model() {
+        use ghi_models::tier::{Tier, preset};
+        for t in [Tier::Light, Tier::Balanced, Tier::Max] {
+            if let Some(id) = preset(t).embed_id {
+                assert_eq!(id, ghi_core::index_job::MODEL_ID);
+            }
+        }
+    }
+
     #[test]
     fn app_version_reports_core() {
         let v = super::app_version();

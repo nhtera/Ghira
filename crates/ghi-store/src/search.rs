@@ -52,6 +52,10 @@ pub struct SearchFilter {
     pub to_ms: Option<i64>,
     /// Restrict to one meeting.
     pub meeting_gid: Option<String>,
+    /// Restrict to any of these meetings (empty: no restriction).
+    pub meeting_gids: Vec<String>,
+    /// Transcript lines only (no note blocks).
+    pub segments_only: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +85,8 @@ pub struct SearchPage {
     pub hits: Vec<SearchHit>,
     /// More matches exist than the candidate window holds.
     pub truncated: bool,
+    /// Matches found (at most the candidate window per index), across pages.
+    pub matches: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,6 +261,7 @@ impl Store {
         let empty = SearchPage {
             hits: Vec::new(),
             truncated: false,
+            matches: 0,
         };
         let Some(parsed) = parse_query(&q.text) else {
             return Ok(empty);
@@ -267,12 +274,13 @@ impl Store {
 
         let mut cands = self.segment_candidates(&conn, &parsed, &q.filter, window)?;
         let mut truncated = cands.len() as i64 >= window;
-        if q.filter.person_gids.is_empty() {
+        if q.filter.person_gids.is_empty() && !q.filter.segments_only {
             let notes = self.note_candidates(&conn, &parsed, &q.filter, window)?;
             truncated |= notes.len() as i64 >= window;
             cands.extend(notes);
         }
 
+        let matches = cands.len();
         let mut titles: HashMap<i64, String> = HashMap::new();
         // (candidate, decrypted text, exact-diacritic match)
         let mut items: Vec<(Candidate, Option<String>, bool)> = Vec::with_capacity(cands.len());
@@ -335,7 +343,11 @@ impl Store {
                 exact,
             });
         }
-        Ok(SearchPage { hits, truncated })
+        Ok(SearchPage {
+            hits,
+            truncated,
+            matches,
+        })
     }
 
     /// Decrypts a candidate's text; `None` if its meeting key was shredded.
@@ -443,6 +455,14 @@ fn push_meeting_filters(sql: &mut String, args: &mut Vec<Value>, f: &SearchFilte
     if let Some(g) = &f.meeting_gid {
         sql.push_str(" AND m.gid = ?");
         args.push(Value::Text(g.clone()));
+    }
+    if !f.meeting_gids.is_empty() {
+        sql.push_str(" AND m.gid IN (");
+        for (i, g) in f.meeting_gids.iter().enumerate() {
+            sql.push_str(if i == 0 { "?" } else { ",?" });
+            args.push(Value::Text(g.clone()));
+        }
+        sql.push(')');
     }
     if let Some(s) = &f.source {
         sql.push_str(" AND m.source = ?");

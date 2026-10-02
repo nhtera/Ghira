@@ -25,7 +25,7 @@ fn err(e: ghi_store::StoreError) -> String {
 /// Text the user typed: a sane upper bound.
 const MAX_TEXT_CHARS: usize = 10_000;
 /// Characters of transcript shown as a citation's quote.
-const QUOTE_CHARS: usize = 280;
+pub(crate) const QUOTE_CHARS: usize = 280;
 
 fn cap(text: String) -> String {
     if text.chars().count() > MAX_TEXT_CHARS {
@@ -201,7 +201,7 @@ pub struct MeetingTranscript {
     pub topics: Vec<TopicView>,
 }
 
-fn shorten(text: &str, max: usize) -> String {
+pub(crate) fn shorten(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         return text.to_string();
     }
@@ -860,6 +860,7 @@ pub async fn search_meetings(
                 from_ms: ms(request.from_ms),
                 to_ms: ms(request.to_ms),
                 meeting_gid: request.meeting,
+                ..Default::default()
             },
             // Each hit is decrypted: keep pages small.
             limit: request.limit.clamp(1, 50) as usize,

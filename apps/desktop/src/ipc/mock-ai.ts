@@ -3,7 +3,7 @@
 // returned), the cloud send preview / send with a request log, "Ask this
 // meeting", the custom vocabulary, export-everything and delete-all. `?cloudfail=1`
 // in the URL makes cloud sends fail (to see the local fallback).
-import type { AskAnswer, CloudLogEntry, CloudPreview, MeetingRow, MeetingTranscript, Vocabulary } from "../bindings";
+import type { AskAllAnswer, AskScope, AskAnswer, CloudLogEntry, CloudPreview, MeetingRow, MeetingRef, MeetingTranscript, RelatedHit, Vocabulary } from "../bindings";
 import email from "@ghi/ui/mocks/email.json";
 import type { Commands } from "./ipc";
 
@@ -65,6 +65,70 @@ function vocabulary(host: AiHost): Vocabulary {
   return { terms: [...terms], learned, maxTerms: 200 };
 }
 
+
+const refOf = (r: MeetingRow): MeetingRef => ({ meeting: r.gid, title: r.title, startedAt: r.startedAt });
+const inScope = (r: MeetingRow, scope: AskScope) =>
+  (scope.meetings.length === 0 || scope.meetings.includes(r.gid)) &&
+  (scope.persons.length === 0 || r.people.some((p) => scope.persons.includes(p.name))) &&
+  // A meeting with no start time can't be placed in a date range.
+  (scope.fromMs == null || (r.startedAt != null && r.startedAt >= scope.fromMs)) &&
+  (scope.toMs == null || (r.startedAt != null && r.startedAt <= scope.toMs));
+
+/** `?askfail=busyRecording|busyNotes|noModel`: the core refuses the way `local_model_free` does. */
+const refusal = () => {
+  const code = new URLSearchParams(location.search).get("askfail");
+  return code && ["busyRecording", "busyNotes", "noModel"].includes(code) ? code : null;
+};
+
+/** Ask across meetings: a cited passage from up to two meetings; "pricing" is never discussed. */
+function answerAll(host: AiHost, question: string, scope: AskScope): AskAllAnswer {
+  const words = fold(question)
+    .split(/\W+/)
+    .filter((w) => w.length > 3);
+  const semantic = !new URLSearchParams(location.search).has("keywordonly");
+  const rows = host.rows.filter((r) => r.status === "ready" && inScope(r, scope));
+  const sources = rows.slice(0, 3).map(refOf);
+  if (words.includes("pricing")) return { answered: false, text: "", citations: [], searched: words, sources, semantic };
+  const picks: { row: MeetingRow; seg: MeetingTranscript["segments"][number] }[] = [];
+  for (const r of rows) {
+    const seg = host.transcript(r.gid)?.segments.find((s) => words.some((w) => fold(s.text).includes(w)));
+    if (seg) picks.push({ row: r, seg });
+    if (picks.length === 2) break;
+  }
+  // Nothing matched by words: the model still found related passages by meaning.
+  for (const r of semantic ? rows : []) {
+    if (picks.length >= 2) break;
+    const seg = host.transcript(r.gid)?.segments[0];
+    if (seg && !picks.some((p) => p.row.gid === r.gid)) picks.push({ row: r, seg });
+  }
+  if (picks.length === 0) return { answered: false, text: "", citations: [], searched: words, sources, semantic };
+  return {
+    answered: true,
+    text: picks.map((p) => p.seg.text).join("\n"),
+    citations: picks.map((p) => ({
+      meeting: refOf(p.row),
+      citation: { t0Ms: p.seg.t0Ms, t1Ms: p.seg.t1Ms, quote: p.seg.text, speakerGid: p.seg.speakerGid, stale: false, missing: false },
+    })),
+    searched: [],
+    sources: picks.map((p) => refOf(p.row)),
+    semantic,
+  };
+}
+
+/** Passages by meaning, one per meeting (the UI leaves out meetings that already have keyword hits). */
+function relatedTo(host: AiHost, text: string, scope: AskScope, limit: number): RelatedHit[] {
+  if (fold(text.trim()).length < 3 || new URLSearchParams(location.search).has("keywordonly")) return [];
+  const out: RelatedHit[] = [];
+  for (const r of host.rows) {
+    if (out.length >= Math.min(limit, 3)) break;
+    if (r.status !== "ready" || !inScope(r, scope)) continue;
+    const segs = host.transcript(r.gid)?.segments ?? [];
+    const seg = segs[1] ?? segs[0];
+    if (seg) out.push({ meeting: refOf(r), t0Ms: seg.t0Ms, t1Ms: seg.t1Ms, quote: seg.text });
+  }
+  return out;
+}
+
 type AiCommands = Pick<
   Commands,
   | "cloudKeys"
@@ -76,6 +140,8 @@ type AiCommands = Pick<
   | "setMeetingCloudLocked"
   | "cloudRequestLog"
   | "askMeeting"
+  | "askAllMeetings"
+  | "relatedMeetings"
   | "vocabulary"
   | "setVocabulary"
   | "ignoreLearnedTerm"
@@ -157,11 +223,18 @@ export function aiCommands(host: AiHost): AiCommands {
     },
     cloudRequestLog: (limit) => ok(log.slice(0, limit)),
     askMeeting: (meeting, question) => {
+      if (refusal()) return fail(refusal()!);
       if (!row(meeting)) return fail(`meeting not found: ${meeting}`);
       if (!question.trim()) return fail("ask a question");
       // A little thinking time, as on the real model.
       return new Promise((resolve) => window.setTimeout(() => resolve({ status: "ok", data: answer(host, meeting, question, "local") }), 600));
     },
+    askAllMeetings: (question, scope) => {
+      if (refusal()) return fail(refusal()!);
+      if (!question.trim()) return fail("ask a question");
+      return new Promise((resolve) => window.setTimeout(() => resolve({ status: "ok", data: answerAll(host, question, scope) }), 600));
+    },
+    relatedMeetings: (text, scope, limit) => ok(relatedTo(host, text, scope, limit)),
     vocabulary: () => ok(vocabulary(host)),
     setVocabulary: (next) => {
       const out: string[] = [];
@@ -177,6 +250,7 @@ export function aiCommands(host: AiHost): AiCommands {
     exportEverything: (password) => (password.length < 8 ? fail("use at least 8 characters") : ok(`Ghira export ${new Date().toISOString().slice(0, 10)}.ghira`)),
     // Built from the design's sample draft, after a short "writing" pause.
     draftFollowupEmail: (meeting, language, tone) => {
+      if (refusal()) return fail(refusal()!);
       const r = row(meeting);
       if (!r) return fail(`meeting not found: ${meeting}`);
       const vi = language === "vi";

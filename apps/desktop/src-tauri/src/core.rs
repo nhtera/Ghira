@@ -11,6 +11,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::time::{Duration, Instant};
 
 use ghi_core::events::{Envelope, ErrorKind, EventTx, bus};
 use ghi_core::jobs::JobRunner;
@@ -50,8 +51,16 @@ pub struct Core {
     runner_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
     /// Opens the local notes model (the jobs' factory; "Ask this meeting").
     llm: Mutex<Option<ghi_core::notes_job::LlmFactory>>,
+    /// The embedding model for search queries, kept loaded while the user
+    /// searches (dropped after [`QUERY_EMBEDDER_IDLE`]).
+    query_embedder: QueryEmbedder,
     events: EventTx,
 }
+
+type QueryEmbedder = Arc<Mutex<Option<(Box<dyn ghi_llm::embed::Embedder + Send>, Instant)>>>;
+
+/// The query embedder is unloaded after this long unused.
+const QUERY_EMBEDDER_IDLE: Duration = Duration::from_secs(120);
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -174,6 +183,13 @@ pub(crate) fn speech_ready(models: &Path) -> bool {
     cfg!(feature = "nemo") && ghi_models::installed(models, &ids)
 }
 
+/// The embedding model (semantic search) is installed, on a tier that has one.
+pub(crate) fn embed_ready(models: &Path) -> bool {
+    preset()
+        .embed_id
+        .is_some_and(|id| ghi_models::installed(models, &[id]))
+}
+
 /// The notes model for this machine's tier is installed.
 pub(crate) fn llm_ready(models: &Path) -> bool {
     ghi_models::installed(models, &[preset().llm_id])
@@ -255,6 +271,7 @@ impl Core {
             runner: Mutex::new(None),
             runner_thread: Mutex::new(None),
             llm: Mutex::new(None),
+            query_embedder: Arc::new(Mutex::new(None)),
             settings: Mutex::new(None),
             recovered: Mutex::new(Vec::new()),
             events,
@@ -306,12 +323,77 @@ impl Core {
         if let Some(r) = lock(&self.runner).as_ref() {
             r.shutdown_and_release(wait);
         }
+        // Kill first: a query may hold the embedder's lock while its worker
+        // loads or embeds (minutes at worst); a killed worker returns at once.
+        ghi_llm::local::kill_workers();
+        lock(&self.query_embedder).take();
         ghi_llm::local::kill_workers();
         if let Some(t) = lock(&self.runner_thread).take()
             && t.is_finished()
         {
             let _ = t.join();
         }
+    }
+
+    /// Runs `f` with the embedding model for a search query, or with `None`
+    /// when meaning search is off (8 GB Macs), the model isn't installed yet
+    /// or can't be opened, and while recording (the GPU belongs to live
+    /// speech). The model stays loaded between queries and is dropped after
+    /// [`QUERY_EMBEDDER_IDLE`]; queries take turns.
+    pub fn with_query_embedder<T>(
+        &self,
+        store: &Store,
+        f: impl FnOnce(Option<&mut dyn ghi_llm::embed::Embedder>) -> T,
+    ) -> T {
+        let models = self.models();
+        if self.recording() || !ghi_core::index_job::enabled(store) || !embed_ready(&models) {
+            lock(&self.query_embedder).take();
+            return f(None);
+        }
+        let mut slot = lock(&self.query_embedder);
+        if slot.is_none() {
+            match ghi_llm::embed::LocalEmbedder::open_registry_in(
+                &models,
+                ghi_core::index_job::MODEL_ID,
+            ) {
+                Ok(e) => {
+                    *slot = Some((Box::new(e), Instant::now()));
+                    self.unload_when_idle();
+                }
+                Err(e) => {
+                    log::warn!("search embedder unavailable: {e}");
+                    drop(slot);
+                    return f(None);
+                }
+            }
+        }
+        let Some((e, used)) = slot.as_mut() else {
+            return f(None);
+        };
+        let out = f(Some(e.as_mut()));
+        *used = Instant::now();
+        out
+    }
+
+    /// Drops the query embedder once it has been idle long enough.
+    fn unload_when_idle(&self) {
+        let slot = self.query_embedder.clone();
+        let _ = std::thread::Builder::new()
+            .name("ghi-embed-idle".into())
+            .spawn(move || {
+                loop {
+                    std::thread::sleep(Duration::from_secs(15));
+                    let mut s = lock(&slot);
+                    match s.as_ref() {
+                        None => return,
+                        Some((_, used)) if used.elapsed() >= QUERY_EMBEDDER_IDLE => {
+                            s.take();
+                            return;
+                        }
+                        Some(_) => {}
+                    }
+                }
+            });
     }
 
     /// The app lock is on (lock_cmd.rs).
@@ -431,6 +513,7 @@ impl Core {
         let recovered = ghi_core::recover::recover(&store)?;
         *lock(&self.recovered) = recovered.meetings;
         let models = self.models();
+        let embed_dir = models.clone();
         let template = ghi_llm::template::builtin("general").map_err(|e| e.to_string())?;
         // The notes model lives with the speech models in the app data dir.
         let llm_dir = models.clone();
@@ -475,8 +558,29 @@ impl Core {
                     llm,
                     ready: notes_ready,
                 }),
+                // Semantic search: lowest priority, after the notes.
+                Arc::new(ghi_core::index_job::IndexJob {
+                    embedder: {
+                        let dir = embed_dir.clone();
+                        Arc::new(move || {
+                            ghi_llm::embed::LocalEmbedder::open_registry_in(
+                                &dir,
+                                ghi_core::index_job::MODEL_ID,
+                            )
+                            .map(|e| Box::new(e) as Box<dyn ghi_llm::embed::Embedder + Send>)
+                            .map_err(|e| e.to_string())
+                        })
+                    },
+                    ready: {
+                        let dir = embed_dir;
+                        Arc::new(move || embed_ready(&dir))
+                    },
+                }),
             ],
         );
+        // Light machines search by keywords only (no embedding model).
+        let _ = ghi_core::index_job::set_enabled(&store, preset().embed_id.is_some());
+        let _ = ghi_core::index_job::queue_missing(&store);
         *lock(&self.runner_thread) = Some(runner.spawn().map_err(|e| e.to_string())?);
         *lock(&self.runner) = Some(runner);
         *slot = Some(store.clone());

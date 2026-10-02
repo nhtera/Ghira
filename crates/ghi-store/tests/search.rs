@@ -160,6 +160,30 @@ fn filters_narrow_the_results() {
         .len(),
         2
     );
+    assert_eq!(
+        run(SearchFilter {
+            meeting_gids: vec![m1.clone(), m2.clone()],
+            ..Default::default()
+        })
+        .len(),
+        3
+    );
+    assert_eq!(
+        run(SearchFilter {
+            meeting_gids: vec![m2.clone()],
+            ..Default::default()
+        })[0]
+            .meeting_gid,
+        m2
+    );
+    assert!(
+        run(SearchFilter {
+            segments_only: true,
+            ..Default::default()
+        })
+        .iter()
+        .all(|h| h.kind == HitKind::Segment)
+    );
     let by_person = run(SearchFilter {
         person_gids: vec![alice],
         ..Default::default()

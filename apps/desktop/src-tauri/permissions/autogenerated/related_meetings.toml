@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-related-meetings"
+description = "Enables the related_meetings command without any pre-configured scope."
+commands.allow = ["related_meetings"]
+
+[[permission]]
+identifier = "deny-related-meetings"
+description = "Denies the related_meetings command without any pre-configured scope."
+commands.deny = ["related_meetings"]

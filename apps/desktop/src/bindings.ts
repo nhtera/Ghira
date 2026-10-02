@@ -282,6 +282,13 @@ export const commands = {
 	 *  unlocked Mac turns it off); changing the time while on doesn't.
 	 */
 	setAppLock: (on: boolean, afterMinutes: number, reason: string) => typedError<AppSettings, string>(__TAURI_INVOKE("set_app_lock", { on, afterMinutes, reason })),
+	/**  Ask across meetings, answered on this device by the local model. */
+	askAllMeetings: (question: string, scope: AskScope, language: NotesLanguage) => typedError<AskAllAnswer, string>(__TAURI_INVOKE("ask_all_meetings", { question, scope, language })),
+	/**
+	 *  Passages close in meaning to `text`, at most one per meeting (empty when
+	 *  meaning search is off or the model isn't installed yet).
+	 */
+	relatedMeetings: (text: string, scope: AskScope, limit: number) => typedError<RelatedHit[], string>(__TAURI_INVOKE("related_meetings", { text, scope, limit })),
 	/**
 	 *  A system notification (notes ready, recovered); clicking it brings the
 	 *  app forward. The text comes localized from the UI.
@@ -377,6 +384,27 @@ export type AppVersion = {
 	core: string,
 };
 
+export type AskAllAnswer = {
+	/**  False: "Not discussed in these meetings". */
+	answered: boolean,
+	text: string,
+	citations: AskAllCitation[],
+	/**  The terms looked for (not discussed). */
+	searched: string[],
+	/**
+	 *  The meetings the answer was looked for in (passages read), newest
+	 *  first.
+	 */
+	sources: MeetingRef[],
+	/**  Meaning search took part (false: keywords only). */
+	semantic: boolean,
+};
+
+export type AskAllCitation = {
+	meeting: MeetingRef,
+	citation: Citation,
+};
+
 /**  An answer to "Ask this meeting". */
 export type AskAnswer = {
 	/**  False: "Not discussed in this meeting". */
@@ -387,6 +415,15 @@ export type AskAnswer = {
 	searched: string[],
 	/**  `local` or the cloud provider. */
 	engine: string,
+};
+
+/**  Where to look (empty lists: everywhere / everyone). */
+export type AskScope = {
+	meetings: string[],
+	/**  Meeting start, unix ms, inclusive. */
+	fromMs: number | null,
+	toMs: number | null,
+	persons: string[],
 };
 
 /**  The audio bar's source: a play token and how long the audio is. */
@@ -722,6 +759,12 @@ export type MeetingNotes = {
 	sections: TemplateSection[],
 };
 
+export type MeetingRef = {
+	meeting: string,
+	title: string,
+	startedAt: number | null,
+};
+
 export type MeetingRow = {
 	gid: string,
 	title: string,
@@ -901,6 +944,15 @@ export type RecoveredMeeting = {
 export type Redaction = {
 	kind: string,
 	count: number,
+};
+
+/**  A passage close in meaning to the search text. */
+export type RelatedHit = {
+	meeting: MeetingRef,
+	t0Ms: number | null,
+	t1Ms: number | null,
+	/**  The passage's first words. */
+	quote: string,
 };
 
 export type SearchHitView = {

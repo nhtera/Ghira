@@ -238,7 +238,7 @@ fn civil(ms: i64) -> (i64, i64, i64, i64, i64) {
     (y, m, d, mins / 60, mins % 60)
 }
 
-fn date_of(ms: i64) -> String {
+pub(crate) fn date_of(ms: i64) -> String {
     let (y, m, d, _, _) = civil(ms);
     format!("{y:04}-{m:02}-{d:02}")
 }

@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Button, Dialog, DialogClose, Segmented, useToast } from "@ghi/ui";
 import type { EmailTone, NotesLanguage } from "../../bindings";
 import { ipc } from "../../ipc";
+import { AskError } from "../ask/ask-error";
 import { emailText } from "./email-text";
 
 type Phase = { kind: "form" } | { kind: "writing" } | { kind: "draft" };
@@ -122,11 +123,7 @@ export function FollowupEmailDialog({ open, onOpenChange, meeting }: { open: boo
         )}
       </div>
 
-      {error && (
-        <p role="alert" className="text-body m-0 text-rec-ink">
-          {t("system.commandFailed", { message: error })}
-        </p>
-      )}
+      {error && <AskError error={error} status />}
 
       {hasDraft && (
         <div className="flex flex-col gap-2">

@@ -1237,6 +1237,31 @@
       "byProvider": "Answered by {{provider}}",
       "cloudFailed": "the cloud request failed ({{reason}}); answered on this device",
       "answeredLocal": "Answered on this device"
+    },
+    "scopeLabel": "Search in",
+    "rangeMenu": "Choose a date range",
+    "thread": "Questions and answers",
+    "openAt": "Open {{title}} at {{time}}",
+    "suggestions": {
+      "decided": "What did we decide recently?",
+      "actions": "Which action items are still open?",
+      "themes": "What topics came up most often?"
+    },
+    "keywordOnly": "Searched by keywords only. Searching by meaning needs the larger model set (Settings → Models).",
+    "related": {
+      "title": "Related by meaning"
+    },
+    "busy": {
+      "busyRecording": "This waits until the recording stops.",
+      "busyNotes": "Notes are being written. Try again in a moment.",
+      "noModel": "The notes model isn't installed yet (Settings → Models)."
+    },
+    "thinking": "Thinking…",
+    "openMeeting": "Open {{title}}",
+    "rangeShort": {
+      "last7Days": "Last 7 days",
+      "last30Days": "Last 30 days",
+      "thisYear": "This year"
     }
   },
   "import": {

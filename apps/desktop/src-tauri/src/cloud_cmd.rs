@@ -233,7 +233,7 @@ pub enum CloudPreviewResult {
     Answer(AskAnswer),
 }
 
-fn out_lang(l: NotesLanguage, store: &Store, meeting: &str) -> Result<OutLang, String> {
+pub(crate) fn out_lang(l: NotesLanguage, store: &Store, meeting: &str) -> Result<OutLang, String> {
     Ok(match l {
         NotesLanguage::En => OutLang::En,
         NotesLanguage::Vi => OutLang::Vi,
@@ -537,11 +537,17 @@ pub async fn cloud_request_log(
 
 // ------------------------------------------------------------------ ask
 
+/// Error codes of [`local_model_free`] the UI turns into words
+/// (`ask.busy.*`).
+pub(crate) const BUSY_RECORDING: &str = "busyRecording";
+pub(crate) const BUSY_NOTES: &str = "busyNotes";
+pub(crate) const NO_MODEL: &str = "noModel";
+
 /// The local model can run now: installed, not recording, no notes job
-/// using it (one model in memory at a time).
-fn local_model_free(c: &Core, store: &Store) -> Result<(), String> {
+/// using it (one model in memory at a time). Errors are the codes above.
+pub(crate) fn local_model_free(c: &Core, store: &Store) -> Result<(), String> {
     if c.recording() {
-        return Err("this waits until the recording stops".into());
+        return Err(BUSY_RECORDING.into());
     }
     let running = store.active_jobs().map_err(err)?;
     if running.iter().any(|j| {
@@ -549,10 +555,10 @@ fn local_model_free(c: &Core, store: &Store) -> Result<(), String> {
             && (j.kind == ghi_core::session::NOTES_LIVE_JOB
                 || j.kind == ghi_core::notes_job::NOTES_FINAL_JOB)
     }) {
-        return Err("notes are being written: try again in a moment".into());
+        return Err(BUSY_NOTES.into());
     }
     if !crate::core::llm_ready(&c.models()) {
-        return Err("the notes model isn't installed yet".into());
+        return Err(NO_MODEL.into());
     }
     Ok(())
 }
