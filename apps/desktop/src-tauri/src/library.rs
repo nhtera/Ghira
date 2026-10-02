@@ -498,27 +498,27 @@ pub async fn take_recovered_meetings(core: CoreState<'_>) -> Result<Vec<Recovere
     .await
 }
 
-/// Names given to speakers in recent meetings, most recent first (rename
-/// autocomplete; the People list arrives in phase 14).
+/// Names of the people the user has named (not Me), most recently met first
+/// (rename autocomplete).
 #[tauri::command]
 #[specta::specta]
 pub async fn known_speaker_names(core: CoreState<'_>) -> Result<Vec<String>, String> {
     blocking(&core, |c| {
+        // The people the user has named (Me has no name to suggest), the
+        // most recently met first.
         let store = c.store()?;
-        let mut names: Vec<String> = Vec::new();
-        for m in store.list_meetings(30, 0).map_err(|e| e.to_string())? {
-            for s in store.speakers(&m.gid).map_err(|e| e.to_string())? {
-                if let Some(n) = s.display_name
-                    && !s.is_me
-                    && !s.not_person
-                    && !names.iter().any(|x| x.to_lowercase() == n.to_lowercase())
-                {
-                    names.push(n);
-                }
-            }
+        let mut people: Vec<_> = store
+            .people_overview()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|p| !p.is_me && !p.name.is_empty())
+            .collect();
+        people.sort_by_key(|p| std::cmp::Reverse(p.last_met_ms));
+        // Names are content: re-checked just before they are returned.
+        if c.locked() {
+            return Err("the app is locked".into());
         }
-        names.truncate(100);
-        Ok(names)
+        Ok(people.into_iter().map(|p| p.name).take(100).collect())
     })
     .await
 }

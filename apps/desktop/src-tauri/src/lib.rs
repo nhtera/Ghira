@@ -17,12 +17,14 @@ mod menu;
 mod models_cmd;
 mod navigation;
 mod panels;
+mod people_cmd;
 mod recovery_cmd;
 mod settings_cmd;
 mod speakers_cmd;
 mod system;
 mod tray;
 mod update_cmd;
+mod voice_cmd;
 mod windows;
 
 use std::sync::Arc;
@@ -382,6 +384,21 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             lock_cmd::set_app_lock,
             ask_cmd::ask_all_meetings,
             ask_cmd::related_meetings,
+            people_cmd::list_people,
+            people_cmd::person_detail,
+            people_cmd::merge_people,
+            people_cmd::delete_voice_data,
+            people_cmd::remove_person_name,
+            voice_cmd::voice_status,
+            voice_cmd::enroll_voice_start,
+            voice_cmd::enroll_voice_level,
+            voice_cmd::enroll_voice_finish,
+            voice_cmd::enroll_voice_cancel,
+            speakers_cmd::set_speaker_me,
+            speakers_cmd::clear_speaker_me,
+            speakers_cmd::accept_voice_suggestion,
+            speakers_cmd::dismiss_voice_suggestion,
+            speakers_cmd::save_voice_profile,
             system::show_notification
         ])
         .events(tauri_specta::collect_events![

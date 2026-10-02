@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-speaker-me"
+description = "Enables the set_speaker_me command without any pre-configured scope."
+commands.allow = ["set_speaker_me"]
+
+[[permission]]
+identifier = "deny-set-speaker-me"
+description = "Denies the set_speaker_me command without any pre-configured scope."
+commands.deny = ["set_speaker_me"]

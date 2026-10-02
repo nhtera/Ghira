@@ -207,6 +207,8 @@ pub struct SpeakerSuggestion {
     pub person_gid: String,
     /// The person's name (empty for Me).
     pub person_name: String,
+    /// The suggested person is Me.
+    pub is_me: bool,
     pub score: f32,
 }
 
@@ -914,7 +916,7 @@ impl Store {
         let dek = self.dek(&conn, m.id)?;
         let mut stmt = conn.prepare_cached(
             "SELECT s.gid, s.label_idx, s.display_name_ct, p.gid, s.color_slot, s.is_me,
-                    s.not_person, t.gid, sp.gid, sp.name, s.suggest_score
+                    s.not_person, t.gid, sp.gid, sp.name, s.suggest_score, sp.is_me
              FROM speakers s LEFT JOIN persons p ON p.id = s.person_id
              LEFT JOIN speakers t ON t.id = s.merged_into
              LEFT JOIN persons sp ON sp.id = s.suggest_person_id
@@ -934,6 +936,7 @@ impl Store {
                     r.get::<_, Option<String>>(8)?,
                     r.get::<_, Option<String>>(9)?,
                     r.get::<_, Option<f64>>(10)?,
+                    r.get::<_, Option<bool>>(11)?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -951,6 +954,7 @@ impl Store {
                     suggest_gid,
                     suggest_name,
                     suggest_score,
+                    suggest_me,
                 )| {
                     let display_name = ct
                         .map(|ct| {
@@ -969,6 +973,7 @@ impl Store {
                         suggestion: suggest_gid.map(|person_gid| SpeakerSuggestion {
                             person_gid,
                             person_name: suggest_name.unwrap_or_default(),
+                            is_me: suggest_me.unwrap_or(false),
                             score: suggest_score.unwrap_or(0.0) as f32,
                         }),
                     })

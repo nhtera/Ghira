@@ -26,6 +26,7 @@ import type {
 import type { Commands, Ipc } from "./ipc";
 import { audioUrl, namesOf, onImportStaged, onImportUpdate, reviewCommands, simulateImportDrop, transcriptOf } from "./mock-review";
 import { aiCommands } from "./mock-ai";
+import { peopleCommands } from "./mock-people";
 
 const LINE_MS = 1800;
 // Palette slots in assignment order (s1, s2, s4, s8: tokens speakerOrder).
@@ -224,6 +225,7 @@ const commands: Commands = {
   // The mock can't restart itself.
   installUpdate: () => fail("updates are installed by the app, not the mock"),
   ...reviewCommands({ rows, process }),
+  ...peopleCommands({ rows, voiceReady: () => voiceInstalled, recording: () => session != null }),
   ...aiCommands({
     rows,
     process,
@@ -358,11 +360,11 @@ const commands: Commands = {
     const lines = sample.transcript.slice(0, session.next).map((l) => l.x).slice(-2);
     return ok({ fromMs, lines, notes: [], marks: 0 });
   },
-  getSettings: () => ok(settings),
+  getSettings: () => ok({ ...settings, voiceProfilesMe: voiceInstalled }),
   updateSettings: (patch) => {
     const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v != null));
     settings = { ...settings, ...defined, voiceProfilesMe: false, voiceProfilesThirdParty: false };
-    return ok(settings);
+    return ok({ ...settings, voiceProfilesMe: voiceInstalled });
   },
   micPermission: () => Promise.resolve("granted"),
   requestMicPermission: () => ok("granted"),
@@ -395,7 +397,11 @@ const commands: Commands = {
         : null,
     ),
   modelsStatus: () =>
-    ok({ tier: "balanced", models: MODELS.map((m) => ({ ...m, installed: true, partialBytes: 0, damaged: false })), downloading: false }),
+    ok({
+      tier: "balanced",
+      models: MODELS.map((m) => ({ ...m, installed: m.role === "voice" ? voiceInstalled : true, partialBytes: 0, damaged: false })),
+      downloading: false,
+    }),
   // `?recovered=1` in the URL pretends the last session crashed mid-meeting.
   takeRecoveredMeetings: () => {
     const once = new URLSearchParams(location.search).has("recovered") && !recoveredShown;
@@ -426,10 +432,18 @@ const commands: Commands = {
   downloadModels: () => {
     MODELS.forEach((m, i) => {
       const total = m.size;
+      // `?voiceslow=1`: the voice model never finishes (to see "still downloading").
+      if (m.role === "voice" && new URLSearchParams(location.search).has("voiceslow")) {
+        window.setTimeout(() => emitDownload({ model: m.id, phase: "downloading", done: total * 0.4, total, error: null }), 100);
+        return;
+      }
       [0.25, 0.6, 1].forEach((f, k) =>
         window.setTimeout(() => emitDownload({ model: m.id, phase: "downloading", done: total * f, total, error: null }), 300 * (i * 4 + k)),
       );
-      window.setTimeout(() => emitDownload({ model: m.id, phase: "done", done: total, total, error: null }), 300 * (i * 4 + 3));
+      window.setTimeout(() => {
+        if (m.role === "voice") voiceInstalled = true;
+        emitDownload({ model: m.id, phase: "done", done: total, total, error: null });
+      }, 300 * (i * 4 + 3));
     });
     return ok(null);
   },
@@ -461,6 +475,7 @@ const commands: Commands = {
         lines: 3,
         sampleT0Ms: i * 10_000,
         sampleT1Ms: i * 10_000 + 3000,
+        suggestion: null,
       })),
     ),
   renameMeetingSpeaker: () => ok(null),
@@ -491,7 +506,10 @@ const MODELS = [
   { id: "nemotron-3.5-asr", role: "asr", size: 1.2e9 },
   { id: "nemotron-3-diarization", role: "diarization", size: 0.2e9 },
   { id: "qwen3-4b", role: "llm", size: 2.5e9 },
+  { id: "campplus-voice", role: "voice", size: 0.03e9 },
 ];
+/** `?novoice=1`: the voice model isn't installed (a download installs it). */
+let voiceInstalled = !new URLSearchParams(location.search).has("novoice");
 
 const detectListeners = new Set<(e: MeetingDetected) => void>();
 const downloadListeners = new Set<(e: ModelDownload) => void>();

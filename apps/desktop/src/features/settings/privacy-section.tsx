@@ -8,6 +8,7 @@ import { type Locale } from "@ghi/i18n";
 import { ipc } from "../../ipc";
 import { MIN_PASSWORD, RETENTION_DAYS, deleteWord, deleteWordMatches, passwordIssue, passwordStrength, retentionDeletes } from "./logic";
 import { AppLockCard } from "./app-lock-card";
+import { MyVoiceCard } from "./my-voice-card";
 import { Card, Note, Row, Switch, SwitchRow, inputCls, useFail, useSettings } from "./parts";
 
 export function PrivacySection() {
@@ -21,8 +22,9 @@ export function PrivacySection() {
       </Card>
       <AppLockCard />
       {settings && <Retention days={settings.audioRetentionDays} onApply={(d) => patch({ audioRetentionDays: d })} />}
+      <MyVoiceCard />
       <Card>
-        <Row label={t("settings.privacy.learnVoices")} hint={t("settings.privacy.comingLater")}>
+        <Row label={t("settings.privacy.learnVoices")} hint={t("settings.privacy.thirdPartyOff")}>
           <Switch checked={false} onChange={() => {}} label={t("settings.privacy.learnVoices")} disabled />
         </Row>
         {settings && (

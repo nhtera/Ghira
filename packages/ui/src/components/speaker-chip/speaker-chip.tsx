@@ -18,16 +18,20 @@ export type SpeakerChipProps = {
   isMe?: boolean;
   /** `suggested`: the name the voice sounds like ("Linh"). */
   suggestion?: string;
+  /** `suggested`: the button's text, when it is not just "Linh?" ("Sounds like Linh"). */
+  suggestionLabel?: string;
   /** `merged`: the label that was merged away ("Speaker 5"). */
   mergedFrom?: string;
   /** This speaker is selected (e.g. its lines are highlighted). */
   selected?: boolean;
   onClick?: () => void;
   onAcceptSuggestion?: () => void;
+  /** `suggested`: adds a button that dismisses the suggestion. */
+  onDismissSuggestion?: () => void;
   className?: string;
 };
 
-export function SpeakerChip({ state, name = "", colorSlot = 1, isMe, suggestion, mergedFrom, selected, onClick, onAcceptSuggestion, className }: SpeakerChipProps) {
+export function SpeakerChip({ state, name = "", colorSlot = 1, isMe, suggestion, mergedFrom, selected, onClick, onAcceptSuggestion, onDismissSuggestion, suggestionLabel, className }: SpeakerChipProps) {
   const { t } = useTranslation();
   const identifying = state === "identifying";
   const initial = state === "numbered" || state === "suggested" ? (name.match(/\d+\s*$/)?.[0].trim() ?? initialOf(name)) : initialOf(name);
@@ -68,8 +72,18 @@ export function SpeakerChip({ state, name = "", colorSlot = 1, isMe, suggestion,
           aria-label={t("speakers.acceptSuggestion", { name: suggestion })}
           className="-mr-1 ml-1 inline-flex h-6 items-center gap-0.5 rounded-full bg-warn-soft px-2 text-[12px] font-semibold text-warn"
         >
-          {`${suggestion}?`}
+          {suggestionLabel ?? `${suggestion}?`}
           <Icon name="check" size={15} />
+        </button>
+      )}
+      {state === "suggested" && suggestion && onDismissSuggestion && (
+        <button
+          type="button"
+          onClick={onDismissSuggestion}
+          aria-label={t("speakers.dismissSuggestionFor", { speaker: name })}
+          className="ml-1 inline-flex size-7 items-center justify-center rounded-full text-muted hover:bg-sunk"
+        >
+          <Icon name="close" size={14} />
         </button>
       )}
     </span>

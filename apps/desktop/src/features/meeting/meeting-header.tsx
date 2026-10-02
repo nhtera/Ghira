@@ -4,7 +4,6 @@
 import { formatClock, formatDate, formatTime, type Locale } from "@ghi/i18n";
 import {
   Icon,
-  SpeakerChip,
   StatusPill,
   cn,
   useToast,
@@ -18,7 +17,7 @@ import { ipc } from "../../ipc";
 import { meetingKeys } from "../../state/meeting-queries";
 import { MEETINGS_KEY } from "../library/use-meetings";
 import { detailStatus } from "./detail-status";
-import { speakerDisplay } from "./speaker-display";
+import { StoredSpeaker } from "../speakers/stored-speaker";
 
 function Chip({
   icon,
@@ -151,19 +150,11 @@ export function MeetingHeader({ detail }: { detail: MeetingDetail }) {
           aria-label={t("speakers.title")}
           className="m-0 flex list-none flex-wrap gap-1.5 p-0"
         >
-          {people.map((s) => {
-            const d = speakerDisplay(s, t);
-            return (
-              <li key={s.gid} className="h-7">
-                <SpeakerChip
-                  state={d.named ? "named" : "numbered"}
-                  name={d.name}
-                  colorSlot={d.colorSlot}
-                  isMe={d.isMe}
-                />
-              </li>
-            );
-          })}
+          {people.map((s) => (
+            <li key={s.gid} className="flex h-7 items-center gap-1.5">
+              <StoredSpeaker meeting={detail.gid} mode={detail.mode} speaker={s} />
+            </li>
+          ))}
         </ul>
       )}
     </header>

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-clear-speaker-me"
+description = "Enables the clear_speaker_me command without any pre-configured scope."
+commands.allow = ["clear_speaker_me"]
+
+[[permission]]
+identifier = "deny-clear-speaker-me"
+description = "Denies the clear_speaker_me command without any pre-configured scope."
+commands.deny = ["clear_speaker_me"]

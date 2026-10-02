@@ -22,7 +22,7 @@ export type ModelDownloadState = {
   status: ModelsStatus | null;
   models: ModelProgress[];
   phase: DownloadPhase;
-  /** 0..100 over all models. */
+  /** 0..100 over the models onboarding waits for (not the voice model). */
   percent: number;
   /** A rough estimate from the speed so far; null until there is one. */
   minutesLeft: number | null;
@@ -33,6 +33,9 @@ export type ModelDownloadState = {
   refresh: () => void;
   cancel: () => void;
 };
+
+/** Models with this role never block "done". */
+const VOICE_ROLE = "voice";
 
 const pct = (done: number, total: number) => (total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0);
 
@@ -96,21 +99,26 @@ export function useModelDownload(): ModelDownloadState {
     [status, events],
   );
 
+  // The voice model keeps downloading in the background: onboarding never waits for it.
+  const required = models.filter((m) => m.model.role !== VOICE_ROLE);
+  // The shown download size counts every model; the progress and the estimate only the required ones.
   const totalBytes = models.reduce((n, m) => n + (m.model.size ?? 0), 0);
-  const gotBytes = models.reduce((n, m) => n + ((m.model.size ?? 0) * m.percent) / 100, 0);
-  const percent = pct(gotBytes, totalBytes);
-  const allDone = models.length > 0 && models.every((m) => m.installed);
-  const anyActive = models.some((m) => m.active);
-  const anyFailed = models.some((m) => m.failed);
+  const requiredBytes = required.reduce((n, m) => n + (m.model.size ?? 0), 0);
+  const gotBytes = required.reduce((n, m) => n + ((m.model.size ?? 0) * m.percent) / 100, 0);
+  const percent = pct(gotBytes, requiredBytes);
+  const allDone = required.length > 0 && required.every((m) => m.installed);
+  const anyActive = required.some((m) => m.active);
+  const anyFailed = required.some((m) => m.failed);
   const phase: DownloadPhase = !status ? "loading" : allDone ? "done" : anyFailed || (error && !anyActive) ? "failed" : anyActive || running ? "downloading" : "idle";
 
   // Speed since the first progress: enough for "about N min left".
-  const bases = Object.values(first);
+  const requiredIds = new Set(required.map((m) => m.model.id));
+  const bases = Object.entries(first).filter(([id]) => requiredIds.has(id)).map(([, b]) => b);
   let minutesLeft: number | null = null;
   if (phase === "downloading" && bases.length > 0) {
     const since = Math.min(...bases.map((b) => b.at));
-    const moved = Object.entries(first).reduce((n, [id, b]) => n + Math.max(0, (events[id]?.done ?? 0) - b.done), 0);
-    if (now > since && moved > 0) minutesLeft = Math.max(1, Math.ceil((totalBytes - gotBytes) / (moved / (now - since)) / 60_000));
+    const moved = Object.entries(first).filter(([id]) => requiredIds.has(id)).reduce((n, [id, b]) => n + Math.max(0, (events[id]?.done ?? 0) - b.done), 0);
+    if (now > since && moved > 0) minutesLeft = Math.max(1, Math.ceil((requiredBytes - gotBytes) / (moved / (now - since)) / 60_000));
   }
 
   const start = useCallback(() => {

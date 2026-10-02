@@ -47,6 +47,8 @@ pub struct Core {
     recovered: Mutex<Vec<String>>,
     /// App settings as last read or written (system.rs).
     settings: Mutex<Option<crate::system::AppSettings>>,
+    /// "Record your voice" in progress (voice_cmd.rs).
+    enrollment: Mutex<Option<crate::voice_cmd::Enrollment>>,
     /// The runner's thread, joined (bounded) at shutdown.
     runner_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
     /// Opens the local notes model (the jobs' factory; "Ask this meeting").
@@ -190,6 +192,55 @@ pub(crate) fn embed_ready(models: &Path) -> bool {
         .is_some_and(|id| ghi_models::installed(models, &[id]))
 }
 
+/// The speaker-voice model (voice profiles) is installed.
+pub(crate) fn voice_ready(models: &Path) -> bool {
+    ghi_models::installed(models, &[preset().voice_id])
+}
+
+/// [`voice_ready`] remembered for 30 s (settings are read often).
+pub(crate) fn voice_ready_cached(models: &Path) -> bool {
+    static CACHE: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
+    let mut c = lock(&CACHE);
+    if let Some((at, v)) = *c
+        && at.elapsed() < Duration::from_secs(30)
+    {
+        return v;
+    }
+    let v = voice_ready(models);
+    *c = Some((Instant::now(), v));
+    v
+}
+
+/// Opens the speaker model (checked against its SHA-256 first).
+pub(crate) fn voice_factory(models: &Path) -> ghi_core::profiles::VoiceFactory {
+    let models = models.to_path_buf();
+    Arc::new(move || {
+        let path = checked_model(&models, preset().voice_id)?;
+        ghi_core::profiles::open_tract(&path)
+    })
+}
+
+fn voice_ready_fn(models: &Path) -> ghi_core::jobs::Ready {
+    let models = models.to_path_buf();
+    Arc::new(move || voice_ready(&models))
+}
+
+/// Hands out the third-party proof only when `enforce()`'s rule says the
+/// flag is on (never, while `THIRD_PARTY_APPROVED` is false).
+fn third_party_gate(store: &Arc<Store>) -> ghi_core::voice_step::ThirdPartyGate {
+    let store = store.clone();
+    Arc::new(move || crate::system::third_party_token(&store))
+}
+
+/// The final pass's voice step: Me and, behind the flag, other people.
+fn voice_step(models: &Path, store: &Arc<Store>) -> ghi_core::voice_step::VoiceStep {
+    ghi_core::voice_step::VoiceStep {
+        embedder: voice_factory(models),
+        ready: voice_ready_fn(models),
+        third_party: third_party_gate(store),
+    }
+}
+
 /// The notes model for this machine's tier is installed.
 pub(crate) fn llm_ready(models: &Path) -> bool {
     ghi_models::installed(models, &[preset().llm_id])
@@ -270,6 +321,7 @@ impl Core {
             locked,
             runner: Mutex::new(None),
             runner_thread: Mutex::new(None),
+            enrollment: Mutex::new(None),
             llm: Mutex::new(None),
             query_embedder: Arc::new(Mutex::new(None)),
             settings: Mutex::new(None),
@@ -296,6 +348,20 @@ impl Core {
             });
     }
 
+    pub(crate) fn enrollment_mutex(&self) -> &Mutex<Option<crate::voice_cmd::Enrollment>> {
+        &self.enrollment
+    }
+
+    /// Held while a recording starts or stops (an enrollment checks
+    /// `recording()` under it).
+    pub(crate) fn lifecycle_guard(&self) -> MutexGuard<'_, ()> {
+        lock(&self.lifecycle)
+    }
+
+    pub(crate) fn enrollment_slot(&self) -> MutexGuard<'_, Option<crate::voice_cmd::Enrollment>> {
+        lock(&self.enrollment)
+    }
+
     /// A recording is running (quitting must ask first).
     pub fn recording(&self) -> bool {
         lock(&self.session).is_some()
@@ -320,6 +386,7 @@ impl Core {
     /// call) — its claim goes back to the queue without spending an attempt.
     /// Then the LLM worker processes are killed so none outlives the app.
     pub fn shutdown(&self, wait: std::time::Duration) {
+        crate::voice_cmd::drop_enrollment(&self.enrollment);
         if let Some(r) = lock(&self.runner).as_ref() {
             r.shutdown_and_release(wait);
         }
@@ -402,6 +469,10 @@ impl Core {
     }
 
     pub fn set_locked(&self, locked: bool) {
+        // The mic never stays open behind the lock screen.
+        if locked {
+            crate::voice_cmd::drop_enrollment(&self.enrollment);
+        }
         self.locked
             .store(locked, std::sync::atomic::Ordering::Release);
     }
@@ -512,7 +583,12 @@ impl Core {
         }
         let recovered = ghi_core::recover::recover(&store)?;
         *lock(&self.recovered) = recovered.meetings;
+        // Names given before 14c get their person rows (idempotent).
+        if let Err(e) = store.link_named_speakers() {
+            log::warn!("linking named speakers: {e}");
+        }
         let models = self.models();
+        let speech_models = models.clone();
         let embed_dir = models.clone();
         let template = ghi_llm::template::builtin("general").map_err(|e| e.to_string())?;
         // The notes model lives with the speech models in the app data dir.
@@ -549,8 +625,15 @@ impl Core {
                         Arc::new(move || engines(&models, 1120))
                     },
                     chunk_s: 600.0,
-                    ready: Arc::new(move || speech_ready(&models)),
-                    voice: None,
+                    ready: Arc::new(move || speech_ready(&speech_models)),
+                    voice: Some(voice_step(&models, &store)),
+                }),
+                // After a "This is me" or an accepted suggestion: add that
+                // voice to the profile (checks consent again when it runs).
+                Arc::new(ghi_core::voice_job::VoiceLearnJob {
+                    embedder: voice_factory(&models),
+                    ready: voice_ready_fn(&models),
+                    third_party: third_party_gate(&store),
                 }),
                 Arc::new(ghi_core::notes_job::NotesJob {
                     kind: ghi_core::notes_job::NOTES_FINAL_JOB,
@@ -660,6 +743,8 @@ impl Core {
         if lock(&self.session).is_some() {
             return Err("a recording is already running".into());
         }
+        // The mic is the recording's: a voice enrollment in progress ends.
+        crate::voice_cmd::drop_enrollment(&self.enrollment);
         let store = self.store_even_locked()?;
         // Models missing: record now, transcribe when they arrive. Engines
         // that fail to load must not cost the recording either. They load

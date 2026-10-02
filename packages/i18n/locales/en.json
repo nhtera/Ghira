@@ -200,7 +200,13 @@
     "me": "Me",
     "acceptSuggestion": "Accept {{name}} as this speaker",
     "numbered": "Speaker {{number}}",
-    "saveVoiceNext": "You’ll confirm they agreed on the next step."
+    "saveVoiceNext": "You’ll confirm they agreed on the next step.",
+    "thisIsMe": "This is me",
+    "notMe": "Not me",
+    "markedMe": "Marked as Me",
+    "unmarkedMe": "No longer marked as Me",
+    "soundsLikeName": "Sounds like {{name}}",
+    "dismissSuggestionFor": "Dismiss the suggestion for {{speaker}}"
   },
   "common": {
     "accept": "Accept",
@@ -592,7 +598,13 @@
       "listening": "Listening…",
       "done": "Your voice is saved",
       "consent_mac": "I agree to store a voice profile of myself. It stays encrypted on this Mac and I can delete it in People.",
-      "consent_win": "I agree to store a voice profile of myself. It stays encrypted on this PC and I can delete it in People."
+      "consent_win": "I agree to store a voice profile of myself. It stays encrypted on this PC and I can delete it in People.",
+      "modelWaiting": "The voice model is still downloading. You can skip this and record your voice later in People.",
+      "reading": "Reading… {{seconds}} s of about {{max}} s",
+      "stop": "Stop and save",
+      "saving": "Saving your voice…",
+      "again": "Try again",
+      "modelOffline": "The voice model isn’t installed and strict offline is on. Record your voice later from People, once the model is installed."
     },
     "test": {
       "title": "Try a 10-second test",
@@ -870,7 +882,19 @@
       },
       "lockNow": "Lock now",
       "lockNote": "Locking hides your meetings. A recording keeps going.",
-      "lockEncrypted": "Your meetings stay encrypted either way."
+      "lockEncrypted": "Your meetings stay encrypted either way.",
+      "myVoice": {
+        "title": "Your voice",
+        "saved_one": "Voice profile saved {{date}} · {{count}} sample",
+        "saved_other": "Voice profile saved {{date}} · {{count}} samples",
+        "none": "No voice profile yet. {{app}} can’t label you as Me automatically.",
+        "modelMissing": "Recording your voice needs the voice model (Settings → Models).",
+        "delete": "Delete my voice data…",
+        "question_one": "Delete your voice profile and {{count}} sample? {{app}} stops labeling you as Me automatically. Your name stays in notes.",
+        "question_other": "Delete your voice profile and {{count}} samples? {{app}} stops labeling you as Me automatically. Your name stays in notes.",
+        "deleted": "Your voice data is deleted."
+      },
+      "thirdPartyOff": "Other people’s voices can’t be saved in this version."
     },
     "sync": {
       "pairTitle": "Pair a phone",
@@ -1050,12 +1074,17 @@
       "action": "Remove name from notes…",
       "question_one": "Replace “{{name}}” with “Speaker N” in {{count}} meeting? Voice data is not affected.",
       "question_other": "Replace “{{name}}” with “Speaker N” in {{count}} meetings? Voice data is not affected.",
-      "confirm": "Remove name"
+      "confirm": "Remove name",
+      "done_one": "Name removed in {{count}} meeting.",
+      "done_other": "Name removed in {{count}} meetings."
     },
     "merge": {
       "action": "Merge with…",
       "hint": "Use when one person appears twice, like “Minh” and “Minh Nguyen”.",
-      "done": "Merged {{from}} into {{into}}"
+      "done": "Merged {{from}} into {{into}}",
+      "question": "Merge {{from}} into {{into}}? Their meetings and names are combined. This can’t be undone.",
+      "confirm": "Merge",
+      "blocked": "People with a voice profile can’t be merged in this version."
     },
     "openActions": "Open action items",
     "meetingsTogether": "Meetings together",
@@ -1065,7 +1094,34 @@
       "body": "When you name a speaker, {{app}} adds them here. Voice profiles are saved only with their agreement."
     },
     "namedIn": "Named {{name}} in {{meeting}}",
-    "markedNotPerson": "Marked as not a person"
+    "markedNotPerson": "Marked as not a person",
+    "lastMet": "Last met {{date}}",
+    "list": "People",
+    "noMeetings": "No meetings yet.",
+    "errors": {
+      "busyRecording": "This waits until the recording stops.",
+      "notFound": "That person is no longer in People.",
+      "isMe": "This can’t be done to Me.",
+      "samePerson": "Pick a different person.",
+      "noProfile": "There is no voice profile to delete.",
+      "storage": "Couldn’t read or write the data. Try again.",
+      "liveMeeting": "Voice actions work after the meeting is saved.",
+      "notASpeaker": "That speaker is no longer in this meeting.",
+      "farSide": "In a call only your own microphone can be Me.",
+      "notMe": "This speaker isn’t marked as Me.",
+      "noSuggestion": "There is no suggestion any more.",
+      "thirdPartyOff": "Other people’s voice profiles are off.",
+      "notNamed": "Name the speaker first.",
+      "noVoice": "No voice was kept for this speaker.",
+      "invalidConsent": "The consent could not be recorded.",
+      "noModel": "The voice model isn’t installed yet (Settings → Models).",
+      "micPermission": "Microphone access is off. Allow it in system settings and try again.",
+      "noMic": "No microphone was found.",
+      "notEnrolling": "The recording had already stopped. Start again.",
+      "tooShort": "That was too short. Read the whole passage, about 20 seconds.",
+      "tooQuiet": "We could barely hear you. Move closer to the microphone and try again."
+    },
+    "stopSample": "Stop the sample"
   },
   "consent": {
     "title": "Save {{name}}’s voice?",
@@ -1264,7 +1320,8 @@
       "last7Days": "Last 7 days",
       "last30Days": "Last 30 days",
       "thisYear": "This year"
-    }
+    },
+    "personMenu": "Choose a person"
   },
   "import": {
     "subtitle_mac": "Audio and video files are transcribed and written up on this Mac.",

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-enroll-voice-cancel"
+description = "Enables the enroll_voice_cancel command without any pre-configured scope."
+commands.allow = ["enroll_voice_cancel"]
+
+[[permission]]
+identifier = "deny-enroll-voice-cancel"
+description = "Denies the enroll_voice_cancel command without any pre-configured scope."
+commands.deny = ["enroll_voice_cancel"]

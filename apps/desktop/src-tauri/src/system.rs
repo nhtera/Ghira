@@ -37,10 +37,11 @@ pub struct AppSettings {
     pub global_mark_shortcut: bool,
     /// ⌘⇧R / Ctrl+Shift+R starts or stops recording from any app.
     pub global_record_shortcut: bool,
-    /// Voice profile of the user ("Me"). Off until speaker embeddings exist
-    /// (phase 14); the onboarding step is hidden while off.
+    /// Voice profile of the user ("Me"): on while the speaker model is
+    /// installed (the onboarding step is hidden while off).
     pub voice_profiles_me: bool,
-    /// Saving other people's voices (consent dialog). Off for the alpha.
+    /// Saving other people's voices (consent dialog). Off for the alpha
+    /// ([`THIRD_PARTY_APPROVED`]).
     pub voice_profiles_third_party: bool,
     /// No network at all, model downloads included (doc 02 §L).
     pub strict_offline: bool,
@@ -171,13 +172,37 @@ fn short(v: Option<String>, cur: String, max: usize) -> String {
     v.map(|s| s.chars().take(max).collect()).unwrap_or(cur)
 }
 
-/// The features behind these flags don't exist yet: always off.
-fn enforce(s: AppSettings) -> AppSettings {
+/// Other people's voice profiles wait for counsel's sign-off on the consent
+/// evidence (phase 14c, D9): hard off in every build until this is changed in
+/// source. Every command and the final pass check it server-side.
+pub(crate) const THIRD_PARTY_APPROVED: bool = false;
+
+/// The voice flags are not the user's to set: Me follows the speaker model,
+/// third-party is the source constant AND what the user chose.
+fn enforce(s: AppSettings, voice_model: bool) -> AppSettings {
     AppSettings {
-        voice_profiles_me: false,
-        voice_profiles_third_party: false,
+        voice_profiles_me: voice_model,
+        voice_profiles_third_party: THIRD_PARTY_APPROVED && s.voice_profiles_third_party,
         ..s
     }
+}
+
+/// The third-party proof for the store's voice calls: `Some` only when the
+/// source constant allows it and the stored setting is on. The only place the
+/// token is built.
+pub(crate) fn third_party_token(
+    store: &ghi_store::store::Store,
+) -> Option<ghi_store::voice::ThirdPartyApproved> {
+    if !THIRD_PARTY_APPROVED {
+        return None;
+    }
+    let on = store
+        .get_setting(SETTINGS_KEY)
+        .ok()
+        .flatten()
+        .and_then(|v| v.get("voiceProfilesThirdParty").and_then(|b| b.as_bool()))
+        .unwrap_or(false);
+    on.then(ghi_store::voice::ThirdPartyApproved::assert_flag_checked)
 }
 
 /// Stored fields over the defaults (an older store lacks newer fields).
@@ -200,7 +225,7 @@ fn from_stored(v: Option<serde_json::Value>) -> AppSettings {
             }
         }
     }
-    enforce(serde_json::from_value(base).unwrap_or_default())
+    enforce(serde_json::from_value(base).unwrap_or_default(), false)
 }
 
 /// The settings (cached: the detection poller reads them every 2 s).
@@ -209,8 +234,10 @@ pub fn load_settings(core: &Core) -> Result<AppSettings, String> {
         .settings_cache()
         .lock()
         .unwrap_or_else(|e| e.into_inner());
+    // The model can arrive while the app runs: Me's flag is read fresh.
+    let voice_model = crate::core::voice_ready_cached(&core.models());
     if let Some(s) = cache.as_ref() {
-        return Ok(s.clone());
+        return Ok(enforce(s.clone(), voice_model));
     }
     let s = from_stored(
         core.store()?
@@ -218,7 +245,7 @@ pub fn load_settings(core: &Core) -> Result<AppSettings, String> {
             .map_err(|e| e.to_string())?,
     );
     *cache = Some(s.clone());
-    Ok(s)
+    Ok(enforce(s, voice_model))
 }
 
 #[tauri::command]
@@ -253,40 +280,43 @@ pub fn patch_settings(
         static WRITING: Mutex<()> = Mutex::new(());
         let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
         let cur = load_settings(c)?;
-        let s = enforce(AppSettings {
-            onboarding_done: patch.onboarding_done.unwrap_or(cur.onboarding_done),
-            detect_meetings: patch.detect_meetings.unwrap_or(cur.detect_meetings),
-            global_mark_shortcut: patch
-                .global_mark_shortcut
-                .unwrap_or(cur.global_mark_shortcut),
-            global_record_shortcut: patch
-                .global_record_shortcut
-                .unwrap_or(cur.global_record_shortcut),
-            strict_offline: patch.strict_offline.unwrap_or(cur.strict_offline),
-            meeting_language: patch.meeting_language.unwrap_or(cur.meeting_language),
-            cloud_redact: patch.cloud_redact.unwrap_or(cur.cloud_redact),
-            update_check: patch.update_check.unwrap_or(cur.update_check),
-            live_mode: patch.live_mode.unwrap_or(cur.live_mode),
-            app_lock: patch.app_lock.unwrap_or(cur.app_lock),
-            lock_after_minutes: patch.lock_after_minutes.unwrap_or(cur.lock_after_minutes),
-            audio_retention_days: patch
-                .audio_retention_days
-                .map(|d| d.min(3650))
-                .unwrap_or(cur.audio_retention_days),
-            cloud_provider: short(patch.cloud_provider, cur.cloud_provider.clone(), 40),
-            cloud_model: short(patch.cloud_model, cur.cloud_model.clone(), 80),
-            consent_message_en: short(
-                patch.consent_message_en,
-                cur.consent_message_en.clone(),
-                1000,
-            ),
-            consent_message_vi: short(
-                patch.consent_message_vi,
-                cur.consent_message_vi.clone(),
-                1000,
-            ),
-            ..cur.clone()
-        });
+        let s = enforce(
+            AppSettings {
+                onboarding_done: patch.onboarding_done.unwrap_or(cur.onboarding_done),
+                detect_meetings: patch.detect_meetings.unwrap_or(cur.detect_meetings),
+                global_mark_shortcut: patch
+                    .global_mark_shortcut
+                    .unwrap_or(cur.global_mark_shortcut),
+                global_record_shortcut: patch
+                    .global_record_shortcut
+                    .unwrap_or(cur.global_record_shortcut),
+                strict_offline: patch.strict_offline.unwrap_or(cur.strict_offline),
+                meeting_language: patch.meeting_language.unwrap_or(cur.meeting_language),
+                cloud_redact: patch.cloud_redact.unwrap_or(cur.cloud_redact),
+                update_check: patch.update_check.unwrap_or(cur.update_check),
+                live_mode: patch.live_mode.unwrap_or(cur.live_mode),
+                app_lock: patch.app_lock.unwrap_or(cur.app_lock),
+                lock_after_minutes: patch.lock_after_minutes.unwrap_or(cur.lock_after_minutes),
+                audio_retention_days: patch
+                    .audio_retention_days
+                    .map(|d| d.min(3650))
+                    .unwrap_or(cur.audio_retention_days),
+                cloud_provider: short(patch.cloud_provider, cur.cloud_provider.clone(), 40),
+                cloud_model: short(patch.cloud_model, cur.cloud_model.clone(), 80),
+                consent_message_en: short(
+                    patch.consent_message_en,
+                    cur.consent_message_en.clone(),
+                    1000,
+                ),
+                consent_message_vi: short(
+                    patch.consent_message_vi,
+                    cur.consent_message_vi.clone(),
+                    1000,
+                ),
+                ..cur.clone()
+            },
+            crate::core::voice_ready(&c.models()),
+        );
         let retention_changed = s.audio_retention_days != cur.audio_retention_days;
         let v = serde_json::to_value(&s).map_err(|e| e.to_string())?;
         c.store()?
@@ -564,9 +594,14 @@ mod tests {
         let s = from_stored(Some(serde_json::json!({
             "strictOffline": true,
             "voiceProfilesMe": true,
+            "voiceProfilesThirdParty": true,
             "unknownOldField": 1
         })));
-        assert!(s.strict_offline && s.detect_meetings && !s.voice_profiles_me);
+        assert!(s.strict_offline && s.detect_meetings);
+        // Me follows the speaker model, never the stored value.
+        assert!(!s.voice_profiles_me);
+        assert!(enforce(s.clone(), true).voice_profiles_me);
+        assert!(!enforce(AppSettings::default(), false).voice_profiles_me);
         // An older store without newer fields keeps their defaults.
         let s = from_stored(Some(serde_json::json!({ "onboardingDone": true })));
         assert!(s.onboarding_done && !s.strict_offline);
@@ -578,6 +613,39 @@ mod tests {
         })));
         assert!(s.app_lock && s.strict_offline);
         assert_eq!(s.live_mode, LiveMode::Auto);
+    }
+
+    #[test]
+    fn third_party_voice_profiles_are_never_enabled_by_settings() {
+        // The source constant is off: whatever is stored or patched.
+        const { assert!(!THIRD_PARTY_APPROVED, "release builds ship it off (D9)") };
+        for model in [false, true] {
+            let on = AppSettings {
+                voice_profiles_third_party: true,
+                ..AppSettings::default()
+            };
+            assert!(!enforce(on, model).voice_profiles_third_party);
+        }
+        let s = from_stored(Some(serde_json::json!({ "voiceProfilesThirdParty": true })));
+        assert!(!s.voice_profiles_third_party);
+    }
+
+    #[test]
+    fn the_third_party_token_needs_the_constant() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ghi_store::store::Store::open(
+            tmp.path(),
+            std::sync::Arc::new(ghi_store::keys::MemoryKeyStore::default()),
+            ghi_store::keys::Protection::default(),
+        )
+        .unwrap();
+        store
+            .set_setting(
+                SETTINGS_KEY,
+                &serde_json::json!({"voiceProfilesThirdParty": true}),
+            )
+            .unwrap();
+        assert!(third_party_token(&store).is_none());
     }
 
     #[test]

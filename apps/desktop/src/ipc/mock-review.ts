@@ -37,6 +37,9 @@ export interface ReviewHost {
 
 const SPEAKER_NAMES = ["An Tran", "Sarah", "Minh", "Linh", "Jordan", "Priya"];
 const SLOTS = [1, 2, 4, 8, 3, 5];
+/** `?suggest=1`: one unnamed speaker per meeting "sounds like Me" (the final pass's voice match). */
+const SUGGEST_SPEAKER = 2;
+const withSuggestion = () => new URLSearchParams(location.search).has("suggest");
 
 type Detail = { speakers: MeetingSpeaker[]; notes: MeetingNotes; transcript: MeetingTranscript };
 const details = new Map<string, Detail>();
@@ -91,7 +94,7 @@ function build(lang: "en" | "vi"): Detail {
   const used = [...new Set(sample.transcript.map((l) => l.s))];
   const speakers: MeetingSpeaker[] = used.map((s, i) => ({
     gid: `spk-${s}`,
-    name: SPEAKER_NAMES[s] ?? null,
+    name: s === SUGGEST_SPEAKER && withSuggestion() ? null : (SPEAKER_NAMES[s] ?? null),
     number: i + 1,
     colorSlot: SLOTS[s % SLOTS.length]!,
     isMe: s === 0,
@@ -99,6 +102,7 @@ function build(lang: "en" | "vi"): Detail {
     lines: sample.transcript.filter((l) => l.s === s).length,
     sampleT0Ms: segs.find((g) => g.speakerGid === `spk-${s}`)?.t0Ms ?? null,
     sampleT1Ms: (segs.find((g) => g.speakerGid === `spk-${s}`)?.t0Ms ?? 0) + 3000,
+    suggestion: s === SUGGEST_SPEAKER && withSuggestion() ? { personGid: "person-me", name: "", isMe: true, score: 0.74 } : null,
   }));
   const n = sample.notes as unknown as Record<string, Item[]>;
   const text = (x: Item) => (lang === "vi" ? x.vi : x.en) ?? x.en ?? "";
@@ -283,6 +287,8 @@ export const onImportUpdate = (cb: (e: ImportUpdate) => void) => {
 };
 export const audioUrl = (token: string) => audio.get(token) ?? "";
 /** For the AI mock: a meeting's transcript and speaker names. */
+/** The meeting's stored speakers (mutable: the mock's voice commands edit them). */
+export const speakersOf = (m: string) => detailOf(m).speakers;
 export const transcriptOf = (m: string) => detailOf(m).transcript;
 export const namesOf = (m: string) => detailOf(m).speakers.flatMap((s) => (s.name ? [s.name] : []));
 
@@ -348,7 +354,8 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         consentConfirmed: r.consentConfirmed,
         transcriptVersion: r.transcriptVersion,
         audioAvailable: true,
-        speakers: d.speakers,
+        // Copies: the voice commands edit the stored speakers in place, and an unchanged reference would hide that from the query cache.
+        speakers: d.speakers.map((s) => ({ ...s })),
         job: r.job,
       };
       return ok(detail);

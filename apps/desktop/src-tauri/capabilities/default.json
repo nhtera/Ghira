@@ -111,6 +111,21 @@
     "allow-unlock",
     "allow-set-app-lock",
     "allow-ask-all-meetings",
-    "allow-related-meetings"
+    "allow-related-meetings",
+    "allow-list-people",
+    "allow-person-detail",
+    "allow-merge-people",
+    "allow-delete-voice-data",
+    "allow-remove-person-name",
+    "allow-voice-status",
+    "allow-enroll-voice-start",
+    "allow-enroll-voice-level",
+    "allow-enroll-voice-finish",
+    "allow-enroll-voice-cancel",
+    "allow-set-speaker-me",
+    "allow-clear-speaker-me",
+    "allow-accept-voice-suggestion",
+    "allow-dismiss-voice-suggestion",
+    "allow-save-voice-profile"
   ]
 }

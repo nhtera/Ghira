@@ -23,6 +23,7 @@ const speaker = (gid: string, number: number, over: Partial<MeetingSpeaker> = {}
   lines: 1,
   sampleT0Ms: null,
   sampleT1Ms: null,
+  suggestion: null,
   ...over,
 });
 const speakers = [speaker("a", 1, { name: "Linh" }), speaker("b", 2)];

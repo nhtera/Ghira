@@ -24,7 +24,7 @@ export type OnboardingFlowProps = {
   onStep: (s: StepId) => void;
   /** Mark onboarding done and leave. */
   onFinish: () => void | Promise<void>;
-  /** `settings.voiceProfilesMe`: the "Your voice" step is skipped while false. */
+  /** The "Your voice" step may run at all; it still needs the voice model installed or on its way. */
   voiceEnabled: boolean;
   strictOffline: boolean;
   /** The default meeting language, and its change (the route stores it). */
@@ -39,15 +39,21 @@ const INTERACTIVE = "button, a, input, textarea, select, [role=radio], [role=che
 export function OnboardingFlow({ step, onStep, onFinish, voiceEnabled, strictOffline, language, onLanguage, testSeconds }: OnboardingFlowProps) {
   const { t } = useTranslation();
   const context = usePlatform();
-  const steps = useMemo(() => flowSteps(voiceEnabled), [voiceEnabled]);
+  const dl = useModelDownload();
+  // "Your voice" runs only when the voice model is installed or being downloaded right now;
+  // otherwise it is skipped silently and the user records later from People or Settings.
+  const voiceModel = dl.models.find((m) => m.model.role === "voice");
+  // Active on its own, or queued behind the others in a running download.
+  const voiceDownloading = !!voiceModel && !voiceModel.installed && !voiceModel.failed && (voiceModel.active || dl.phase === "downloading");
+  const voiceStep = voiceEnabled && !!voiceModel && (voiceModel.installed || voiceDownloading);
+  const steps = useMemo(() => flowSteps(voiceStep), [voiceStep]);
   const index = steps.indexOf(step);
   const [finishing, setFinishing] = useState(false);
-  const dl = useModelDownload();
   const content = useRef<HTMLDivElement>(null);
 
   const nav: StepNav = {
-    next: () => onStep(nextStep(step, voiceEnabled)),
-    back: () => onStep(prevStep(step, voiceEnabled)),
+    next: () => onStep(nextStep(step, voiceStep)),
+    back: () => onStep(prevStep(step, voiceStep)),
     finish: () => {
       if (finishing) return;
       setFinishing(true);
@@ -55,6 +61,12 @@ export function OnboardingFlow({ step, onStep, onFinish, voiceEnabled, strictOff
     },
     canGoBack: index > 0,
   };
+
+  // A typed URL (or a failed download) for a step that isn't in the flow moves on, once the models are known.
+  const known = dl.status != null;
+  useEffect(() => {
+    if (known && step === "voice" && !voiceStep) onStep(nextStep("voice", false));
+  }, [known, step, voiceStep, onStep]);
 
   // Enter continues (unless a control has focus and takes it); Esc does not
   // close: onboarding is a place, not a dialog.
@@ -129,7 +141,7 @@ export function OnboardingFlow({ step, onStep, onFinish, voiceEnabled, strictOff
           {step === "languages" && <LanguagesStep nav={nav} initial={language} onSave={onLanguage} />}
           {step === "models" && <ModelsStep nav={nav} dl={dl} strictOffline={strictOffline} />}
           {step === "permissions" && <PermissionsStep nav={nav} />}
-          {step === "voice" && <VoiceStep nav={nav} />}
+          {step === "voice" && <VoiceStep nav={nav} voiceDownloading={voiceDownloading} strictOffline={strictOffline} />}
           {step === "test" && <TestStep nav={nav} seconds={testSeconds} />}
           {step === "recovery" && <RecoveryStep nav={nav} />}
           {step === "done" && <DoneStep nav={nav} finishing={finishing} />}

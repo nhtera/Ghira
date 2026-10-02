@@ -15,12 +15,15 @@ export type InlineConfirmProps = {
   onConfirm: () => void;
   onCancel: () => void;
   icon?: IconName;
+  /** `warn`: for a change that is not a data loss (removing a name from notes). */
+  tone?: "danger" | "warn";
   className?: string;
 };
 
-export function InlineConfirm({ question, confirmLabel, onConfirm, onCancel, icon = "delete_forever", className }: InlineConfirmProps) {
+export function InlineConfirm({ question, confirmLabel, onConfirm, onCancel, icon = "delete_forever", tone = "danger", className }: InlineConfirmProps) {
   const { t } = useTranslation();
   const id = useId();
+  const warn = tone === "warn";
   const cancelRef = useRef<HTMLButtonElement>(null);
   useEffect(() => cancelRef.current?.focus(), []);
   const onKeyDown = (e: KeyboardEvent) => {
@@ -34,13 +37,13 @@ export function InlineConfirm({ question, confirmLabel, onConfirm, onCancel, ico
       role="alertdialog"
       aria-labelledby={id}
       onKeyDown={onKeyDown}
-      className={cn("flex flex-wrap items-center gap-2.5 rounded-row border-[1.5px] border-rec bg-rec-soft px-3.5 py-3", className)}
+      className={cn("flex flex-wrap items-center gap-2.5 rounded-row border-[1.5px] px-3.5 py-3", warn ? "border-warn bg-warn-soft" : "border-rec bg-rec-soft", className)}
     >
-      <Icon name={icon} size={20} className="text-rec-ink" />
-      <b id={id} className="text-body min-w-48 flex-1 font-semibold text-rec-ink">
+      <Icon name={icon} size={20} className={warn ? "text-warn" : "text-rec-ink"} />
+      <b id={id} className={cn("text-body min-w-48 flex-1 font-semibold", warn ? "text-warn" : "text-rec-ink")}>
         {question}
       </b>
-      <Button variant="danger" onClick={onConfirm}>
+      <Button variant="danger" className={warn ? "bg-warn text-surface" : undefined} onClick={onConfirm}>
         {confirmLabel}
       </Button>
       <Button ref={cancelRef} onClick={onCancel}>

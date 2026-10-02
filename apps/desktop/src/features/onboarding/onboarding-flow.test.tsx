@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,6 +27,8 @@ const core = vi.hoisted(() => {
     createRecoveryKey: vi.fn(async () => Array.from({ length: 24 }, (_, i) => `word${i + 1}`)),
     confirmRecoveryKey: vi.fn(async (w: string[]) => ({ status: "ok", data: w.length === 24 })),
     cancelRecoveryKey: vi.fn(async () => undefined),
+    voiceStatus: vi.fn(async () => ({ status: "ok", data: { modelReady: true, meProfile: null, enrolling: false } })),
+    enrollVoiceCancel: vi.fn(async () => ({ status: "ok", data: null })),
     // Like the core: events into the live store, then the meeting ends.
     testCapture: vi.fn(async () => {
       const id = "test-1";
@@ -56,19 +59,23 @@ vi.mock("../../ipc", () => ({
 import { OnboardingFlow } from "./onboarding-flow";
 import { resolveStep, type StepId } from "./steps";
 
-const models = (installed: boolean, partial = 0): ModelsStatus => ({
+// `voice`: undefined = no voice model in the list; otherwise whether it is installed.
+const models = (installed: boolean, partial = 0, voice?: boolean): ModelsStatus => ({
   tier: "balanced",
   downloading: false,
   models: [
     { id: "asr-model", role: "asr", size: 1.2e9, installed, partialBytes: partial, damaged: false },
     { id: "llm-model", role: "llm", size: 2.5e9, installed, partialBytes: 0, damaged: false },
+    ...(voice === undefined ? [] : [{ id: "voice-model", role: "voice", size: 3e7, installed: voice, partialBytes: 0, damaged: false }]),
   ],
 });
 const send = (e: ModelDownload) => act(() => core.state.listener?.(e));
 
 function Harness({ start = "welcome", voice = false, strictOffline = false, onFinish = vi.fn() }: { start?: StepId; voice?: boolean; strictOffline?: boolean; onFinish?: () => void }) {
   const [step, setStep] = useState<StepId>(start);
+  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }));
   return (
+    <QueryClientProvider client={client}>
     <PlatformProvider value="mac">
       <ToastProvider label="notifications">
         <OnboardingFlow
@@ -83,6 +90,7 @@ function Harness({ start = "welcome", voice = false, strictOffline = false, onFi
         />
       </ToastProvider>
     </PlatformProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -120,11 +128,25 @@ describe("flow", () => {
     expect(onFinish).toHaveBeenCalledOnce();
   });
 
-  it("includes the voice step when voice profiles are on", async () => {
+  it("includes the voice step when voice profiles are on and the voice model is installed", async () => {
+    core.state.status = models(true, 0, true);
     render(<Harness start="permissions" voice />);
-    expect(screen.getAllByRole("listitem").some((li) => li.textContent?.includes("Your voice"))).toBe(true);
+    await waitFor(() => expect(screen.getAllByRole("listitem").some((li) => li.textContent?.includes("Your voice"))).toBe(true));
     await userEvent.setup().click(screen.getByRole("button", { name: "Continue" }));
     expect(current()).toContain("Your voice");
+  });
+
+  it("skips the voice step silently while the voice model is missing and nothing is downloading it", async () => {
+    core.state.status = models(true, 0, false);
+    render(<Harness start="permissions" voice strictOffline />);
+    await waitFor(() => expect(core.commands.modelsStatus).toHaveBeenCalled());
+    const rail = () => within(screen.getByRole("navigation")).getAllByRole("listitem");
+    await waitFor(() => expect(rail()).toHaveLength(7));
+    expect(rail().some((li) => li.textContent?.includes("Your voice"))).toBe(false);
+    // A typed URL for the step lands on the next one.
+    cleanup();
+    render(<Harness start="voice" voice strictOffline />);
+    await waitFor(() => expect(current()).toContain("Test recording"));
   });
 
   it("Enter continues, Escape does nothing, and Back goes back", async () => {
@@ -160,6 +182,20 @@ describe("models step", () => {
     await send({ model: "asr-model", phase: "done", done: 1.2e9, total: 1.2e9, error: null });
     await send({ model: "llm-model", phase: "done", done: 2.5e9, total: 2.5e9, error: null });
     await waitFor(() => expect(screen.getAllByText("Downloaded and checked").length).toBeGreaterThan(0));
+  });
+
+  it("a missing voice model does not hold up done, and is fetched on its own", async () => {
+    core.state.status = models(true, 0, false);
+    render(<Harness start="models" />);
+    await waitFor(() => expect(screen.getAllByText("Downloaded and checked").length).toBeGreaterThan(0));
+    await waitFor(() => expect(core.commands.downloadModels).toHaveBeenCalledOnce());
+  });
+
+  it("strict offline: the voice model is not fetched", async () => {
+    core.state.status = models(true, 0, false);
+    render(<Harness start="models" strictOffline />);
+    await waitFor(() => expect(screen.getAllByText("Downloaded and checked").length).toBeGreaterThan(0));
+    expect(core.commands.downloadModels).not.toHaveBeenCalled();
   });
 
   it("a failed download offers Resume and Record now", async () => {

@@ -378,7 +378,7 @@ fn merge_persons_moves_speakers_and_reseals_names() {
         .set_speaker_suggestion(&sug, Some((&pb, 0.6)))
         .unwrap();
 
-    let affected = store.merge_persons(&pb, &pa).unwrap();
+    let affected = store.merge_persons(&pb, &pa, approved()).unwrap();
     assert_eq!(affected, vec![m2.clone()]);
     let sb = speaker_of(&store, &m2, &b);
     assert_eq!(sb.person_gid.as_deref(), Some(pa.as_str()));
@@ -393,9 +393,9 @@ fn merge_persons_moves_speakers_and_reseals_names() {
 
     // Me can't be merged, in either direction; nor a person into itself.
     let me = store.me_person().unwrap();
-    assert!(store.merge_persons(&me, &pa).is_err());
-    assert!(store.merge_persons(&pa, &me).is_err());
-    assert!(store.merge_persons(&pa, &pa).is_err());
+    assert!(store.merge_persons(&me, &pa, approved()).is_err());
+    assert!(store.merge_persons(&pa, &me, approved()).is_err());
+    assert!(store.merge_persons(&pa, &pa, approved()).is_err());
 }
 
 #[test]
@@ -422,7 +422,7 @@ fn merge_persons_merges_voice_profiles_and_shreds_the_source() {
     let ga = put(&pa, "vi", &[0.1, 0.2]);
     let gb = put(&pb, "vi", &[0.8, 0.9]);
     put_en(&store, &gb);
-    store.merge_persons(&pb, &pa).unwrap();
+    store.merge_persons(&pb, &pa, approved()).unwrap();
 
     let p = store.voice_profile(&pa).unwrap().unwrap();
     assert_eq!(p.gid, ga, "the target's profile survives");
@@ -456,7 +456,7 @@ fn merge_persons_merges_voice_profiles_and_shreds_the_source() {
     let pc = speaker_of(&store, &m, &c).person_gid.unwrap();
     let pd = speaker_of(&store, &m, &d).person_gid.unwrap();
     let gd = put(&pd, "vi", &[0.3]);
-    store.merge_persons(&pd, &pc).unwrap();
+    store.merge_persons(&pd, &pc, approved()).unwrap();
     assert_eq!(store.voice_profile(&pc).unwrap().unwrap().gid, gd);
 }
 
@@ -1236,4 +1236,83 @@ fn raw_counts_and_debug_hide_nothing_but_vectors() {
         !shown.contains("0.25") && !shown.contains("0.75"),
         "{shown}"
     );
+}
+
+#[test]
+fn not_me_unsets_me_drops_the_meetings_exemplars_and_stales_the_index() {
+    use ghi_store::voice::ExemplarSource;
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let m = ready_meeting(&store, "m");
+    let a = speaker(&store, &m, 0, None);
+    assert!(store.clear_speaker_me(&a).is_err(), "not Me");
+    store.set_speaker_me(&a).unwrap();
+    let me = store.me_person().unwrap();
+    let profile = store
+        .put_voice_profile(
+            &me,
+            &consent(),
+            None,
+            "m1",
+            vec![("any".into(), vec![exemplar(0.5)])],
+            None,
+        )
+        .unwrap();
+    store
+        .add_voice_exemplars(
+            &profile,
+            "m1",
+            "vi",
+            vec![VoiceExemplar {
+                vec: vec![0.5; 4],
+                source: Some(ExemplarSource {
+                    meeting_gid: m.clone(),
+                    t0_ms: 0,
+                    t1_ms: 1,
+                }),
+            }],
+            None,
+        )
+        .unwrap();
+    let before = store.index_gen(&m).unwrap();
+    store.clear_speaker_me(&a).unwrap();
+    let sp = speaker_of(&store, &m, &a);
+    assert!(!sp.is_me && sp.person_gid.is_none());
+    assert!(store.index_gen(&m).unwrap() > before);
+    let p = store.me_voice_profile("m1").unwrap().unwrap();
+    assert_eq!(p.sets.len(), 1, "the exemplar from this meeting is gone");
+}
+
+#[test]
+fn merging_people_with_voice_profiles_needs_the_token() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let m = ready_meeting(&store, "m");
+    let (a, b) = (
+        speaker(&store, &m, 0, Some("Lan")),
+        speaker(&store, &m, 1, Some("Lan B")),
+    );
+    let _ = (a, b);
+    let pa = store.find_person_by_name("Lan").unwrap().unwrap();
+    let pb = store.find_person_by_name("Lan B").unwrap().unwrap();
+    // No profiles: no token needed.
+    let pc = store.add_person("Cuong", 3).unwrap();
+    store.merge_persons(&pc, &pb, None).unwrap();
+    store
+        .put_voice_profile(
+            &pa,
+            &consent(),
+            None,
+            "m1",
+            vec![("vi".into(), vec![exemplar(0.5)])],
+            approved(),
+        )
+        .unwrap();
+    let pd = store.add_person("Dung", 4).unwrap();
+    assert!(
+        store.merge_persons(&pd, &pa, None).is_err(),
+        "a profile is involved"
+    );
+    assert!(store.merge_persons(&pa, &pb, None).is_err());
+    store.merge_persons(&pd, &pa, approved()).unwrap();
 }

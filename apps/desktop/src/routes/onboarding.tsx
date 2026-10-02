@@ -19,7 +19,8 @@ export function OnboardingScreen() {
   const settings = useQuery(settingsQuery);
   const queryClient = useQueryClient();
   if (!settings.data) return null;
-  const voiceEnabled = settings.data.voiceProfilesMe;
+  // The voice step may run; the flow decides by the voice model (installed or downloading).
+  const voiceEnabled = true;
   const step = resolveStep(raw, voiceEnabled);
 
   const patch = async (p: { onboardingDone?: boolean; meetingLanguage?: MeetingLanguage }) => {

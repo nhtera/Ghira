@@ -5,7 +5,7 @@ export type StepId = (typeof ALL_STEPS)[number];
 
 export const isStepId = (s: string | undefined): s is StepId => (ALL_STEPS as readonly string[]).includes(s ?? "");
 
-/** The steps in the flow. "Your voice" is hidden until voice profiles exist (phase 14). */
+/** The steps in the flow. "Your voice" runs only while the voice model is installed or downloading. */
 export function flowSteps(voiceEnabled: boolean): StepId[] {
   return ALL_STEPS.filter((s) => s !== "voice" || voiceEnabled);
 }

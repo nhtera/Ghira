@@ -85,8 +85,8 @@ export const commands = {
 	 */
 	takeRecoveredMeetings: () => typedError<RecoveredMeeting[], string>(__TAURI_INVOKE("take_recovered_meetings")),
 	/**
-	 *  Names given to speakers in recent meetings, most recent first (rename
-	 *  autocomplete; the People list arrives in phase 14).
+	 *  Names of the people the user has named (not Me), most recently met first
+	 *  (rename autocomplete).
 	 */
 	knownSpeakerNames: () => typedError<string[], string>(__TAURI_INVOKE("known_speaker_names")),
 	/**
@@ -289,6 +289,86 @@ export const commands = {
 	 *  meaning search is off or the model isn't installed yet).
 	 */
 	relatedMeetings: (text: string, scope: AskScope, limit: number) => typedError<RelatedHit[], string>(__TAURI_INVOKE("related_meetings", { text, scope, limit })),
+	/**  Everyone with a name in a meeting, plus Me. Errors: `storage`. */
+	listPeople: () => typedError<PeopleList, string>(__TAURI_INVOKE("list_people")),
+	/**
+	 *  One person: their meetings, open actions and the voice samples. Errors:
+	 *  `notFound`, `storage`.
+	 */
+	personDetail: (gid: string) => typedError<PersonDetail, string>(__TAURI_INVOKE("person_detail", { gid })),
+	/**
+	 *  Merges `from` into `into`: their meetings and voice data become one
+	 *  person's, `from` is gone. Not while recording. Errors: `busyRecording`,
+	 *  `notFound`, `isMe`, `samePerson`, `storage`.
+	 */
+	mergePeople: (from: string, into: string) => typedError<null, string>(__TAURI_INVOKE("merge_people", { from, into })),
+	/**
+	 *  Deletes the person's voice profile (a crypto-shred). Names in meetings
+	 *  stay. Errors: `notFound`, `noProfile`, `storage`.
+	 */
+	deleteVoiceData: (gid: string) => typedError<null, string>(__TAURI_INVOKE("delete_voice_data", { gid })),
+	/**
+	 *  Removes the person's name from every meeting: speaker names go back to
+	 *  "Speaker N", and the name is replaced in AI-written notes (what the user
+	 *  wrote is left). The voice profile stays. Returns how many meetings
+	 *  changed. Not while recording. Errors: `busyRecording`, `notFound`, `isMe`,
+	 *  `storage`.
+	 */
+	removePersonName: (gid: string) => typedError<number, string>(__TAURI_INVOKE("remove_person_name", { gid })),
+	/**  Where the model and Me's profile stand. Errors: `storage`. */
+	voiceStatus: () => typedError<VoiceStatus, string>(__TAURI_INVOKE("voice_status")),
+	/**
+	 *  Opens the mic for the passage (any earlier enrollment is dropped). Errors:
+	 *  `busyRecording`, `noModel`, `micPermission`, `noMic`.
+	 */
+	enrollVoiceStart: () => typedError<null, string>(__TAURI_INVOKE("enroll_voice_start")),
+	/**
+	 *  For the level meter and the timer; poll a few times a second. Errors:
+	 *  `notEnrolling`.
+	 */
+	enrollVoiceLevel: () => typedError<EnrollLevel, string>(__TAURI_INVOKE("enroll_voice_level")),
+	/**
+	 *  Ends the recording, learns the voice and stores Me's profile, replacing the
+	 *  old one. `consent_text_key` is the locale key of the agreement the user
+	 *  ticked (`onboarding.voice.consent_mac` or `_win`). The audio is wiped. Errors: `notEnrolling`, `busyRecording`,
+	 *  `invalidConsent`, `tooShort`, `tooQuiet`, `noModel`, `storage`.
+	 */
+	enrollVoiceFinish: (consentTextKey: string) => typedError<null, string>(__TAURI_INVOKE("enroll_voice_finish", { consentTextKey })),
+	/**  Stops the recording and wipes the audio. Never an error. */
+	enrollVoiceCancel: () => typedError<null, string>(__TAURI_INVOKE("enroll_voice_cancel")),
+	/**
+	 *  "This is me": the speaker becomes Me (another Me in the meeting stops
+	 *  being Me, and Me's voice samples from this meeting go), and Me's profile
+	 *  learns from the speaker's voice. Errors: `liveMeeting`, `notASpeaker`,
+	 *  `farSide`, `storage`.
+	 */
+	setSpeakerMe: (meeting: string, speaker: string) => typedError<null, string>(__TAURI_INVOKE("set_speaker_me", { meeting, speaker })),
+	/**
+	 *  "Not me": the speaker stops being Me. Errors: `liveMeeting`,
+	 *  `notASpeaker`, `notMe`, `farSide` (in a call the mic speaker is always
+	 *  Me), `storage`.
+	 */
+	clearSpeakerMe: (meeting: string, speaker: string) => typedError<null, string>(__TAURI_INVOKE("clear_speaker_me", { meeting, speaker })),
+	/**
+	 *  Takes the "sounds like ..." suggestion: for Me that is "This is me"; for
+	 *  anyone else it names the speaker (and links the person) and is refused
+	 *  while other people's voice profiles are off. Then the voice is learned.
+	 *  Errors: as `set_speaker_me`, plus `noSuggestion`, `thirdPartyOff`.
+	 */
+	acceptVoiceSuggestion: (meeting: string, speaker: string) => typedError<null, string>(__TAURI_INVOKE("accept_voice_suggestion", { meeting, speaker })),
+	/**
+	 *  Drops the suggestion without naming anyone. Errors: `liveMeeting`,
+	 *  `notASpeaker`, `storage`.
+	 */
+	dismissVoiceSuggestion: (meeting: string, speaker: string) => typedError<null, string>(__TAURI_INVOKE("dismiss_voice_suggestion", { meeting, speaker })),
+	/**
+	 *  Saves a named speaker's voice as a profile, with the consent evidence;
+	 *  afterwards the profile also learns from this meeting. Refused unless other
+	 *  people's voice profiles are on. Errors: `liveMeeting`, `notASpeaker`,
+	 *  `thirdPartyOff`, `notNamed`, `noVoice` (no stored voice for the speaker),
+	 *  `invalidConsent`, `storage`.
+	 */
+	saveVoiceProfile: (meeting: string, speaker: string, consent: VoiceConsentInput) => typedError<null, string>(__TAURI_INVOKE("save_voice_profile", { meeting, speaker, consent })),
 	/**
 	 *  A system notification (notes ready, recovered); clicking it brings the
 	 *  app forward. The text comes localized from the UI.
@@ -336,11 +416,14 @@ export type AppSettings = {
 	/**  ⌘⇧R / Ctrl+Shift+R starts or stops recording from any app. */
 	globalRecordShortcut: boolean,
 	/**
-	 *  Voice profile of the user ("Me"). Off until speaker embeddings exist
-	 *  (phase 14); the onboarding step is hidden while off.
+	 *  Voice profile of the user ("Me"): on while the speaker model is
+	 *  installed (the onboarding step is hidden while off).
 	 */
 	voiceProfilesMe: boolean,
-	/**  Saving other people's voices (consent dialog). Off for the alpha. */
+	/**
+	 *  Saving other people's voices (consent dialog). Off for the alpha
+	 *  ([`THIRD_PARTY_APPROVED`]).
+	 */
 	voiceProfilesThirdParty: boolean,
 	/**  No network at all, model downloads included (doc 02 §L). */
 	strictOffline: boolean,
@@ -560,6 +643,16 @@ export type EmailDraft = {
 
 export type EmailTone = "friendly" | "neutral" | "formal";
 
+export type EnrollLevel = {
+	/**  Loudness of the latest moment, 0..1. */
+	level: number | null,
+	/**  Audio buffered so far. */
+	seconds: number | null,
+	maxSeconds: number | null,
+	/**  The mic is closed (the buffer is full or it ran too long): finish. */
+	done: boolean,
+};
+
 /**
  *  An event with its sequence number (gap-free per bus) and wall time, so a
  *  late subscriber (a reloaded webview) can tell what it missed.
@@ -705,6 +798,13 @@ export type MarkView = {
 	tag: string,
 };
 
+export type MeProfile = {
+	/**  When they agreed (unix ms). */
+	atMs: number | null,
+	/**  Voice samples kept (windows of their speech). */
+	samples: number,
+};
+
 export type MeetingDetail = {
 	gid: string,
 	title: string,
@@ -802,6 +902,11 @@ export type MeetingSpeaker = {
 	/**  A span of their speech for the sample (meeting ms, at most 3 s). */
 	sampleT0Ms: number | null,
 	sampleT1Ms: number | null,
+	/**
+	 *  "Sounds like ..." from the final pass's voice matching, until the user
+	 *  names the speaker, accepts or dismisses it.
+	 */
+	suggestion: VoiceSuggestion | null,
 };
 
 export type MeetingTranscript = {
@@ -894,6 +999,16 @@ export type Origin = "user" | "ai" |
 /**  AI-written, then changed by the user (kept by a regenerate). */
 "aiEdited";
 
+export type PeopleList = {
+	/**  Me first, then by most recent meeting. */
+	people: PersonRow[],
+	/**
+	 *  Other people's voice profiles are on (always off in this build): the
+	 *  unknown-voices queue and "Save a voice profile" stay hidden without it.
+	 */
+	thirdParty: boolean,
+};
+
 /**  Microphone access as macOS reports it. */
 export type Permission = "granted" | "denied" | 
 /**  Not asked yet. */
@@ -903,11 +1018,60 @@ export type Permission = "granted" | "denied" |
 /**  Not applicable on this platform (no macOS permission model). */
 "unsupported";
 
+export type PersonAction = {
+	gid: string,
+	meetingGid: string,
+	meetingTitle: string,
+	text: string,
+	due: number | null,
+	dueText: string | null,
+};
+
 /**  A named speaker as a chip: color + initial (never color alone). */
 export type PersonChip = {
 	name: string,
 	/**  Palette slot 1..8 (0: Others). */
 	colorSlot: number,
+};
+
+export type PersonDetail = {
+	person: PersonRow,
+	/**  Newest first, at most 50. */
+	meetings: PersonMeeting[],
+	openActions: PersonAction[],
+	/**  Up to 10, newest first; only those whose audio is still kept. */
+	samples: VoiceSample[],
+};
+
+export type PersonMeeting = {
+	gid: string,
+	title: string,
+	startedAt: number | null,
+	durationMs: number | null,
+};
+
+export type PersonRow = {
+	gid: string,
+	/**  Empty for Me: show "Me". */
+	name: string,
+	isMe: boolean,
+	/**  Palette slot 0..8. */
+	colorSlot: number,
+	meetings: number,
+	openActions: number,
+	lastMetMs: number | null,
+	voice: PersonVoice,
+};
+
+/**  Whose voice is kept, and how they agreed. */
+export type PersonVoice = {
+	/**
+	 *  `self` (Me, own consent), `agreed` (someone else, their consent) or
+	 *  `none` (no voice profile).
+	 */
+	kind: string,
+	/**  When they agreed (unix ms); `None` for `none`. */
+	atMs: number | null,
 };
 
 /**  A pane of the OS privacy settings, for a denied permission. */
@@ -1141,6 +1305,53 @@ export type Vocabulary = {
 	/**  Names learned from the speakers the user named (removable). */
 	learned: string[],
 	maxTerms: number,
+};
+
+/**
+ *  The evidence that a person agreed to a voice profile (D10). Only a spoken
+ *  agreement recorded in the meeting counts for someone else.
+ */
+export type VoiceConsentInput = {
+	/**  `verbal_clip`. */
+	method: string,
+	/**  The locale key of the consent text that was shown. */
+	textKey: string,
+	/**  The span of this meeting where they said yes (at most 30 s). */
+	clipT0Ms: number | null,
+	clipT1Ms: number | null,
+};
+
+/**
+ *  A span of the meeting where this voice was heard and learned from (its
+ *  audio is still kept). Play it with `issue_audio_sample(meetingGid, t0Ms,
+ *  t1Ms, null)`.
+ */
+export type VoiceSample = {
+	meetingGid: string,
+	meetingTitle: string,
+	t0Ms: number | null,
+	t1Ms: number | null,
+	/**
+	 *  The track the span is on: `0` (mic) for Me's samples, `null` for the
+	 *  meeting's diarized track. Pass it to `issue_audio_sample`.
+	 */
+	track: number | null,
+};
+
+export type VoiceStatus = {
+	/**  The speaker model is installed. */
+	modelReady: boolean,
+	meProfile: MeProfile | null,
+	enrolling: boolean,
+};
+
+export type VoiceSuggestion = {
+	personGid: string,
+	/**  The person's name (empty for Me: show "Me"). */
+	name: string,
+	isMe: boolean,
+	/**  Cosine similarity, 0.5..1. */
+	score: number | null,
 };
 
 /**  The audio bar's waveform. */

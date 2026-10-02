@@ -18,7 +18,7 @@ import { MiniScreen } from "./routes/mini";
 import { OnboardingScreen } from "./routes/onboarding";
 import { PopoverScreen } from "./routes/popover";
 import { AskScreen } from "./routes/ask";
-import { PeopleScreen } from "./routes/simple";
+import { PeopleScreen } from "./routes/people";
 import { ImportScreen } from "./routes/import";
 import { MeetingDetailScreen } from "./routes/meeting-detail";
 import { SETTINGS_SECTIONS, SettingsScreen, type SettingsSection } from "./routes/settings";

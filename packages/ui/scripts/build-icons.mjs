@@ -104,6 +104,7 @@ export const ICONS = {
   radio_button_unchecked: ["radio_button_unchecked", "circle_20_regular"],
   record_voice_over: ["record_voice_over", "person_voice_20_regular"],
   refresh: ["refresh", "arrow_clockwise_20_regular"],
+  remove_moderator: ["remove_moderator", "shield_prohibited_20_regular"],
   remove: ["remove", "subtract_20_regular"],
   schedule: ["schedule", "clock_20_regular"],
   science: ["science", "beaker_20_regular"],

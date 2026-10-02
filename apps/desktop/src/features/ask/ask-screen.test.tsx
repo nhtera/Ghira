@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import userEvent from "@testing-library/user-event";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AskAllAnswer } from "../../bindings";
@@ -9,6 +10,7 @@ const commands = vi.hoisted(() => ({
   askAllMeetings: vi.fn(),
   listMeetings: vi.fn(),
   modelsStatus: vi.fn(),
+  listPeople: vi.fn(),
 }));
 const navigate = vi.hoisted(() => vi.fn());
 vi.mock("../../ipc", () => ({ ipc: { commands, onCoreEvent: () => Promise.resolve(() => {}) } }));
@@ -17,7 +19,7 @@ vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 import { renderLive } from "../live/test-utils";
 import { AskScreenBody } from "./ask-screen";
 
-const row = (gid: string, title: string, ago: number) => ({ gid, title, startedAt: Date.now() - ago * day });
+const row = (gid: string, title: string, ago: number, people: string[] = []) => ({ gid, title, startedAt: Date.now() - ago * day, status: "ready", job: null, people: people.map((name) => ({ name, colorSlot: 2 })) });
 const ref = (gid: string, title: string) => ({ meeting: gid, title, startedAt: null });
 const answered: AskAllAnswer = {
   answered: true,
@@ -39,7 +41,17 @@ const ask = (q: string) => {
 beforeEach(() => {
   Object.values(commands).forEach((c) => c.mockReset());
   navigate.mockReset();
-  commands.listMeetings.mockImplementation((_n: number, offset: number) => ok(offset ? [] : [row("m1", "Product sync", 2), row("m2", "Standup", 20), row("m3", "Old", 200)]));
+  commands.listMeetings.mockImplementation((_n: number, offset: number) => ok(offset ? [] : [row("m1", "Product sync", 2, ["Linh"]), row("m2", "Standup", 20, ["Linh"]), row("m3", "Old", 200)]));
+  commands.listPeople.mockReturnValue(
+    ok({
+      thirdParty: false,
+      people: [
+        { gid: "me", name: "", isMe: true, colorSlot: 1, meetings: 3, openActions: 0, lastMetMs: null, voice: { kind: "self", atMs: null } },
+        { gid: "linh", name: "Linh", isMe: false, colorSlot: 2, meetings: 2, openActions: 0, lastMetMs: null, voice: { kind: "none", atMs: null } },
+        { gid: "ghost", name: "Ghost", isMe: false, colorSlot: 3, meetings: 0, openActions: 0, lastMetMs: null, voice: { kind: "none", atMs: null } },
+      ],
+    }),
+  );
   commands.modelsStatus.mockReturnValue(ok({ tier: "balanced", models: [{ id: "qwen3-4b", role: "llm", installed: true }], downloading: false }));
 });
 afterEach(cleanup);
@@ -179,5 +191,24 @@ describe("Ask across meetings", () => {
     commands.listMeetings.mockImplementation(() => ok([]));
     renderLive(<AskScreenBody />);
     expect(await screen.findByText("Ask works once you have a few meetings")).toBeTruthy();
+  });
+
+  it("A person: the picker offers people from meetings and sends their gid in the scope", async () => {
+    commands.askAllMeetings.mockReturnValue(ok(answered));
+    renderLive(<AskScreenBody />);
+    await screen.findByText(/Searching 3 meetings/);
+    fireEvent.click(await screen.findByRole("radio", { name: "A person" }));
+    // Nobody is picked yet: asking waits for a choice.
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Choose a person" }));
+    expect(screen.queryByRole("menuitem", { name: "Ghost" })).toBeNull();
+    await user.click(await screen.findByRole("menuitem", { name: "Linh" }));
+    // The count is of meetings the core reads that have her in them.
+    await screen.findByText("Searching 2 meetings with Linh");
+    ask("What did Linh say?");
+    await screen.findByText("Beta ships in November.");
+    expect(commands.askAllMeetings.mock.calls[0]![1]).toEqual({ meetings: [], fromMs: null, toMs: null, persons: ["linh"] });
+    expect(screen.getByText(/meetings read · Linh/)).toBeTruthy();
   });
 });

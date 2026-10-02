@@ -81,3 +81,14 @@ test("no related list when meaning search is off", async ({ page }) => {
   await page.waitForTimeout(900);
   await expect(page.getByTestId("related-section")).toHaveCount(0);
 });
+
+test("A person scope: pick someone, the scope line and the answer's footer name them", async ({ page }) => {
+  await page.goto("/?platform=win#/ask");
+  await page.getByRole("radio", { name: "A person" }).click();
+  await page.getByRole("button", { name: "Choose a person" }).click();
+  await page.getByRole("menuitem", { name: "Linh" }).click();
+  await expect(page.getByTestId("ask-scope-line")).toContainText(/Searching \d+ meetings? with Linh/);
+  await page.getByRole("textbox", { name: "Question" }).fill("nhận diện");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("ask-entry").getByText(/meetings? read · Linh/)).toBeVisible();
+});

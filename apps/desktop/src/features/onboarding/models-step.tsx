@@ -43,6 +43,18 @@ export function ModelsStep({ nav, dl, strictOffline }: { nav: StepNav; dl: Model
       dl.start();
     }
   }, [dl, canDownload]);
+  // The voice model never holds onboarding up, but it should still arrive: when everything else
+  // is installed (or on its way) and nothing is fetching it, start it on its own, once.
+  const voiceAuto = useRef(false);
+  const voice = dl.models.find((m) => m.model.role === "voice");
+  const voiceMissing = !!voice && !voice.installed && !voice.active && !voice.failed;
+  useEffect(() => {
+    if (voiceAuto.current || !voiceMissing || !canDownload || dl.phase === "loading") return;
+    // Only when `phase` isn't "downloading": the running download already covers it.
+    if (dl.phase === "downloading") return;
+    voiceAuto.current = true;
+    dl.start();
+  }, [dl, voiceMissing, canDownload]);
 
   const recordLater = () => {
     show({ title: t("download.deferToast") });

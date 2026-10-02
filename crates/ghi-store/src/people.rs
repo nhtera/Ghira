@@ -386,8 +386,14 @@ impl Store {
     /// voice profiles are merged (centroids recomputed; `from`'s is
     /// crypto-shredded when both have one), and `from` is tombstoned. Me can't
     /// be merged. Returns the gids of the meetings whose speaker names
-    /// changed (their chunk embeddings carry the old names).
-    pub fn merge_persons(&self, from_gid: &str, into_gid: &str) -> Result<Vec<String>> {
+    /// changed (their chunk embeddings carry the old names). Merging people
+    /// who have a voice profile (always someone else's) needs `approval`.
+    pub fn merge_persons(
+        &self,
+        from_gid: &str,
+        into_gid: &str,
+        approval: Option<crate::voice::ThirdPartyApproved>,
+    ) -> Result<Vec<String>> {
         let person = |conn: &Connection, gid: &str| -> Result<(i64, String, bool)> {
             conn.query_row(
                 "SELECT id, name, is_me FROM persons WHERE gid = ?1",
@@ -408,6 +414,16 @@ impl Store {
             }
             if from_me || into_me {
                 return Err(StoreError::Invalid("Me can't be merged".into()));
+            }
+            let has_profile: bool = conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM voice_profiles WHERE person_id IN (?1, ?2))",
+                params![from, into],
+                |r| r.get(0),
+            )?;
+            if has_profile && approval.is_none() {
+                return Err(StoreError::Invalid(
+                    "third-party voice profiles are not enabled".into(),
+                ));
             }
             Ok((from, into, into_name))
         };
@@ -731,6 +747,47 @@ impl Store {
             self.drop_me_exemplars_from(&meeting_gid)?;
         }
         Ok(true)
+    }
+
+    /// "Not me": the speaker stops being Me (and its person link goes). Me's
+    /// voice exemplars taken from this meeting are dropped (they were not
+    /// Me's) and the meeting's index is stale. Refused in a call with a
+    /// far-side track, where the mic speaker is Me by construction.
+    pub fn clear_speaker_me(&self, speaker_gid: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let (sid, meeting_id, is_me, call, meeting_gid): (i64, i64, bool, bool, String) = tx
+            .query_row(
+                "SELECT s.id, s.meeting_id, s.is_me, m.gid,
+                        m.mode = 'call' AND EXISTS (
+                            SELECT 1 FROM tracks t WHERE t.meeting_id = m.id AND t.kind = 'system')
+                 FROM speakers s JOIN meetings m ON m.id = s.meeting_id WHERE s.gid = ?1",
+                [speaker_gid],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(4)?, r.get(3)?)),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound {
+                kind: "speaker",
+                gid: speaker_gid.to_string(),
+            })?;
+        if !is_me {
+            return Err(StoreError::Invalid("the speaker is not Me".into()));
+        }
+        if call {
+            return Err(StoreError::Invalid(
+                "in a call the mic speaker is always Me".into(),
+            ));
+        }
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        tx.execute(
+            "UPDATE speakers SET is_me = 0, person_id = NULL, lamport = ?1 WHERE id = ?2",
+            params![lamport, sid],
+        )?;
+        crate::embeddings::bump_index_gen(&tx, meeting_id)?;
+        tx.commit()?;
+        drop(conn);
+        self.drop_me_exemplars_from(&meeting_gid)?;
+        Ok(())
     }
 
     /// Sets (or with `None` clears) the "sounds like ..." suggestion of a

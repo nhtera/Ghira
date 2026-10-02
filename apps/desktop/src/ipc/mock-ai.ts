@@ -69,7 +69,8 @@ function vocabulary(host: AiHost): Vocabulary {
 const refOf = (r: MeetingRow): MeetingRef => ({ meeting: r.gid, title: r.title, startedAt: r.startedAt });
 const inScope = (r: MeetingRow, scope: AskScope) =>
   (scope.meetings.length === 0 || scope.meetings.includes(r.gid)) &&
-  (scope.persons.length === 0 || r.people.some((p) => scope.persons.includes(p.name))) &&
+  // Person gids on the mock are `person-<name>` (see mock-people.ts); Me is in every meeting.
+  (scope.persons.length === 0 || scope.persons.includes("person-me") || r.people.some((p) => scope.persons.includes(`person-${p.name.toLowerCase()}`))) &&
   // A meeting with no start time can't be placed in a date range.
   (scope.fromMs == null || (r.startedAt != null && r.startedAt >= scope.fromMs)) &&
   (scope.toMs == null || (r.startedAt != null && r.startedAt <= scope.toMs));

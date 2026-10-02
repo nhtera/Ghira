@@ -32,6 +32,18 @@ describe("SpeakerChip", () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it("suggested can show its own text and be dismissed (naming the speaker)", async () => {
+    const onAccept = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <SpeakerChip state="suggested" name="Speaker 2" suggestion="Me" suggestionLabel="Sounds like Me" onAcceptSuggestion={onAccept} onDismissSuggestion={onDismiss} />,
+    );
+    expect(screen.getByText("Sounds like Me")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss the suggestion for Speaker 2" }));
+    expect(onDismiss).toHaveBeenCalledOnce();
+    expect(onAccept).not.toHaveBeenCalled();
+  });
+
   it("auto-named shows the voice-match mark", () => {
     render(<SpeakerChip state="auto" name="Minh" colorSlot={4} />);
     expect(screen.getByRole("img", { name: "voice match" })).toBeTruthy();

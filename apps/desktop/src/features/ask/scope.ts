@@ -5,7 +5,7 @@
 import type { AskScope, MeetingRow } from "../../bindings";
 import { dateFrom } from "../library/filters";
 
-export type ScopeKind = "all" | "meeting" | "range";
+export type ScopeKind = "all" | "meeting" | "person" | "range";
 export type RangeKey = "last7Days" | "last30Days" | "thisYear";
 export const RANGES: readonly RangeKey[] = ["last7Days", "last30Days", "thisYear"];
 
@@ -23,11 +23,11 @@ export const countInRange = (rows: readonly Pick<MeetingRow, "startedAt" | "stat
   return rows.filter((r) => searchable(r) && r.startedAt != null && r.startedAt >= from).length;
 };
 
-export function buildScope(kind: ScopeKind, meeting: string | undefined, range: RangeKey, now: Date): AskScope {
+export function buildScope(kind: ScopeKind, meeting: string | undefined, range: RangeKey, now: Date, person?: string): AskScope {
   return {
     meetings: kind === "meeting" && meeting ? [meeting] : [],
     fromMs: kind === "range" ? rangeFrom(range, now) : null,
     toMs: null,
-    persons: [],
+    persons: kind === "person" && person ? [person] : [],
   };
 }

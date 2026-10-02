@@ -11,6 +11,8 @@ import { Button, EmptyState, Icon, Menu, Segmented, cn, usePlatform } from "@ghi
 import type { AskAllAnswer, NotesLanguage } from "../../bindings";
 import { ipc } from "../../ipc";
 import { useMeetings } from "../library/use-meetings";
+import { personName } from "../people/person-label";
+import { usePeople } from "../people/queries";
 import { AskError } from "./ask-error";
 import { RANGES, buildScope, countInRange, searchable, type RangeKey, type ScopeKind } from "./scope";
 
@@ -145,6 +147,7 @@ export function AskScreenBody({ meeting }: { meeting?: string }) {
 
   const [kind, setKind] = useState<ScopeKind>(meeting ? "meeting" : "all");
   const [range, setRange] = useState<RangeKey>("last30Days");
+  const [personGid, setPersonGid] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
   const nextId = useRef(0);
@@ -161,13 +164,18 @@ export function AskScreenBody({ meeting }: { meeting?: string }) {
   const patch = (id: number, p: Partial<Entry>) => setEntries((es) => es.map((e) => (e.id === id ? { ...e, ...p } : e)));
 
   const rows = meetings.rows;
+  // People who were in at least one meeting; the picker only offers them.
+  const people = usePeople().data?.people.filter((p) => p.meetings > 0) ?? [];
+  // Nobody picked (or the picked person was merged away): the picker asks again, it never falls back to someone else.
+  const person = people.find((p) => p.gid === personGid);
+  const needsPerson = kind === "person" && !person;
   const meetingTitle = rows.find((r) => r.gid === meeting)?.title;
   const scopeName = (k: ScopeKind, r: RangeKey) =>
-    k === "meeting" ? (meetingTitle ?? t("ask.scopes.thisMeeting")) : k === "range" ? t(`ask.rangeShort.${r}`) : t("ask.scopes.allMeetings");
+    k === "person" && person ? personName(person, t) : k === "meeting" ? (meetingTitle ?? t("ask.scopes.thisMeeting")) : k === "range" ? t(`ask.rangeShort.${r}`) : t("ask.scopes.allMeetings");
 
   const ask = async (text: string) => {
     const q = text.trim();
-    if (!q || inFlight.current) return;
+    if (!q || inFlight.current || needsPerson) return;
     inFlight.current = true;
     setQuestion("");
     inputRef.current?.focus();
@@ -176,7 +184,7 @@ export function AskScreenBody({ meeting }: { meeting?: string }) {
     const id = ++nextId.current;
     setEntries((es) => [...es, { id, question: q, startedAt: Date.now(), state: "thinking", scopeLabel: scopeName(kind, range) }]);
     try {
-      const r = await ipc.commands.askAllMeetings(q, buildScope(kind, meeting, range, at), language);
+      const r = await ipc.commands.askAllMeetings(q, buildScope(kind, meeting, range, at, person?.gid), language);
       if (r.status === "error") patch(id, { state: "error", error: r.error });
       else patch(id, { state: "done", answer: r.data });
     } finally {
@@ -185,13 +193,19 @@ export function AskScreenBody({ meeting }: { meeting?: string }) {
   };
 
   const searchableRows = rows.filter(searchable);
+  // Only the meetings the core reads: the person's own count also holds ones still being processed.
+  const personCount = person ? (person.isMe ? searchableRows.length : searchableRows.filter((r) => r.people.some((x) => x.name === person.name)).length) : 0;
   const rangeLabel = (k: RangeKey) => t(`ask.ranges.${k}`, { count: countInRange(rows, k, now) });
   const scopeLine =
     kind === "meeting"
       ? meetingTitle
         ? t("ask.scopeLine.thisMeeting", { title: meetingTitle })
         : null
-      : kind === "range"
+      : kind === "person"
+        ? person
+          ? t("ask.scopeLine.person", { count: personCount, name: personName(person, t) })
+          : null
+        : kind === "range"
         ? t("ask.scopeLine.dateRange", { range: rangeLabel(range) })
         : meetings.isSuccess
           ? t("ask.scopeLine.allMeetings", { count: searchableRows.length })
@@ -200,6 +214,7 @@ export function AskScreenBody({ meeting }: { meeting?: string }) {
   const options: { value: ScopeKind; label: string }[] = [
     { value: "all", label: t("ask.scopes.allMeetings") },
     ...(meeting ? [{ value: "meeting" as const, label: t("ask.scopes.thisMeeting") }] : []),
+    ...(people.length > 0 ? [{ value: "person" as const, label: t("ask.scopes.person") }] : []),
     { value: "range", label: t("ask.scopes.dateRange") },
   ];
 
@@ -209,6 +224,18 @@ export function AskScreenBody({ meeting }: { meeting?: string }) {
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex flex-none flex-wrap items-center gap-2">
         <Segmented<ScopeKind> label={t("ask.scopeLabel")} value={kind} onChange={(k) => (setNow(new Date()), setKind(k))} options={options} />
+        {kind === "person" && (
+          <Menu
+            label={t("ask.personMenu")}
+            align="start"
+            trigger={
+              <Button size="sm" icon="expand_more" aria-label={t("ask.personMenu")}>
+                {person ? personName(person, t) : t("ask.personMenu")}
+              </Button>
+            }
+            items={people.map((p) => ({ label: personName(p, t), onSelect: () => setPersonGid(p.gid) }))}
+          />
+        )}
         {kind === "range" && (
           <Menu
             label={t("ask.rangeMenu")}
@@ -285,7 +312,7 @@ export function AskScreenBody({ meeting }: { meeting?: string }) {
           }}
           className="text-body h-9 min-w-0 flex-1 rounded-ctl border border-ctl bg-surface px-3 text-ink focus-visible:outline-2 focus-visible:outline-accent"
         />
-        <Button variant="primary" icon="arrow_upward" aria-label={t("ask.meeting.send")} disabled={!question.trim() || thinking} onClick={() => void ask(question)} />
+        <Button variant="primary" icon="arrow_upward" aria-label={t("ask.meeting.send")} disabled={!question.trim() || thinking || needsPerson} onClick={() => void ask(question)} />
       </div>
     </div>
   );

@@ -31,8 +31,13 @@ test("walks every step and lands in the library", async ({ page }) => {
   await expect(page.getByText("Allowed")).toBeVisible();
   await page.getByRole("button", { name: "Continue" }).click();
 
-  // Test recording (voice is skipped: the mock has voice profiles off).
+  // Your voice: optional, Skip is always there (the real enrollment has its own spec).
   await expect(current(page)).toHaveText("5");
+  await expect(page.getByRole("heading", { name: /Teach .+ your voice/ })).toBeVisible();
+  await page.getByRole("button", { name: "Skip" }).click();
+
+  // Test recording.
+  await expect(current(page)).toHaveText("6");
   await expect(page.getByRole("heading", { name: "Try a 10-second test" })).toBeVisible();
   await page.getByRole("button", { name: "Run test" }).click();
   await expect(page.getByRole("meter", { name: "Mic" })).toBeVisible();
@@ -40,7 +45,7 @@ test("walks every step and lands in the library", async ({ page }) => {
   await page.getByRole("button", { name: "Continue" }).click();
 
   // Recovery key: optional, never blocks.
-  await expect(current(page)).toHaveText("6");
+  await expect(current(page)).toHaveText("7");
   await page.getByRole("button", { name: /^(Set up later|onboarding\.recovery\.later)$/ }).click();
 
   // Done: shortcuts with Ctrl labels, finish.
@@ -67,11 +72,10 @@ test("Enter continues, Escape stays, Back goes back", async ({ page }) => {
   await expect(page.getByRole("radio", { name: "Tiếng Việt" })).toBeFocused();
 });
 
-test("the voice step is not in the rail while voice profiles are off", async ({ page }) => {
+test("the voice step is in the rail, and a typed URL for it lands on it", async ({ page }) => {
   await open(page, "permissions");
-  await expect(page.getByRole("navigation").getByRole("listitem")).toHaveCount(7);
-  await expect(page.getByRole("navigation").getByText("Your voice")).toHaveCount(0);
-  // A typed URL for the hidden step lands on the next one.
+  await expect(page.getByRole("navigation").getByRole("listitem")).toHaveCount(8);
+  await expect(page.getByRole("navigation").getByText("Your voice")).toHaveCount(1);
   await open(page, "voice");
   await expect(current(page)).toHaveText("5");
 });
@@ -85,6 +89,7 @@ test("fits the compact window on every step", async ({ page }) => {
     () => primary(page),
     () => primary(page),
     () => primary(page),
+    () => page.getByRole("button", { name: "Skip" }),
     () => page.getByRole("button", { name: "Skip" }),
     () => page.getByRole("button", { name: /^(Set up later|onboarding\.recovery\.later)$/ }),
   ];

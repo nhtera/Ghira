@@ -189,7 +189,13 @@
     "me": "Tôi",
     "acceptSuggestion": "Chọn {{name}} làm người nói này",
     "numbered": "Người nói {{number}}",
-    "saveVoiceNext": "Bạn sẽ xác nhận họ đồng ý ở bước tiếp theo."
+    "saveVoiceNext": "Bạn sẽ xác nhận họ đồng ý ở bước tiếp theo.",
+    "thisIsMe": "Đây là tôi",
+    "notMe": "Không phải tôi",
+    "markedMe": "Đã đánh dấu là “Tôi”",
+    "unmarkedMe": "Đã bỏ đánh dấu “Tôi”",
+    "soundsLikeName": "Giống giọng {{name}}",
+    "dismissSuggestionFor": "Bỏ gợi ý cho {{speaker}}"
   },
   "common": {
     "accept": "Đồng ý",
@@ -576,7 +582,13 @@
       "listening": "Đang nghe…",
       "done": "Đã lưu giọng của bạn",
       "consent_mac": "Tôi đồng ý lưu hồ sơ giọng nói của mình. Hồ sơ được mã hoá trên máy này và tôi có thể xoá trong Mọi người.",
-      "consent_win": "Tôi đồng ý lưu hồ sơ giọng nói của mình. Hồ sơ được mã hoá trên máy này và tôi có thể xoá trong Mọi người."
+      "consent_win": "Tôi đồng ý lưu hồ sơ giọng nói của mình. Hồ sơ được mã hoá trên máy này và tôi có thể xoá trong Mọi người.",
+      "modelWaiting": "Mô hình giọng nói vẫn đang tải. Bạn có thể bỏ qua và ghi giọng sau trong Mọi người.",
+      "reading": "Đang đọc… {{seconds}} giây trên khoảng {{max}} giây",
+      "stop": "Dừng và lưu",
+      "saving": "Đang lưu giọng của bạn…",
+      "again": "Thử lại",
+      "modelOffline": "Mô hình giọng nói chưa được cài và chế độ ngoại tuyến nghiêm ngặt đang bật. Hãy ghi giọng sau trong Mọi người, khi đã cài mô hình."
     },
     "test": {
       "title": "Ghi thử 10 giây",
@@ -851,7 +863,17 @@
       },
       "lockNow": "Khoá ngay",
       "lockNote": "Khoá sẽ ẩn các cuộc họp. Đang ghi âm thì vẫn tiếp tục.",
-      "lockEncrypted": "Cuộc họp luôn được mã hoá, dù khoá hay không."
+      "lockEncrypted": "Cuộc họp luôn được mã hoá, dù khoá hay không.",
+      "myVoice": {
+        "title": "Giọng của bạn",
+        "saved_other": "Đã lưu hồ sơ giọng nói {{date}} · {{count}} mẫu",
+        "none": "Chưa có hồ sơ giọng nói. {{app}} chưa thể tự nhận ra bạn là “Tôi”.",
+        "modelMissing": "Ghi giọng cần mô hình giọng nói (Cài đặt → Mô hình).",
+        "delete": "Xoá dữ liệu giọng của tôi…",
+        "question_other": "Xoá hồ sơ giọng nói và {{count}} mẫu giọng của bạn? {{app}} sẽ không tự gắn nhãn “Tôi” nữa. Tên bạn vẫn còn trong ghi chú.",
+        "deleted": "Đã xoá dữ liệu giọng của bạn."
+      },
+      "thirdPartyOff": "Phiên bản này chưa lưu giọng của người khác."
     },
     "sync": {
       "pairTitle": "Ghép nối điện thoại",
@@ -999,8 +1021,8 @@
       "subtitle": "Video, nhạc hoặc âm thanh nền"
     },
     "voiceProfile": {
-      "agreed": "Hồ sơ giọng · đồng ý {{date}}",
-      "none": "Chưa có hồ sơ giọng",
+      "agreed": "Hồ sơ giọng nói · đồng ý {{date}}",
+      "none": "Chưa có hồ sơ giọng nói",
       "self": "Giọng của bạn · đã lưu"
     },
     "meetingsCount_other": "{{count}} cuộc họp",
@@ -1012,7 +1034,7 @@
     },
     "deleteVoice": {
       "action": "Xoá dữ liệu giọng nói…",
-      "question_other": "Xoá hồ sơ giọng và {{samples}} mẫu của {{name}}? {{app}} sẽ không nhận ra {{name}} nữa. Tên vẫn giữ trong {{count}} cuộc họp.",
+      "question_other": "Xoá hồ sơ giọng nói và {{samples}} mẫu của {{name}}? {{app}} sẽ không nhận ra {{name}} nữa. Tên vẫn giữ trong {{count}} cuộc họp.",
       "confirm": "Xoá dữ liệu giọng",
       "done": "Đã xoá dữ liệu giọng. Tên của {{name}} vẫn giữ trong ghi chú."
     },
@@ -1025,22 +1047,53 @@
     "removeName": {
       "action": "Gỡ tên khỏi ghi chú…",
       "question_other": "Thay “{{name}}” bằng “Người nói N” trong {{count}} cuộc họp? Dữ liệu giọng không bị ảnh hưởng.",
-      "confirm": "Gỡ tên"
+      "confirm": "Gỡ tên",
+      "done_other": "Đã gỡ tên trong {{count}} cuộc họp."
     },
     "merge": {
       "action": "Gộp với…",
       "hint": "Dùng khi một người xuất hiện hai lần, như “Minh” và “Minh Nguyễn”.",
-      "done": "Đã gộp {{from}} vào {{into}}"
+      "done": "Đã gộp {{from}} vào {{into}}",
+      "question": "Gộp {{from}} vào {{into}}? Các cuộc họp và tên sẽ được gộp lại. Không thể hoàn tác.",
+      "confirm": "Gộp",
+      "blocked": "Phiên bản này chưa gộp được người đã có hồ sơ giọng nói."
     },
     "openActions": "Việc đang mở",
     "meetingsTogether": "Các cuộc họp chung",
     "noOpenActions": "Không có việc nào đang mở.",
     "empty": {
       "title": "Mọi người sẽ hiện sau cuộc họp đầu tiên",
-      "body": "Khi bạn đặt tên người nói, {{app}} thêm họ vào đây. Hồ sơ giọng chỉ được lưu khi họ đồng ý."
+      "body": "Khi bạn đặt tên người nói, {{app}} thêm họ vào đây. Hồ sơ giọng nói chỉ được lưu khi họ đồng ý."
     },
     "namedIn": "Đã đặt tên {{name}} trong {{meeting}}",
-    "markedNotPerson": "Đã đánh dấu không phải người"
+    "markedNotPerson": "Đã đánh dấu không phải người",
+    "lastMet": "Gặp gần nhất {{date}}",
+    "list": "Danh sách người",
+    "noMeetings": "Chưa có cuộc họp nào.",
+    "errors": {
+      "busyRecording": "Việc này sẽ làm được sau khi dừng ghi âm.",
+      "notFound": "Người này không còn trong danh sách.",
+      "isMe": "Không thể thực hiện với “Tôi”.",
+      "samePerson": "Hãy chọn người khác.",
+      "noProfile": "Không có hồ sơ giọng nói để xoá.",
+      "storage": "Không đọc hoặc ghi được dữ liệu. Hãy thử lại.",
+      "liveMeeting": "Thao tác giọng nói dùng được sau khi cuộc họp được lưu.",
+      "notASpeaker": "Người nói này không còn trong cuộc họp.",
+      "farSide": "Trong cuộc gọi chỉ mic của bạn mới là “Tôi”.",
+      "notMe": "Người nói này chưa được đánh dấu là tôi.",
+      "noSuggestion": "Không còn gợi ý nào.",
+      "thirdPartyOff": "Hồ sơ giọng nói của người khác đang tắt.",
+      "notNamed": "Hãy đặt tên người nói trước.",
+      "noVoice": "Không còn dữ liệu giọng của người nói này.",
+      "invalidConsent": "Không ghi lại được sự đồng ý.",
+      "noModel": "Mô hình giọng nói chưa được cài (Cài đặt → Mô hình).",
+      "micPermission": "Quyền dùng micro đang tắt. Hãy cho phép trong cài đặt hệ thống rồi thử lại.",
+      "noMic": "Không tìm thấy micro.",
+      "notEnrolling": "Việc ghi đã dừng. Hãy bắt đầu lại.",
+      "tooShort": "Đoạn đọc quá ngắn. Hãy đọc hết đoạn văn, khoảng 20 giây.",
+      "tooQuiet": "Gần như không nghe thấy bạn. Hãy lại gần micro và thử lại."
+    },
+    "stopSample": "Dừng phát mẫu"
   },
   "consent": {
     "title": "Lưu giọng của {{name}}?",
@@ -1229,7 +1282,8 @@
       "last7Days": "7 ngày qua",
       "last30Days": "30 ngày qua",
       "thisYear": "Năm nay"
-    }
+    },
+    "personMenu": "Chọn một người"
   },
   "import": {
     "subtitle_mac": "File âm thanh và video được chuyển thành chữ và viết ghi chú trên máy này.",
