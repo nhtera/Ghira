@@ -17,7 +17,9 @@ import { DetectScreen } from "./routes/detect";
 import { MiniScreen } from "./routes/mini";
 import { OnboardingScreen } from "./routes/onboarding";
 import { PopoverScreen } from "./routes/popover";
-import { AskScreen, ImportScreen, MeetingDetailScreen, PeopleScreen } from "./routes/simple";
+import { AskScreen, PeopleScreen } from "./routes/simple";
+import { ImportScreen } from "./routes/import";
+import { MeetingDetailScreen } from "./routes/meeting-detail";
 import { SETTINGS_SECTIONS, SettingsScreen, type SettingsSection } from "./routes/settings";
 
 // Root: global listeners only. The app shell (sidebar, title bar) is a
@@ -42,6 +44,11 @@ const meetingDetail = createRoute({
   params: {
     parse: (p) => ({ id: p.id, tab: p.tab === "transcript" ? ("transcript" as const) : ("notes" as const) }),
     stringify: (p) => ({ id: p.id, tab: p.tab }),
+  },
+  // `t`: open at this meeting time (a search hit), in ms.
+  validateSearch: (s: Record<string, unknown>): { t?: number } => {
+    const t = Number(s.t);
+    return Number.isFinite(t) && t >= 0 ? { t } : {};
   },
   component: MeetingDetailScreen,
 });

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
 import type { MeetingRow } from "../../bindings";
 import { ipc } from "../../ipc";
 
 export const MEETINGS_KEY = ["meetings"] as const;
-const PAGE = 200; // search and paging are phase 11
+const PAGE = 200; // the command allows 500; a small first page paints fast
+const MAX_ROWS = 2000;
 
-/** The library rows; refetched when a meeting's state, job or notes change. */
+/** The library rows (newest first), loaded page by page up to MAX_ROWS; refetched when a meeting's state, job or notes change. */
 export function useMeetings() {
   const client = useQueryClient();
   useEffect(() => {
@@ -24,12 +25,25 @@ export function useMeetings() {
       off?.();
     };
   }, [client]);
-  return useQuery({
+  const q = useInfiniteQuery({
     queryKey: MEETINGS_KEY,
-    queryFn: async (): Promise<MeetingRow[]> => {
-      const r = await ipc.commands.listMeetings(PAGE, 0);
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }): Promise<MeetingRow[]> => {
+      const r = await ipc.commands.listMeetings(PAGE, pageParam);
       if (r.status === "error") throw new Error(r.error);
       return r.data;
     },
+    getNextPageParam: (last, all) => (last.length < PAGE || all.length * PAGE >= MAX_ROWS ? undefined : all.length * PAGE),
   });
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = q;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const rows = useMemo(() => q.data?.pages.flat() ?? [], [q.data]);
+  return {
+    rows,
+    isSuccess: q.isSuccess,
+    refetch: q.refetch,
+    loadingMore: hasNextPage,
+  };
 }

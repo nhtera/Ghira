@@ -212,7 +212,8 @@
     "delete": "Xoá",
     "open": "Mở",
     "language": "Ngôn ngữ",
-    "remove": "Gỡ"
+    "remove": "Gỡ",
+    "metaSep": " · "
   },
   "notes": {
     "tab": "Ghi chú",
@@ -240,7 +241,17 @@
       "actionItems": "Việc cần làm",
       "openQuestions": "Câu hỏi mở",
       "keyQuotes": "Trích dẫn chính"
-    }
+    },
+    "yourNoteLabel": "Ghi chú của bạn",
+    "enhancedLabel": "Ý từ bản ghi",
+    "blockLabel": "Ghi chú",
+    "actionLabel": "Việc cần làm",
+    "addAction": "Thêm việc cần làm",
+    "markDone": "Đã xong",
+    "noOwner": "Chưa có người phụ trách",
+    "ownerMenu": "Người phụ trách",
+    "ownerOf": "Người phụ trách: {{owner}}. Đổi",
+    "empty": "Chưa có ghi chú."
   },
   "processing": {
     "title_mac": "Đang viết ghi chú trên máy này",
@@ -371,7 +382,17 @@
       "body": "Thử ít từ hơn. Gõ không dấu cũng được."
     },
     "deleteBusy": "Không xoá được khi đang ghi hoặc đang xử lý",
-    "nothingToRetry": "Không có gì để thử lại"
+    "nothingToRetry": "Không có gì để thử lại",
+    "select": "Chọn {{title}}",
+    "exportSel": "Xuất…",
+    "moreResults": "Thêm kết quả",
+    "hitNote": "Ghi chú",
+    "sourceLive": "Đã ghi âm",
+    "dates": {
+      "week": "7 ngày qua",
+      "month": "30 ngày qua"
+    },
+    "undoTooLate": "Không hoàn tác được nữa: cuộc họp đã bị xóa"
   },
   "tray": {
     "detected": {
@@ -412,7 +433,40 @@
     "redactionOff": "Tên, email và số điện thoại sẽ được gửi nguyên văn.",
     "sendingButton": "Đang gửi…",
     "close": "Xong",
-    "failed": "Không kết nối được {{provider}}. Ghi chú trên máy vẫn được giữ."
+    "failed": "Không kết nối được {{provider}}. Ghi chú trên máy vẫn được giữ.",
+    "sheet": {
+      "askTitle": "Hỏi mô hình đám mây về cuộc họp này?",
+      "model": "Mô hình",
+      "noKey": "Chưa có khoá API cho {{provider}}.",
+      "addKey": "Thêm khoá trong Cài đặt → AI",
+      "redact": "Ẩn tên và dữ liệu cá nhân",
+      "textOnly": "Chỉ văn bản. Âm thanh không rời khỏi thiết bị này.",
+      "host": "Gửi tới {{host}}",
+      "tokens": "Khoảng {{tokens}} token",
+      "cost": "khoảng {{cost}}",
+      "preparing": "Đang chuẩn bị bản xem trước…",
+      "warnings": "Có thể vẫn là thông tin cá nhân",
+      "payload": "Chính xác nội dung được gửi",
+      "noRedactions": "Không có gì cần ẩn",
+      "sha": "Mã kiểm tra",
+      "locked": "AI đám mây đã tắt cho cuộc họp này.",
+      "strictOffline": "Đang bật chế độ ngoại tuyến hoàn toàn nên không thể gửi gì.",
+      "failedLocal": "Đang viết lại ghi chú trên thiết bị này.",
+      "leftDevice": "Yêu cầu có thể đã tới nhà cung cấp. Nó được ghi trong Cài đặt → AI.",
+      "never": "Không bao giờ gửi lên đám mây",
+      "redacted": "{{kind}}: {{count}}",
+      "kinds": {
+        "person": "Tên người",
+        "org": "Tổ chức",
+        "email": "Email",
+        "phone": "Số điện thoại",
+        "url": "Đường dẫn",
+        "id": "Số định danh",
+        "card": "Số thẻ",
+        "account": "Số tài khoản",
+        "term": "Thuật ngữ"
+      }
+    }
   },
   "onboarding": {
     "steps": {
@@ -567,7 +621,8 @@
       "models": "Mô hình",
       "privacy": "Quyền riêng tư",
       "sync": "Đồng bộ",
-      "shortcuts": "Phím tắt"
+      "shortcuts": "Phím tắt",
+      "about": "Giới thiệu"
     },
     "general": {
       "appearance": "Giao diện",
@@ -578,7 +633,9 @@
       "openAtLogin": "Mở {{app}} khi đăng nhập",
       "openAtLoginHint": "Cần để {{app}} nhận biết khi cuộc gọi bắt đầu.",
       "showInTray_mac": "Hiện {{app}} trên thanh menu",
-      "showInTray_win": "Hiện {{app}} trong khay hệ thống"
+      "showInTray_win": "Hiện {{app}} trong khay hệ thống",
+      "detectMeetings": "Hỏi ghi âm khi cuộc gọi bắt đầu",
+      "detectMeetingsHint": "{{app}} nhận ra khi ứng dụng họp dùng micro. Không bao giờ tự bắt đầu ghi."
     },
     "languages": {
       "meetingLanguages": "Ngôn ngữ trong cuộc họp",
@@ -588,7 +645,22 @@
       "vietnamese": "Tiếng Việt",
       "dateFormat": "Ngày giờ",
       "accentSearch": "Tìm không dấu",
-      "accentSearchHint": "Gõ “chot” cũng ra “chốt”. Luôn bật."
+      "accentSearchHint": "Gõ “chot” cũng ra “chốt”. Luôn bật.",
+      "vocab": {
+        "title": "Từ vựng riêng",
+        "hint": "Tên người, sản phẩm, thuật ngữ. Bản ghi cuối sẽ được sửa theo các từ này.",
+        "add": "Thêm từ",
+        "placeholder": "vd. Acme, Nguyễn Văn An",
+        "addButton": "Thêm",
+        "duplicate": "Từ này đã có.",
+        "full": "Danh sách đã đầy. Hãy xoá bớt một từ.",
+        "empty": "Chưa có từ nào.",
+        "editTerm": "Sửa {{term}}",
+        "removeTerm": "Xoá {{term}}",
+        "learnedTitle": "Học từ tên bạn đặt cho người nói",
+        "learnedHint": "Các tên này cũng được dùng. Xoá để ngừng sửa theo tên đó.",
+        "learnedEmpty": "Chưa có. Tên bạn đặt cho người nói sẽ hiện ở đây."
+      }
     },
     "recording": {
       "detectApps": "Hỏi để ghi khi các ứng dụng này bắt đầu cuộc gọi",
@@ -598,7 +670,21 @@
       "appAudioOnly": "Chỉ ghi âm thanh của ứng dụng họp",
       "appAudioOnlyHint": "Nhạc và thông báo từ ứng dụng khác được bỏ qua.",
       "consentMessage": "Lời thông báo ghi âm",
-      "consentMessageHint": "Dán vào khung chat khi bắt đầu ghi."
+      "consentMessageHint": "Dán vào khung chat khi bắt đầu ghi.",
+      "micTitle": "Micro",
+      "mic": {
+        "granted": "Đã cho phép",
+        "denied": "Đang bị chặn. Hãy cho phép trong cài đặt quyền riêng tư của hệ thống.",
+        "undetermined": "Chưa hỏi. Bạn sẽ được hỏi ở lần ghi đầu tiên.",
+        "restricted": "Bị giới hạn bởi chính sách của máy này.",
+        "unsupported": "Hệ thống này không cần cấp quyền."
+      },
+      "openPrivacy_mac": "Mở cài đặt Quyền riêng tư",
+      "openPrivacy_win": "Mở cài đặt quyền riêng tư",
+      "echoOn": "Khử tiếng vọng luôn bật ở chế độ cuộc gọi. Không ai bị tính hai lần.",
+      "consentEn": "Tiếng Anh",
+      "consentVi": "Tiếng Việt",
+      "consentReset": "Dùng lời thông báo có sẵn"
     },
     "ai": {
       "local": {
@@ -629,8 +715,29 @@
           "tokens": "Token"
         },
         "sentRedacted": "Bản ghi, đã ẩn",
-        "sentRaw": "Bản ghi"
-      }
+        "sentRaw": "Bản ghi",
+        "empty": "Chưa gửi gì cả."
+      },
+      "keys": {
+        "title": "Khoá API của bạn",
+        "hint_mac": "Lưu trong Keychain trên máy này. Khoá đã lưu sẽ không hiện lại.",
+        "hint_win": "Lưu trong Credential Manager trên máy này. Khoá đã lưu sẽ không hiện lại.",
+        "placeholder": "Dán khoá vào đây",
+        "inputFor": "Khoá API {{provider}}",
+        "saveFor": "Lưu khoá {{provider}}",
+        "removeFor": "Xoá khoá {{provider}}",
+        "saved": "Đã lưu khoá"
+      },
+      "defaults": {
+        "title": "Mặc định cho yêu cầu đám mây",
+        "hint": "Bảng gửi sẽ bắt đầu với nhà cung cấp và mô hình này.",
+        "needKey": "Thêm khoá ở trên để chọn nhà cung cấp.",
+        "none": "Chưa chọn",
+        "model": "Mô hình"
+      },
+      "redactDefault": "Mặc định ẩn tên và dữ liệu cá nhân",
+      "redactDefaultHint": "Tên, email và số điện thoại được thay thế trước khi gửi, rồi khôi phục tại máy này.",
+      "alwaysPreview": "{{app}} luôn cho xem đúng nội dung yêu cầu trước khi gửi."
     },
     "models": {
       "presetTitle": "Tốc độ và chất lượng",
@@ -662,7 +769,17 @@
         "remove": "Gỡ"
       },
       "actionFor": "{{action}} {{name}}",
-      "license": "Giấy phép {{license}}"
+      "license": "Giấy phép {{license}}",
+      "tier": {
+        "light": "Gói Nhẹ được khuyên dùng cho máy này.",
+        "balanced": "Gói Cân bằng được khuyên dùng cho máy này.",
+        "max": "Gói Tối đa được khuyên dùng cho máy này."
+      },
+      "strictOffline": "Đang bật Ngoại tuyến hoàn toàn nên không tải gì. Tắt trong Quyền riêng tư để tải.",
+      "damaged": "Mô hình này không qua kiểm tra. Hãy tải lại.",
+      "redownload": "Tải lại",
+      "redownloadFor": "Tải lại {{name}}",
+      "licenseUrl": "Giấy phép {{license}}: {{url}}"
     },
     "privacy": {
       "encrypt": "Mã hoá cuộc họp trên máy này",
@@ -684,7 +801,32 @@
       "exportAllHint": "Markdown, JSON và âm thanh trong một thư mục.",
       "deleteAll": "Xoá toàn bộ cuộc họp và dữ liệu giọng nói…",
       "deleteConfirm_other": "Xoá {{count}} cuộc họp và {{profiles}} hồ sơ giọng nói? Không thể hoàn tác.",
-      "deleteEverything": "Xoá tất cả"
+      "deleteEverything": "Xoá tất cả",
+      "encryptBody_mac": "Cuộc họp được mã hoá trên máy này, mỗi cuộc có khoá riêng lưu trong Keychain.",
+      "encryptBody_win": "Cuộc họp được mã hoá trên máy này, mỗi cuộc có khoá riêng lưu trong Credential Manager.",
+      "comingLater": "Sẽ có sau",
+      "keepForever": "Giữ",
+      "days_other": "{{count}} ngày",
+      "retentionConfirm_other": "Âm thanh cũ hơn {{count}} ngày sẽ bị xoá ngay. Bản ghi và ghi chú được giữ lại.",
+      "retentionApply": "Xoá âm thanh cũ",
+      "strictOffline": "Ngoại tuyến hoàn toàn",
+      "strictOfflineHint": "Chặn mọi kết nối mạng, gồm AI đám mây và tải mô hình.",
+      "password": "Mật khẩu",
+      "passwordAgain": "Nhập lại mật khẩu",
+      "strength": {
+        "0": "Quá ngắn",
+        "1": "Tạm được",
+        "2": "Tốt",
+        "3": "Mạnh"
+      },
+      "passwordShort": "Dùng ít nhất {{min}} ký tự.",
+      "passwordMismatch": "Hai mật khẩu không khớp.",
+      "passwordWarning": "Bạn cần mật khẩu này để mở bản xuất. Không thể khôi phục nếu quên.",
+      "exportButton": "Xuất tất cả…",
+      "exported": "Đã lưu {{name}}",
+      "dangerTitle": "Khu vực nguy hiểm",
+      "dangerBody": "Xoá mọi cuộc họp, ghi chú, âm thanh và hồ sơ giọng nói trên máy này, cùng các khoá. Không thể hoàn tác.",
+      "typeToConfirm": "Gõ {{word}} để xác nhận"
     },
     "sync": {
       "pairTitle": "Ghép nối điện thoại",
@@ -695,7 +837,9 @@
       "notes": "Ghi chú và bản ghi, hai chiều",
       "voiceProfiles": "Hồ sơ giọng nói",
       "voiceProfilesHint": "Để điện thoại cũng gọi được tên người nói.",
-      "localOnly": "Chỉ qua mạng nội bộ. Không qua internet."
+      "localOnly": "Chỉ qua mạng nội bộ. Không qua internet.",
+      "soonTitle": "Đồng bộ giữa các thiết bị sắp có",
+      "soonBody": "Hiện tại cuộc họp chỉ nằm trên máy này."
     },
     "shortcuts": {
       "startStop": "Bắt đầu hoặc dừng ghi",
@@ -704,7 +848,30 @@
       "searchMeetings": "Tìm cuộc họp",
       "notesTranscript": "Ghi chú / Bản ghi",
       "export": "Xuất",
-      "playPause": "Phát hoặc dừng"
+      "playPause": "Phát hoặc dừng",
+      "globalTitle": "Từ mọi ứng dụng",
+      "globalHint": "Dùng được khi ứng dụng khác đang mở. Tắt nếu trùng với công cụ khác.",
+      "inApp": "Trong {{app}}",
+      "settings": "Mở cài đặt",
+      "find": "Tìm trong cuộc họp",
+      "notesTab": "Thẻ Ghi chú",
+      "transcriptTab": "Thẻ Bản ghi"
+    },
+    "about": {
+      "promise": "Ghi chú họp nằm trên máy của bạn. Không gửi gì đi trừ khi bạn chọn đám mây cho một cuộc họp.",
+      "version": "Phiên bản {{app}} · lõi {{core}}",
+      "licenses": "Giấy phép mã nguồn mở",
+      "licensesHint": "Thư viện, mô hình và phông chữ dùng trong {{app}}.",
+      "search": "Tìm giấy phép",
+      "loading": "Đang tải…",
+      "count_other": "{{count}} mục",
+      "noText": "Nội dung giấy phép {{license}} không kèm trong ứng dụng.",
+      "groups": {
+        "rust": "Thư viện Rust ({{count}})",
+        "js": "Gói JavaScript ({{count}})",
+        "models": "Mô hình ({{count}})",
+        "assets": "Phông chữ và biểu tượng ({{count}})"
+      }
     }
   },
   "system": {
@@ -861,7 +1028,8 @@
       "decisions": "Quyết định",
       "actionItems": "Việc cần làm",
       "openQuestions": "Câu hỏi mở",
-      "transcript": "Bản ghi"
+      "transcript": "Bản ghi",
+      "notes": "Ghi chú"
     },
     "timestamps": "Mốc thời gian",
     "preview": "Xem trước",
@@ -875,7 +1043,20 @@
     "done_mac": "Đã xuất. Không có gì rời khỏi máy.",
     "done_win": "Đã xuất. Không có gì rời khỏi máy.",
     "changeFolder": "Đổi thư mục…",
-    "subtitlesNote": "Phụ đề chỉ gồm tên người nói và bản ghi."
+    "subtitlesNote": "Phụ đề chỉ gồm tên người nói và bản ghi.",
+    "fmt": {
+      "markdown": "Markdown (.md)",
+      "srt": "Phụ đề (.srt)",
+      "vtt": "Phụ đề (.vtt)"
+    },
+    "save": "Xuất…",
+    "saved": "Đã lưu {{name}}",
+    "savedMany": "Đã lưu {{count}} cuộc họp",
+    "reveal_mac": "Hiện trong Finder",
+    "reveal_win": "Hiện trong File Explorer",
+    "copied": "Đã sao chép",
+    "copyText": "Sao chép dạng văn bản",
+    "toObsidian": "Xuất sang Obsidian…"
   },
   "email": {
     "title": "Soạn email follow-up",
@@ -934,6 +1115,25 @@
     "empty": {
       "title": "Hỏi sẽ hữu ích khi bạn có vài cuộc họp",
       "body": "Ghi âm hoặc nhập một cuộc họp, rồi hỏi kiểu “Mình đã chốt gì?”"
+    },
+    "meeting": {
+      "title": "Hỏi về cuộc họp này",
+      "open": "Hỏi",
+      "close": "Đóng",
+      "hint": "Hỏi điều đã quyết định hay ai nói gì. Câu trả lời dẫn tới đúng thời điểm.",
+      "label": "Câu hỏi",
+      "placeholder": "Hỏi về cuộc họp này",
+      "send": "Hỏi",
+      "engine": "Trả lời bằng",
+      "onDevice_mac": "Trên máy Mac này",
+      "onDevice_win": "Trên máy này",
+      "cloud": "Đám mây…",
+      "thinking": "Đang nghĩ… {{seconds}}s",
+      "notDiscussed": "Không được nhắc tới trong cuộc họp này",
+      "searched": "Đã tìm:",
+      "byProvider": "Trả lời bởi {{provider}}",
+      "cloudFailed": "yêu cầu đám mây thất bại ({{reason}}); đã trả lời trên thiết bị này",
+      "answeredLocal": "Trả lời trên thiết bị này"
     }
   },
   "import": {
@@ -964,7 +1164,9 @@
       "speakers": "Số người nói dự kiến",
       "speakersAuto": "Tự động",
       "stereo": "Tách kênh stereo",
-      "stereoHint": "Zoom lưu bạn và người khác trên hai kênh riêng. {{app}} dùng điều đó để phân biệt người nói."
+      "stereoHint": "Zoom lưu bạn và người khác trên hai kênh riêng. {{app}} dùng điều đó để phân biệt người nói.",
+      "language": "Ngôn ngữ",
+      "stereoSides": "Bạn ở kênh trái, những người khác ở kênh phải."
     },
     "importFiles_other": "Nhập {{count}} file",
     "queue": {
@@ -972,7 +1174,13 @@
       "waiting": "Đang chờ",
       "ready": "Xong",
       "openNotes": "Mở ghi chú",
-      "empty": "Hàng đợi trống. File đã nhập sẽ hiện trong Cuộc họp khi có ghi chú."
+      "empty": "Hàng đợi trống. File đã nhập sẽ hiện trong Cuộc họp khi có ghi chú.",
+      "cancelled": "Đã hủy",
+      "failed": "Không thành công: {{message}}",
+      "decoding": "Đang chuyển đổi {{percent}}%",
+      "cancel": "Hủy {{name}}",
+      "importing_other": "{{count}} tệp đang nhập",
+      "clear": "Xóa danh sách"
     },
     "stages": {
       "converting": "Chuyển định dạng",
@@ -1003,7 +1211,22 @@
     },
     "dockDrop": "Nhập vào {{app}}",
     "emptyTitle": "Hàng đợi trống",
-    "emptyBody": "File đã nhập sẽ hiện trong Cuộc họp khi có ghi chú."
+    "emptyBody": "File đã nhập sẽ hiện trong Cuộc họp khi có ghi chú.",
+    "sources": {
+      "plaud": "Plaud",
+      "zoom": "Bản thu Zoom",
+      "teams": "Bản thu Teams",
+      "voiceMemos": "Voice Memos",
+      "other": "Tệp âm thanh"
+    },
+    "problems": {
+      "unsupported": "{{app}} không đọc được tệp này. Hãy nhập tệp âm thanh hoặc video.",
+      "empty": "Tệp này trống.",
+      "veryLong": "Dài hơn 4 giờ. Vẫn nhập được nhưng sẽ mất khá lâu.",
+      "duplicate": "Đã nhập trước đó với tên “{{title}}”"
+    },
+    "removeFile": "Bỏ {{name}}",
+    "channelsN": "{{count}} kênh"
   },
   "palette": {
     "placeholder": "Gõ lệnh hoặc tìm cuộc họp",
@@ -1029,7 +1252,11 @@
     "showAt": "Xem trong bản ghi {{time}}",
     "showAtBroken": "Xem trong bản ghi {{time}}. Âm thanh đã bị xoá.",
     "showIndex": "Xem nguồn {{index}} trong bản ghi",
-    "showIndexBroken": "Xem nguồn {{index}} trong bản ghi. Âm thanh đã bị xoá."
+    "showIndexBroken": "Xem nguồn {{index}} trong bản ghi. Âm thanh đã bị xoá.",
+    "preview": "Xem trước trích dẫn",
+    "missing": "Không có nội dung ở thời điểm đó trong bản ghi.",
+    "noAudio": "Âm thanh đã bị xóa. Dòng bản ghi vẫn còn.",
+    "stale": "Viết từ phiên bản bản ghi cũ hơn."
   },
   "meter": {
     "silent": "Không có tiếng nói",
@@ -1041,5 +1268,59 @@
   "mini": {
     "collapse": "Thu nhỏ",
     "expand": "Mở rộng"
+  },
+  "meeting": {
+    "templates": {
+      "interview": "Phỏng vấn",
+      "lecture": "Bài giảng / Hội thảo",
+      "sales": "Cuộc gọi bán hàng"
+    },
+    "noAudio": "Đã xóa âm thanh",
+    "tabs": "Cuộc họp",
+    "share": "Chia sẻ",
+    "exportEllipsis": "Xuất…",
+    "lang": {
+      "meeting": "Cuộc họp"
+    },
+    "regenerateQuestion": "Viết lại ghi chú? Những gì bạn đã viết, sửa, ghim hoặc đánh dấu sẽ được giữ lại.",
+    "regenerating": "Đang viết lại ghi chú…",
+    "regenWaiting": "Ghi chú sẽ được viết khi mô hình ghi chú được cài xong.",
+    "waitingModels": "Đang chờ mô hình",
+    "waitingModelsBody": "Bản thu âm đã được lưu. Ghi chú sẽ được viết khi các mô hình được cài xong.",
+    "notFound": {
+      "title": "Không tìm thấy cuộc họp này",
+      "body": "Có thể nó đã bị xóa."
+    },
+    "stillRecording": {
+      "title": "Cuộc họp này đang được ghi",
+      "body": "Ghi chú và bản ghi sẽ hiện ở đây khi bạn dừng.",
+      "open": "Mở Trực tiếp"
+    },
+    "templateButton": "Mẫu: {{name}}"
+  },
+  "audio": {
+    "label": "Trình phát âm thanh",
+    "play": "Phát",
+    "pause": "Tạm dừng",
+    "back15": "Lùi 15 giây",
+    "fwd15": "Tiến 15 giây",
+    "position": "Vị trí phát",
+    "speed": "Tốc độ phát",
+    "speedNow": "Tốc độ phát, {{rate}}×",
+    "computing": "Đang tạo dạng sóng…",
+    "error": "Không phát được âm thanh. Bản ghi vẫn dùng được.",
+    "removed": "Âm thanh đã bị xóa theo thời hạn lưu",
+    "back15Short": "−15",
+    "fwd15Short": "+15"
+  },
+  "transcript": {
+    "backToPlayback": "Về chỗ đang phát",
+    "findCount": "{{current}} / {{total}}",
+    "noMatches": "Không có kết quả",
+    "findPrev": "Kết quả trước",
+    "findNext": "Kết quả sau",
+    "lineMenu": "Thao tác với dòng",
+    "loading": "Đang tải bản ghi…",
+    "empty": "Cuộc họp này chưa có bản ghi."
   }
 }

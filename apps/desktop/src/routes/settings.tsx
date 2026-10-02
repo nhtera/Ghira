@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-// Settings (D11): section list; General has the theme and the app language
-// (phase 9). The other sections arrive with their features.
+// Settings (D11): the section list; each section lives in features/settings.
 import { Link, useParams } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Icon, Segmented, cn, type IconName, type ThemePreference } from "@ghi/ui";
-import type { Locale } from "@ghi/i18n";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { MeetingLanguage } from "../bindings";
-import { ipc } from "../ipc";
-import { settingsQuery } from "../shell/root-view";
-import { usePrefs } from "../state/prefs";
+import { Icon, cn, type IconName } from "@ghi/ui";
+import { AboutSection } from "../features/settings/about-section";
+import { AiSection } from "../features/settings/ai-section";
+import { GeneralSection } from "../features/settings/general-section";
+import { LanguagesSection } from "../features/settings/languages-section";
+import { ModelsSection } from "../features/settings/models-section";
+import { PrivacySection } from "../features/settings/privacy-section";
+import { RecordingSection } from "../features/settings/recording-section";
+import { ShortcutsSection } from "../features/settings/shortcuts-section";
+import { SyncSection } from "../features/settings/sync-section";
 
-export const SETTINGS_SECTIONS = ["general", "languages", "recording", "ai", "models", "privacy", "sync", "shortcuts"] as const;
+export const SETTINGS_SECTIONS = ["general", "languages", "recording", "ai", "models", "privacy", "sync", "shortcuts", "about"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 const ICONS: Record<SettingsSection, IconName> = {
@@ -23,6 +25,7 @@ const ICONS: Record<SettingsSection, IconName> = {
   privacy: "lock",
   sync: "sync",
   shortcuts: "keyboard_command_key",
+  about: "info",
 };
 
 export function SettingsScreen() {
@@ -51,69 +54,16 @@ export function SettingsScreen() {
       </nav>
       <div className="min-h-0 overflow-auto px-8 py-6">
         <h2 className="text-heading m-0 mb-4">{t(`settings.sections.${section}`)}</h2>
-        {section === "general" && <General />}
+        {section === "general" && <GeneralSection />}
+        {section === "languages" && <LanguagesSection />}
+        {section === "recording" && <RecordingSection />}
+        {section === "ai" && <AiSection />}
+        {section === "models" && <ModelsSection />}
+        {section === "privacy" && <PrivacySection />}
+        {section === "sync" && <SyncSection />}
+        {section === "shortcuts" && <ShortcutsSection />}
+        {section === "about" && <AboutSection />}
       </div>
     </div>
-  );
-}
-
-function General() {
-  const { t } = useTranslation();
-  const { theme, setTheme, language, setLanguage } = usePrefs();
-  const queryClient = useQueryClient();
-  const { data: settings } = useQuery(settingsQuery);
-  const setMeetingLanguage = async (meetingLanguage: MeetingLanguage) => {
-    const r = await ipc.commands.updateSettings({
-      meetingLanguage,
-      onboardingDone: null,
-      detectMeetings: null,
-      globalMarkShortcut: null,
-      strictOffline: null,
-    });
-    if (r.status === "ok") queryClient.setQueryData(settingsQuery.queryKey, r.data);
-  };
-  return (
-    <dl className="m-0 grid max-w-xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-4">
-      <dt className="text-body">{t("settings.general.appearance")}</dt>
-      <dd className="m-0">
-        <Segmented<ThemePreference>
-          label={t("settings.general.appearance")}
-          value={theme}
-          onChange={setTheme}
-          options={[
-            { value: "system", label: t("settings.general.themeSystem") },
-            { value: "light", label: t("settings.general.themeLight"), icon: "light_mode" },
-            { value: "dark", label: t("settings.general.themeDark"), icon: "dark_mode" },
-          ]}
-        />
-      </dd>
-      <dt className="text-body">{t("settings.general.appLanguage")}</dt>
-      <dd className="m-0">
-        <Segmented<Locale>
-          label={t("settings.general.appLanguage")}
-          value={language}
-          onChange={setLanguage}
-          options={[
-            { value: "en", label: "English" },
-            { value: "vi", label: "Tiếng Việt" },
-          ]}
-        />
-      </dd>
-      <dt className="text-body">{t("onboarding.languages.title")}</dt>
-      <dd className="m-0">
-        {settings && (
-          <Segmented<MeetingLanguage>
-            label={t("onboarding.languages.title")}
-            value={settings.meetingLanguage}
-            onChange={(v) => void setMeetingLanguage(v)}
-            options={[
-              { value: "auto", label: t("onboarding.languages.both") },
-              { value: "vi", label: t("onboarding.languages.vietnamese") },
-              { value: "en", label: t("onboarding.languages.english") },
-            ]}
-          />
-        )}
-      </dd>
-    </dl>
   );
 }

@@ -223,7 +223,8 @@
     "delete": "Delete",
     "open": "Open",
     "language": "Language",
-    "remove": "Remove"
+    "remove": "Remove",
+    "metaSep": " · "
   },
   "notes": {
     "tab": "Notes",
@@ -251,7 +252,17 @@
       "actionItems": "Action items",
       "openQuestions": "Open questions",
       "keyQuotes": "Key quotes"
-    }
+    },
+    "yourNoteLabel": "Your note",
+    "enhancedLabel": "Points from the transcript",
+    "blockLabel": "Note",
+    "actionLabel": "Action item",
+    "addAction": "Add an action item",
+    "markDone": "Done",
+    "noOwner": "No owner",
+    "ownerMenu": "Owner",
+    "ownerOf": "Owner: {{owner}}. Change",
+    "empty": "No notes yet."
   },
   "processing": {
     "title_mac": "Writing your notes on this Mac",
@@ -387,7 +398,17 @@
       "body": "Try fewer words. Accents are optional."
     },
     "deleteBusy": "Can't delete while it's recording or processing",
-    "nothingToRetry": "Nothing to retry"
+    "nothingToRetry": "Nothing to retry",
+    "select": "Select {{title}}",
+    "exportSel": "Export…",
+    "moreResults": "More results",
+    "hitNote": "Notes",
+    "sourceLive": "Recorded",
+    "dates": {
+      "week": "Last 7 days",
+      "month": "Last 30 days"
+    },
+    "undoTooLate": "Too late to undo: the meeting is already deleted"
   },
   "tray": {
     "detected": {
@@ -428,7 +449,40 @@
     "redactionOff": "Names, emails and phone numbers will be sent as written.",
     "sendingButton": "Sending…",
     "close": "Done",
-    "failed": "Couldn’t reach {{provider}}. Local notes are kept."
+    "failed": "Couldn’t reach {{provider}}. Local notes are kept.",
+    "sheet": {
+      "askTitle": "Ask a cloud model about this meeting?",
+      "model": "Model",
+      "noKey": "No API key for {{provider}} yet.",
+      "addKey": "Add a key in Settings → AI",
+      "redact": "Hide names and personal data",
+      "textOnly": "Text only. Audio never leaves this device.",
+      "host": "Sent to {{host}}",
+      "tokens": "About {{tokens}} tokens",
+      "cost": "about {{cost}}",
+      "preparing": "Preparing the preview…",
+      "warnings": "Might still be personal",
+      "payload": "Exactly what is sent",
+      "noRedactions": "Nothing needed hiding",
+      "sha": "Checksum",
+      "locked": "Cloud AI is turned off for this meeting.",
+      "strictOffline": "Strict offline is on, so nothing can be sent.",
+      "failedLocal": "Writing them on this device instead.",
+      "leftDevice": "The request may have reached the provider. It is logged in Settings → AI.",
+      "never": "Never send to cloud",
+      "redacted": "{{kind}}: {{count}}",
+      "kinds": {
+        "person": "Names",
+        "org": "Organizations",
+        "email": "Emails",
+        "phone": "Phone numbers",
+        "url": "Links",
+        "id": "ID numbers",
+        "card": "Card numbers",
+        "account": "Account numbers",
+        "term": "Terms"
+      }
+    }
   },
   "onboarding": {
     "steps": {
@@ -583,7 +637,8 @@
       "models": "Models",
       "privacy": "Privacy",
       "sync": "Sync",
-      "shortcuts": "Shortcuts"
+      "shortcuts": "Shortcuts",
+      "about": "About"
     },
     "general": {
       "appearance": "Appearance",
@@ -594,7 +649,9 @@
       "openAtLogin": "Open {{app}} at login",
       "openAtLoginHint": "Needed so {{app}} can notice when a call starts.",
       "showInTray_mac": "Show {{app}} in the menu bar",
-      "showInTray_win": "Show {{app}} in the system tray"
+      "showInTray_win": "Show {{app}} in the system tray",
+      "detectMeetings": "Ask to record when a call starts",
+      "detectMeetingsHint": "{{app}} notices when a meeting app uses the microphone. It never starts on its own."
     },
     "languages": {
       "meetingLanguages": "Languages spoken in meetings",
@@ -604,7 +661,22 @@
       "vietnamese": "Tiếng Việt",
       "dateFormat": "Dates and times",
       "accentSearch": "Search without accents",
-      "accentSearchHint": "“chot” finds “chốt”. Always on."
+      "accentSearchHint": "“chot” finds “chốt”. Always on.",
+      "vocab": {
+        "title": "Custom vocabulary",
+        "hint": "Names, products and jargon. The final transcript is corrected towards these words.",
+        "add": "Add a term",
+        "placeholder": "e.g. Acme, Nguyễn Văn An",
+        "addButton": "Add",
+        "duplicate": "Already in the list.",
+        "full": "The list is full. Remove a term to add another.",
+        "empty": "No terms yet.",
+        "editTerm": "Edit {{term}}",
+        "removeTerm": "Remove {{term}}",
+        "learnedTitle": "Learned from names you gave speakers",
+        "learnedHint": "These are used too. Remove one to stop correcting towards it.",
+        "learnedEmpty": "Nothing yet. Names you give speakers appear here."
+      }
     },
     "recording": {
       "detectApps": "Ask to record when these apps start a call",
@@ -614,7 +686,21 @@
       "appAudioOnly": "Record only the meeting app’s sound",
       "appAudioOnlyHint": "Music and notifications from other apps are left out.",
       "consentMessage": "Consent message",
-      "consentMessageHint": "Paste it in the meeting chat when you start recording."
+      "consentMessageHint": "Paste it in the meeting chat when you start recording.",
+      "micTitle": "Microphone",
+      "mic": {
+        "granted": "Allowed",
+        "denied": "Blocked. Allow it in the system privacy settings.",
+        "undetermined": "Not asked yet. You will be asked on the first recording.",
+        "restricted": "Restricted by this computer’s policy.",
+        "unsupported": "No permission needed on this system."
+      },
+      "openPrivacy_mac": "Open Privacy Settings",
+      "openPrivacy_win": "Open privacy settings",
+      "echoOn": "Echo cancellation is on in call mode. Nobody is counted twice.",
+      "consentEn": "English",
+      "consentVi": "Tiếng Việt",
+      "consentReset": "Use the built-in message"
     },
     "ai": {
       "local": {
@@ -645,8 +731,29 @@
           "tokens": "Tokens"
         },
         "sentRedacted": "Transcript, redacted",
-        "sentRaw": "Transcript"
-      }
+        "sentRaw": "Transcript",
+        "empty": "Nothing has been sent."
+      },
+      "keys": {
+        "title": "Your API keys",
+        "hint_mac": "Stored in the Keychain on this Mac. A saved key is never shown again.",
+        "hint_win": "Stored in Credential Manager on this PC. A saved key is never shown again.",
+        "placeholder": "Paste a key",
+        "inputFor": "{{provider}} API key",
+        "saveFor": "Save {{provider}} key",
+        "removeFor": "Remove {{provider}} key",
+        "saved": "Key saved"
+      },
+      "defaults": {
+        "title": "Default for cloud requests",
+        "hint": "The send sheet starts with this provider and model.",
+        "needKey": "Add a key above to choose a provider.",
+        "none": "None",
+        "model": "Model"
+      },
+      "redactDefault": "Hide names and personal data by default",
+      "redactDefaultHint": "Names, emails and phone numbers are replaced before sending, then restored here.",
+      "alwaysPreview": "{{app}} always shows the exact request before anything is sent."
     },
     "models": {
       "presetTitle": "Speed and quality",
@@ -678,7 +785,17 @@
         "remove": "Remove"
       },
       "actionFor": "{{action}} {{name}}",
-      "license": "License {{license}}"
+      "license": "License {{license}}",
+      "tier": {
+        "light": "Light is recommended for this computer.",
+        "balanced": "Balanced is recommended for this computer.",
+        "max": "Max is recommended for this computer."
+      },
+      "strictOffline": "Strict offline is on, so nothing is downloaded. Turn it off in Privacy to download.",
+      "damaged": "This model failed its check. Download it again.",
+      "redownload": "Download again",
+      "redownloadFor": "Download {{name}} again",
+      "licenseUrl": "License {{license}}: {{url}}"
     },
     "privacy": {
       "encrypt": "Encrypt meetings on this computer",
@@ -701,7 +818,34 @@
       "deleteAll": "Delete all meetings and voice data…",
       "deleteConfirm_one": "Delete {{count}} meeting and {{profiles}} voice profiles? This can’t be undone.",
       "deleteConfirm_other": "Delete {{count}} meetings and {{profiles}} voice profiles? This can’t be undone.",
-      "deleteEverything": "Delete everything"
+      "deleteEverything": "Delete everything",
+      "encryptBody_mac": "Meetings are encrypted on this Mac, each with its own key kept in the Keychain.",
+      "encryptBody_win": "Meetings are encrypted on this PC, each with its own key kept in Credential Manager.",
+      "comingLater": "Coming later",
+      "keepForever": "Keep",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days",
+      "retentionConfirm_one": "Audio older than {{count}} day will be deleted now. Transcripts and notes are kept.",
+      "retentionConfirm_other": "Audio older than {{count}} days will be deleted now. Transcripts and notes are kept.",
+      "retentionApply": "Delete older audio",
+      "strictOffline": "Strict offline",
+      "strictOfflineHint": "Blocks all network use: cloud AI and model downloads included.",
+      "password": "Password",
+      "passwordAgain": "Repeat the password",
+      "strength": {
+        "0": "Too short",
+        "1": "Fair",
+        "2": "Good",
+        "3": "Strong"
+      },
+      "passwordShort": "Use at least {{min}} characters.",
+      "passwordMismatch": "The passwords don’t match.",
+      "passwordWarning": "You need this password to open the export. It can’t be recovered.",
+      "exportButton": "Export everything…",
+      "exported": "Saved {{name}}",
+      "dangerTitle": "Danger zone",
+      "dangerBody": "Deletes every meeting, note, audio file and voice profile on this computer, and the keys. This can’t be undone.",
+      "typeToConfirm": "Type {{word}} to confirm"
     },
     "sync": {
       "pairTitle": "Pair a phone",
@@ -712,7 +856,9 @@
       "notes": "Notes and transcripts, both ways",
       "voiceProfiles": "Voice profiles",
       "voiceProfilesHint": "Lets your phone name speakers too.",
-      "localOnly": "Local network only. Nothing goes through the internet."
+      "localOnly": "Local network only. Nothing goes through the internet.",
+      "soonTitle": "Sync between your devices is coming",
+      "soonBody": "Your meetings stay on this computer for now."
     },
     "shortcuts": {
       "startStop": "Start or stop recording",
@@ -721,7 +867,31 @@
       "searchMeetings": "Search meetings",
       "notesTranscript": "Notes / Transcript",
       "export": "Export",
-      "playPause": "Play or pause"
+      "playPause": "Play or pause",
+      "globalTitle": "From any app",
+      "globalHint": "These work while another app is in front. Turn one off if it clashes with another tool.",
+      "inApp": "Inside {{app}}",
+      "settings": "Open settings",
+      "find": "Find in this meeting",
+      "notesTab": "Notes tab",
+      "transcriptTab": "Transcript tab"
+    },
+    "about": {
+      "promise": "Meeting notes that stay on your computer. Nothing is sent anywhere unless you choose cloud for one meeting.",
+      "version": "Version {{app}} · core {{core}}",
+      "licenses": "Open-source licenses",
+      "licensesHint": "Libraries, models and fonts {{app}} is built with.",
+      "search": "Search licenses",
+      "loading": "Loading…",
+      "count_one": "{{count}} entry",
+      "count_other": "{{count}} entries",
+      "noText": "The {{license}} text is not bundled with the app.",
+      "groups": {
+        "rust": "Rust crates ({{count}})",
+        "js": "JavaScript packages ({{count}})",
+        "models": "Models ({{count}})",
+        "assets": "Fonts and icons ({{count}})"
+      }
     }
   },
   "system": {
@@ -883,7 +1053,8 @@
       "decisions": "Decisions",
       "actionItems": "Action items",
       "openQuestions": "Open questions",
-      "transcript": "Transcript"
+      "transcript": "Transcript",
+      "notes": "Notes"
     },
     "timestamps": "Timestamps",
     "preview": "Preview",
@@ -897,7 +1068,20 @@
     "done_mac": "Exported. Nothing left this Mac.",
     "done_win": "Exported. Nothing left this PC.",
     "changeFolder": "Change folder…",
-    "subtitlesNote": "Subtitles contain speaker names and transcript only."
+    "subtitlesNote": "Subtitles contain speaker names and transcript only.",
+    "fmt": {
+      "markdown": "Markdown (.md)",
+      "srt": "Subtitles (.srt)",
+      "vtt": "Subtitles (.vtt)"
+    },
+    "save": "Export…",
+    "saved": "Saved {{name}}",
+    "savedMany": "Saved {{count}} meetings",
+    "reveal_mac": "Show in Finder",
+    "reveal_win": "Show in File Explorer",
+    "copied": "Copied",
+    "copyText": "Copy as text",
+    "toObsidian": "Export to Obsidian…"
   },
   "email": {
     "title": "Draft follow-up email",
@@ -966,6 +1150,25 @@
     "empty": {
       "title": "Ask works once you have a few meetings",
       "body": "Record or import a meeting, then ask things like “What did we decide?”"
+    },
+    "meeting": {
+      "title": "Ask this meeting",
+      "open": "Ask",
+      "close": "Close",
+      "hint": "Ask what was decided or who said something. Answers link to the moment.",
+      "label": "Question",
+      "placeholder": "Ask about this meeting",
+      "send": "Ask",
+      "engine": "Answer with",
+      "onDevice_mac": "On this Mac",
+      "onDevice_win": "On this PC",
+      "cloud": "Cloud…",
+      "thinking": "Thinking… {{seconds}}s",
+      "notDiscussed": "Not discussed in this meeting",
+      "searched": "Looked for:",
+      "byProvider": "Answered by {{provider}}",
+      "cloudFailed": "the cloud request failed ({{reason}}); answered on this device",
+      "answeredLocal": "Answered on this device"
     }
   },
   "import": {
@@ -996,7 +1199,9 @@
       "speakers": "Expected speakers",
       "speakersAuto": "Auto",
       "stereo": "Split stereo channels",
-      "stereoHint": "Zoom saves you and the others on separate channels. {{app}} uses that to tell speakers apart."
+      "stereoHint": "Zoom saves you and the others on separate channels. {{app}} uses that to tell speakers apart.",
+      "language": "Language",
+      "stereoSides": "You on the left channel, the others on the right."
     },
     "importFiles_one": "Import {{count}} file",
     "importFiles_other": "Import {{count}} files",
@@ -1005,7 +1210,14 @@
       "waiting": "Waiting",
       "ready": "Ready",
       "openNotes": "Open notes",
-      "empty": "Nothing in the queue. Imported files show up in Meetings when their notes are ready."
+      "empty": "Nothing in the queue. Imported files show up in Meetings when their notes are ready.",
+      "cancelled": "Cancelled",
+      "failed": "Failed: {{message}}",
+      "decoding": "Converting {{percent}}%",
+      "cancel": "Cancel {{name}}",
+      "importing_one": "{{count}} file importing",
+      "importing_other": "{{count}} files importing",
+      "clear": "Clear"
     },
     "stages": {
       "converting": "Converting",
@@ -1037,7 +1249,22 @@
     },
     "dockDrop": "Import into {{app}}",
     "emptyTitle": "Nothing in the queue",
-    "emptyBody": "Imported files show up in Meetings when their notes are ready."
+    "emptyBody": "Imported files show up in Meetings when their notes are ready.",
+    "sources": {
+      "plaud": "Plaud",
+      "zoom": "Zoom recording",
+      "teams": "Teams recording",
+      "voiceMemos": "Voice Memos",
+      "other": "Audio file"
+    },
+    "problems": {
+      "unsupported": "{{app}} can’t read this file. Import audio or video instead.",
+      "empty": "This file is empty.",
+      "veryLong": "Over 4 hours. It can be imported, but it will take a while.",
+      "duplicate": "Already imported as “{{title}}”"
+    },
+    "removeFile": "Remove {{name}}",
+    "channelsN": "{{count}} channels"
   },
   "palette": {
     "placeholder": "Type a command or search meetings",
@@ -1063,7 +1290,11 @@
     "showAt": "Show in transcript {{time}}",
     "showAtBroken": "Show in transcript {{time}}. The audio was deleted.",
     "showIndex": "Show source {{index}} in transcript",
-    "showIndexBroken": "Show source {{index}} in transcript. The audio was deleted."
+    "showIndexBroken": "Show source {{index}} in transcript. The audio was deleted.",
+    "preview": "Quote preview",
+    "missing": "Nothing in the transcript at that moment.",
+    "noAudio": "The audio was deleted. The transcript line is kept.",
+    "stale": "Written from an earlier version of the transcript."
   },
   "meter": {
     "silent": "No speech",
@@ -1075,5 +1306,59 @@
   "mini": {
     "collapse": "Shrink to a pill",
     "expand": "Expand"
+  },
+  "meeting": {
+    "templates": {
+      "interview": "Interview",
+      "lecture": "Lecture / Workshop",
+      "sales": "Sales call"
+    },
+    "noAudio": "Audio deleted",
+    "tabs": "Meeting",
+    "share": "Share",
+    "exportEllipsis": "Export…",
+    "lang": {
+      "meeting": "Meeting"
+    },
+    "regenerateQuestion": "Write the notes again? What you wrote, edited, pinned or ticked stays.",
+    "regenerating": "Writing the notes again…",
+    "regenWaiting": "Notes will be written once the notes model is installed.",
+    "waitingModels": "Waiting for models",
+    "waitingModelsBody": "The recording is saved. Notes are written once the models are installed.",
+    "notFound": {
+      "title": "This meeting isn’t here",
+      "body": "It may have been deleted."
+    },
+    "stillRecording": {
+      "title": "This meeting is still recording",
+      "body": "Notes and transcript appear here when you stop.",
+      "open": "Open Live"
+    },
+    "templateButton": "Template: {{name}}"
+  },
+  "audio": {
+    "label": "Audio player",
+    "play": "Play",
+    "pause": "Pause",
+    "back15": "Back 15 seconds",
+    "fwd15": "Forward 15 seconds",
+    "position": "Playback position",
+    "speed": "Playback speed",
+    "speedNow": "Playback speed, {{rate}}×",
+    "computing": "Preparing the waveform…",
+    "error": "The audio can’t be played. The transcript still works.",
+    "removed": "Audio removed by retention",
+    "back15Short": "−15",
+    "fwd15Short": "+15"
+  },
+  "transcript": {
+    "backToPlayback": "Back to playback",
+    "findCount": "{{current}} of {{total}}",
+    "noMatches": "No matches",
+    "findPrev": "Previous match",
+    "findNext": "Next match",
+    "lineMenu": "Line actions",
+    "loading": "Loading the transcript…",
+    "empty": "No transcript for this meeting."
   }
 }

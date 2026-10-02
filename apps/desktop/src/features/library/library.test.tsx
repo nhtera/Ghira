@@ -20,6 +20,8 @@ const row = (gid: string, over: Partial<MeetingRow> = {}): MeetingRow => ({
   transcriptVersion: 2,
   cloudUsed: false,
   consentConfirmed: false,
+  template: null,
+  people: [],
   job: null,
   ...over,
 });
@@ -28,7 +30,17 @@ afterEach(cleanup);
 
 describe("groupByDay", () => {
   it("groups by calendar day and keeps order", () => {
-    const g = groupByDay([row("a", { startedAt: at(0, 14) }), row("b", { startedAt: at(0, 8) }), row("c", { startedAt: at(1) }), row("d", { startedAt: at(3) }), row("e", { startedAt: at(9) }), row("f", { startedAt: at(40) })], NOW);
+    const g = groupByDay(
+      [
+        row("a", { startedAt: at(0, 14) }),
+        row("b", { startedAt: at(0, 8) }),
+        row("c", { startedAt: at(1) }),
+        row("d", { startedAt: at(3) }),
+        row("e", { startedAt: at(9) }),
+        row("f", { startedAt: at(40) }),
+      ],
+      NOW,
+    );
     expect(g.map((x) => x.key.kind)).toEqual(["today", "yesterday", "weekday", "lastWeek", "month"]);
     expect(g[0]!.rows.map((r) => r.gid)).toEqual(["a", "b"]);
   });
@@ -59,7 +71,21 @@ describe("LibraryList", () => {
         <LibraryList
           now={NOW}
           onOpen={() => {}}
-          rows={[row("a", { title: "Standup" }), row("b", { title: "Workshop", startedAt: at(1), status: "processing", job }), row("c", { title: "Queued", startedAt: at(1), status: "processing", job: { ...job, waitingForModels: true } })]}
+          rows={[
+            row("a", { title: "Standup" }),
+            row("b", {
+              title: "Workshop",
+              startedAt: at(1),
+              status: "processing",
+              job,
+            }),
+            row("c", {
+              title: "Queued",
+              startedAt: at(1),
+              status: "processing",
+              job: { ...job, waitingForModels: true },
+            }),
+          ]}
         />
       </PlatformProvider>,
     );
@@ -94,6 +120,12 @@ describe("LibraryList", () => {
     const li = screen.getByRole("listitem");
     fireEvent.click(within(li).getByText("Standup"));
     expect(onOpen).toHaveBeenCalledWith("a");
-    expect((within(li).getByRole("button", { name: "Copy notes" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (
+        within(li).getByRole("button", {
+          name: "Copy notes",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 });

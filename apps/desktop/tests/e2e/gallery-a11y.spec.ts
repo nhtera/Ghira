@@ -7,6 +7,8 @@ import { VARIANTS, galleryEntries, storyUrl } from "./gallery";
 
 test("axe: no serious violations in any story", async ({ page }) => {
   test.setTimeout(10 * 60_000);
+  // Colors are checked at rest: a pulse caught mid-fade is not a contrast bug.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const entries = await galleryEntries(page);
   const found: string[] = [];
   for (const e of entries) {

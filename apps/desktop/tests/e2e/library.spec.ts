@@ -23,7 +23,7 @@ test("quick actions show on keyboard focus and Delete asks first", async ({ page
   await row.getByRole("button", { name: "Delete" }).click();
   await expect(row).toContainText("Delete 1 meeting?");
   await row.getByRole("button", { name: "Delete" }).last().click();
-  await expect(page.getByText("1 deleted")).toBeVisible();
+  await expect(page.getByText("1 deleted", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Client call — Acme onboarding/ })).toHaveCount(0);
 });
 

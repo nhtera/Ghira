@@ -21,7 +21,7 @@ test("name a speaker from the chip: open, type, Enter", async ({ page }) => {
   await page.keyboard.type("Hana");
   await page.keyboard.press("Enter");
   await expect(strip(page).getByRole("button", { name: /Hana/ })).toBeVisible();
-  await expect(page.getByText("Renamed to Hana on every line")).toBeVisible();
+  await expect(page.getByText("Renamed to Hana on every line", { exact: true })).toBeVisible();
 });
 
 test("known people are offered while typing", async ({ page }) => {
@@ -69,7 +69,7 @@ test("split two lines off to a new speaker", async ({ page }) => {
   await page.getByRole("checkbox", { name: "split candidate 1" }).check();
   await page.getByRole("checkbox", { name: "split candidate 2" }).check();
   await page.getByRole("button", { name: "Move 2 lines" }).click();
-  await expect(page.getByText(/Moved 2 lines to/)).toBeVisible();
+  await expect(page.getByText(/^Moved 2 lines to/)).toBeVisible();
   await expect(strip(page).getByRole("button")).toHaveCount(3);
 });
 
@@ -80,7 +80,7 @@ test("change one line's speaker from the line", async ({ page }) => {
   await row.hover();
   await row.getByRole("button", { name: "Change speaker" }).click();
   await page.getByRole("button", { name: /Speaker 3/ }).last().click();
-  await expect(page.getByText(/Merged into/)).toBeVisible();
+  await expect(page.getByText(/^Merged into/)).toBeVisible();
   // Focus returns to the line's button, not to the page.
   await expect(row.getByRole("button", { name: "Change speaker" })).toBeFocused();
 });

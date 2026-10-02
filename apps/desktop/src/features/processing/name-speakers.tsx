@@ -3,7 +3,6 @@
 // Naming applies to notes and transcript; Skip leaves the voice as "Speaker N".
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { Avatar, Button, Icon, useToast } from "@ghi/ui";
 import { ipc } from "../../ipc";
 import { adapter, type UnnamedSpeaker } from "./speakers-adapter";
@@ -19,7 +18,7 @@ function SpeakerCard({ meeting, speaker, onDone }: { meeting: string; speaker: U
   const play = async () => {
     const r = await ipc.commands.issueAudioSample(meeting, speaker.t0Ms, speaker.t1Ms, null);
     // No audio (the mock core, a deleted bundle): the card still lets you type a name.
-    if (r.status === "ok") setSample({ src: convertFileSrc(r.data, "ghi-audio") });
+    if (r.status === "ok") setSample({ src: ipc.audioUrl(r.data) });
   };
   const save = async () => {
     const trimmed = name.trim();

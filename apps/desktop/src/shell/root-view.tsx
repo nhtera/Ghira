@@ -10,6 +10,14 @@ import type { CoreEvent } from "../bindings";
 import { ipc } from "../ipc";
 import { useLive } from "../state/live";
 import { QuitDialog } from "./quit-dialog";
+import { useImportListeners } from "../features/import/import-store";
+
+/** Main window only: files dropped on the window or the Dock (D10) and import
+ * progress are kept even before the import screen opens. */
+function ImportListeners() {
+  useImportListeners();
+  return null;
+}
 
 export const settingsQuery = {
   queryKey: ["settings"] as const,
@@ -67,6 +75,7 @@ export function RootView() {
       <Outlet />
       {/* Here, not in the shell: quitting must ask during onboarding's test too. */}
       {!panel && <QuitDialog />}
+      {!panel && <ImportListeners />}
     </>
   );
 }
