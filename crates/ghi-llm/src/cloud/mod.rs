@@ -207,6 +207,12 @@ impl CloudProvider {
         backoff: &[Duration],
     ) -> Result<Completion> {
         let headers = self.headers(key);
+        log::info!(
+            "cloud send provider={} model={} bytes={}",
+            self.name(),
+            self.model,
+            prepared.body.len()
+        );
         let mut attempt = 0;
         loop {
             let last = grant.attempts_left() <= 1;
@@ -216,7 +222,16 @@ impl CloudProvider {
                     return self.parse(r.status, &r.body).map_err(|e| scrub(e, key));
                 }
                 Err(e) if e.is_retryable() && !last => {}
-                Err(e) => return Err(map_net(e)),
+                Err(e) => {
+                    let e = map_net(e);
+                    let verdict = if matches!(e, LlmError::Denied(_)) {
+                        "refused"
+                    } else {
+                        "failed"
+                    };
+                    log::warn!("cloud send {verdict} provider={}", self.name());
+                    return Err(e);
+                }
             }
             std::thread::sleep(backoff.get(attempt).copied().unwrap_or_default());
             attempt += 1;

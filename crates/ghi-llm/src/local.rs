@@ -90,6 +90,7 @@ impl LocalLlm {
             name: model.id.clone(),
             version: model.revision.chars().take(8).collect(),
         };
+        log::info!("llm model load id={id} n_ctx={n_ctx}");
         let format = model
             .chat_format
             .as_deref()

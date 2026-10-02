@@ -10,6 +10,7 @@ const core = vi.hoisted(() => {
   const state = {
     recovered: [] as unknown[],
     damaged: false,
+    crashed: false,
     coreListeners: new Set<(e: unknown) => void>(),
     downloadListener: null as null | ((e: unknown) => void),
   };
@@ -23,6 +24,9 @@ const core = vi.hoisted(() => {
     downloadModels: vi.fn(async () => ({ status: "ok", data: null })),
     cancelModelDownload: vi.fn(async () => undefined),
     openPrivacySettings: vi.fn(async () => ({ status: "ok", data: null })),
+    diagnosticsStatus: vi.fn(async () => ({ crashedLastRun: state.crashed, reports: 1 })),
+    revealDiagnostics: vi.fn(async () => ({ status: "ok", data: null })),
+    acknowledgeCrash: vi.fn(async () => undefined),
   };
   return { state, commands };
 });
@@ -54,6 +58,7 @@ const renderStates = () =>
 beforeEach(() => {
   core.state.recovered = [];
   core.state.damaged = false;
+  core.state.crashed = false;
   Object.values(core.commands).forEach((f) => f.mockClear());
   navigate.mockClear();
 });
@@ -89,6 +94,36 @@ describe("recovered meetings", () => {
   });
 });
 import { within } from "@testing-library/react";
+
+describe("crash report notice", () => {
+  const banner = () => document.querySelector('[data-banner="crash-report"]');
+
+  it("shows nothing after a clean run", async () => {
+    renderStates();
+    await waitFor(() => expect(core.commands.diagnosticsStatus).toHaveBeenCalled());
+    expect(banner()).toBeNull();
+  });
+
+  it("opens the report folder and acknowledges", async () => {
+    core.state.crashed = true;
+    renderStates();
+    await waitFor(() => expect(banner()).not.toBeNull());
+    await userEvent.setup().click(within(banner() as HTMLElement).getAllByRole("button")[0]);
+    expect(core.commands.revealDiagnostics).toHaveBeenCalled();
+    expect(core.commands.acknowledgeCrash).toHaveBeenCalled();
+    await waitFor(() => expect(banner()).toBeNull());
+  });
+
+  it("dismiss acknowledges without opening the folder", async () => {
+    core.state.crashed = true;
+    renderStates();
+    await waitFor(() => expect(banner()).not.toBeNull());
+    await userEvent.setup().click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(core.commands.acknowledgeCrash).toHaveBeenCalled();
+    expect(core.commands.revealDiagnostics).not.toHaveBeenCalled();
+    expect(banner()).toBeNull();
+  });
+});
 
 describe("damaged model", () => {
   it("shows nothing when the models are fine", async () => {

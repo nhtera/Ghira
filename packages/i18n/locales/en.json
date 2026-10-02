@@ -891,6 +891,34 @@
         "js": "JavaScript packages ({{count}})",
         "models": "Models ({{count}})",
         "assets": "Fonts and icons ({{count}})"
+      },
+      "diagnostics": "Diagnostics",
+      "diagnosticsHint": "Reports stay on this Mac. They contain no meeting content.",
+      "revealReports": "Reveal reports and logs"
+    },
+    "updates": {
+      "title": "Updates",
+      "check": "Check for updates",
+      "checking": "Checking for updates…",
+      "upToDate": "{{app}} is up to date.",
+      "neverChecked": "Not checked yet.",
+      "lastChecked": "Last checked {{when}}",
+      "available": "Version {{version}} is available.",
+      "ready": "Version {{version}} is ready.",
+      "restart": "Restart to update",
+      "confirm": "{{app}} will close and open again to install version {{version}}. Save what you are doing first.",
+      "confirmButton": "Restart and update",
+      "auto": "Check automatically",
+      "autoHint": "Looks for a new version now and then. Only the version number is sent, never your meetings.",
+      "notConfigured": "This build doesn’t update itself.",
+      "strictOffline": "Strict offline is on, so {{app}} doesn’t check for updates.",
+      "notes": "Release notes: {{url}}",
+      "banner": {
+        "pulledReady": "This version was withdrawn. Restart to update.",
+        "pulledNotReady": "This version was withdrawn. Check for updates in Settings → About.",
+        "reinstall": "This version is too old to update itself. Download the new version from the website.",
+        "restart": "Restart to update",
+        "open": "Open Settings → About"
       }
     }
   },
@@ -938,7 +966,12 @@
       "title": "{{app}} can’t open your meetings",
       "body": "Nothing can be saved right now. Your recordings on disk are not touched. Try again, and if it keeps happening, restart your computer."
     },
-    "storageWrite": "Some of this recording couldn’t be saved to disk."
+    "storageWrite": "Some of this recording couldn’t be saved to disk.",
+    "crashReport": {
+      "title": "{{app}} quit unexpectedly last time",
+      "body": "A report was saved on this Mac. It contains no meeting content and is never sent anywhere.",
+      "reveal": "Reveal report"
+    }
   },
   "people": {
     "subtitle_mac": "{{people}} people · {{profiles}} voice profiles · encrypted on this Mac",

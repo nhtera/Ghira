@@ -45,10 +45,35 @@ Before v1.0, only the latest release gets security fixes.
   builds with an Open Source code-signing certificate (from the first alpha on).
 - Models are downloaded at a pinned revision and verified by SHA-256.
 
+## Key storage on macOS
+
+The store's master key is a non-synchronizable item in the **login keychain**
+(`com.nhtera.ghira` / `store`) in the alpha. The keychain asks before another
+app reads it, and a backup of the data folder alone can't open the store. Moving
+the item to the data-protection keychain (`WhenUnlockedThisDeviceOnly`, needed
+for app lock) requires a provisioning profile with the Developer ID, so it is
+decided with the first signed build.
+
 ## Updater key
 
 The in-app updater only installs updates whose manifest is signed with the
-project's Ed25519 updater key. The public key is compiled into the app.
+project's Ed25519 updater key (minisign format). The public key is compiled
+into the app (`crates/ghi-update`).
+
+**What the app checks** before installing: the manifest's signature; its
+`sequence` is not lower than one already seen (no replay of an old,
+pre-withdrawal manifest); it has not expired; the archive's size and SHA-256
+match the manifest; the unpacked app is validly signed by the same Apple Team
+ID as the installed one. Only a strictly newer version is ever installed, and
+only when the user clicks "Restart to update". `tools/release/sign-manifest.sh`
+writes and signs a manifest (offline).
+
+**Withdrawing a release (kill-switch).** List the bad version in the
+manifest's `pulled` field: apps running it ask their users to update. There is
+no rollback and no automatic downgrade: a newer store schema can't be opened by
+older code. A bad release is fixed by publishing a higher version (re-tag the
+previous code under a new version if needed). `min_supported` marks versions
+too old to update in place (users reinstall from the download page).
 
 **Custody.**
 - The private key is generated **offline** and kept on a hardware token or an

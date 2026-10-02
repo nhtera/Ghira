@@ -3,6 +3,7 @@
 // Wires core events into the live store, the keyboard map, and the macOS
 // menu's actions.
 import { Outlet, useNavigate } from "@tanstack/react-router";
+import { UpdateBanner } from "../features/settings/update-banner";
 import { useEffect, useRef } from "react";
 import { usePlatform } from "@ghi/ui";
 import { ipc } from "../ipc";
@@ -80,6 +81,7 @@ export function AppShell() {
         <Sidebar compact={compact} />
         <main className="relative min-h-0 min-w-0 overflow-hidden">
           <SystemStates />
+          <UpdateBanner onOpenAbout={() => void navigate({ to: "/settings/$section", params: { section: "about" } })} />
           <Outlet />
         </main>
       </div>

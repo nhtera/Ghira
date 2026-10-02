@@ -222,6 +222,10 @@ impl JobHandler for FinalPassJob {
         }
         let audio_ms =
             pcm.values().map(Vec::len).max().unwrap_or(0) as i64 * 1000 / i64::from(SAMPLE_RATE);
+        log::info!(
+            "final pass decoded audio_ms={audio_ms} tracks={}",
+            pcm.len()
+        );
         if audio_ms > m.duration_ms {
             store
                 .extend_meeting_duration(&meeting, audio_ms)
@@ -419,7 +423,9 @@ impl JobHandler for FinalPassJob {
         if ctx.preempted() {
             return restart();
         }
+        let lines = v2.len();
         store.replace_transcript(&meeting, v2).map_err(err)?;
+        log::info!("final pass stored lines={lines}");
         queue_notes(store, &meeting)?;
         ctx.progress(Some(Stage::MatchingVoices), 1.0);
         Ok(Outcome::Done)

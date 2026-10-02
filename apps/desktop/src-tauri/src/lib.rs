@@ -6,6 +6,7 @@ mod audio_protocol;
 mod cloud_cmd;
 mod core;
 mod detail;
+mod diag_cmd;
 mod dialogs;
 mod export_cmd;
 mod import_cmd;
@@ -19,6 +20,7 @@ mod settings_cmd;
 mod speakers_cmd;
 mod system;
 mod tray;
+mod update_cmd;
 mod windows;
 
 use std::sync::Arc;
@@ -328,6 +330,9 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             detail::update_segment_text,
             detail::set_segment_speaker,
             detail::update_note_block,
+            diag_cmd::diagnostics_status,
+            diag_cmd::reveal_diagnostics,
+            diag_cmd::acknowledge_crash,
             detail::add_note_block,
             detail::delete_note_block,
             detail::add_action_item,
@@ -366,6 +371,9 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             settings_cmd::delete_all_data,
             import_cmd::take_dropped_files,
             cloud_cmd::draft_followup_email,
+            update_cmd::update_status,
+            update_cmd::check_for_updates,
+            update_cmd::install_update,
             system::show_notification
         ])
         .events(tauri_specta::collect_events![
@@ -376,7 +384,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             Navigate,
             QuitRequested,
             import_cmd::ImportStaged,
-            import_cmd::ImportUpdate
+            import_cmd::ImportUpdate,
+            update_cmd::UpdateChanged
         ])
 }
 
@@ -419,8 +428,11 @@ pub fn run() {
         })
         .setup(move |app| {
             builder.mount_events(app);
+            // First: the panic hook and the log cover everything after.
+            app.manage(Arc::new(diag_cmd::Diag::init(app.handle())));
             let tray_app = app.handle().clone();
             let core = Arc::new(core::Core::new(app.handle(), move |e| {
+                diag_cmd::track(e);
                 tray::on_event(&tray_app, e)
             })?);
             core.init_in_background();
@@ -435,6 +447,9 @@ pub fn run() {
             app.manage(Arc::new(import_cmd::Imports::default()));
             app.manage(Arc::new(dialogs::LastExport::default()));
             app.manage(Arc::new(cloud_cmd::CloudPlans::default()));
+            app.manage(Arc::new(update_cmd::Updates::default()));
+            update_cmd::cleanup_after_update();
+            update_cmd::spawn_checks(app.handle().clone());
             #[cfg(target_os = "macos")]
             {
                 app.set_menu(menu::build(app.handle())?)?;
@@ -491,10 +506,12 @@ pub fn run() {
         // it is processed at the next launch, then stop the jobs.
         RunEvent::Exit => {
             let core = app.state::<Arc<core::Core>>();
+            let diag = app.state::<Arc<diag_cmd::Diag>>();
             if core.recording() {
                 let _ = core.stop();
             }
             core.shutdown(Duration::from_secs(2));
+            diag.release();
         }
         #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => {

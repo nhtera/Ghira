@@ -13,7 +13,9 @@ workspace = true
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+log = "0.4"
 toml = "1"
+ghi-diag = { path = "../ghi-diag" }
 ghi-text = { path = "../ghi-text" }
 ghi-llm-worker = { path = "../ghi-llm-worker", default-features = false }
 ghi-models = { path = "../ghi-models" }

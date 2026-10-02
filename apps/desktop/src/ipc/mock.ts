@@ -18,6 +18,8 @@ import type {
   QuitRequested,
   RecordMode,
   SpeakerInfo,
+  UpdateChanged,
+  UpdateStatus,
   Stage,
 } from "../bindings";
 import type { Commands, Ipc } from "./ipc";
@@ -158,6 +160,7 @@ let settings: AppSettings = {
   strictOffline: false,
   meetingLanguage: "auto",
   globalRecordShortcut: true,
+  updateCheck: true,
   cloudProvider: "",
   cloudModel: "",
   cloudRedact: true,
@@ -169,8 +172,32 @@ let lineSeq = 0;
 /** Speakers made by a split in this session (ids after the scripted ones). */
 const extraSpeakers: number[] = [];
 let recoveredShown = false;
+let crashAcknowledged = false;
+
+// App updates: `?update=1` pretends a newer version is downloaded and ready.
+const updateReady = new URLSearchParams(location.search).has("update");
+const updateStatus = (): UpdateStatus => ({
+  configured: true,
+  checking: false,
+  lastCheck: Date.now() - 3_600_000,
+  available: updateReady ? "0.1.0-alpha.2" : null,
+  notesUrl: null,
+  ready: updateReady,
+  runningPulled: false,
+  reinstallNeeded: false,
+  error: null,
+});
+const updateListeners = new Set<(e: UpdateChanged) => void>();
 
 const commands: Commands = {
+  updateStatus: () => Promise.resolve(updateStatus()),
+  checkForUpdates: () => {
+    const status = updateStatus();
+    updateListeners.forEach((l) => l({ status }));
+    return ok(status);
+  },
+  // The mock can't restart itself.
+  installUpdate: () => fail("updates are installed by the app, not the mock"),
   ...reviewCommands({ rows, process }),
   ...aiCommands({
     rows,
@@ -350,6 +377,14 @@ const commands: Commands = {
     recoveredShown = true;
     return ok(once ? [{ gid: "sample-0", title: rows[0]?.title ?? "", durationMs: 1_520_000 }] : []);
   },
+  // `?crashed=1` in the URL pretends the last run crashed. No folder to open here.
+  diagnosticsStatus: () =>
+    Promise.resolve({ crashedLastRun: new URLSearchParams(location.search).has("crashed") && !crashAcknowledged, reports: 0 }),
+  revealDiagnostics: () => ok(null),
+  acknowledgeCrash: () => {
+    crashAcknowledged = true;
+    return Promise.resolve();
+  },
   // Native windows and notifications don't exist in the browser.
   hidePopover: () => Promise.resolve(),
   setMiniCompact: () => ok(null),
@@ -477,6 +512,7 @@ export const mockIpc: Ipc = {
   onModelDownload: on(downloadListeners),
   onImportStaged,
   onImportUpdate,
+  onUpdateChanged: on(updateListeners),
   audioUrl,
 };
 

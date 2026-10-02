@@ -18,6 +18,7 @@ engine = ["dep:llama-cpp-2"]
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+ghi-diag = { path = "../ghi-diag" }
 llama-cpp-2 = { version = "=0.1.157", default-features = false, features = ["common"], optional = true }
 
 [target.'cfg(unix)'.dependencies]

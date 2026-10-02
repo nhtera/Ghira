@@ -85,6 +85,11 @@ impl Sidecar {
         if debug() {
             cmd.env("GHI_LLM_DEBUG", "1");
         }
+        // Where the worker writes its own crash reports.
+        if let Some(dir) = ghi_diag::dir() {
+            cmd.env(ghi_diag::DIR_ENV, dir);
+        }
+        log::info!("llm worker starting");
         Sidecar::spawn_command(cmd, HELLO_TIMEOUT)
     }
 
@@ -236,11 +241,28 @@ impl Sidecar {
     fn died(&mut self, why: &str) -> LlmError {
         self.kill();
         let tail = self.stderr_tail();
+        self.report_exit(why);
         if tail.is_empty() {
             LlmError::Worker(why.to_string())
         } else {
             LlmError::Worker(format!("{why}; worker stderr:\n{tail}"))
         }
+    }
+
+    /// Writes `<utc>-worker.txt` into the diagnostics folder: our own
+    /// description of the failure and the scrubbed stderr ring.
+    fn report_exit(&self, why: &str) {
+        let Some(dir) = ghi_diag::dir() else { return };
+        let ring: Vec<String> = self
+            .tail
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .cloned()
+            .collect();
+        // `why` and the ring both go through the scrubber.
+        ghi_diag::write_worker_exit(dir, why, &ring);
+        log::warn!("llm worker died");
     }
 
     fn stderr_tail(&mut self) -> String {

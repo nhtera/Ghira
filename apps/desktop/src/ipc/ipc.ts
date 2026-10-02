@@ -7,6 +7,7 @@ import type {
   ImportStaged,
   ImportUpdate,
   MeetingDetected,
+  UpdateChanged,
   MenuAction,
   ModelDownload,
   Navigate,
@@ -35,6 +36,8 @@ export interface Ipc {
   onImportStaged(cb: (e: ImportStaged) => void): Promise<Unlisten>;
   /** A queued import moved on (queued, decoding with progress, done, failed, cancelled). */
   onImportUpdate(cb: (e: ImportUpdate) => void): Promise<Unlisten>;
+  /** The app-update status changed (a check, a download, an error). */
+  onUpdateChanged(cb: (e: UpdateChanged) => void): Promise<Unlisten>;
   /** The URL an `<audio>` element plays for a ghi-audio token (issueAudioPlay, issueAudioSample). */
   audioUrl(token: string): string;
 }

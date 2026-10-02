@@ -1743,6 +1743,7 @@ dependencies = [
  "clap",
  "ghi-audio",
  "ghi-core",
+ "ghi-diag",
  "ghi-llm",
  "ghi-models",
  "ghi-net",
@@ -1768,6 +1769,7 @@ dependencies = [
  "ghi-speech",
  "ghi-store",
  "ghi-text",
+ "log",
  "serde",
  "serde_json",
  "sha2",
@@ -1782,12 +1784,15 @@ version = "0.1.0"
 dependencies = [
  "ghi-audio",
  "ghi-core",
+ "ghi-diag",
  "ghi-llm",
  "ghi-models",
  "ghi-net",
  "ghi-speech",
  "ghi-store",
  "ghi-text",
+ "ghi-update",
+ "log",
  "objc2-app-kit",
  "rand_core 0.6.4",
  "rfd",
@@ -1806,14 +1811,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ghi-diag"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "log",
+ "tempfile",
+]
+
+[[package]]
 name = "ghi-llm"
 version = "0.1.0"
 dependencies = [
+ "ghi-diag",
  "ghi-llm-worker",
  "ghi-models",
  "ghi-net",
  "ghi-text",
  "libc",
+ "log",
  "proptest",
  "regex",
  "serde",
@@ -1825,6 +1841,7 @@ dependencies = [
 name = "ghi-llm-worker"
 version = "0.1.0"
 dependencies = [
+ "ghi-diag",
  "libc",
  "llama-cpp-2",
  "serde",
@@ -1863,6 +1880,7 @@ dependencies = [
 name = "ghi-net"
 version = "0.1.0"
 dependencies = [
+ "log",
  "rustls",
  "sha2",
  "tempfile",
@@ -1906,6 +1924,18 @@ name = "ghi-text"
 version = "0.1.0"
 dependencies = [
  "unicode-normalization",
+]
+
+[[package]]
+name = "ghi-update"
+version = "0.1.0"
+dependencies = [
+ "ghi-net",
+ "minisign-verify",
+ "semver",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -2915,6 +2945,12 @@ name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
+name = "minisign-verify"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22f9645cb765ea72b8111f36c522475d2daa0d22c957a9826437e97534bc4e9e"
 
 [[package]]
 name = "miniz_oxide"

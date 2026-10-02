@@ -303,9 +303,20 @@ pub fn send(
     headers: &Headers,
     body: &[u8],
 ) -> Result<HttpResponse, NetError> {
-    grant.check(url, body)?;
+    if let Err(e) = grant.check(url, body) {
+        log::warn!(
+            "net send refused host={} attempts_left={}",
+            grant.host(),
+            grant.attempts_left
+        );
+        return Err(e);
+    }
     grant.attempts_left -= 1;
     let result = exchange(grant, url, headers, body);
+    match &result {
+        Ok(r) => log::info!("net send host={} status={}", grant.host(), r.status),
+        Err(_) => log::warn!("net send failed host={}", grant.host()),
+    }
     grant.spent = match &result {
         Ok(r) => !(r.status == 429 || r.status >= 500),
         Err(e) => !e.is_retryable(),

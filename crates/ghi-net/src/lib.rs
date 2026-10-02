@@ -52,12 +52,14 @@ impl NetPolicy {
     /// Whether this policy permits a connection to `host` (a DNS name or an IP
     /// literal, without scheme or port), given the content-free `allowlist`.
     pub fn permits(self, host: &str, allowlist: &[&str]) -> bool {
-        match (self, classify(host, allowlist)) {
+        let allowed = match (self, classify(host, allowlist)) {
             (_, Destination::PrivateLan) => true,
             (NetPolicy::Default, Destination::AllowlistedHost) => true,
             (NetPolicy::StrictOffline, Destination::AllowlistedHost) => false,
             (_, Destination::OtherHost) => false,
-        }
+        };
+        log::info!("net policy {self:?} host={host} allowed={allowed}");
+        allowed
     }
 }
 

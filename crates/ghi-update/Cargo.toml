@@ -1,0 +1,21 @@
+[package]
+name = "ghi-update"
+description = "App updates: a signed manifest checked through ghi-net, and the bundle swap."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ghi-net = { path = "../ghi-net" }
+minisign-verify = "0.2"
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,1 @@
+{"schema":1,"sequence":7,"channel":"alpha","expires_at":4102444800000,"latest":{"version":"0.1.0-alpha.2","min_macos":"14.2","archive":{"url":"https://github.com/o/r/releases/download/v0.1.0-alpha.2/Ghira.app.zip","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":123}},"pulled":["0.1.0-alpha.1"],"min_supported":"0.1.0-alpha.0"}

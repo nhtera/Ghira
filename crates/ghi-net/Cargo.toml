@@ -16,6 +16,7 @@ workspace = true
 # come from the OS through rustls-platform-verifier; the crypto provider is ring.
 ureq = { version = "=3.4.2", default-features = false, features = ["rustls-no-provider", "platform-verifier"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+log = "0.4"
 sha2 = "0.10"
 zeroize = "1"
 

@@ -400,6 +400,7 @@ impl Session {
 
     fn set_state(&self, s: SessionState) {
         *self.state.lock().unwrap_or_else(|e| e.into_inner()) = s;
+        log::info!("session state {s:?}");
         self.events.emit(Event::StateChanged {
             meeting: self.meeting.clone(),
             state: s,

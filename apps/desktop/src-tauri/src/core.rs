@@ -184,6 +184,11 @@ fn engines(
 ) -> Result<Arc<dyn ghi_core::engines::SpeechEngines>, String> {
     // Checked against their pinned SHA-256 before native code parses them.
     let path = |id: &str| checked_model(models, id);
+    log::info!(
+        "speech models load asr={} diar={}",
+        preset().speech_models[0],
+        preset().speech_models[1]
+    );
     let e = ghi_core::engines::NemoEngines::load(
         &path(&preset().speech_models[0])?,
         &path(&preset().speech_models[1])?,
@@ -287,6 +292,11 @@ impl Core {
         {
             let _ = t.join();
         }
+    }
+
+    /// The app's data directory (store, models, updates, diagnostics).
+    pub fn data_dir(&self) -> &Path {
+        &self.data
     }
 
     pub fn models(&self) -> PathBuf {

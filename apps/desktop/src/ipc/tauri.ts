@@ -14,5 +14,6 @@ export const tauriIpc: Ipc = {
   onModelDownload: (cb) => events.modelDownload.listen((e) => cb(e.payload)),
   onImportStaged: (cb) => events.importStaged.listen((e) => cb(e.payload)),
   onImportUpdate: (cb) => events.importUpdate.listen((e) => cb(e.payload)),
+  onUpdateChanged: (cb) => events.updateChanged.listen((e) => cb(e.payload)),
   audioUrl: (token) => convertFileSrc(token, "ghi-audio"),
 };

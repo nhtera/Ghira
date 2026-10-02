@@ -374,6 +374,10 @@ fn run(command: Command) -> Result<(), ErrorDoc> {
 }
 
 fn main() -> ExitCode {
+    // Reports only when a diagnostics folder is given; errors already go to stderr.
+    if let Some(dir) = ghi_diag::dir_from_env() {
+        ghi_diag::install_panic_hook("cli", dir, || "cli".into());
+    }
     let cli = Cli::parse();
     match run(cli.command) {
         Ok(()) => ExitCode::SUCCESS,

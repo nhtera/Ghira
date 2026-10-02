@@ -58,6 +58,8 @@ pub struct AppSettings {
     /// built-in text in the app's language).
     pub consent_message_en: String,
     pub consent_message_vi: String,
+    /// Check for app updates at launch and daily (never under strict offline).
+    pub update_check: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
@@ -97,6 +99,7 @@ impl Default for AppSettings {
             audio_retention_days: 0,
             consent_message_en: String::new(),
             consent_message_vi: String::new(),
+            update_check: true,
         }
     }
 }
@@ -117,6 +120,7 @@ pub struct SettingsPatch {
     pub audio_retention_days: Option<u32>,
     pub consent_message_en: Option<String>,
     pub consent_message_vi: Option<String>,
+    pub update_check: Option<bool>,
 }
 
 /// Short text settings stay short.
@@ -196,6 +200,7 @@ pub async fn update_settings(
             strict_offline: patch.strict_offline.unwrap_or(cur.strict_offline),
             meeting_language: patch.meeting_language.unwrap_or(cur.meeting_language),
             cloud_redact: patch.cloud_redact.unwrap_or(cur.cloud_redact),
+            update_check: patch.update_check.unwrap_or(cur.update_check),
             audio_retention_days: patch
                 .audio_retention_days
                 .map(|d| d.min(3650))

@@ -8,8 +8,8 @@ can check it against the code (all network access lives in `crates/ghi-net`).
 | Class | What | Rule |
 |---|---|---|
 | **Your content**: audio, transcripts, notes, voiceprints, meeting titles, people | **Never sent** | Only three exceptions, each an explicit opt-in: **cloud AI** (transcript text only, after you review exactly what will be sent), **sync with your own paired devices** over your local network (end-to-end encrypted, pinned keys), and integrations you choose to connect |
-| **Content-free traffic**: model downloads, update check | Only to an **allowlist**: `huggingface.co` and its CDN, the Ghira model mirror, the Ghira update feed | You can switch each one off. **Strict offline** blocks all internet traffic; sync with your paired devices on your private network stays allowed |
-| **Telemetry / analytics** | **None** | Crash reports are written locally. You can open, review and send them yourself |
+| **Content-free traffic**: model downloads, update check | Only to an **allowlist**: `huggingface.co` and its CDN, the Ghira model mirror, the Ghira update feed (GitHub Releases: `github.com` and its download host `*.githubusercontent.com`). The update check sends nothing but the request for the public manifest: no ID, no version in the URL | You can switch each one off (Settings → About → Check automatically). **Strict offline** blocks all internet traffic; sync with your paired devices on your private network stays allowed |
+| **Telemetry / analytics** | **None** | Crash reports and an event log (no meeting content) are written locally (Settings → About → Diagnostics). You can open, review and send them yourself |
 | **Fonts, icons, UI assets** | Bundled with the app | Nothing is loaded from the internet at runtime |
 
 ## What we promise, and how it is tested

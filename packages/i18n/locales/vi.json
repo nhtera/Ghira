@@ -871,6 +871,34 @@
         "js": "Gói JavaScript ({{count}})",
         "models": "Mô hình ({{count}})",
         "assets": "Phông chữ và biểu tượng ({{count}})"
+      },
+      "diagnostics": "Chẩn đoán",
+      "diagnosticsHint": "Báo cáo chỉ nằm trên máy Mac này. Không chứa nội dung cuộc họp.",
+      "revealReports": "Mở thư mục báo cáo và nhật ký"
+    },
+    "updates": {
+      "title": "Cập nhật",
+      "check": "Kiểm tra cập nhật",
+      "checking": "Đang kiểm tra cập nhật…",
+      "upToDate": "{{app}} đã là bản mới nhất.",
+      "neverChecked": "Chưa kiểm tra.",
+      "lastChecked": "Kiểm tra lần cuối {{when}}",
+      "available": "Có phiên bản {{version}}.",
+      "ready": "Phiên bản {{version}} đã sẵn sàng.",
+      "restart": "Khởi động lại để cập nhật",
+      "confirm": "{{app}} sẽ đóng rồi mở lại để cài phiên bản {{version}}. Hãy lưu việc đang làm trước.",
+      "confirmButton": "Khởi động lại và cập nhật",
+      "auto": "Tự động kiểm tra",
+      "autoHint": "Thỉnh thoảng tìm phiên bản mới. Chỉ gửi số phiên bản, không bao giờ gửi cuộc họp.",
+      "notConfigured": "Bản này không tự cập nhật.",
+      "strictOffline": "Đang bật Ngoại tuyến tuyệt đối nên {{app}} không kiểm tra cập nhật.",
+      "notes": "Ghi chú phát hành: {{url}}",
+      "banner": {
+        "pulledReady": "Phiên bản này đã bị thu hồi. Hãy khởi động lại để cập nhật.",
+        "pulledNotReady": "Phiên bản này đã bị thu hồi. Kiểm tra cập nhật trong Cài đặt → Giới thiệu.",
+        "reinstall": "Phiên bản này quá cũ để tự cập nhật. Hãy tải bản mới từ trang web.",
+        "restart": "Khởi động lại để cập nhật",
+        "open": "Mở Cài đặt → Giới thiệu"
       }
     }
   },
@@ -918,7 +946,12 @@
       "title": "{{app}} không mở được các cuộc họp của bạn",
       "body": "Hiện chưa thể lưu gì. Các bản ghi trên ổ đĩa không bị đụng đến. Hãy thử lại, nếu vẫn lỗi thì khởi động lại máy."
     },
-    "storageWrite": "Một phần bản ghi này chưa lưu được vào ổ đĩa."
+    "storageWrite": "Một phần bản ghi này chưa lưu được vào ổ đĩa.",
+    "crashReport": {
+      "title": "Lần trước {{app}} đã thoát bất ngờ",
+      "body": "Báo cáo đã được lưu trên máy Mac này. Báo cáo không chứa nội dung cuộc họp và không bao giờ được gửi đi.",
+      "reveal": "Mở báo cáo"
+    }
   },
   "people": {
     "subtitle_mac": "{{people}} người · {{profiles}} hồ sơ giọng nói · mã hoá trên máy này",

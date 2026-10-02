@@ -72,6 +72,9 @@ struct Worker {
 }
 
 fn main() {
+    if let Some(dir) = ghi_diag::dir_from_env() {
+        ghi_diag::install_panic_hook("worker", dir, || "worker".into());
+    }
     let mut out = take_protocol_stdout();
     // Hello first: backend init (Metal) can be slow, and the parent only needs
     // to know the process is alive and speaks its protocol.

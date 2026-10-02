@@ -42,6 +42,13 @@ use crate::{Destination, NetError, NetPolicy, classify};
 /// Hosts model files may come from: Hugging Face and its CDN (`*.hf.co`:
 /// `cdn-lfs*`, `us.aws.cdn`, `cas-bridge.xethub`). Doc 06 §1.
 pub const MODEL_HOSTS: &[&str] = &["huggingface.co", "hf.co"];
+
+/// Hosts that serve app updates: the signed manifest and the archives
+/// (GitHub Releases redirect to `*.githubusercontent.com`).
+pub const UPDATE_HOSTS: &[&str] = &["github.com", "githubusercontent.com"];
+
+/// How long a small document may take, in total.
+const SMALL_TIMEOUT: Duration = Duration::from_secs(30);
 /// Redirect hops a download may follow.
 pub const MAX_REDIRECTS: u8 = 5;
 /// Copy and hash buffer.
@@ -304,6 +311,51 @@ fn open(
             .as_deref()
             .ok_or_else(|| FetchError::Transport("redirect without Location".into()))?;
         current = resolve_location(&current, location)?;
+    }
+}
+
+/// GETs a small document (an update manifest or its signature) into memory:
+/// https from `hosts` only (redirects too), at most `max_bytes`, within 30 s.
+/// Strict offline refuses before anything is resolved.
+pub fn fetch_small(
+    policy: NetPolicy,
+    url: &str,
+    hosts: &[&str],
+    max_bytes: usize,
+    transport: &dyn Transport,
+) -> Result<Vec<u8>, FetchError> {
+    if policy == NetPolicy::StrictOffline {
+        return Err(FetchError::Denied("strict offline is on".into()));
+    }
+    let (resp, _, _) = open(url, None, hosts, transport)?;
+    if resp.status != 200 {
+        return Err(FetchError::Status(resp.status));
+    }
+    if resp.content_length.is_some_and(|n| n > max_bytes as u64) {
+        return Err(FetchError::SizeMismatch {
+            expected: max_bytes as u64,
+            got: resp.content_length.unwrap_or(0),
+        });
+    }
+    let rx = spawn_reader(resp.body);
+    let deadline = std::time::Instant::now() + SMALL_TIMEOUT;
+    let mut out = Vec::new();
+    loop {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        match rx.recv_timeout(left) {
+            Ok(Ok(chunk)) if chunk.is_empty() => return Ok(out),
+            Ok(Ok(chunk)) => {
+                out.extend_from_slice(&chunk);
+                if out.len() > max_bytes {
+                    return Err(FetchError::SizeMismatch {
+                        expected: max_bytes as u64,
+                        got: out.len() as u64,
+                    });
+                }
+            }
+            Ok(Err(e)) => return Err(FetchError::Transport(e)),
+            Err(_) => return Err(FetchError::IdleTimeout(SMALL_TIMEOUT)),
+        }
     }
 }
 
@@ -1123,5 +1175,37 @@ mod tests {
         assert_eq!(range_start("bytes 100-199/200"), Some(100));
         assert_eq!(range_start("bytes */200"), None);
         assert_eq!(range_start("nope"), None);
+    }
+
+    #[test]
+    fn small_documents_come_from_update_hosts_only() {
+        const M: &str = "https://github.com/o/r/releases/latest/download/ghira-alpha.json";
+        let t = Fake::new(vec![
+            redirect("https://release-assets.githubusercontent.com/x?sig=1"),
+            ok(200, b"{\"schema\":1}", None),
+        ]);
+        let got = fetch_small(NetPolicy::Default, M, UPDATE_HOSTS, 1024, &t).unwrap();
+        assert_eq!(got, b"{\"schema\":1}");
+        // Strict offline: refused before any request.
+        let t = Fake::new(vec![]);
+        assert!(fetch_small(NetPolicy::StrictOffline, M, UPDATE_HOSTS, 1024, &t).is_err());
+        assert!(t.calls.borrow().is_empty());
+        // A host off the update list, directly or by redirect.
+        let t = Fake::new(vec![]);
+        assert!(matches!(
+            fetch_small(NetPolicy::Default, URL, UPDATE_HOSTS, 1024, &t),
+            Err(FetchError::Denied(_))
+        ));
+        let t = Fake::new(vec![redirect("https://evil.example/x")]);
+        assert!(matches!(
+            fetch_small(NetPolicy::Default, M, UPDATE_HOSTS, 1024, &t),
+            Err(FetchError::Denied(_))
+        ));
+        // Too big.
+        let t = Fake::new(vec![ok(200, &[b'x'; 2048], None)]);
+        assert!(matches!(
+            fetch_small(NetPolicy::Default, M, UPDATE_HOSTS, 1024, &t),
+            Err(FetchError::SizeMismatch { .. })
+        ));
     }
 }

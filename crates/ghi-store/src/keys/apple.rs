@@ -14,12 +14,14 @@
 //!   (phase 12), not by the unit tests.
 //!
 //! Two constructors:
-//! - [`KeychainStore::new`]: unsigned CLI / dev builds. Login keychain on
-//!   macOS (no entitlements needed); the data-protection keychain only with
-//!   `app_lock`.
-//! - [`KeychainStore::data_protection`]: the signed app (and iOS). Always the
+//! - [`KeychainStore::new`]: the CLI, dev builds, and the macOS alpha app.
+//!   Login keychain on macOS (no entitlements needed); the data-protection
+//!   keychain only with `app_lock`.
+//! - [`KeychainStore::data_protection`]: iOS, and the macOS app once it ships
+//!   with `keychain-access-groups` (that needs a provisioning profile with
+//!   the Developer ID; an owner decision, see SECURITY.md). Always the
 //!   data-protection keychain, `WhenUnlockedThisDeviceOnly`, with user
-//!   presence when `app_lock` is set. Verified in the signed app (phase 12).
+//!   presence when `app_lock` is set.
 //!
 //! A cancelled or denied prompt (or no UI available) is
 //! [`StoreError::KeyLocked`].

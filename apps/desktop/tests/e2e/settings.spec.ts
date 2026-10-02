@@ -56,3 +56,12 @@ test("searches the licenses", async ({ page }) => {
   await first.click();
   await expect(page.locator("pre").first()).not.toBeEmpty();
 });
+
+test("shows a ready update with a confirmed restart", async ({ page }) => {
+  await page.goto("/?platform=win&update=1#/settings/about");
+  await expect(page.getByTestId("update-line")).toContainText("is ready");
+  await page.getByRole("button", { name: "Restart to update" }).click();
+  await expect(page.getByRole("alertdialog")).toContainText("open again");
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("button", { name: "Restart to update" })).toBeVisible();
+});

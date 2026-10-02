@@ -99,6 +99,12 @@
     "allow-export-everything",
     "allow-delete-all-data",
     "allow-take-dropped-files",
-    "allow-draft-followup-email"
+    "allow-draft-followup-email",
+    "allow-diagnostics-status",
+    "allow-reveal-diagnostics",
+    "allow-acknowledge-crash",
+    "allow-update-status",
+    "allow-check-for-updates",
+    "allow-install-update"
   ]
 }

@@ -154,6 +154,11 @@ export const commands = {
 	setSegmentSpeaker: (meeting: string, segment: string, speaker: string) => typedError<null, string>(__TAURI_INVOKE("set_segment_speaker", { meeting, segment, speaker })),
 	/**  Edits a note block (an AI block becomes the user's: `aiEdited`). */
 	updateNoteBlock: (meeting: string, block: string, text: string) => typedError<null, string>(__TAURI_INVOKE("update_note_block", { meeting, block, text })),
+	diagnosticsStatus: () => __TAURI_INVOKE<DiagnosticsStatus>("diagnostics_status"),
+	/**  Opens the diagnostics folder in Finder. */
+	revealDiagnostics: () => typedError<null, string>(__TAURI_INVOKE("reveal_diagnostics")),
+	/**  The user saw the crash notice: it does not show again this launch. */
+	acknowledgeCrash: () => __TAURI_INVOKE<void>("acknowledge_crash"),
 	/**  Adds one of the user's own notes ("My notes"). */
 	addNoteBlock: (meeting: string, text: string) => typedError<NoteBlockView, string>(__TAURI_INVOKE("add_note_block", { meeting, text })),
 	deleteNoteBlock: (meeting: string, block: string) => typedError<null, string>(__TAURI_INVOKE("delete_note_block", { meeting, block })),
@@ -251,6 +256,14 @@ export const commands = {
 	 *  edit and copy; nothing is sent).
 	 */
 	draftFollowupEmail: (meeting: string, language: NotesLanguage, tone: EmailTone) => typedError<EmailDraft, string>(__TAURI_INVOKE("draft_followup_email", { meeting, language, tone })),
+	updateStatus: () => __TAURI_INVOKE<UpdateStatus>("update_status"),
+	/**
+	 *  "Check for updates" (works with automatic checks off, not under strict
+	 *  offline).
+	 */
+	checkForUpdates: () => typedError<UpdateStatus, string>(__TAURI_INVOKE("check_for_updates")),
+	/**  "Restart to update": swaps in the downloaded version and relaunches. */
+	installUpdate: () => typedError<null, string>(__TAURI_INVOKE("install_update")),
 	/**
 	 *  A system notification (notes ready, recovered); clicking it brings the
 	 *  app forward. The text comes localized from the UI.
@@ -268,6 +281,7 @@ export const events = {
 	modelDownload: makeEvent<ModelDownload>("model-download"),
 	navigate: makeEvent<Navigate>("navigate"),
 	quitRequested: makeEvent<QuitRequested>("quit-requested"),
+	updateChanged: makeEvent<UpdateChanged>("update-changed"),
 };
 
 /* Types */
@@ -322,6 +336,8 @@ export type AppSettings = {
 	 */
 	consentMessageEn: string,
 	consentMessageVi: string,
+	/**  Check for app updates at launch and daily (never under strict offline). */
+	updateCheck: boolean,
 };
 
 /**  Versions shown in Settings → About. */
@@ -443,6 +459,11 @@ export type DetectReply =
 "notNow" | 
 /**  Never ask for this app again. */
 "never";
+
+export type DiagnosticsStatus = {
+	crashedLastRun: boolean,
+	reports: number,
+};
 
 /**  What "discard the last N seconds" would remove, shown before confirming [RT-1]. */
 export type DiscardPreview = {
@@ -936,6 +957,7 @@ export type SettingsPatch = {
 	audioRetentionDays?: number | null,
 	consentMessageEn?: string | null,
 	consentMessageVi?: string | null,
+	updateCheck?: boolean | null,
 };
 
 export type SpeakerInfo = {
@@ -991,6 +1013,29 @@ export type TemplateSection = {
 export type TopicView = {
 	title: string,
 	tMs: number | null,
+};
+
+/**  The status changed (the About section and a banner follow it). */
+export type UpdateChanged = {
+	status: UpdateStatus,
+};
+
+export type UpdateStatus = {
+	/**  This build can update itself (a feed and a key are built in). */
+	configured: boolean,
+	checking: boolean,
+	/**  Unix ms of the last successful check. */
+	lastCheck: number | null,
+	/**  A newer version, if any. */
+	available: string | null,
+	notesUrl: string | null,
+	/**  Downloaded and checked: "Restart to update" can run. */
+	ready: boolean,
+	/**  The running version was withdrawn: update now. */
+	runningPulled: boolean,
+	/**  Too old to update in place: download the new version. */
+	reinstallNeeded: boolean,
+	error: string | null,
 };
 
 export type Vocabulary = {

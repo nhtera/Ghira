@@ -206,7 +206,23 @@ impl JobRunner {
             };
             ctx.progress(None, 0.0);
             *self.current.lock().unwrap_or_else(|e| e.into_inner()) = Some(job.id);
+            log::info!(
+                "job start kind={} id={} attempt={}",
+                job.kind,
+                job.id,
+                job.attempts
+            );
+            let began = std::time::Instant::now();
             let r = h.run(&ctx);
+            let ms = began.elapsed().as_millis();
+            match &r {
+                Ok(Outcome::Done) => log::info!("job done kind={} id={} ms={ms}", job.kind, job.id),
+                Ok(Outcome::Yield(_)) => {
+                    log::info!("job yielded kind={} id={} ms={ms}", job.kind, job.id)
+                }
+                // The error text may quote content; only the kind is logged.
+                Err(_) => log::warn!("job failed kind={} id={} ms={ms}", job.kind, job.id),
+            }
             *self.current.lock().unwrap_or_else(|e| e.into_inner()) = None;
             let settled = match &r {
                 Ok(Outcome::Done) => self.store.complete_job(job.id),
