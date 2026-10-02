@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Hardened runtime entitlements of the app. Only the microphone: system
+     audio (the process tap) needs no entitlement, only the TCC prompt
+     (NSAudioCaptureUsageDescription); Metal needs no JIT; every bundled dylib
+     is signed by the same team, so library validation stays on. No sandbox
+     (doc 05 §4). -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>

@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 fn main() {
-    // With `--features nemo`, dev builds find NeMo-Speech.cpp where
-    // tools/scripts/build-nemo.sh installed it; bundles ship it (phase 12).
+    // NeMo-Speech.cpp (`--features nemo`): the app bundle ships its dylibs in
+    // Contents/Frameworks (tools/release/stage-bundle.sh). Debug builds also
+    // find them where tools/scripts/build-nemo.sh installed them; release
+    // builds don't carry that build path.
     println!("cargo:rerun-if-env-changed=DEP_NEMO_SPEECH_ASR_C_LIBDIR");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
+    }
     if let Ok(dir) = std::env::var("DEP_NEMO_SPEECH_ASR_C_LIBDIR")
         && std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows")
+        && std::env::var("PROFILE").as_deref() != Ok("release")
     {
         println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
     }
@@ -63,6 +69,12 @@ fn main() {
             "cancel_recovery_key",
             "open_privacy_settings",
             "test_capture",
+            "install_update",
+            "check_for_updates",
+            "update_status",
+            "acknowledge_crash",
+            "reveal_diagnostics",
+            "diagnostics_status",
             "draft_followup_email",
             "take_dropped_files",
             "delete_all_data",

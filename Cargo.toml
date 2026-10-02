@@ -21,7 +21,11 @@ codegen-units = 1
 lto = true
 opt-level = 3
 panic = "abort"
-strip = true
+# Symbols go to a dSYM (a release artifact) to read crash reports; the
+# shipped binaries carry none.
+strip = "symbols"
+debug = "line-tables-only"
+split-debuginfo = "packed"
 
 # Model files are hashed before every first load (RT-12); unoptimized SHA-256
 # would take ~25 s per 700 MB model in debug builds.

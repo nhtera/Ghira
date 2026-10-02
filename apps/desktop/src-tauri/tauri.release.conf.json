@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["app"],
+    "externalBin": ["binaries/ghi-llm-worker"],
+    "macOS": {
+      "minimumSystemVersion": "14.2",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.plist",
+      "frameworks": [
+        "frameworks/libggml-base.0.dylib",
+        "frameworks/libggml-blas.0.dylib",
+        "frameworks/libggml-cpu.0.dylib",
+        "frameworks/libggml-metal.0.dylib",
+        "frameworks/libggml.0.dylib",
+        "frameworks/libnemo_speech_asr.dylib",
+        "frameworks/libnemo_speech_asr_c.1.dylib"
+      ]
+    }
+  }
+}

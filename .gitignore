@@ -9,6 +9,9 @@ node_modules/
 /packages/*/dist/
 dist-ssr/
 apps/*/src-tauri/gen/schemas/
+# Staged for the app bundle by tools/release/stage-bundle.sh
+/apps/desktop/src-tauri/binaries/
+/apps/desktop/src-tauri/frameworks/
 test-results/
 playwright-report/
 THIRD_PARTY_NOTICES.html
