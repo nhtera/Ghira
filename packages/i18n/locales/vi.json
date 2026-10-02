@@ -1074,7 +1074,12 @@
     "openMail_mac": "Mở trong Mail",
     "openMail_win": "Mở trong Outlook",
     "copied": "Đã sao chép email",
-    "subject": "Tiêu đề"
+    "subject": "Tiêu đề",
+    "write": "Viết bản nháp",
+    "rewrite": "Viết lại",
+    "writing": "Đang viết… {{seconds}} giây",
+    "body": "Nội dung",
+    "notSent": "{{app}} không gửi gì cả. Hãy sao chép email vào ứng dụng thư của bạn."
   },
   "ask": {
     "subtitle": "Câu trả lời lấy từ các cuộc họp và dẫn về đúng thời điểm được nói.",

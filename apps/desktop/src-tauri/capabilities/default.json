@@ -98,6 +98,7 @@
     "allow-ignore-learned-term",
     "allow-export-everything",
     "allow-delete-all-data",
-    "allow-take-dropped-files"
+    "allow-take-dropped-files",
+    "allow-draft-followup-email"
   ]
 }

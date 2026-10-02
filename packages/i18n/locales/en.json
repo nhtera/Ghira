@@ -1099,7 +1099,12 @@
     "openMail_mac": "Open in Mail",
     "openMail_win": "Open in Outlook",
     "copied": "Email copied",
-    "subject": "Subject"
+    "subject": "Subject",
+    "write": "Write draft",
+    "rewrite": "Rewrite",
+    "writing": "Writing… {{seconds}} s",
+    "body": "Message",
+    "notSent": "Nothing is sent from {{app}}. Copy the email into your mail app."
   },
   "ask": {
     "subtitle": "Answers come from your meetings and link to the moment something was said.",

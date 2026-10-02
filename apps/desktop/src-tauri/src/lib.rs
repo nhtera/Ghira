@@ -365,6 +365,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             settings_cmd::export_everything,
             settings_cmd::delete_all_data,
             import_cmd::take_dropped_files,
+            cloud_cmd::draft_followup_email,
             system::show_notification
         ])
         .events(tauri_specta::collect_events![

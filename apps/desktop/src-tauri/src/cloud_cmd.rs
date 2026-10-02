@@ -537,6 +537,26 @@ pub async fn cloud_request_log(
 
 // ------------------------------------------------------------------ ask
 
+/// The local model can run now: installed, not recording, no notes job
+/// using it (one model in memory at a time).
+fn local_model_free(c: &Core, store: &Store) -> Result<(), String> {
+    if c.recording() {
+        return Err("this waits until the recording stops".into());
+    }
+    let running = store.active_jobs().map_err(err)?;
+    if running.iter().any(|j| {
+        j.state == ghi_store::jobs::JobState::Running
+            && (j.kind == ghi_core::session::NOTES_LIVE_JOB
+                || j.kind == ghi_core::notes_job::NOTES_FINAL_JOB)
+    }) {
+        return Err("notes are being written: try again in a moment".into());
+    }
+    if !crate::core::llm_ready(&c.models()) {
+        return Err("the notes model isn't installed yet".into());
+    }
+    Ok(())
+}
+
 /// Ask this meeting, answered on this device by the local model.
 #[tauri::command]
 #[specta::specta]
@@ -547,21 +567,8 @@ pub async fn ask_meeting(
     language: NotesLanguage,
 ) -> Result<AskAnswer, String> {
     blocking(&core, move |c| {
-        if c.recording() {
-            return Err("answers wait until the recording stops".into());
-        }
         let store = c.store()?;
-        let running = store.active_jobs().map_err(err)?;
-        if running.iter().any(|j| {
-            j.state == ghi_store::jobs::JobState::Running
-                && (j.kind == ghi_core::session::NOTES_LIVE_JOB
-                    || j.kind == ghi_core::notes_job::NOTES_FINAL_JOB)
-        }) {
-            return Err("notes are being written: ask again in a moment".into());
-        }
-        if !crate::core::llm_ready(&c.models()) {
-            return Err("the notes model isn't installed yet".into());
-        }
+        local_model_free(c, &store)?;
         let question: String = question.chars().take(1000).collect();
         if question.trim().is_empty() {
             return Err("ask a question".into());
@@ -577,6 +584,53 @@ pub async fn ask_meeting(
             ghi_llm::ask::ask(llm.as_mut(), &t, &question, lang).map_err(|e| e.to_string())?;
         drop(llm);
         answer_view(&store, &meeting, run.answer, &segs, "local")
+    })
+    .await
+}
+
+// ------------------------------------------------------- follow-up email
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum EmailTone {
+    Friendly,
+    Neutral,
+    Formal,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailDraft {
+    pub subject: String,
+    pub body: String,
+}
+
+/// A follow-up email from the meeting's notes, written on this device (to
+/// edit and copy; nothing is sent).
+#[tauri::command]
+#[specta::specta]
+pub async fn draft_followup_email(
+    core: CoreState<'_>,
+    meeting: String,
+    language: NotesLanguage,
+    tone: EmailTone,
+) -> Result<EmailDraft, String> {
+    blocking(&core, move |c| {
+        let store = c.store()?;
+        local_model_free(c, &store)?;
+        let lang = out_lang(language, &store, &meeting)?;
+        let tone = match tone {
+            EmailTone::Friendly => ghi_core::email::Tone::Friendly,
+            EmailTone::Neutral => ghi_core::email::Tone::Neutral,
+            EmailTone::Formal => ghi_core::email::Tone::Formal,
+        };
+        // The notes are short: a small context is enough.
+        let mut llm = (c.llm()?)(16_000)?;
+        let e = ghi_core::email::draft(&store, &meeting, llm.as_mut(), lang, tone)?;
+        Ok(EmailDraft {
+            subject: e.subject,
+            body: e.body,
+        })
     })
     .await
 }

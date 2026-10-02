@@ -247,6 +247,11 @@ export const commands = {
 	/**  Files staged by a drop that the import screen hasn't shown yet (read once). */
 	takeDroppedFiles: () => __TAURI_INVOKE<StagedFile[]>("take_dropped_files"),
 	/**
+	 *  A follow-up email from the meeting's notes, written on this device (to
+	 *  edit and copy; nothing is sent).
+	 */
+	draftFollowupEmail: (meeting: string, language: NotesLanguage, tone: EmailTone) => typedError<EmailDraft, string>(__TAURI_INVOKE("draft_followup_email", { meeting, language, tone })),
+	/**
 	 *  A system notification (notes ready, recovered); clicking it brings the
 	 *  app forward. The text comes localized from the UI.
 	 */
@@ -458,6 +463,13 @@ export type DuplicateOf = {
 	meeting: string,
 	title: string,
 };
+
+export type EmailDraft = {
+	subject: string,
+	body: string,
+};
+
+export type EmailTone = "friendly" | "neutral" | "formal";
 
 /**
  *  An event with its sequence number (gap-free per bus) and wall time, so a

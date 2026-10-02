@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-draft-followup-email"
+description = "Enables the draft_followup_email command without any pre-configured scope."
+commands.allow = ["draft_followup_email"]
+
+[[permission]]
+identifier = "deny-draft-followup-email"
+description = "Denies the draft_followup_email command without any pre-configured scope."
+commands.deny = ["draft_followup_email"]

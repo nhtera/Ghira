@@ -63,6 +63,7 @@ fn main() {
             "cancel_recovery_key",
             "open_privacy_settings",
             "test_capture",
+            "draft_followup_email",
             "take_dropped_files",
             "delete_all_data",
             "export_everything",

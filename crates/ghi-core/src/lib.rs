@@ -6,6 +6,7 @@ pub mod capture;
 pub mod carry;
 pub mod cloud;
 pub mod diff;
+pub mod email;
 pub mod engines;
 pub mod events;
 pub mod export;

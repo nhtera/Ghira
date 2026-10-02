@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { Button, Dialog, DialogClose, Icon, cn, useToast, usePlatform } from "@ghi/ui";
 import type { ExportFormat } from "../../bindings";
 import { ipc } from "../../ipc";
+import { FollowupEmailDialog } from "../email/followup-email-dialog";
 import { FORMATS, canExport, exportContent, isSubtitles } from "./export-options";
 
 const FORMAT_KEY = {
@@ -25,6 +26,7 @@ export function ExportSheet({ open, onOpenChange, meetings }: { open: boolean; o
   const [notes, setNotes] = useState(true);
   const [transcript, setTranscript] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [emailing, setEmailing] = useState(false);
   const single = meetings.length === 1 ? meetings[0]! : null;
   const subtitles = isSubtitles(format);
   const content = exportContent(format, notes, transcript, i18n.language);
@@ -90,91 +92,103 @@ export function ExportSheet({ open, onOpenChange, meetings }: { open: boolean; o
     });
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title={t("export.title")}
-      description={meetings.length > 1 ? t("library.selected", { count: meetings.length }) : undefined}
-      width={460}
-      footer={
-        <>
-          <DialogClose asChild>
-            <Button>{t("common.cancel")}</Button>
-          </DialogClose>
-          <Button
-            variant="primary"
-            icon="ios_share"
-            disabled={busy || meetings.length === 0 || !canExport(format, notes, transcript)}
-            onClick={() => void save()}
-          >
-            {t("export.save")}
-          </Button>
-        </>
-      }
-    >
-      <div
-        role="radiogroup"
-        aria-label={t("export.format")}
-        className="flex flex-col gap-0.5"
-        // Arrow keys move the choice (one Tab stop for the group).
-        onKeyDown={(e) => {
-          const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
-          if (!step) return;
-          e.preventDefault();
-          const next = FORMATS[(FORMATS.indexOf(format) + step + FORMATS.length) % FORMATS.length]!;
-          setFormat(next);
-          e.currentTarget.querySelector<HTMLElement>(`[data-format="${next}"]`)?.focus();
-        }}
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={onOpenChange}
+        title={t("export.title")}
+        description={meetings.length > 1 ? t("library.selected", { count: meetings.length }) : undefined}
+        width={460}
+        footer={
+          <>
+            <DialogClose asChild>
+              <Button>{t("common.cancel")}</Button>
+            </DialogClose>
+            <Button
+              variant="primary"
+              icon="ios_share"
+              disabled={busy || meetings.length === 0 || !canExport(format, notes, transcript)}
+              onClick={() => void save()}
+            >
+              {t("export.save")}
+            </Button>
+          </>
+        }
       >
-        {FORMATS.map((f) => (
-          <button
-            key={f}
-            type="button"
-            role="radio"
-            data-format={f}
-            aria-checked={format === f}
-            tabIndex={format === f ? 0 : -1}
-            onClick={() => setFormat(f)}
-            className={cn(
-              "flex h-8 items-center gap-2 rounded-seg px-2 text-left text-[13px]",
-              format === f ? "bg-accent-soft font-semibold text-accent" : "hover:bg-surface2",
-            )}
-          >
-            <Icon name={format === f ? "radio_button_checked" : "radio_button_unchecked"} size={18} />
-            {t(FORMAT_KEY[f])}
-          </button>
-        ))}
-      </div>
-
-      <fieldset className="m-0 flex flex-col gap-0.5 border-0 p-0">
-        <legend className="text-small mb-1 p-0 font-semibold text-muted">{t("export.include")}</legend>
-        <Toggle label={t("export.parts.notes")} checked={!subtitles && notes} disabled={subtitles} onChange={setNotes} />
-        <Toggle label={t("export.parts.transcript")} checked={subtitles || transcript} disabled={subtitles} onChange={setTranscript} />
-        {subtitles && <p className="text-small m-0 mt-1 text-muted">{t("export.subtitlesNote")}</p>}
-      </fieldset>
-
-      {single && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
-          <Button icon="content_copy" disabled={busy || subtitles || !canExport(format, notes, transcript)} onClick={() => void copy(true)}>
-            {t("export.formats.markdown")}
-          </Button>
-          <Button icon="content_copy" disabled={busy || subtitles || !canExport(format, notes, transcript)} onClick={() => void copy(false)}>
-            {t("export.copyText")}
-          </Button>
-          <Button icon="folder" disabled={busy || subtitles || !canExport(format, notes, transcript)} onClick={() => void obsidian(false)}>
-            {t("export.toObsidian")}
-          </Button>
-          <button
-            type="button"
-            disabled={busy || subtitles}
-            onClick={() => void obsidian(true)}
-            className="text-small h-6 rounded-seg px-1 font-semibold text-accent hover:underline disabled:opacity-50"
-          >
-            {t("export.changeFolder")}
-          </button>
+        <div
+          role="radiogroup"
+          aria-label={t("export.format")}
+          className="flex flex-col gap-0.5"
+          // Arrow keys move the choice (one Tab stop for the group).
+          onKeyDown={(e) => {
+            const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+            if (!step) return;
+            e.preventDefault();
+            const next = FORMATS[(FORMATS.indexOf(format) + step + FORMATS.length) % FORMATS.length]!;
+            setFormat(next);
+            e.currentTarget.querySelector<HTMLElement>(`[data-format="${next}"]`)?.focus();
+          }}
+        >
+          {FORMATS.map((f) => (
+            <button
+              key={f}
+              type="button"
+              role="radio"
+              data-format={f}
+              aria-checked={format === f}
+              tabIndex={format === f ? 0 : -1}
+              onClick={() => setFormat(f)}
+              className={cn(
+                "flex h-8 items-center gap-2 rounded-seg px-2 text-left text-[13px]",
+                format === f ? "bg-accent-soft font-semibold text-accent" : "hover:bg-surface2",
+              )}
+            >
+              <Icon name={format === f ? "radio_button_checked" : "radio_button_unchecked"} size={18} />
+              {t(FORMAT_KEY[f])}
+            </button>
+          ))}
         </div>
-      )}
-    </Dialog>
+
+        <fieldset className="m-0 flex flex-col gap-0.5 border-0 p-0">
+          <legend className="text-small mb-1 p-0 font-semibold text-muted">{t("export.include")}</legend>
+          <Toggle label={t("export.parts.notes")} checked={!subtitles && notes} disabled={subtitles} onChange={setNotes} />
+          <Toggle label={t("export.parts.transcript")} checked={subtitles || transcript} disabled={subtitles} onChange={setTranscript} />
+          {subtitles && <p className="text-small m-0 mt-1 text-muted">{t("export.subtitlesNote")}</p>}
+        </fieldset>
+
+        {single && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+            <Button icon="content_copy" disabled={busy || subtitles || !canExport(format, notes, transcript)} onClick={() => void copy(true)}>
+              {t("export.formats.markdown")}
+            </Button>
+            <Button icon="content_copy" disabled={busy || subtitles || !canExport(format, notes, transcript)} onClick={() => void copy(false)}>
+              {t("export.copyText")}
+            </Button>
+            <Button icon="folder" disabled={busy || subtitles || !canExport(format, notes, transcript)} onClick={() => void obsidian(false)}>
+              {t("export.toObsidian")}
+            </Button>
+            <Button
+              icon="inbox"
+              onClick={() => {
+                setEmailing(true);
+                onOpenChange(false);
+              }}
+            >
+              {t("detail.more.draftEmail")}
+            </Button>
+            <button
+              type="button"
+              disabled={busy || subtitles}
+              onClick={() => void obsidian(true)}
+              className="text-small h-6 rounded-seg px-1 font-semibold text-accent hover:underline disabled:opacity-50"
+            >
+              {t("export.changeFolder")}
+            </button>
+          </div>
+        )}
+      </Dialog>
+      {single && <FollowupEmailDialog open={emailing} onOpenChange={setEmailing} meeting={single} />}
+    </>
   );
 }
 

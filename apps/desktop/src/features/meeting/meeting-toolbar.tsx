@@ -14,6 +14,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingDetail, NotesLanguage } from "../../bindings";
+import { FollowupEmailDialog } from "../email/followup-email-dialog";
 import { ipc } from "../../ipc";
 import { invalidateMeeting, useTemplates } from "../../state/meeting-queries";
 import { DEFAULT_TEMPLATE, templateName } from "./template-names";
@@ -45,6 +46,7 @@ export function MeetingToolbar({
   }
   const [language, setLanguage] = useState<NotesLanguage>("meeting");
   const [asking, setAsking] = useState(false);
+  const [emailing, setEmailing] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyJob = busy || detail.status === "processing" || detail.job != null;
   const failed = (message: string) =>
@@ -106,6 +108,11 @@ export function MeetingToolbar({
       label: t("meeting.exportEllipsis"),
       icon: "ios_share",
       onSelect: onExport,
+    },
+    {
+      label: t("detail.more.draftEmail"),
+      icon: "inbox",
+      onSelect: () => setEmailing(true),
     },
     {
       label: t("cloud.sheet.never"),
@@ -184,6 +191,11 @@ export function MeetingToolbar({
           onCancel={() => setAsking(false)}
         />
       )}
+      <FollowupEmailDialog
+        open={emailing}
+        onOpenChange={setEmailing}
+        meeting={detail.gid}
+      />
     </div>
   );
 }

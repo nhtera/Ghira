@@ -4,6 +4,7 @@
 // meeting", the custom vocabulary, export-everything and delete-all. `?cloudfail=1`
 // in the URL makes cloud sends fail (to see the local fallback).
 import type { AskAnswer, CloudLogEntry, CloudPreview, MeetingRow, MeetingTranscript, Vocabulary } from "../bindings";
+import email from "@ghi/ui/mocks/email.json";
 import type { Commands } from "./ipc";
 
 type Result<T> = { status: "ok"; data: T } | { status: "error"; error: string };
@@ -80,6 +81,7 @@ type AiCommands = Pick<
   | "ignoreLearnedTerm"
   | "exportEverything"
   | "deleteAllData"
+  | "draftFollowupEmail"
 >;
 
 /** Meetings marked "never send to cloud" on the mock. */
@@ -173,6 +175,17 @@ export function aiCommands(host: AiHost): AiCommands {
       return ok(vocabulary(host));
     },
     exportEverything: (password) => (password.length < 8 ? fail("use at least 8 characters") : ok(`Ghira export ${new Date().toISOString().slice(0, 10)}.ghira`)),
+    // Built from the design's sample draft, after a short "writing" pause.
+    draftFollowupEmail: (meeting, language, tone) => {
+      const r = row(meeting);
+      if (!r) return fail(`meeting not found: ${meeting}`);
+      const vi = language === "vi";
+      const i = tone === "friendly" ? 0 : tone === "neutral" ? 1 : 2;
+      const d = email.draft;
+      const lang = vi ? "vi" : "en";
+      const body = [d.open[lang][i], "", d.dec[lang], "", d.actH[lang], "- …", "", d.close[lang][i]].join("\n");
+      return new Promise((resolve) => window.setTimeout(() => resolve({ status: "ok", data: { subject: d.subj[lang][i] ?? r.title, body } }), 500));
+    },
     deleteAllData: () => {
       host.rows.splice(0, host.rows.length);
       return ok(null);
