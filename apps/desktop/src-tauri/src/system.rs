@@ -46,6 +46,18 @@ pub struct AppSettings {
     pub strict_offline: bool,
     /// Language of new meetings: `en`, `vi`, or `auto` (both, code-switching).
     pub meeting_language: MeetingLanguage,
+    /// The cloud provider and model the send sheet starts with (empty: none
+    /// chosen yet). Every send is still previewed and confirmed.
+    pub cloud_provider: String,
+    pub cloud_model: String,
+    /// Hide names and personal data from cloud requests (restored locally).
+    pub cloud_redact: bool,
+    /// Days to keep meeting audio (0: until the meeting is deleted).
+    pub audio_retention_days: u32,
+    /// The consent message to share at the start of a meeting (empty: the
+    /// built-in text in the app's language).
+    pub consent_message_en: String,
+    pub consent_message_vi: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
@@ -79,6 +91,12 @@ impl Default for AppSettings {
             voice_profiles_third_party: false,
             strict_offline: false,
             meeting_language: MeetingLanguage::Auto,
+            cloud_provider: String::new(),
+            cloud_model: String::new(),
+            cloud_redact: true,
+            audio_retention_days: 0,
+            consent_message_en: String::new(),
+            consent_message_vi: String::new(),
         }
     }
 }
@@ -93,6 +111,17 @@ pub struct SettingsPatch {
     pub global_record_shortcut: Option<bool>,
     pub strict_offline: Option<bool>,
     pub meeting_language: Option<MeetingLanguage>,
+    pub cloud_provider: Option<String>,
+    pub cloud_model: Option<String>,
+    pub cloud_redact: Option<bool>,
+    pub audio_retention_days: Option<u32>,
+    pub consent_message_en: Option<String>,
+    pub consent_message_vi: Option<String>,
+}
+
+/// Short text settings stay short.
+fn short(v: Option<String>, cur: String, max: usize) -> String {
+    v.map(|s| s.chars().take(max).collect()).unwrap_or(cur)
 }
 
 /// The features behind these flags don't exist yet: always off.
@@ -151,6 +180,9 @@ pub async fn update_settings(
     patch: SettingsPatch,
 ) -> Result<AppSettings, String> {
     let r = blocking(&core, move |c| {
+        // One change at a time: two patches can't lose each other's fields.
+        static WRITING: Mutex<()> = Mutex::new(());
+        let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
         let cur = load_settings(c)?;
         let s = enforce(AppSettings {
             onboarding_done: patch.onboarding_done.unwrap_or(cur.onboarding_done),
@@ -163,19 +195,67 @@ pub async fn update_settings(
                 .unwrap_or(cur.global_record_shortcut),
             strict_offline: patch.strict_offline.unwrap_or(cur.strict_offline),
             meeting_language: patch.meeting_language.unwrap_or(cur.meeting_language),
-            ..cur
+            cloud_redact: patch.cloud_redact.unwrap_or(cur.cloud_redact),
+            audio_retention_days: patch
+                .audio_retention_days
+                .map(|d| d.min(3650))
+                .unwrap_or(cur.audio_retention_days),
+            cloud_provider: short(patch.cloud_provider, cur.cloud_provider.clone(), 40),
+            cloud_model: short(patch.cloud_model, cur.cloud_model.clone(), 80),
+            consent_message_en: short(
+                patch.consent_message_en,
+                cur.consent_message_en.clone(),
+                1000,
+            ),
+            consent_message_vi: short(
+                patch.consent_message_vi,
+                cur.consent_message_vi.clone(),
+                1000,
+            ),
+            ..cur.clone()
         });
+        let retention_changed = s.audio_retention_days != cur.audio_retention_days;
         let v = serde_json::to_value(&s).map_err(|e| e.to_string())?;
         c.store()?
             .set_setting(SETTINGS_KEY, &v)
             .map_err(|e| e.to_string())?;
         *c.settings_cache().lock().unwrap_or_else(|e| e.into_inner()) = Some(s.clone());
+        if retention_changed {
+            apply_retention(c, s.audio_retention_days)?;
+        }
         Ok(s)
     })
     .await;
     // Onboarding finished or the setting changed: (un)register ⌘⇧R.
     crate::tray::sync_record_shortcut(&app);
     r
+}
+
+/// Applies the audio retention setting and deletes the audio past it (the
+/// text stays). Also run at startup and hourly (`spawn_retention`).
+pub fn apply_retention(core: &Core, days: u32) -> Result<(), String> {
+    let store = core.store()?;
+    store
+        .apply_retention_days((days > 0).then_some(days))
+        .map_err(|e| e.to_string())?;
+    store.retention_sweep_now().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Hourly retention sweep in the background.
+pub fn spawn_retention(core: Arc<Core>) {
+    let _ = std::thread::Builder::new()
+        .name("ghi-retention".into())
+        .spawn(move || {
+            // Not in the way of startup.
+            std::thread::sleep(Duration::from_secs(30));
+            loop {
+                if let Ok(s) = load_settings(&core) {
+                    let _ = apply_retention(&core, s.audio_retention_days);
+                }
+                std::thread::sleep(Duration::from_secs(3600));
+            }
+        });
 }
 
 /// Microphone access as macOS reports it.

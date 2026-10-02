@@ -79,6 +79,14 @@ impl Prices {
         Ok(Prices(file.model))
     }
 
+    /// Every listed `(provider, model)`, in file order (the model menus).
+    pub fn models(&self) -> Vec<(String, String)> {
+        self.0
+            .iter()
+            .map(|p| (p.provider.clone(), p.model.clone()))
+            .collect()
+    }
+
     /// `(input, output)` USD per 1M tokens. The longest listed model id that
     /// is `model` or a prefix of it wins.
     pub fn lookup(&self, provider: &str, model: &str) -> Option<(f64, f64)> {

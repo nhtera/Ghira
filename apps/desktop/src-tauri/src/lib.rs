@@ -3,13 +3,19 @@
 //! bindings with `GHI_UPDATE_BINDINGS=1 cargo test -p ghi-desktop`.
 
 mod audio_protocol;
+mod cloud_cmd;
 mod core;
+mod detail;
+mod dialogs;
+mod export_cmd;
+mod import_cmd;
 mod library;
 mod menu;
 mod models_cmd;
 mod navigation;
 mod panels;
 mod recovery_cmd;
+mod settings_cmd;
 mod speakers_cmd;
 mod system;
 mod tray;
@@ -54,14 +60,6 @@ pub enum RecordMode {
 #[serde(rename_all = "camelCase")]
 pub struct Stopped {
     pub meeting: String,
-    pub duration_ms: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct Imported {
-    pub meeting: String,
-    pub duplicate: bool,
     pub duration_ms: f64,
 }
 
@@ -220,25 +218,6 @@ async fn speaker_not_a_person(core: CoreState<'_>, id: u32) -> Result<(), String
     core.with_session(|s| s.not_a_person(id))
 }
 
-/// Imports an audio/video file as a meeting (transcribed by the job runner).
-#[tauri::command]
-#[specta::specta]
-async fn import_recording(
-    core: CoreState<'_>,
-    path: String,
-    split_channels: bool,
-) -> Result<Imported, String> {
-    let r = blocking(&core, move |c| {
-        c.import(std::path::Path::new(&path), split_channels)
-    })
-    .await?;
-    Ok(Imported {
-        meeting: r.meeting,
-        duplicate: r.duplicate,
-        duration_ms: r.duration_ms as f64,
-    })
-}
-
 /// The UI should go to `route` (a window was brought forward for it).
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 #[serde(rename_all = "camelCase")]
@@ -305,7 +284,6 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             merge_speakers,
             split_speaker,
             speaker_not_a_person,
-            import_recording,
             quit_app,
             request_quit_app,
             library::list_meetings,
@@ -344,6 +322,49 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             panels::close_mini,
             panels::open_mini_recorder,
             panels::close_detect,
+            detail::meeting_detail,
+            detail::meeting_notes,
+            detail::meeting_transcript,
+            detail::update_segment_text,
+            detail::set_segment_speaker,
+            detail::update_note_block,
+            detail::add_note_block,
+            detail::delete_note_block,
+            detail::add_action_item,
+            detail::update_action_item,
+            detail::set_action_done,
+            detail::set_action_owner,
+            detail::delete_action_item,
+            detail::list_templates,
+            detail::regenerate_notes,
+            detail::search_meetings,
+            audio_protocol::issue_audio_play,
+            audio_protocol::waveform_peaks,
+            export_cmd::export_meeting,
+            export_cmd::export_meetings,
+            export_cmd::export_obsidian,
+            export_cmd::meeting_as_text,
+            export_cmd::reveal_last_export,
+            import_cmd::pick_import_files,
+            import_cmd::staged_files,
+            import_cmd::unstage_files,
+            import_cmd::start_import,
+            import_cmd::cancel_import,
+            cloud_cmd::cloud_keys,
+            cloud_cmd::set_cloud_key,
+            cloud_cmd::delete_cloud_key,
+            cloud_cmd::cloud_models,
+            cloud_cmd::cloud_preview,
+            cloud_cmd::cloud_send,
+            cloud_cmd::set_meeting_cloud_locked,
+            cloud_cmd::cloud_request_log,
+            cloud_cmd::ask_meeting,
+            settings_cmd::vocabulary,
+            settings_cmd::set_vocabulary,
+            settings_cmd::ignore_learned_term,
+            settings_cmd::export_everything,
+            settings_cmd::delete_all_data,
+            import_cmd::take_dropped_files,
             system::show_notification
         ])
         .events(tauri_specta::collect_events![
@@ -352,7 +373,9 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             system::MeetingDetected,
             models_cmd::ModelDownload,
             Navigate,
-            QuitRequested
+            QuitRequested,
+            import_cmd::ImportStaged,
+            import_cmd::ImportUpdate
         ])
 }
 
@@ -381,7 +404,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init());
     let app = app
         .invoke_handler(builder.invoke_handler())
-        // Short audio spans for the webview, by token only (audio_protocol.rs).
+        // Meeting audio for the webview, by token only (audio_protocol.rs).
         .register_asynchronous_uri_scheme_protocol("ghi-audio", move |ctx, request, responder| {
             let core = ctx.app_handle().state::<Arc<core::Core>>().inner().clone();
             let tokens = protocol_tokens.clone();
@@ -402,11 +425,15 @@ pub fn run() {
             core.init_in_background();
             let detection = Arc::new(system::Detection::default());
             system::spawn_detection(app.handle().clone(), core.clone(), detection.clone());
+            system::spawn_retention(core.clone());
             app.manage(core);
             app.manage(detection);
             app.manage(tokens);
             app.manage(Arc::new(models_cmd::Downloads::default()));
             app.manage(Arc::new(recovery_cmd::PendingRecovery::default()));
+            app.manage(Arc::new(import_cmd::Imports::default()));
+            app.manage(Arc::new(dialogs::LastExport::default()));
+            app.manage(Arc::new(cloud_cmd::CloudPlans::default()));
             #[cfg(target_os = "macos")]
             {
                 app.set_menu(menu::build(app.handle())?)?;
@@ -436,6 +463,18 @@ pub fn run() {
             if app.state::<Arc<core::Core>>().recording() {
                 panels::open_mini(app);
             }
+        }
+        // Audio files dropped on the main window: import them (D10).
+        RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }),
+            ..
+        } if label == "main" => import_cmd::dropped(app, paths),
+        // ... or on the Dock icon / "Open With" (bundle file associations).
+        #[cfg(target_os = "macos")]
+        RunEvent::Opened { urls } => {
+            let paths = urls.iter().filter_map(|u| u.to_file_path().ok()).collect();
+            import_cmd::dropped(app, paths);
         }
         RunEvent::ExitRequested { api, code, .. } => {
             let core = app.state::<Arc<core::Core>>();

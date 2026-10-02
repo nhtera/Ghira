@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-staged-files"
+description = "Enables the staged_files command without any pre-configured scope."
+commands.allow = ["staged_files"]
+
+[[permission]]
+identifier = "deny-staged-files"
+description = "Denies the staged_files command without any pre-configured scope."
+commands.deny = ["staged_files"]

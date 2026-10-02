@@ -21,6 +21,8 @@ import type {
   Stage,
 } from "../bindings";
 import type { Commands, Ipc } from "./ipc";
+import { audioUrl, namesOf, onImportStaged, onImportUpdate, reviewCommands, simulateImportDrop, transcriptOf } from "./mock-review";
+import { aiCommands } from "./mock-ai";
 
 const LINE_MS = 1800;
 // Palette slots in assignment order (s1, s2, s4, s8: tokens speakerOrder).
@@ -141,6 +143,8 @@ const rows: MeetingRow[] = library.rows.map((r, i) => ({
   transcriptVersion: 2,
   cloudUsed: r.st === "cloud",
   consentConfirmed: false,
+  template: null,
+  people: r.ppl.filter((p) => p !== "Me").map((name, k) => ({ name, colorSlot: SLOTS[(k + 1) % SLOTS.length]! })),
   job: r.st === "final" ? { kind: "final_pass", progress: (("pct" in r ? r.pct : 0) ?? 0) / 100, waitingForModels: false } : null,
 }));
 const notes = new Map<string, NoteLine[]>();
@@ -154,6 +158,12 @@ let settings: AppSettings = {
   strictOffline: false,
   meetingLanguage: "auto",
   globalRecordShortcut: true,
+  cloudProvider: "",
+  cloudModel: "",
+  cloudRedact: true,
+  audioRetentionDays: 0,
+  consentMessageEn: "",
+  consentMessageVi: "",
 };
 let lineSeq = 0;
 /** Speakers made by a split in this session (ids after the scripted ones). */
@@ -161,6 +171,14 @@ const extraSpeakers: number[] = [];
 let recoveredShown = false;
 
 const commands: Commands = {
+  ...reviewCommands({ rows, process }),
+  ...aiCommands({
+    rows,
+    process,
+    transcript: (m) => (rows.some((r) => r.gid === m) ? transcriptOf(m) : null),
+    names: namesOf,
+    strictOffline: () => settings.strictOffline,
+  }),
   appVersion: () => Promise.resolve<AppVersion>({ app: "0.1.0", core: "0.1.0 (mock)" }),
   startRecording: (mode) => {
     if (session) return fail("a recording is already running");
@@ -177,6 +195,8 @@ const commands: Commands = {
       transcriptVersion: 0,
       cloudUsed: false,
       consentConfirmed: false,
+      template: null,
+      people: [],
       job: null,
     });
     emit({ type: "stateChanged", meeting: id, state: "starting" });
@@ -252,7 +272,6 @@ const commands: Commands = {
     emit({ type: "speakerNotAPerson", meeting: session.id, id });
     return ok(null);
   },
-  importRecording: () => ok({ meeting: `mock-${++meetings}`, duplicate: false, durationMs: 60_000 }),
   quitApp: () => ok(null),
   listMeetings: (limit, offset) => ok(rows.slice(offset, offset + limit)),
   setMeetingTitle: (meeting, title) => {
@@ -456,6 +475,9 @@ export const mockIpc: Ipc = {
   onNavigate: on(navigateListeners),
   onQuitRequested: on(quitListeners),
   onModelDownload: on(downloadListeners),
+  onImportStaged,
+  onImportUpdate,
+  audioUrl,
 };
 
 
@@ -465,4 +487,7 @@ export const mockIpc: Ipc = {
   simulateCoreEvent,
   simulateMeetingDetected,
   simulateQuitRequested,
+  simulateImportDrop,
+  /** Stores a (fake) API key, as Settings → AI would. */
+  setCloudKey: (provider: string) => commands.setCloudKey(provider, "test-key"),
 };

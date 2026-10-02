@@ -4,9 +4,11 @@
 pub mod aligner;
 pub mod capture;
 pub mod carry;
+pub mod cloud;
 pub mod diff;
 pub mod engines;
 pub mod events;
+pub mod export;
 pub mod final_pass;
 pub mod import;
 pub mod jobs;

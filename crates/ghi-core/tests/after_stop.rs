@@ -350,3 +350,200 @@ fn record_now_process_when_models_arrive() {
             .any(|e| matches!(e, Event::DiscardApplied { .. }))
     );
 }
+
+/// Remembers the prompts it was given.
+struct Recorder(Arc<std::sync::Mutex<Vec<String>>>);
+
+impl Llm for Recorder {
+    fn engine(&self) -> EngineInfo {
+        OneLiner.engine()
+    }
+    fn context_tokens(&self) -> u32 {
+        16_384
+    }
+    fn complete(&mut self, req: &Request) -> ghi_llm::Result<Completion> {
+        let text: Vec<&str> = req.messages.iter().map(|m| m.content.as_str()).collect();
+        self.0.lock().unwrap().push(text.join("\n"));
+        OneLiner.complete(req)
+    }
+}
+
+/// Regenerate (D6): the job's payload picks the template and the language.
+#[test]
+fn regenerate_uses_the_chosen_template_and_language() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = Arc::new(
+        Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap(),
+    );
+    let m = store
+        .create_meeting(ghi_store::store::NewMeeting::default())
+        .unwrap()
+        .gid;
+    store
+        .add_segments(
+            &m,
+            vec![ghi_store::store::NewSegment {
+                t0_ms: 0,
+                t1_ms: 2000,
+                text: "we ship on friday".into(),
+                lang: Some("en".into()),
+                ..Default::default()
+            }],
+        )
+        .unwrap();
+    let prompts = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = prompts.clone();
+    let llm: ghi_core::notes_job::LlmFactory =
+        Arc::new(move |_| Ok(Box::new(Recorder(seen.clone())) as Box<dyn Llm + Send>));
+    let (tx, _rx) = bus();
+    let runner = JobRunner::new(
+        store.clone(),
+        tx,
+        vec![Arc::new(NotesJob {
+            kind: NOTES_FINAL_JOB,
+            version: 2,
+            template: ghi_llm::template::builtin("general").unwrap(),
+            llm,
+            ready: always_ready(),
+        })],
+    );
+    store
+        .enqueue_job(
+            Some(&m),
+            NOTES_FINAL_JOB,
+            1,
+            &serde_json::json!({"template": "standup", "lang": "vi"}),
+        )
+        .unwrap();
+    assert_eq!(runner.run_pending(), 1);
+    let p = prompts.lock().unwrap().join("\n");
+    let standup = ghi_llm::template::builtin("standup").unwrap();
+    assert!(p.contains(&standup.guidance_vi), "standup, in Vietnamese");
+    assert!(!p.contains(&ghi_llm::template::builtin("general").unwrap().guidance_en));
+}
+
+/// Notes as [`OneLiner`]; for the enhance requests, the first line is
+/// supported by segment 0 and the second isn't.
+struct Enhancer;
+
+impl Llm for Enhancer {
+    fn engine(&self) -> EngineInfo {
+        OneLiner.engine()
+    }
+    fn context_tokens(&self) -> u32 {
+        16_384
+    }
+    fn complete(&mut self, req: &Request) -> ghi_llm::Result<Completion> {
+        let enhance = req
+            .schema
+            .as_ref()
+            .is_some_and(|s| s.to_string().contains("\"lines\""));
+        if !enhance {
+            return OneLiner.complete(req);
+        }
+        let prompt: String = req.messages.iter().map(|m| m.content.as_str()).collect();
+        let text = if prompt.contains("pricing") {
+            r#"{"lines":[{"line":1,"found":false,"points":[]}]}"#
+        } else {
+            r#"{"lines":[{"line":1,"found":true,"points":[{"text":"The release ships on Friday.","cite":[0]}]}]}"#
+        };
+        Ok(Completion {
+            text: text.into(),
+            tokens_in: 10,
+            tokens_out: 5,
+            truncated: false,
+        })
+    }
+}
+
+/// The final notes expand the user's own lines (cited), or say "not found".
+#[test]
+fn final_notes_enhance_what_the_user_typed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = Arc::new(
+        Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap(),
+    );
+    let m = store
+        .create_meeting(ghi_store::store::NewMeeting::default())
+        .unwrap()
+        .gid;
+    store
+        .add_segments(
+            &m,
+            vec![
+                ghi_store::store::NewSegment {
+                    t0_ms: 0,
+                    t1_ms: 3000,
+                    text: "we ship the release on friday after the review".into(),
+                    lang: Some("en".into()),
+                    ..Default::default()
+                },
+                ghi_store::store::NewSegment {
+                    t0_ms: 3000,
+                    t1_ms: 6000,
+                    text: "the design review happens thursday morning".into(),
+                    lang: Some("en".into()),
+                    ..Default::default()
+                },
+            ],
+        )
+        .unwrap();
+    let user = |text: &str, t: i64| {
+        let a = store.anchor_for_range(&m, t, t).unwrap();
+        store
+            .add_note_block(
+                &m,
+                ghi_store::store::NewNoteBlock {
+                    kind: "note".into(),
+                    provenance: ghi_store::store::Provenance::User,
+                    body: text.into(),
+                    anchors: vec![a],
+                    pinned: false,
+                },
+            )
+            .unwrap()
+            .gid
+    };
+    let ship = user("release ship friday", 1000);
+    let pricing = user("ask about pricing tiers", 4000);
+    let llm: ghi_core::notes_job::LlmFactory =
+        Arc::new(|_| Ok(Box::new(Enhancer) as Box<dyn Llm + Send>));
+    let (tx, _rx) = bus();
+    let runner = JobRunner::new(
+        store.clone(),
+        tx,
+        vec![Arc::new(NotesJob {
+            kind: NOTES_FINAL_JOB,
+            version: 2,
+            template: ghi_llm::template::builtin("general").unwrap(),
+            llm,
+            ready: always_ready(),
+        })],
+    );
+    store
+        .enqueue_job(Some(&m), NOTES_FINAL_JOB, 1, &serde_json::json!({}))
+        .unwrap();
+    assert_eq!(runner.run_pending(), 1);
+    let blocks = store.note_blocks(&m).unwrap();
+    let of = |gid: &str| -> Vec<_> {
+        let kind = format!("{}{gid}", ghi_core::notes_job::ENHANCED_PREFIX);
+        blocks.iter().filter(|b| b.kind == kind).collect()
+    };
+    let found = of(&ship);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].body, "The release ships on Friday.");
+    assert_eq!(found[0].anchors[0].t0_ms, 0, "cites segment 0");
+    let missing = of(&pricing);
+    assert_eq!(missing.len(), 1);
+    assert!(missing[0].body.is_empty(), "not found");
+}

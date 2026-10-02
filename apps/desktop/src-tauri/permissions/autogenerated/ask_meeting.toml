@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ask-meeting"
+description = "Enables the ask_meeting command without any pre-configured scope."
+commands.allow = ["ask_meeting"]
+
+[[permission]]
+identifier = "deny-ask-meeting"
+description = "Denies the ask_meeting command without any pre-configured scope."
+commands.deny = ["ask_meeting"]

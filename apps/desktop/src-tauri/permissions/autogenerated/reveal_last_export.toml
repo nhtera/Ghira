@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reveal-last-export"
+description = "Enables the reveal_last_export command without any pre-configured scope."
+commands.allow = ["reveal_last_export"]
+
+[[permission]]
+identifier = "deny-reveal-last-export"
+description = "Denies the reveal_last_export command without any pre-configured scope."
+commands.deny = ["reveal_last_export"]

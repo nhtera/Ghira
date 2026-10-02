@@ -26,8 +26,6 @@ export const commands = {
 	/**  Moves the given lines (segment gids) to a new speaker; returns its id. */
 	splitSpeaker: (from: number, lines: string[]) => typedError<number | null, string>(__TAURI_INVOKE("split_speaker", { from, lines })),
 	speakerNotAPerson: (id: number) => typedError<null, string>(__TAURI_INVOKE("speaker_not_a_person", { id })),
-	/**  Imports an audio/video file as a meeting (transcribed by the job runner). */
-	importRecording: (path: string, splitChannels: boolean) => typedError<Imported, string>(__TAURI_INVOKE("import_recording", { path, splitChannels })),
 	/**
 	 *  Quits; `stop`: stop the recording first (it is saved and processed at the
 	 *  next launch). Without `stop`, a running recording keeps the app open.
@@ -147,6 +145,107 @@ export const commands = {
 	/**  Opens the mini-recorder from the live view ("Mini recorder"). */
 	openMiniRecorder: () => __TAURI_INVOKE<void>("open_mini_recorder"),
 	closeDetect: () => __TAURI_INVOKE<void>("close_detect"),
+	meetingDetail: (meeting: string) => typedError<MeetingDetail, string>(__TAURI_INVOKE("meeting_detail", { meeting })),
+	meetingNotes: (meeting: string) => typedError<MeetingNotes, string>(__TAURI_INVOKE("meeting_notes", { meeting })),
+	meetingTranscript: (meeting: string) => typedError<MeetingTranscript, string>(__TAURI_INVOKE("meeting_transcript", { meeting })),
+	/**  Corrects a transcript line ("Edited"; the final pass keeps it). */
+	updateSegmentText: (meeting: string, segment: string, text: string) => typedError<null, string>(__TAURI_INVOKE("update_segment_text", { meeting, segment, text })),
+	/**  Moves a transcript line to another speaker of the meeting. */
+	setSegmentSpeaker: (meeting: string, segment: string, speaker: string) => typedError<null, string>(__TAURI_INVOKE("set_segment_speaker", { meeting, segment, speaker })),
+	/**  Edits a note block (an AI block becomes the user's: `aiEdited`). */
+	updateNoteBlock: (meeting: string, block: string, text: string) => typedError<null, string>(__TAURI_INVOKE("update_note_block", { meeting, block, text })),
+	/**  Adds one of the user's own notes ("My notes"). */
+	addNoteBlock: (meeting: string, text: string) => typedError<NoteBlockView, string>(__TAURI_INVOKE("add_note_block", { meeting, text })),
+	deleteNoteBlock: (meeting: string, block: string) => typedError<null, string>(__TAURI_INVOKE("delete_note_block", { meeting, block })),
+	addActionItem: (meeting: string, text: string, owner: string | null) => typedError<ActionItemView, string>(__TAURI_INVOKE("add_action_item", { meeting, text, owner })),
+	updateActionItem: (meeting: string, item: string, text: string) => typedError<null, string>(__TAURI_INVOKE("update_action_item", { meeting, item, text })),
+	setActionDone: (meeting: string, item: string, done: boolean) => typedError<null, string>(__TAURI_INVOKE("set_action_done", { meeting, item, done })),
+	/**  Sets (or clears) who owns an action item: one of the meeting's speakers. */
+	setActionOwner: (meeting: string, item: string, owner: string | null) => typedError<null, string>(__TAURI_INVOKE("set_action_owner", { meeting, item, owner })),
+	deleteActionItem: (meeting: string, item: string) => typedError<null, string>(__TAURI_INVOKE("delete_action_item", { meeting, item })),
+	/**  The built-in notes templates, in menu order. */
+	listTemplates: () => __TAURI_INVOKE<TemplateInfo[]>("list_templates"),
+	/**
+	 *  Rewrites the AI notes (template and language as chosen); what the user
+	 *  wrote, edited, pinned or ticked off stays [RT-7]. Returns whether it waits
+	 *  for the local model to be installed.
+	 */
+	regenerateNotes: (meeting: string, template: string | null, language: NotesLanguage) => typedError<boolean, string>(__TAURI_INVOKE("regenerate_notes", { meeting, template, language })),
+	/**  Accent-insensitive search over transcripts and notes (VN-folded). */
+	searchMeetings: (request: SearchRequest) => typedError<SearchResults, string>(__TAURI_INVOKE("search_meetings", { request })),
+	/**  Plays the whole meeting (the open one; any earlier play token stops working). */
+	issueAudioPlay: (meeting: string) => typedError<AudioPlay, string>(__TAURI_INVOKE("issue_audio_play", { meeting })),
+	/**
+	 *  The waveform of a finished meeting (computed once, then kept sealed in
+	 *  the store until the audio goes).
+	 */
+	waveformPeaks: (meeting: string) => typedError<Waveform, string>(__TAURI_INVOKE("waveform_peaks", { meeting })),
+	/**
+	 *  Saves one meeting (a save dialog first). Returns the file name, or `None`
+	 *  if the user cancelled.
+	 */
+	exportMeeting: (meeting: string, format: ExportFormat, content: ExportContent) => typedError<string | null, string>(__TAURI_INVOKE("export_meeting", { meeting, format, content })),
+	/**
+	 *  Saves several meetings into a folder (one file each). Returns how many
+	 *  were written, or `None` if the user cancelled.
+	 */
+	exportMeetings: (meetings: string[], format: ExportFormat, content: ExportContent, title: string) => typedError<number | null, string>(__TAURI_INVOKE("export_meetings", { meetings, format, content, title })),
+	/**
+	 *  Writes the meeting as a note into an Obsidian vault folder (chosen once,
+	 *  then remembered; `chooseFolder` asks again). Returns the note's name, or
+	 *  `None` if the user cancelled.
+	 */
+	exportObsidian: (meeting: string, content: ExportContent, chooseFolder: boolean, title: string) => typedError<string | null, string>(__TAURI_INVOKE("export_obsidian", { meeting, content, chooseFolder, title })),
+	/**  The meeting as Markdown or plain text, for the clipboard. */
+	meetingAsText: (meeting: string, markdown: boolean, content: ExportContent) => typedError<string, string>(__TAURI_INVOKE("meeting_as_text", { meeting, markdown, content })),
+	/**  Shows the last exported file in Finder. */
+	revealLastExport: () => typedError<null, string>(__TAURI_INVOKE("reveal_last_export")),
+	/**  The open dialog: stages the chosen files. */
+	pickImportFiles: (title: string) => typedError<StagedFile[], string>(__TAURI_INVOKE("pick_import_files", { title })),
+	/**  What was staged by a drop (the event carries ids only). */
+	stagedFiles: (ids: string[]) => __TAURI_INVOKE<StagedFile[]>("staged_files", { ids }),
+	/**  Removes files from the staging list. */
+	unstageFiles: (ids: string[]) => __TAURI_INVOKE<void>("unstage_files", { ids }),
+	/**  Queues staged files for import (unsupported or empty ones are refused). */
+	startImport: (ids: string[], choice: ImportChoice) => typedError<null, string>(__TAURI_INVOKE("start_import", { ids, choice })),
+	/**  Stops a queued or running import (its half-made meeting is removed). */
+	cancelImport: (id: string) => __TAURI_INVOKE<void>("cancel_import", { id }),
+	/**  Which providers have a key (never the key). */
+	cloudKeys: () => typedError<ProviderKey[], string>(__TAURI_INVOKE("cloud_keys")),
+	/**  Stores a provider's API key in the Keychain (from a masked field). */
+	setCloudKey: (provider: string, key: string) => typedError<null, string>(__TAURI_INVOKE("set_cloud_key", { provider, key })),
+	deleteCloudKey: (provider: string) => typedError<null, string>(__TAURI_INVOKE("delete_cloud_key", { provider })),
+	/**  The models with a known price, per provider (the sheet's menus). */
+	cloudModels: () => __TAURI_INVOKE<CloudModel[]>("cloud_models"),
+	/**  Builds the exact request for the sheet (nothing is sent). */
+	cloudPreview: (meeting: string, ask: CloudAsk) => typedError<CloudPreviewResult, string>(__TAURI_INVOKE("cloud_preview", { meeting, ask })),
+	/**  Sends the previewed request, exactly. */
+	cloudSend: (id: string) => typedError<CloudSendResult, string>(__TAURI_INVOKE("cloud_send", { id })),
+	/**  "Never send to cloud" for a meeting. */
+	setMeetingCloudLocked: (meeting: string, locked: boolean) => typedError<null, string>(__TAURI_INVOKE("set_meeting_cloud_locked", { meeting, locked })),
+	/**  Every cloud request made, newest first (no content is kept). */
+	cloudRequestLog: (limit: number) => typedError<CloudLogEntry[], string>(__TAURI_INVOKE("cloud_request_log", { limit })),
+	/**  Ask this meeting, answered on this device by the local model. */
+	askMeeting: (meeting: string, question: string, language: NotesLanguage) => typedError<AskAnswer, string>(__TAURI_INVOKE("ask_meeting", { meeting, question, language })),
+	vocabulary: () => typedError<Vocabulary, string>(__TAURI_INVOKE("vocabulary")),
+	/**  Replaces the user's terms (trimmed, deduplicated, at most 200). */
+	setVocabulary: (terms: string[]) => typedError<Vocabulary, string>(__TAURI_INVOKE("set_vocabulary", { terms })),
+	/**  Removes a learned name from the vocabulary (it stays removed). */
+	ignoreLearnedTerm: (term: string) => typedError<Vocabulary, string>(__TAURI_INVOKE("ignore_learned_term", { term })),
+	/**
+	 *  "Export everything": every meeting with its audio in one archive,
+	 *  encrypted with `password` (a save dialog first). Returns the file name, or
+	 *  `None` if the user cancelled.
+	 */
+	exportEverything: (password: string) => typedError<string | null, string>(__TAURI_INVOKE("export_everything", { password })),
+	/**
+	 *  "Delete all data": everything goes (meetings, audio, keys, settings),
+	 *  then the app restarts into onboarding. The UI asks for a typed
+	 *  confirmation first.
+	 */
+	deleteAllData: () => typedError<null, string>(__TAURI_INVOKE("delete_all_data")),
+	/**  Files staged by a drop that the import screen hasn't shown yet (read once). */
+	takeDroppedFiles: () => __TAURI_INVOKE<StagedFile[]>("take_dropped_files"),
 	/**
 	 *  A system notification (notes ready, recovered); clicking it brings the
 	 *  app forward. The text comes localized from the UI.
@@ -157,6 +256,8 @@ export const commands = {
 /** Events */
 export const events = {
 	coreEvent: makeEvent<CoreEvent>("core-event"),
+	importStaged: makeEvent<ImportStaged>("import-staged"),
+	importUpdate: makeEvent<ImportUpdate>("import-update"),
 	meetingDetected: makeEvent<MeetingDetected>("meeting-detected"),
 	menuAction: makeEvent<MenuAction>("menu-action"),
 	modelDownload: makeEvent<ModelDownload>("model-download"),
@@ -165,6 +266,17 @@ export const events = {
 };
 
 /* Types */
+export type ActionItemView = {
+	gid: string,
+	text: string,
+	ownerSpeakerGid: string | null,
+	/**  The due date as spoken ("thứ Sáu"). */
+	dueText: string | null,
+	done: boolean,
+	origin: Origin,
+	citations: Citation[],
+};
+
 /**
  *  App settings the UI reads (stored in the encrypted store). Every field is
  *  required in the TypeScript type; what the store lacks takes its default.
@@ -189,6 +301,22 @@ export type AppSettings = {
 	strictOffline: boolean,
 	/**  Language of new meetings: `en`, `vi`, or `auto` (both, code-switching). */
 	meetingLanguage: MeetingLanguage,
+	/**
+	 *  The cloud provider and model the send sheet starts with (empty: none
+	 *  chosen yet). Every send is still previewed and confirmed.
+	 */
+	cloudProvider: string,
+	cloudModel: string,
+	/**  Hide names and personal data from cloud requests (restored locally). */
+	cloudRedact: boolean,
+	/**  Days to keep meeting audio (0: until the meeting is deleted). */
+	audioRetentionDays: number,
+	/**
+	 *  The consent message to share at the start of a meeting (empty: the
+	 *  built-in text in the app's language).
+	 */
+	consentMessageEn: string,
+	consentMessageVi: string,
 };
 
 /**  Versions shown in Settings → About. */
@@ -196,6 +324,108 @@ export type AppVersion = {
 	app: string,
 	core: string,
 };
+
+/**  An answer to "Ask this meeting". */
+export type AskAnswer = {
+	/**  False: "Not discussed in this meeting". */
+	answered: boolean,
+	text: string,
+	citations: Citation[],
+	/**  The terms looked for (not discussed). */
+	searched: string[],
+	/**  `local` or the cloud provider. */
+	engine: string,
+};
+
+/**  The audio bar's source: a play token and how long the audio is. */
+export type AudioPlay = {
+	token: string,
+	durationMs: number | null,
+};
+
+/**  A citation resolved against the current transcript. */
+export type Citation = {
+	t0Ms: number | null,
+	t1Ms: number | null,
+	/**  The cited words (overlapping segments, shortened). */
+	quote: string,
+	speakerGid: string | null,
+	/**  Made against an older transcript (the text was found by time). */
+	stale: boolean,
+	/**  Nothing in the transcript at that time ("not found"). */
+	missing: boolean,
+};
+
+export type CloudAsk = {
+	provider: string,
+	model: string,
+	task: CloudTask,
+	/**  Replace names and personal data with placeholders (restored locally). */
+	redact: boolean,
+	/**  More names to hide besides the speakers'. */
+	extraNames: string[],
+};
+
+export type CloudLogEntry = {
+	meeting: string,
+	meetingTitle: string,
+	provider: string,
+	model: string,
+	tokensIn: number | null,
+	tokensOut: number | null,
+	/**  Unix ms. */
+	at: number | null,
+};
+
+export type CloudModel = {
+	provider: string,
+	model: string,
+};
+
+/**  The send preview the sheet shows (nothing has left the device). */
+export type CloudPreview = {
+	/**  Confirm with `cloud_send(id)`. */
+	id: string,
+	provider: string,
+	model: string,
+	host: string,
+	/**  The request body, byte for byte. */
+	payload: string,
+	sha256: string,
+	tokensEst: number,
+	costEstUsd: number | null,
+	retentionNote: string,
+	/**  Things in the text that still look like personal data. */
+	warnings: string[],
+	redactions: Redaction[],
+};
+
+export type CloudPreviewResult = {
+	kind: "preview",
+} & CloudPreview | 
+/**  An Ask that nothing matched: answered without any request. */
+{
+	kind: "answer",
+} & AskAnswer;
+
+export type CloudSendResult = 
+/**  The notes were rewritten (what the user wrote stays). */
+({ kind: "notes" }) & { leftDevice?: never; reason?: never } | {
+	kind: "answer",
+} & AskAnswer | 
+/**
+ *  The provider failed: notes are being written on this device instead
+ *  (an Ask is answered on this device by the caller).
+ */
+{ kind: "failed"; reason: string; 
+/**  The request may have left the device (it is in the request log). */
+leftDevice: boolean };
+
+export type CloudTask = 
+/**  Rewrite the notes ("Improve with cloud…"). */
+{ kind: "notes"; template: string | null; language: NotesLanguage } | 
+/**  Ask this meeting. */
+{ kind: "ask"; question: string; language: NotesLanguage };
 
 /**  Every core event, in order (`seq` is gap-free; on a gap, re-read state). */
 export type CoreEvent = Envelope;
@@ -223,6 +453,11 @@ export type DiscardPreview = {
 export type DownloadPhase = "downloading" | 
 /**  Checking the SHA-256 of the finished file. */
 "verifying" | "done" | "failed" | "cancelled";
+
+export type DuplicateOf = {
+	meeting: string,
+	title: string,
+};
 
 /**
  *  An event with its sequence number (gap-free per bus) and wall time, so a
@@ -290,10 +525,51 @@ progress: number | null } | { type: "notesReady"; meeting: string;
 /**  1 = from the live transcript, 2 = after the final pass. */
 version: number } | { type: "error"; meeting: string | null; kind: ErrorKind; message: string };
 
-export type Imported = {
-	meeting: string,
-	duplicate: boolean,
-	durationMs: number | null,
+/**  What goes into the file; headings in the app's language. */
+export type ExportContent = {
+	notes: boolean,
+	transcript: boolean,
+	/**  Headings in Vietnamese (else English). */
+	vietnamese: boolean,
+};
+
+export type ExportFormat = "markdown" | "text" | "srt" | "vtt" | "docx";
+
+export type ImportChoice = {
+	/**  The transcript language (`en`, `vi`), or detect. */
+	language: string | null,
+	/**  Keep a stereo file's two channels as you / the others. */
+	splitChannels: boolean,
+};
+
+export type ImportProblem = 
+/**  Not audio we can read. */
+"unsupported" | 
+/**  An empty file. */
+"empty" | 
+/**  Over 4 hours: allowed, with a warning. */
+"veryLong" | 
+/**  Imported before (see `duplicateOf`). */
+"duplicate";
+
+export type ImportSource = "plaud" | "zoom" | "teams" | "voiceMemos" | "other";
+
+/**  Files dropped on the window or the Dock icon were staged. */
+export type ImportStaged = {
+	files: StagedFileEvent[],
+};
+
+export type ImportState = "queued" | "decoding" | "done" | "failed" | "cancelled";
+
+/**  One step of a queued import. */
+export type ImportUpdate = {
+	id: string,
+	state: ImportState,
+	/**  The meeting being made (once decoding started). */
+	meeting: string | null,
+	/**  0..1 while decoding. */
+	progress: number | null,
+	error: string | null,
 };
 
 /**  A final transcript line. */
@@ -307,6 +583,38 @@ export type LineInfo = {
 	/**  Two speakers talked over each other. */
 	overlap: boolean,
 	words: WordInfo[],
+};
+
+export type MarkView = {
+	tMs: number | null,
+	/**  `mark`, `decision`, `action`, `question`. */
+	tag: string,
+};
+
+export type MeetingDetail = {
+	gid: string,
+	title: string,
+	/**  Unix ms. */
+	startedAt: number | null,
+	durationMs: number | null,
+	/**  `live`, `import`, … */
+	source: string,
+	/**  `call` or `room`. */
+	mode: string,
+	/**  The transcript's language (`en`, `vi`, `mixed`), if known. */
+	language: string | null,
+	/**  Notes template id (`None`: the default, `general`). */
+	template: string | null,
+	status: string,
+	cloudLocked: boolean,
+	sensitive: boolean,
+	cloudUsed: boolean,
+	consentConfirmed: boolean,
+	transcriptVersion: number | null,
+	/**  Some audio is kept (retention may have removed it). */
+	audioAvailable: boolean,
+	speakers: MeetingSpeaker[],
+	job: MeetingJob | null,
 };
 
 /**  A meeting app started using the microphone. */
@@ -330,6 +638,13 @@ export type MeetingJob = {
 
 export type MeetingLanguage = "en" | "vi" | "auto";
 
+export type MeetingNotes = {
+	blocks: NoteBlockView[],
+	actionItems: ActionItemView[],
+	/**  The meeting template's own sections (for `section:<id>` blocks). */
+	sections: TemplateSection[],
+};
+
 export type MeetingRow = {
 	gid: string,
 	title: string,
@@ -345,6 +660,10 @@ export type MeetingRow = {
 	transcriptVersion: number | null,
 	cloudUsed: boolean,
 	consentConfirmed: boolean,
+	/**  Notes template id (`None`: the default). */
+	template: string | null,
+	/**  Named speakers, for the people column and filter. */
+	people: PersonChip[],
 	/**  The active job, if any. */
 	job: MeetingJob | null,
 };
@@ -363,6 +682,14 @@ export type MeetingSpeaker = {
 	/**  A span of their speech for the sample (meeting ms, at most 3 s). */
 	sampleT0Ms: number | null,
 	sampleT1Ms: number | null,
+};
+
+export type MeetingTranscript = {
+	version: number | null,
+	segments: SegmentView[],
+	marks: MarkView[],
+	/**  Topic headers (from the notes), in time order. */
+	topics: TopicView[],
 };
 
 /**  A menu command for the UI. */
@@ -410,6 +737,21 @@ export type Navigate = {
 	route: string,
 };
 
+export type NoteBlockView = {
+	gid: string,
+	/**
+	 *  `tldr`, `decision`, `question`, `quote`, `topic`, `section:<id>`,
+	 *  `enhanced:<user block gid>` (the AI's expansion of a user note; an
+	 *  empty text means "not found"), or the user's `note` / `decision` /
+	 *  `action` / `question`.
+	 */
+	kind: string,
+	origin: Origin,
+	text: string,
+	pinned: boolean,
+	citations: Citation[],
+};
+
 /**  The kinds a user line can carry (in-call tags feed the notes, brief D4). */
 export type NoteKind = "note" | "decision" | "action" | "question";
 
@@ -423,6 +765,15 @@ export type NoteLine = {
 	kind: string,
 };
 
+/**  The language notes are written in. */
+export type NotesLanguage = 
+/**  The meeting's own (dominant) language. */
+"meeting" | "en" | "vi";
+
+export type Origin = "user" | "ai" | 
+/**  AI-written, then changed by the user (kept by a regenerate). */
+"aiEdited";
+
 /**  Microphone access as macOS reports it. */
 export type Permission = "granted" | "denied" | 
 /**  Not asked yet. */
@@ -432,10 +783,22 @@ export type Permission = "granted" | "denied" |
 /**  Not applicable on this platform (no macOS permission model). */
 "unsupported";
 
+/**  A named speaker as a chip: color + initial (never color alone). */
+export type PersonChip = {
+	name: string,
+	/**  Palette slot 1..8 (0: Others). */
+	colorSlot: number,
+};
+
 /**  A pane of the OS privacy settings, for a denied permission. */
 export type PrivacyPane = "microphone" | 
 /**  "Screen & System Audio Recording" on macOS. */
 "systemAudio" | "notifications";
+
+export type ProviderKey = {
+	provider: string,
+	stored: boolean,
+};
 
 /**
  *  The user quit while recording: the UI asks "Stop and quit?" and answers
@@ -456,6 +819,66 @@ export type RecoveredMeeting = {
 	title: string,
 	/**  What was saved (ms). */
 	durationMs: number | null,
+};
+
+export type Redaction = {
+	kind: string,
+	count: number,
+};
+
+export type SearchHitView = {
+	/**  `segment` or `note`. */
+	kind: string,
+	meeting: string,
+	meetingTitle: string,
+	meetingStartedAt: number | null,
+	/**  Segment or note block gid. */
+	item: string,
+	speakerGid: string | null,
+	t0Ms: number | null,
+	t1Ms: number | null,
+	snippet: string,
+	/**  `[start, end)` in UTF-16 code units of `snippet` (JS string indexes). */
+	highlights: ([number, number])[],
+	/**  The accented query matched exactly (ranked first). */
+	exact: boolean,
+};
+
+export type SearchRequest = {
+	text: string,
+	/**  `live` or `file`. */
+	source: string | null,
+	template: string | null,
+	/**  Meeting start range, unix ms, inclusive. */
+	fromMs: number | null,
+	toMs: number | null,
+	/**  Only this meeting ("Find" inside a meeting uses the transcript instead). */
+	meeting: string | null,
+	limit: number,
+	offset: number,
+};
+
+export type SearchResults = {
+	hits: SearchHitView[],
+	/**  More matches exist than were considered. */
+	truncated: boolean,
+};
+
+export type SegmentView = {
+	gid: string,
+	speakerGid: string | null,
+	t0Ms: number | null,
+	t1Ms: number | null,
+	text: string,
+	language: string | null,
+	confidence: number | null,
+	/**  The user changed the text ("Edited"). */
+	edited: boolean,
+	/**
+	 *  One per space-separated word of `text`, in order (empty when the
+	 *  counts don't match, e.g. after an edit).
+	 */
+	words: WordTiming[],
 };
 
 /**
@@ -495,6 +918,12 @@ export type SettingsPatch = {
 	globalRecordShortcut?: boolean | null,
 	strictOffline?: boolean | null,
 	meetingLanguage?: MeetingLanguage | null,
+	cloudProvider?: string | null,
+	cloudModel?: string | null,
+	cloudRedact?: boolean | null,
+	audioRetentionDays?: number | null,
+	consentMessageEn?: string | null,
+	consentMessageVi?: string | null,
 };
 
 export type SpeakerInfo = {
@@ -513,9 +942,58 @@ export type SpeakerInfo = {
 /**  Final-pass stages, in order (shown as progress in the UI). */
 export type Stage = "decoding" | "refiningSpeakers" | "matchingVoices" | "improvingTranscript" | "writingNotes";
 
+export type StagedFile = {
+	id: string,
+	name: string,
+	sizeBytes: number | null,
+	durationMs: number | null,
+	/**  Two or more: "split channels" is offered (a Zoom/Teams stereo file). */
+	channels: number,
+	source: ImportSource,
+	problems: ImportProblem[],
+	duplicateOf: DuplicateOf | null,
+};
+
+/**  [`StagedFile`] as carried by an event (events need `Deserialize`). */
+export type StagedFileEvent = {
+	id: string,
+};
+
 export type Stopped = {
 	meeting: string,
 	durationMs: number | null,
+};
+
+export type TemplateInfo = {
+	id: string,
+	name: string,
+	sections: TemplateSection[],
+};
+
+export type TemplateSection = {
+	id: string,
+	titleEn: string,
+	titleVi: string,
+};
+
+export type TopicView = {
+	title: string,
+	tMs: number | null,
+};
+
+export type Vocabulary = {
+	/**  The user's own terms (names, products, jargon), as written. */
+	terms: string[],
+	/**  Names learned from the speakers the user named (removable). */
+	learned: string[],
+	maxTerms: number,
+};
+
+/**  The audio bar's waveform. */
+export type Waveform = {
+	perSecond: number,
+	/**  Loudness 0..255 per bucket, from the start of the meeting. */
+	peaks: number[],
 };
 
 export type WordInfo = {
@@ -523,6 +1001,13 @@ export type WordInfo = {
 	t0Ms: number | null,
 	t1Ms: number | null,
 	lowConfidence: boolean,
+};
+
+export type WordTiming = {
+	t0Ms: number | null,
+	t1Ms: number | null,
+	/**  0..1, if the engine gave one. */
+	confidence: number | null,
 };
 
 /* Tauri Specta runtime */

@@ -36,7 +36,7 @@ use crate::vocab::Vocabulary;
 
 const RATE: f64 = SAMPLE_RATE as f64;
 /// Store setting holding the custom vocabulary (a JSON list of strings).
-pub const VOCABULARY_SETTING: &str = "vocabulary";
+pub const VOCABULARY_SETTING: &str = crate::vocab::TERMS_SETTING;
 
 /// Loads engines with the final-pass config.
 pub type EnginesFactory = Arc<dyn Fn() -> Result<Arc<dyn SpeechEngines>, String> + Send + Sync>;
@@ -365,12 +365,9 @@ impl JobHandler for FinalPassJob {
         // Nothing from a discarded span comes back [RT-1] (its audio is
         // silence; this also covers anything the engine still hears there).
         let discarded = store.discarded_spans(&meeting).map_err(err)?;
-        let vocab = store
-            .get_setting(VOCABULARY_SETTING)
-            .map_err(err)?
-            .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
-            .map(|t| Vocabulary::new(&t))
-            .filter(|v| !v.is_empty());
+        // The user's terms and the names they gave speakers (RT-14).
+        let vocab =
+            Some(Vocabulary::new(&crate::vocab::effective_terms(store)?)).filter(|v| !v.is_empty());
         let mut v2: Vec<NewSegment> = lines
             .into_iter()
             .filter(|l| {

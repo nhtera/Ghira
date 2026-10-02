@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-meeting-as-text"
+description = "Enables the meeting_as_text command without any pre-configured scope."
+commands.allow = ["meeting_as_text"]
+
+[[permission]]
+identifier = "deny-meeting-as-text"
+description = "Denies the meeting_as_text command without any pre-configured scope."
+commands.deny = ["meeting_as_text"]

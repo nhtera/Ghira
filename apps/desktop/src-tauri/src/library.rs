@@ -40,8 +40,21 @@ pub struct MeetingRow {
     pub transcript_version: f64,
     pub cloud_used: bool,
     pub consent_confirmed: bool,
+    /// Notes template id (`None`: the default).
+    pub template: Option<String>,
+    /// Named speakers, for the people column and filter.
+    pub people: Vec<PersonChip>,
     /// The active job, if any.
     pub job: Option<MeetingJob>,
+}
+
+/// A named speaker as a chip: color + initial (never color alone).
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonChip {
+    pub name: String,
+    /// Palette slot 1..8 (0: Others).
+    pub color_slot: u32,
 }
 
 const JOB_KINDS: [&str; 3] = [
@@ -50,8 +63,11 @@ const JOB_KINDS: [&str; 3] = [
     ghi_core::notes_job::NOTES_FINAL_JOB,
 ];
 
-fn rows(core: &Core, limit: u32, offset: u32) -> Result<Vec<MeetingRow>, String> {
-    let store = core.store()?;
+/// The active job of each meeting that has one (the first in priority order).
+pub(crate) fn active_jobs(
+    core: &Core,
+    store: &ghi_store::store::Store,
+) -> Result<std::collections::HashMap<String, MeetingJob>, String> {
     let models = core.models();
     let (speech, llm) = (speech_ready(&models), llm_ready(&models));
     // All active jobs in one query, the first (in priority order) per meeting.
@@ -73,12 +89,30 @@ fn rows(core: &Core, limit: u32, offset: u32) -> Result<Vec<MeetingRow>, String>
             });
         }
     }
+    Ok(active)
+}
+
+fn rows(core: &Core, limit: u32, offset: u32) -> Result<Vec<MeetingRow>, String> {
+    let store = core.store()?;
+    let mut active = active_jobs(core, &store)?;
     let meetings = store
         .list_meetings(limit.min(500) as usize, offset as usize)
         .map_err(|e| e.to_string())?;
+    let gids: Vec<String> = meetings.iter().map(|m| m.gid.clone()).collect();
+    let mut people = store.named_speakers(&gids).map_err(|e| e.to_string())?;
     Ok(meetings
         .into_iter()
         .map(|m| MeetingRow {
+            people: people
+                .remove(&m.gid)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(name, slot)| PersonChip {
+                    name,
+                    color_slot: slot.clamp(0, 8) as u32,
+                })
+                .collect(),
+            template: m.template,
             job: active.remove(&m.gid),
             gid: m.gid,
             title: m.title,

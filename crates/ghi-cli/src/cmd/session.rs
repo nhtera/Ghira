@@ -392,6 +392,7 @@ pub fn import(args: &ImportArgs) -> Result<(), ErrorDoc> {
             title: args.title.clone(),
             language: language(args.lang),
             split_channels: args.split_channels,
+            ..Default::default()
         },
         &tx,
     )

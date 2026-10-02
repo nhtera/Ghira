@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-unstage-files"
+description = "Enables the unstage_files command without any pre-configured scope."
+commands.allow = ["unstage_files"]
+
+[[permission]]
+identifier = "deny-unstage-files"
+description = "Denies the unstage_files command without any pre-configured scope."
+commands.deny = ["unstage_files"]

@@ -16,6 +16,8 @@
 
 use std::io::Read;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use ghi_audio::decode::Decoder;
 use ghi_audio::encoder::{EncoderConfig, OpusRecorder};
@@ -36,7 +38,44 @@ pub struct ImportOptions {
     pub title: Option<String>,
     pub language: Option<String>,
     pub split_channels: bool,
+    /// When the recording was made (unix ms); default: the file's
+    /// modification time.
+    pub started_at: Option<i64>,
+    /// Set to stop the import (the half-made meeting is removed).
+    pub cancel: Option<Arc<AtomicBool>>,
+    /// Called with the new meeting and 0..1 as decoding advances.
+    pub on_progress: Option<OnProgress>,
+    /// The file's SHA-256 when already known (staging hashed it).
+    pub source_hash: Option<String>,
+    /// While this says so, decoding waits (a recording runs).
+    pub hold: Option<Hold>,
 }
+
+/// See [`ImportOptions::hold`].
+#[derive(Clone)]
+pub struct Hold(pub Arc<dyn Fn() -> bool + Send + Sync>);
+
+impl std::fmt::Debug for Hold {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Hold")
+    }
+}
+
+/// Gets the meeting being made and 0..1.
+pub type ProgressFn = dyn Fn(&str, f32) + Send + Sync;
+
+/// A progress callback for [`ImportOptions::on_progress`].
+#[derive(Clone)]
+pub struct OnProgress(pub Arc<ProgressFn>);
+
+impl std::fmt::Debug for OnProgress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OnProgress")
+    }
+}
+
+/// The error of an import stopped through [`ImportOptions::cancel`].
+pub const CANCELLED: &str = "import cancelled";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportReport {
@@ -48,6 +87,13 @@ pub struct ImportReport {
     pub tracks: usize,
     /// Jobs queued (the final pass; notes follow it).
     pub jobs: Vec<i64>,
+}
+
+/// A file's modification time (unix ms).
+fn modified_ms(path: &Path) -> Option<i64> {
+    let t = std::fs::metadata(path).ok()?.modified().ok()?;
+    let d = t.duration_since(std::time::UNIX_EPOCH).ok()?;
+    i64::try_from(d.as_millis()).ok()
 }
 
 /// SHA-256 (hex) of a file, streamed.
@@ -73,7 +119,10 @@ pub fn import_file(
     events: &EventTx,
 ) -> Result<ImportReport, String> {
     let err = |e: ghi_store::StoreError| e.to_string();
-    let hash = file_sha256(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let hash = match &opts.source_hash {
+        Some(h) => h.clone(),
+        None => file_sha256(path).map_err(|e| format!("{}: {e}", path.display()))?,
+    };
     if let Some(m) = store.meeting_by_source_hash(&hash).map_err(err)? {
         let meeting = store.get_meeting(&m).map_err(err)?;
         if meeting.status == IMPORTING {
@@ -106,7 +155,8 @@ pub fn import_file(
     let meeting = store
         .create_meeting(NewMeeting {
             title,
-            started_at: 0,
+            // When the recording was made: the file's own date by default.
+            started_at: opts.started_at.or_else(|| modified_ms(path)).unwrap_or(0),
             source: "file".into(),
             mode: if split { "call" } else { "room" }.into(),
             lang: opts.language.clone(),
@@ -118,6 +168,9 @@ pub fn import_file(
     store.set_source_hash(&meeting, &hash).map_err(err)?;
     // Any failure from here removes the half-made meeting (and frees the hash).
     let progress = |p: f32| {
+        if let Some(f) = &opts.on_progress {
+            (f.0)(&meeting, p);
+        }
         events.emit(Event::JobProgress {
             meeting: Some(meeting.clone()),
             job: 0,
@@ -146,6 +199,13 @@ pub fn import_file(
             .duration_ms
             .map(|d| d as f64 * f64::from(SAMPLE_RATE) / 1000.0);
         while let Some(block) = dec.next_block().map_err(|e| e.to_string())? {
+            if opts
+                .cancel
+                .as_ref()
+                .is_some_and(|c| c.load(Ordering::Relaxed))
+            {
+                return Err(CANCELLED.into());
+            }
             let n = block.frames();
             if split {
                 for (i, p) in pending.iter_mut().enumerate() {
@@ -225,7 +285,6 @@ mod tests {
     use super::*;
     use crate::events::bus;
     use ghi_store::keys::{MemoryKeyStore, Protection};
-    use std::sync::Arc;
 
     fn wav(path: &Path, rate: u32, channels: &[Vec<f32>]) {
         let n = channels[0].len();
@@ -355,5 +414,56 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn progress_date_and_cancel() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            &tmp.path().join("s"),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        let path = tmp.path().join("memo.wav");
+        wav(&path, 16_000, &[tone(440.0, 16_000, 2.0)]);
+        let (tx, _rx) = bus();
+        let seen = Arc::new(std::sync::Mutex::new(Vec::<(String, f32)>::new()));
+        let log = seen.clone();
+        let r = import_file(
+            &store,
+            &path,
+            &ImportOptions {
+                started_at: Some(1_700_000_000_000),
+                on_progress: Some(OnProgress(Arc::new(move |m, p| {
+                    log.lock().unwrap().push((m.to_string(), p))
+                }))),
+                ..Default::default()
+            },
+            &tx,
+        )
+        .unwrap();
+        let m = store.get_meeting(&r.meeting).unwrap();
+        assert_eq!(m.started_at, 1_700_000_000_000, "the file's own date");
+        let seen = seen.lock().unwrap();
+        assert!(seen.iter().all(|(g, _)| *g == r.meeting));
+        assert_eq!(seen.last().map(|(_, p)| *p), Some(1.0));
+
+        // Cancelled: an error, and no meeting is left behind.
+        let other = tmp.path().join("other.wav");
+        wav(&other, 16_000, &[tone(220.0, 16_000, 2.0)]);
+        let cancel = Arc::new(AtomicBool::new(true));
+        let e = import_file(
+            &store,
+            &other,
+            &ImportOptions {
+                cancel: Some(cancel),
+                ..Default::default()
+            },
+            &tx,
+        )
+        .unwrap_err();
+        assert_eq!(e, CANCELLED);
+        assert_eq!(store.list_meetings(10, 0).unwrap().len(), 1);
     }
 }

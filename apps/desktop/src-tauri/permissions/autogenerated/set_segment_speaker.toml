@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-segment-speaker"
+description = "Enables the set_segment_speaker command without any pre-configured scope."
+commands.allow = ["set_segment_speaker"]
+
+[[permission]]
+identifier = "deny-set-segment-speaker"
+description = "Denies the set_segment_speaker command without any pre-configured scope."
+commands.deny = ["set_segment_speaker"]

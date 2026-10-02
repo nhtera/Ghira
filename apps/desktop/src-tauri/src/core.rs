@@ -35,6 +35,8 @@ pub struct Core {
     /// Held for a whole start or stop, so they never overlap; the session
     /// slot itself is only locked briefly.
     lifecycle: Mutex<()>,
+    /// "Delete all data" is running: the store must not be reopened.
+    deleting: std::sync::atomic::AtomicBool,
     runner: Mutex<Option<Arc<JobRunner>>>,
     /// Meetings closed by crash recovery at this launch (D12 "recovered"),
     /// until the user dismisses the notice.
@@ -43,6 +45,8 @@ pub struct Core {
     settings: Mutex<Option<crate::system::AppSettings>>,
     /// The runner's thread, joined (bounded) at shutdown.
     runner_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
+    /// Opens the local notes model (the jobs' factory; "Ask this meeting").
+    llm: Mutex<Option<ghi_core::notes_job::LlmFactory>>,
     events: EventTx,
 }
 
@@ -82,6 +86,43 @@ fn platform_keystore(dir: &Path) -> Result<Arc<dyn KeyStore>, String> {
 
 #[cfg(not(any(target_os = "macos", windows)))]
 fn platform_keystore(_dir: &Path) -> Result<Arc<dyn KeyStore>, String> {
+    Err("no OS key store on this platform yet".into())
+}
+
+/// Where cloud API keys live: the Keychain (Windows: DPAPI files); debug
+/// builds use files next to the data directory unless `GHI_KEYSTORE=keychain`.
+pub(crate) fn secrets(
+    data: &Path,
+) -> Result<Box<dyn ghi_store::keys::secrets::SecretStore>, String> {
+    #[cfg(debug_assertions)]
+    if std::env::var("GHI_KEYSTORE").as_deref() != Ok("keychain") {
+        return Ok(Box::new(ghi_store::keys::secrets::FileSecrets::new(
+            data.join("store.devsecrets"),
+        )));
+    }
+    platform_secrets(data)
+}
+
+#[cfg(target_os = "macos")]
+fn platform_secrets(
+    _data: &Path,
+) -> Result<Box<dyn ghi_store::keys::secrets::SecretStore>, String> {
+    Ok(Box::new(ghi_store::keys::secrets::KeychainSecrets::new(
+        "com.nhtera.ghira",
+    )))
+}
+
+#[cfg(windows)]
+fn platform_secrets(data: &Path) -> Result<Box<dyn ghi_store::keys::secrets::SecretStore>, String> {
+    Ok(Box::new(ghi_store::keys::secrets::DpapiSecrets::new(
+        data.join("secrets"),
+    )))
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn platform_secrets(
+    _data: &Path,
+) -> Result<Box<dyn ghi_store::keys::secrets::SecretStore>, String> {
     Err("no OS key store on this platform yet".into())
 }
 
@@ -185,8 +226,10 @@ impl Core {
             store: Mutex::new(None),
             session: Mutex::new(None),
             lifecycle: Mutex::new(()),
+            deleting: std::sync::atomic::AtomicBool::new(false),
             runner: Mutex::new(None),
             runner_thread: Mutex::new(None),
+            llm: Mutex::new(None),
             settings: Mutex::new(None),
             recovered: Mutex::new(Vec::new()),
             events,
@@ -250,8 +293,70 @@ impl Core {
         self.data.join("models")
     }
 
+    /// "Delete all data" (Settings → Privacy): stops the jobs, crypto-shreds
+    /// every meeting and removes the database, audio, snapshots and cloud
+    /// keys; a fresh key ring is saved. The app restarts into onboarding.
+    pub fn delete_everything(&self) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        // No recording can start meanwhile.
+        let _lifecycle = lock(&self.lifecycle);
+        if lock(&self.session).is_some() {
+            return Err("stop the recording first".into());
+        }
+        if self.deleting.swap(true, Ordering::AcqRel) {
+            return Err("all data is already being deleted".into());
+        }
+        // From here `store()` refuses: nothing reopens the database.
+        let r = self.delete_locked();
+        if r.is_err() {
+            // Nothing was deleted: the next `store()` opens it again, with
+            // its job runner, once the last user has let go.
+            *lock(&self.settings) = None;
+        }
+        self.deleting.store(false, Ordering::Release);
+        r
+    }
+
+    fn delete_locked(&self) -> Result<(), String> {
+        self.shutdown(std::time::Duration::from_secs(5));
+        *lock(&self.runner) = None;
+        *lock(&self.llm) = None;
+        let Some(mut store) = lock(&self.store).take() else {
+            return Err("the store is not open".into());
+        };
+        // Short-lived users (an audio response, a command) let go quickly.
+        let since = std::time::Instant::now();
+        let store = loop {
+            match Arc::try_unwrap(store) {
+                Ok(s) => break s,
+                Err(again) if since.elapsed() < std::time::Duration::from_secs(10) => {
+                    store = again;
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(_) => return Err("the data is still in use: try again in a moment".into()),
+            }
+        };
+        let dir = self.data.join("store");
+        let ks = keystore(&dir)?;
+        store
+            .delete_all(ks.as_ref(), Protection::default())
+            .map_err(|e| e.to_string())?;
+        if let Ok(s) = self.secrets() {
+            for p in crate::cloud_cmd::PROVIDERS {
+                // The data is already gone; a key left behind is removable
+                // in Settings → AI.
+                let _ = s.delete(&format!("provider-{p}"));
+            }
+        }
+        *lock(&self.settings) = None;
+        Ok(())
+    }
+
     /// Opens the store on first use, runs crash recovery and starts the job runner.
     pub fn store(&self) -> Result<Arc<Store>, String> {
+        if self.deleting.load(std::sync::atomic::Ordering::Acquire) {
+            return Err("all data is being deleted".into());
+        }
         let mut slot = lock(&self.store);
         if let Some(s) = slot.as_ref() {
             return Ok(s.clone());
@@ -287,6 +392,7 @@ impl Core {
             .map(|l| Box::new(l) as Box<dyn ghi_llm::Llm + Send>)
             .map_err(|e| e.to_string())
         });
+        *lock(&self.llm) = Some(llm.clone());
         let runner = JobRunner::new(
             store.clone(),
             self.events.clone(),
@@ -474,6 +580,19 @@ impl Core {
         Ok(f(&s))
     }
 
+    /// Cloud API keys (never shown, never sent anywhere but their provider).
+    pub fn secrets(&self) -> Result<Box<dyn ghi_store::keys::secrets::SecretStore>, String> {
+        secrets(&self.data)
+    }
+
+    /// The local notes model's factory (once the store is open).
+    pub fn llm(&self) -> Result<ghi_core::notes_job::LlmFactory, String> {
+        self.store()?;
+        lock(&self.llm)
+            .clone()
+            .ok_or_else(|| "the notes model is not set up".into())
+    }
+
     /// Wakes the job runner (models arrived, a job was queued).
     pub fn notify_jobs(&self) {
         if let Some(r) = lock(&self.runner).as_ref() {
@@ -481,25 +600,17 @@ impl Core {
         }
     }
 
+    /// Imports a file the user chose (staged by import_cmd.rs).
     pub fn import(
         &self,
         path: &Path,
-        split_channels: bool,
+        opts: ghi_core::import::ImportOptions,
     ) -> Result<ghi_core::import::ImportReport, String> {
-        // Only a real file (the webview passes a path).
         if !path.is_absolute() || !path.is_file() {
             return Err("not a file".into());
         }
         let store = self.store()?;
-        let r = ghi_core::import::import_file(
-            &store,
-            path,
-            &ghi_core::import::ImportOptions {
-                split_channels,
-                ..Default::default()
-            },
-            &self.events,
-        )?;
+        let r = ghi_core::import::import_file(&store, path, &opts, &self.events)?;
         if let Some(runner) = lock(&self.runner).as_ref() {
             runner.notify();
         }

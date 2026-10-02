@@ -392,8 +392,19 @@ fn retention_deletes_audio_and_keeps_text() {
         record(&store, g, &[b"pcm"]);
     }
     let anchor = store.anchor_for_range(&expired, 0, 500).unwrap();
+    store.set_waveform(&expired, &[1, 2, 3]).unwrap();
+    store.set_waveform(&kept, &[9]).unwrap();
+    store.set_waveform(&kept, &[4, 5]).unwrap();
+    assert_eq!(store.waveform(&expired).unwrap(), Some(vec![1, 2, 3]));
+    assert_eq!(store.waveform(&forever).unwrap(), None);
 
     let report = store.retention_sweep(2_000).unwrap();
+    assert_eq!(
+        store.waveform(&expired).unwrap(),
+        None,
+        "goes with the audio"
+    );
+    assert_eq!(store.waveform(&kept).unwrap(), Some(vec![4, 5]));
     assert_eq!((report.meetings, report.tracks), (1, 1));
     assert!(!store.audio_available(&expired).unwrap());
     assert!(store.audio_available(&kept).unwrap() && store.audio_available(&forever).unwrap());
@@ -864,4 +875,158 @@ fn ghi_bundle_path_signature_is_a_result() {
     let m = common::meeting(&store, "t");
     let p: Result<std::path::PathBuf, StoreError> = store.bundle_path(&m, TrackKind::File);
     assert!(p.unwrap().ends_with(format!("{m}/file.ghb")));
+}
+
+#[test]
+fn action_owner_edits_keep_ai_items_and_deletes_leave_a_tombstone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let m = common::meeting(&store, "Owners");
+    let other = common::meeting(&store, "Other");
+    let sp = store.add_speaker(&m, NewSpeaker::default()).unwrap();
+    let foreign = store.add_speaker(&other, NewSpeaker::default()).unwrap();
+    let a = store
+        .add_action_item(
+            &m,
+            NewActionItem {
+                text: "Send the deck".into(),
+                provenance: Provenance::Ai,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    store.set_action_owner(&a.gid, Some(&sp)).unwrap();
+    let got = &store.action_items(&m).unwrap()[0];
+    assert_eq!(got.owner_speaker_gid.as_deref(), Some(sp.as_str()));
+    assert_eq!(got.provenance, Provenance::AiEdited, "kept by a regenerate");
+    // Another meeting's speaker never becomes the owner.
+    assert!(matches!(
+        store.set_action_owner(&a.gid, Some(&foreign)),
+        Err(StoreError::NotFound { .. })
+    ));
+    store.set_action_owner(&a.gid, None).unwrap();
+    assert_eq!(store.action_items(&m).unwrap()[0].owner_speaker_gid, None);
+    assert_eq!(
+        store
+            .meeting_of(ghi_store::store::Item::ActionItem, &a.gid)
+            .unwrap(),
+        m
+    );
+    assert_eq!(
+        store
+            .meeting_of(ghi_store::store::Item::Speaker, &foreign)
+            .unwrap(),
+        other
+    );
+
+    store.set_meeting_template(&m, Some("standup")).unwrap();
+    assert_eq!(
+        store.get_meeting(&m).unwrap().template.as_deref(),
+        Some("standup")
+    );
+
+    store.delete_action_item(&a.gid).unwrap();
+    assert!(store.action_items(&m).unwrap().is_empty());
+    assert!(matches!(
+        store.delete_action_item(&a.gid),
+        Err(StoreError::NotFound { .. })
+    ));
+}
+
+#[test]
+fn named_speakers_per_meeting_in_one_call() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let a = common::meeting(&store, "A");
+    let b = common::meeting(&store, "B");
+    let named = |m: &str, name: Option<&str>, slot| {
+        store
+            .add_speaker(
+                m,
+                NewSpeaker {
+                    display_name: name.map(Into::into),
+                    color_slot: slot,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+    };
+    named(&a, Some("Nguyễn Văn An"), 2);
+    named(&a, None, 3);
+    let gone = named(&a, Some("Dup"), 4);
+    let keep = named(&a, Some("Lan"), 5);
+    store.merge_speakers(&gone, &keep).unwrap();
+    named(&b, Some("Bình"), 1);
+    let got = store.named_speakers(std::slice::from_ref(&a)).unwrap();
+    assert_eq!(got.len(), 1, "only the meetings asked for");
+    assert_eq!(
+        got[&a],
+        vec![("Nguyễn Văn An".to_string(), 2), ("Lan".to_string(), 5)]
+    );
+}
+
+#[test]
+fn cloud_lock_and_the_request_log() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let m = common::meeting(&store, "Cloud");
+    store.set_cloud_locked(&m, true).unwrap();
+    assert!(store.get_meeting(&m).unwrap().cloud_locked);
+    store
+        .record_cloud_request(&m, "openai", "gpt-4.1-mini", 1200, 300)
+        .unwrap();
+    store
+        .record_cloud_request(&m, "anthropic", "claude-haiku-4-5", 10, 0)
+        .unwrap();
+    let log = store.cloud_requests(10).unwrap();
+    assert_eq!(log.len(), 2);
+    assert_eq!(log[0].provider, "anthropic", "newest first");
+    assert_eq!((log[1].tokens_in, log[1].tokens_out), (1200, 300));
+    assert!(store.get_meeting(&m).unwrap().cloud_used);
+}
+
+#[test]
+fn a_retention_policy_applies_to_every_meeting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    // Recorded long ago but imported now: its audio is kept the whole period.
+    let old = store
+        .create_meeting(NewMeeting {
+            title: "cũ".into(),
+            started_at: 1_000,
+            ..Default::default()
+        })
+        .unwrap()
+        .gid;
+    let recent = store
+        .create_meeting(NewMeeting {
+            title: "mới".into(),
+            ..Default::default()
+        })
+        .unwrap()
+        .gid;
+    for g in [&old, &recent] {
+        record(&store, g, &[b"pcm"]);
+    }
+    assert_eq!(store.apply_retention_days(Some(30)).unwrap(), 2);
+    assert_eq!(
+        store.apply_retention_days(Some(30)).unwrap(),
+        0,
+        "no change"
+    );
+    let until = store
+        .get_meeting(&old)
+        .unwrap()
+        .audio_retained_until
+        .unwrap();
+    assert!(until > 1_000 + 30 * 86_400_000, "counted from the import");
+    let r = store.retention_sweep_now().unwrap();
+    assert_eq!(r.meetings, 0, "both came into the store just now");
+    assert!(store.audio_available(&old).unwrap());
+    assert!(store.audio_available(&recent).unwrap());
+    store.apply_retention_days(None).unwrap();
+    assert_eq!(
+        store.get_meeting(&recent).unwrap().audio_retained_until,
+        None
+    );
 }

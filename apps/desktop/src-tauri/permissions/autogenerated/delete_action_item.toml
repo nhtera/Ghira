@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-delete-action-item"
+description = "Enables the delete_action_item command without any pre-configured scope."
+commands.allow = ["delete_action_item"]
+
+[[permission]]
+identifier = "deny-delete-action-item"
+description = "Denies the delete_action_item command without any pre-configured scope."
+commands.deny = ["delete_action_item"]

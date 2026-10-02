@@ -282,6 +282,27 @@ pub struct ReplacedNotes {
     pub added: usize,
 }
 
+/// Kinds of items that belong to a meeting ([`Store::meeting_of`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Item {
+    Segment,
+    NoteBlock,
+    ActionItem,
+    Speaker,
+}
+
+/// One logged cloud request (no content: who, what model, how many tokens, when).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloudRequest {
+    pub meeting_gid: String,
+    pub provider: String,
+    pub model: String,
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    /// Unix ms.
+    pub at: i64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Mark {
     pub gid: String,
@@ -606,8 +627,8 @@ impl Store {
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tx.execute(
             "INSERT INTO meetings (gid, title_ct, started_at, source, mode, lang, template, sensitive,
-                                   dek_wrapped, audio_retained_until, lamport)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                                   dek_wrapped, audio_retained_until, lamport, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 gid,
                 title_ct,
@@ -619,7 +640,8 @@ impl Store {
                 new.sensitive,
                 wrapped,
                 new.audio_retained_until,
-                lamport
+                lamport,
+                now_ms(),
             ],
         )?;
         let id = tx.last_insert_rowid();
@@ -711,6 +733,16 @@ impl Store {
     /// (the voiceprint and cloud gates read it).
     pub fn set_consent_confirmed(&self, gid: &str, confirmed: bool) -> Result<()> {
         self.update_meeting(gid, "consent_confirmed = ?1", i64::from(confirmed))
+    }
+
+    /// "Never send to cloud" for this meeting: every cloud request is refused.
+    pub fn set_cloud_locked(&self, gid: &str, locked: bool) -> Result<()> {
+        self.update_meeting(gid, "cloud_locked = ?1", i64::from(locked))
+    }
+
+    /// The notes template the meeting's notes are written with (`None`: default).
+    pub fn set_meeting_template(&self, gid: &str, template: Option<&str>) -> Result<()> {
+        self.update_meeting(gid, "template = ?1", template)
     }
 
     /// Records the final duration and marks the meeting `done`.
@@ -854,6 +886,43 @@ impl Store {
                 },
             )
             .collect()
+    }
+
+    /// The named speakers (not merged away) of each of `meeting_gids`, in
+    /// label order, as `(name, color slot)`: the library's people column and
+    /// filter, in one query.
+    pub fn named_speakers(
+        &self,
+        meeting_gids: &[String],
+    ) -> Result<HashMap<String, Vec<(String, i64)>>> {
+        let conn = self.conn();
+        let want =
+            serde_json::to_string(meeting_gids).map_err(|e| StoreError::Invalid(e.to_string()))?;
+        let mut stmt = conn.prepare_cached(
+            "SELECT m.id, m.gid, s.gid, s.display_name_ct, s.color_slot
+             FROM speakers s JOIN meetings m ON m.id = s.meeting_id
+             WHERE s.display_name_ct IS NOT NULL AND s.merged_into IS NULL
+               AND m.gid IN (SELECT value FROM json_each(?1))
+             ORDER BY m.id, s.label_idx, s.id",
+        )?;
+        let rows = stmt
+            .query_map([want], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Vec<u8>>(3)?,
+                    r.get::<_, i64>(4)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut out: HashMap<String, Vec<(String, i64)>> = HashMap::new();
+        for (id, meeting, gid, ct, slot) in rows {
+            let dek = self.dek(&conn, id)?;
+            let name = open_text(&dek, &ct, &row_aad("speakers", "display_name_ct", &gid))?;
+            out.entry(meeting).or_default().push((name, slot));
+        }
+        Ok(out)
     }
 
     // ------------------------------------------------------------ tracks
@@ -1123,6 +1192,72 @@ impl Store {
     }
 
     /// Word timings of a segment, in order.
+    /// Word timings of every current segment of a meeting, by segment gid
+    /// (one query for the whole transcript).
+    pub fn meeting_words(&self, meeting_gid: &str) -> Result<HashMap<String, Vec<Word>>> {
+        let conn = self.conn();
+        let m = Store::meeting_ref(&conn, meeting_gid)?;
+        let mut stmt = conn.prepare_cached(
+            "SELECT s.gid, w.t0_ms, w.t1_ms, w.conf FROM words w JOIN segments s ON s.id = w.segment_id
+             WHERE s.meeting_id = ?1 AND s.version = ?2 ORDER BY s.id, w.idx",
+        )?;
+        let mut out: HashMap<String, Vec<Word>> = HashMap::new();
+        let rows = stmt.query_map(params![m.id, m.version], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                Word {
+                    t0_ms: r.get(1)?,
+                    t1_ms: r.get(2)?,
+                    conf: r.get(3)?,
+                },
+            ))
+        })?;
+        for row in rows {
+            let (gid, w) = row?;
+            out.entry(gid).or_default().push(w);
+        }
+        Ok(out)
+    }
+
+    /// The meeting an item belongs to (no decryption): for ownership checks.
+    pub fn meeting_of(&self, item: Item, gid: &str) -> Result<String> {
+        let table = match item {
+            Item::Segment => "segments",
+            Item::NoteBlock => "notes_blocks",
+            Item::ActionItem => "action_items",
+            Item::Speaker => "speakers",
+        };
+        self.conn()
+            .query_row(
+                &format!("SELECT m.gid FROM {table} t JOIN meetings m ON m.id = t.meeting_id WHERE t.gid = ?1"),
+                [gid],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound {
+                kind: table,
+                gid: gid.to_string(),
+            })
+    }
+
+    /// Deletes note blocks of one meeting in one transaction.
+    pub fn delete_note_blocks(&self, note_gids: &[String]) -> Result<()> {
+        let mut conn = self.conn();
+        let ids: Vec<(i64, &String)> = note_gids
+            .iter()
+            .map(|g| id_of(&conn, "notes_blocks", g).map(|id| (id, g)))
+            .collect::<Result<_>>()?;
+        let tx = conn.transaction()?;
+        let first = Store::alloc_lamport(&tx, ids.len().max(1) as i64)?;
+        for (n, (id, gid)) in ids.iter().enumerate() {
+            tombstones::write(&tx, gid, "note", first + n as i64)?;
+            tx.execute("DELETE FROM notes_fts WHERE rowid = ?1", [id])?;
+            tx.execute("DELETE FROM notes_blocks WHERE id = ?1", [id])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn segment_words(&self, segment_gid: &str) -> Result<Vec<Word>> {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
@@ -1414,6 +1549,29 @@ impl Store {
         Ok(())
     }
 
+    /// The cloud request log, newest first (the "request log" in Settings → AI).
+    pub fn cloud_requests(&self, limit: usize) -> Result<Vec<CloudRequest>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT m.gid, c.provider, c.model, c.tokens_in, c.tokens_out, c.at
+             FROM cloud_requests c JOIN meetings m ON m.id = c.meeting_id
+             ORDER BY c.at DESC, c.id DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map([limit as i64], |r| {
+                Ok(CloudRequest {
+                    meeting_gid: r.get(0)?,
+                    provider: r.get(1)?,
+                    model: r.get(2)?,
+                    tokens_in: r.get::<_, i64>(3)?.max(0) as u64,
+                    tokens_out: r.get::<_, i64>(4)?.max(0) as u64,
+                    at: r.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     pub fn action_items(&self, meeting_gid: &str) -> Result<Vec<ActionItem>> {
         let conn = self.conn();
         let m = Store::meeting_ref(&conn, meeting_gid)?;
@@ -1480,6 +1638,56 @@ impl Store {
                 gid: action_gid.to_string(),
             });
         }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Sets who owns an action item (`None`: nobody). AI-written items become
+    /// `ai_edited`, so a regenerate keeps them.
+    pub fn set_action_owner(&self, action_gid: &str, speaker_gid: Option<&str>) -> Result<()> {
+        let mut conn = self.conn();
+        if let Some(sp) = speaker_gid {
+            let same: bool = conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM speakers s JOIN action_items a
+                     ON a.meeting_id = s.meeting_id WHERE s.gid = ?1 AND a.gid = ?2)",
+                params![sp, action_gid],
+                |r| r.get(0),
+            )?;
+            if !same {
+                return Err(StoreError::NotFound {
+                    kind: "speaker",
+                    gid: sp.to_string(),
+                });
+            }
+        }
+        let tx = conn.transaction()?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        let n = tx.execute(
+            "UPDATE action_items SET owner_speaker_id =
+                    (SELECT id FROM speakers WHERE gid = ?1
+                       AND meeting_id = action_items.meeting_id),
+                    lamport = ?2,
+                    provenance = CASE provenance WHEN 'ai' THEN 'ai_edited' ELSE provenance END
+             WHERE gid = ?3",
+            params![speaker_gid, lamport, action_gid],
+        )?;
+        if n == 0 {
+            return Err(StoreError::NotFound {
+                kind: "action item",
+                gid: action_gid.to_string(),
+            });
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn delete_action_item(&self, action_gid: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let id = id_of(&conn, "action_items", action_gid)?;
+        let tx = conn.transaction()?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        tombstones::write(&tx, action_gid, "action_item", lamport)?;
+        tx.execute("DELETE FROM action_items WHERE id = ?1", [id])?;
         tx.commit()?;
         Ok(())
     }

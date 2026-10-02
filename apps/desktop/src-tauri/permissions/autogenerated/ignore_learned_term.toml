@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ignore-learned-term"
+description = "Enables the ignore_learned_term command without any pre-configured scope."
+commands.allow = ["ignore_learned_term"]
+
+[[permission]]
+identifier = "deny-ignore-learned-term"
+description = "Denies the ignore_learned_term command without any pre-configured scope."
+commands.deny = ["ignore_learned_term"]

@@ -13,11 +13,11 @@
 //! not a crypto-shred: the meeting's key must stay for the text. Use
 //! [`Store::delete_meeting`] to make everything unreadable.
 
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 
-use crate::Result;
+use crate::rowcrypt::{self, row_aad};
 use crate::store::{Store, now_ms};
-use crate::tombstones;
+use crate::{Result, tombstones};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RetentionReport {
@@ -66,11 +66,65 @@ impl Store {
                 lamport,
             )?;
             let n = tx.execute("DELETE FROM tracks WHERE meeting_id = ?1", params![id])?;
+            tx.execute("DELETE FROM waveforms WHERE meeting_id = ?1", params![id])?;
             tx.commit()?;
             report.meetings += 1;
             report.tracks += n as u32;
         }
         Ok(report)
+    }
+
+    /// Applies a retention policy to every meeting: audio is kept `days`
+    /// after the meeting started or came into the store, whichever is later
+    /// (`None`: kept until the meeting is deleted).
+    /// The next [`Store::retention_sweep`] deletes what is past it.
+    pub fn apply_retention_days(&self, days: Option<u32>) -> Result<usize> {
+        let ms = days.map(|d| i64::from(d) * 86_400_000);
+        let conn = self.conn();
+        Ok(conn.execute(
+            "UPDATE meetings SET audio_retained_until =
+                 CASE WHEN ?1 IS NULL THEN NULL ELSE MAX(started_at, created_at) + ?1 END
+             WHERE audio_retained_until IS NOT
+                 (CASE WHEN ?1 IS NULL THEN NULL ELSE MAX(started_at, created_at) + ?1 END)",
+            params![ms],
+        )?)
+    }
+
+    /// The cached waveform of a meeting's audio (see [`Store::set_waveform`]).
+    pub fn waveform(&self, meeting_gid: &str) -> Result<Option<Vec<u8>>> {
+        let conn = self.conn();
+        let m = Store::meeting_ref(&conn, meeting_gid)?;
+        let ct: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT data_ct FROM waveforms WHERE meeting_id = ?1",
+                [m.id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(ct) = ct else { return Ok(None) };
+        let dek = self.dek(&conn, m.id)?;
+        Ok(Some(rowcrypt::open(
+            &dek,
+            &ct,
+            &row_aad("waveforms", "data_ct", meeting_gid),
+        )?))
+    }
+
+    /// Caches a waveform (loudness per 100 ms) computed from the meeting's
+    /// audio; dropped with the audio.
+    pub fn set_waveform(&self, meeting_gid: &str, data: &[u8]) -> Result<()> {
+        let conn = self.conn();
+        let m = Store::meeting_ref(&conn, meeting_gid)?;
+        let dek = self.dek(&conn, m.id)?;
+        let ct = rowcrypt::seal(&dek, data, &row_aad("waveforms", "data_ct", meeting_gid));
+        // Only while the audio is there (a sweep may have run meanwhile).
+        conn.execute(
+            "INSERT INTO waveforms (meeting_id, data_ct)
+             SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM tracks WHERE meeting_id = ?1)
+             ON CONFLICT (meeting_id) DO UPDATE SET data_ct = excluded.data_ct",
+            params![m.id, ct],
+        )?;
+        Ok(())
     }
 
     /// Sweep with the current time.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { commands, events } from "../bindings";
 import type { Ipc } from "./ipc";
 
@@ -11,4 +12,7 @@ export const tauriIpc: Ipc = {
   onNavigate: (cb) => events.navigate.listen((e) => cb(e.payload)),
   onQuitRequested: (cb) => events.quitRequested.listen((e) => cb(e.payload)),
   onModelDownload: (cb) => events.modelDownload.listen((e) => cb(e.payload)),
+  onImportStaged: (cb) => events.importStaged.listen((e) => cb(e.payload)),
+  onImportUpdate: (cb) => events.importUpdate.listen((e) => cb(e.payload)),
+  audioUrl: (token) => convertFileSrc(token, "ghi-audio"),
 };

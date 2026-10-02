@@ -10,6 +10,7 @@
 
 use std::sync::Arc;
 
+use ghi_llm::enhance::{self, NoteLine};
 use ghi_llm::notes::{self, Notes, Options};
 use ghi_llm::template::{OutLang, Template};
 use ghi_llm::{Llm, Transcript};
@@ -87,6 +88,24 @@ pub fn kept_texts(store: &Store, meeting: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// Kind of the AI lines that expand one of the user's own notes
+/// (`enhanced:<user block gid>`). An empty body says the transcript has
+/// nothing for that note ("not found").
+pub const ENHANCED_PREFIX: &str = "enhanced:";
+
+/// Time anchors for segment indexes (citations).
+fn anchors_for(
+    store: &Store,
+    meeting: &str,
+    segs: &[Segment],
+    ids: &[u64],
+) -> Result<Vec<ghi_store::anchors::Anchor>, String> {
+    ids.iter()
+        .filter_map(|&i| segs.get(i as usize))
+        .map(|s| store.anchor_for_segment(meeting, s).map_err(store_err))
+        .collect()
+}
+
 /// Replaces the meeting's AI notes with `n`; citations become time anchors.
 pub fn save_notes(
     store: &Store,
@@ -94,12 +113,95 @@ pub fn save_notes(
     n: &Notes,
     segs: &[Segment],
 ) -> Result<ReplacedNotes, String> {
-    let anchors = |ids: &[u64]| -> Result<Vec<ghi_store::anchors::Anchor>, String> {
-        ids.iter()
-            .filter_map(|&i| segs.get(i as usize))
-            .map(|s| store.anchor_for_segment(meeting, s).map_err(store_err))
-            .collect()
+    save_notes_with(store, meeting, n, segs, Vec::new())
+}
+
+/// The user's own notes, expanded from the transcript with citations (doc 02
+/// §D): AI blocks of kind `enhanced:<gid>` to add with the notes.
+pub fn enhance_user_notes(
+    store: &Store,
+    meeting: &str,
+    llm: &mut dyn Llm,
+    t: &Transcript,
+    segs: &[Segment],
+    lang: OutLang,
+) -> Result<Vec<NewNoteBlock>, String> {
+    let all = store.note_blocks(meeting).map_err(store_err)?;
+    // A note whose expansion the user edited keeps that one.
+    let kept = |gid: &str| {
+        let kind = format!("{ENHANCED_PREFIX}{gid}");
+        all.iter()
+            .any(|b| b.kind == kind && b.provenance != Provenance::Ai)
     };
+    let users: Vec<_> = all
+        .iter()
+        .filter(|b| b.provenance == Provenance::User && !b.body.trim().is_empty())
+        .filter(|b| !kept(&b.gid))
+        .collect();
+    if users.is_empty() || t.is_empty() {
+        return Ok(Vec::new());
+    }
+    let lines: Vec<NoteLine> = users
+        .iter()
+        .map(|b| NoteLine {
+            text: b.body.clone(),
+            t_ms: b.anchors.first().map(|a| a.t0_ms),
+        })
+        .collect();
+    let run = enhance::enhance(llm, t, &lines, lang).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for (b, e) in users.iter().zip(run.lines) {
+        let kind = format!("{ENHANCED_PREFIX}{}", b.gid);
+        if e.not_found || e.points.is_empty() {
+            out.push(NewNoteBlock {
+                kind,
+                provenance: Provenance::Ai,
+                body: String::new(),
+                anchors: Vec::new(),
+                pinned: false,
+            });
+            continue;
+        }
+        for p in e.points {
+            out.push(NewNoteBlock {
+                kind: kind.clone(),
+                provenance: Provenance::Ai,
+                body: p.text,
+                anchors: anchors_for(store, meeting, segs, &p.citations)?,
+                pinned: false,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// The current AI expansions of the user's notes, to keep when enhancing
+/// fails (a regenerate replaces every AI block).
+pub fn previous_enhanced(store: &Store, meeting: &str) -> Result<Vec<NewNoteBlock>, String> {
+    Ok(store
+        .note_blocks(meeting)
+        .map_err(store_err)?
+        .into_iter()
+        .filter(|b| b.provenance == Provenance::Ai && b.kind.starts_with(ENHANCED_PREFIX))
+        .map(|b| NewNoteBlock {
+            kind: b.kind,
+            provenance: Provenance::Ai,
+            body: b.body,
+            anchors: b.anchors,
+            pinned: false,
+        })
+        .collect())
+}
+
+/// [`save_notes`] plus `extra` AI blocks (the enhanced user notes).
+pub fn save_notes_with(
+    store: &Store,
+    meeting: &str,
+    n: &Notes,
+    segs: &[Segment],
+    extra: Vec<NewNoteBlock>,
+) -> Result<ReplacedNotes, String> {
+    let anchors = |ids: &[u64]| anchors_for(store, meeting, segs, ids);
     let mut blocks = Vec::new();
     let mut block = |kind: &str, text: &str, ids: &[u64]| -> Result<(), String> {
         blocks.push(NewNoteBlock {
@@ -131,6 +233,7 @@ pub fn save_notes(
             block(&format!("section:{}", sec.id), &i.text, &i.citations)?;
         }
     }
+    blocks.extend(extra);
     let mut actions = Vec::new();
     for a in &n.action_items {
         let all = anchors(&a.citations)?;
@@ -207,16 +310,45 @@ impl JobHandler for NotesJob {
             return Ok(Outcome::Done);
         }
         if !t.is_empty() {
+            // A regenerate may pick the template and language (payload); else
+            // the meeting's template, else the default.
+            let payload = &ctx.job.payload;
+            let template = [
+                payload
+                    .get("template")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                ctx.store.get_meeting(meeting).map_err(store_err)?.template,
+            ]
+            .into_iter()
+            .flatten()
+            .find_map(|id| ghi_llm::template::builtin(&id).ok())
+            .unwrap_or_else(|| self.template.clone());
+            let lang = payload
+                .get("lang")
+                .and_then(|v| v.as_str())
+                .unwrap_or("meeting");
             let mut opts = Options::new(
-                self.template.clone(),
-                OutLang::resolve("meeting", &t).unwrap_or(OutLang::En),
+                template,
+                OutLang::resolve(lang, &t)
+                    .or_else(|_| OutLang::resolve("meeting", &t))
+                    .unwrap_or(OutLang::En),
             );
             opts.pinned = kept_texts(ctx.store, meeting)?;
             let bytes: usize = segs.iter().map(|s| s.text.len()).sum();
             let mut llm = (self.llm)(bytes)?;
             let run = notes::generate(llm.as_mut(), &t, &opts).map_err(|e| e.to_string())?;
+            // The final notes also expand the user's own lines; a failure
+            // there leaves them as typed (the notes still count).
+            let extra = if self.version >= 2 {
+                ctx.progress(Some(Stage::WritingNotes), 0.8);
+                enhance_user_notes(ctx.store, meeting, llm.as_mut(), &t, &segs, opts.lang)
+                    .or_else(|_| previous_enhanced(ctx.store, meeting))?
+            } else {
+                Vec::new()
+            };
             drop(llm); // frees the model before anything else loads
-            save_notes(ctx.store, meeting, &run.notes, &segs)?;
+            save_notes_with(ctx.store, meeting, &run.notes, &segs, extra)?;
         }
         if self.version >= 2 {
             ctx.store

@@ -11,6 +11,62 @@
 /// At most this many terms (doc 02 §B).
 pub const MAX_TERMS: usize = 200;
 
+/// Store setting: the user's own terms (a JSON list of strings).
+pub const TERMS_SETTING: &str = "vocabulary";
+/// Store setting: learned names the user removed (a JSON list of strings).
+pub const IGNORED_SETTING: &str = "vocabulary.ignored";
+
+fn list(store: &ghi_store::store::Store, key: &str) -> Result<Vec<String>, String> {
+    Ok(store
+        .get_setting(key)
+        .map_err(|e| e.to_string())?
+        .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
+        .unwrap_or_default())
+}
+
+/// The user's own terms.
+pub fn user_terms(store: &ghi_store::store::Store) -> Result<Vec<String>, String> {
+    list(store, TERMS_SETTING)
+}
+
+/// Names learned from the speakers the user named (RT-14), minus the ones
+/// they removed and the ones already among their terms; sorted.
+pub fn learned_terms(store: &ghi_store::store::Store) -> Result<Vec<String>, String> {
+    let fold = |s: &str| ghi_text::fold(s);
+    let ignored: Vec<String> = list(store, IGNORED_SETTING)?
+        .iter()
+        .map(|s| fold(s))
+        .collect();
+    let own: Vec<String> = user_terms(store)?.iter().map(|s| fold(s)).collect();
+    let gids: Vec<String> = store
+        .list_meetings(100_000, 0)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|m| m.gid)
+        .collect();
+    let mut names: Vec<String> = store
+        .named_speakers(&gids)
+        .map_err(|e| e.to_string())?
+        .into_values()
+        .flatten()
+        .map(|(n, _)| n.trim().to_string())
+        .filter(|n| n.chars().count() >= 2)
+        .filter(|n| !ignored.contains(&fold(n)) && !own.contains(&fold(n)))
+        .collect();
+    names.sort_by_key(|n| fold(n));
+    names.dedup_by(|a, b| fold(a) == fold(b));
+    Ok(names)
+}
+
+/// What the final pass corrects towards: the user's terms, then learned names,
+/// at most [`MAX_TERMS`].
+pub fn effective_terms(store: &ghi_store::store::Store) -> Result<Vec<String>, String> {
+    let mut t = user_terms(store)?;
+    t.extend(learned_terms(store)?);
+    t.truncate(MAX_TERMS);
+    Ok(t)
+}
+
 #[derive(Debug, Clone)]
 pub struct Vocabulary {
     /// (term as written, folded words).

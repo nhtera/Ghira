@@ -36,13 +36,19 @@ ghi-models = { path = "../../../crates/ghi-models" }
 ghi-net = { path = "../../../crates/ghi-net" }
 ghi-speech = { path = "../../../crates/ghi-speech" }
 ghi-store = { path = "../../../crates/ghi-store" }
+ghi-text = { path = "../../../crates/ghi-text" }
+zeroize = "1"
 serde_json = "1"
 rand_core = { version = "0.6", features = ["getrandom"] }
+rfd = "0.17"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Non-activating panels for the menu-bar popover and the mini-recorder.
 tauri-nspanel = "2.1"
 objc2-app-kit = { version = "0.3", features = ["NSWindow"] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true
