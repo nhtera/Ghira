@@ -354,6 +354,10 @@ impl JobHandler for NotesJob {
             ctx.store
                 .set_meeting_status(meeting, "ready")
                 .map_err(store_err)?;
+            // The transcript is final: queue its semantic index. It waits for
+            // the embedding model; a failure here costs nothing (the app
+            // queues what is missing at startup).
+            let _ = crate::index_job::queue_one(ctx.store, meeting);
         }
         ctx.events.emit(Event::NotesReady {
             meeting: meeting.to_string(),

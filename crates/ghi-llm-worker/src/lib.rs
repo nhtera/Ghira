@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Protocol revision; bump on any incompatible change to the lines below.
-pub const PROTOCOL: u32 = 2;
+///
+/// 3 added the embedding ops (`load_embed`, `embed`); the notes ops are
+/// unchanged from 2.
+pub const PROTOCOL: u32 = 3;
 
 /// First line the worker writes: `{"kind":"hello","protocol":1,"worker":"0.1.0"}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,6 +72,19 @@ pub enum Op {
     Count {
         text: String,
     },
+    /// Load an embedding model (a worker serves either the notes LLM or an
+    /// embedder, never both). Last-token pooling, L2-normalized output.
+    LoadEmbed {
+        model_path: String,
+        /// Longest text embedded, in tokens; longer texts are cut.
+        max_tokens: u32,
+        n_gpu_layers: u32,
+    },
+    /// One vector per text, in order. The texts are embedded exactly as given
+    /// (the caller adds any query instruction).
+    Embed {
+        texts: Vec<String>,
+    },
     Health,
     Shutdown,
 }
@@ -99,6 +115,16 @@ pub enum Body {
     },
     Counted {
         tokens: u32,
+    },
+    EmbedLoaded {
+        /// Vector length.
+        dim: u32,
+        load_s: f64,
+    },
+    Embedded {
+        dim: u32,
+        /// One unit-length vector per input text.
+        vectors: Vec<Vec<f32>>,
     },
     /// Sent while a `complete` runs (after each prompt batch and every few
     /// output tokens), with the request's id, before its final reply. The
@@ -157,6 +183,20 @@ mod tests {
                 },
             },
             Request {
+                id: 6,
+                op: Op::LoadEmbed {
+                    model_path: "/m/e.gguf".into(),
+                    max_tokens: 2048,
+                    n_gpu_layers: 999,
+                },
+            },
+            Request {
+                id: 7,
+                op: Op::Embed {
+                    texts: vec!["họp quý bốn".into(), "q4 planning".into()],
+                },
+            },
+            Request {
                 id: 3,
                 op: Op::Health,
             },
@@ -208,6 +248,14 @@ mod tests {
                 wall_s: 0.25,
             },
             Body::Counted { tokens: 12 },
+            Body::EmbedLoaded {
+                dim: 1024,
+                load_s: 0.5,
+            },
+            Body::Embedded {
+                dim: 2,
+                vectors: vec![vec![0.6, 0.8], vec![-1.0, 0.0]],
+            },
             Body::Health { loaded: false },
             Body::Error {
                 message: "boom".into(),

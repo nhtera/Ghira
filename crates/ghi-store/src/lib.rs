@@ -7,6 +7,7 @@
 //! - [`rowcrypt`]: per-meeting data keys (DEKs) and text-column encryption.
 //! - [`bundle`]: the only audio writer: encrypted ~1 s pages, crash-safe,
 //!   random access for playback.
+//! - [`embeddings`]: sealed transcript-chunk vectors for semantic search.
 //! - [`fold`] / [`search`]: Vietnamese accent-insensitive FTS5 search over a
 //!   contentless index, with highlights on the original text.
 //! - [`keys`]: the master key in the OS keystore; [`recovery`]: the optional
@@ -21,6 +22,7 @@ pub mod backup;
 pub mod bundle;
 pub mod db;
 pub mod edits;
+pub mod embeddings;
 pub mod export;
 pub mod fold;
 pub mod jobs;

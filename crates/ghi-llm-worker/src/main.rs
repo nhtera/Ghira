@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use ghi_llm_worker::{Body, Hello, Op, Reply, Request, WireMessage};
 use llama_cpp_2::context::LlamaContext;
-use llama_cpp_2::context::params::{KvCacheType, LlamaContextParams};
+use llama_cpp_2::context::params::{KvCacheType, LlamaContextParams, LlamaPoolingType};
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
@@ -65,10 +65,17 @@ struct Engine {
     format: ChatFormat,
 }
 
+struct Embedder {
+    model: LlamaModel,
+    max_tokens: usize,
+    dim: usize,
+}
+
 struct Worker {
     out: Box<dyn Write>,
     backend: LlamaBackend,
     engine: Option<Engine>,
+    embedder: Option<Embedder>,
 }
 
 fn main() {
@@ -97,6 +104,7 @@ fn main() {
         out,
         backend,
         engine: None,
+        embedder: None,
     };
     let stdin = std::io::stdin();
     // Ends at EOF: the parent closing our stdin is a clean exit.
@@ -221,8 +229,21 @@ impl Worker {
                     tokens: u32::try_from(tokens).unwrap_or(u32::MAX),
                 })
             }
+            Op::LoadEmbed {
+                model_path,
+                max_tokens,
+                n_gpu_layers,
+            } => self.load_embed(&model_path, max_tokens, n_gpu_layers),
+            Op::Embed { texts } => {
+                let e = self.embedder.as_ref().ok_or("no embedding model loaded")?;
+                let vectors = e.embed(&self.backend, &texts)?;
+                Ok(Body::Embedded {
+                    dim: e.dim as u32,
+                    vectors,
+                })
+            }
             Op::Health => Ok(Body::Health {
-                loaded: self.engine.is_some(),
+                loaded: self.engine.is_some() || self.embedder.is_some(),
             }),
             Op::Shutdown => unreachable!("handled by the read loop"),
         }
@@ -246,6 +267,7 @@ impl Worker {
         }
         // Free a previous model before loading the next one.
         self.engine = None;
+        self.embedder = None;
         let params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
         let model = LlamaModel::load_from_file(&self.backend, path, &params)
             .map_err(|e| format!("model load failed: {e}"))?;
@@ -259,6 +281,91 @@ impl Worker {
             n_ctx,
             load_s: t.elapsed().as_secs_f64(),
         })
+    }
+
+    fn load_embed(
+        &mut self,
+        path: &str,
+        max_tokens: u32,
+        n_gpu_layers: u32,
+    ) -> Result<Body, String> {
+        let t = Instant::now();
+        if !Path::new(path).is_file() {
+            return Err("model file not found".into());
+        }
+        if max_tokens == 0 {
+            return Err("max_tokens must be > 0".into());
+        }
+        self.engine = None;
+        self.embedder = None;
+        let params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
+        let model = LlamaModel::load_from_file(&self.backend, path, &params)
+            .map_err(|e| format!("model load failed: {e}"))?;
+        let dim = usize::try_from(model.n_embd_out()).map_err(|_| "bad embedding size")?;
+        // One token is the closing EOS the pooled vector is read from.
+        let max_tokens = (max_tokens as usize).min(model.n_ctx_train() as usize);
+        self.embedder = Some(Embedder {
+            model,
+            max_tokens,
+            dim,
+        });
+        Ok(Body::EmbedLoaded {
+            dim: dim as u32,
+            load_s: t.elapsed().as_secs_f64(),
+        })
+    }
+}
+
+impl Embedder {
+    /// Qwen3-Embedding reads the vector of the last token, which must be the
+    /// end-of-text token: it is appended here (the GGUF tokenizer does not).
+    /// Each text is its own sequence in a fresh context.
+    fn embed(&self, backend: &LlamaBackend, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+        let n_ctx = self.max_tokens + 1;
+        let ctx_params = LlamaContextParams::default()
+            .with_n_ctx(NonZeroU32::new(n_ctx as u32))
+            .with_n_batch(n_ctx as u32)
+            .with_n_ubatch(n_ctx as u32)
+            .with_embeddings(true)
+            .with_pooling_type(LlamaPoolingType::Last);
+        let mut ctx = self
+            .model
+            .new_context(backend, ctx_params)
+            .map_err(|e| format!("context creation failed: {e}"))?;
+        let mut batch = LlamaBatch::new(n_ctx, 1);
+        let eos = self.model.token_eos();
+        let mut out = Vec::with_capacity(texts.len());
+        for text in texts {
+            let plain = [Segment {
+                text: text.clone(),
+                special: false,
+            }];
+            let mut tokens = tokenize_segments(&self.model, &plain)?;
+            tokens.truncate(self.max_tokens);
+            tokens.push(eos);
+            batch.clear();
+            batch
+                .add_sequence(&tokens, 0, true)
+                .map_err(|e| format!("batch: {e}"))?;
+            ctx.clear_kv_cache();
+            ctx.decode(&mut batch)
+                .map_err(|e| format!("decode failed: {e}"))?;
+            let raw = ctx
+                .embeddings_seq_ith(0)
+                .map_err(|e| format!("embedding failed: {e}"))?;
+            out.push(l2_normalized(raw));
+        }
+        Ok(out)
+    }
+}
+
+/// `v` scaled to unit length (a zero vector stays zero).
+fn l2_normalized(v: &[f32]) -> Vec<f32> {
+    let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm > 0.0 {
+        v.iter().map(|x| x / norm).collect()
+    } else {
+        v.to_vec()
     }
 }
 
@@ -354,35 +461,8 @@ impl Engine {
         })
     }
 
-    /// `str_to_token` always parses special tokens, so untrusted text is fed
-    /// in pieces that cannot form one: every special token here starts with
-    /// `<`, which is tokenized on its own.
     fn tokenize(&self, segments: &[Segment]) -> Result<Vec<LlamaToken>, String> {
-        let mut out = Vec::new();
-        let mut add = |text: &str| -> Result<(), String> {
-            if !text.is_empty() {
-                out.extend(
-                    self.model
-                        .str_to_token(text, AddBos::Never)
-                        .map_err(|e| format!("tokenize failed: {e}"))?,
-                );
-            }
-            Ok(())
-        };
-        for seg in segments {
-            if seg.special {
-                add(&seg.text)?;
-                continue;
-            }
-            let mut rest = seg.text.as_str();
-            while let Some(i) = rest.find('<') {
-                add(&rest[..i])?;
-                add("<")?;
-                rest = &rest[i + 1..];
-            }
-            add(rest)?;
-        }
-        Ok(out)
+        tokenize_segments(&self.model, segments)
     }
 
     /// The Qwen3 non-thinking sampling settings (never greedy, which loops on
@@ -412,6 +492,37 @@ impl Engine {
         ]);
         Ok(Sampling { chain, grammar })
     }
+}
+
+/// `str_to_token` always parses special tokens, so untrusted text is fed
+/// in pieces that cannot form one: every special token here starts with
+/// `<`, which is tokenized on its own.
+fn tokenize_segments(model: &LlamaModel, segments: &[Segment]) -> Result<Vec<LlamaToken>, String> {
+    let mut out = Vec::new();
+    let mut add = |text: &str| -> Result<(), String> {
+        if !text.is_empty() {
+            out.extend(
+                model
+                    .str_to_token(text, AddBos::Never)
+                    .map_err(|e| format!("tokenize failed: {e}"))?,
+            );
+        }
+        Ok(())
+    };
+    for seg in segments {
+        if seg.special {
+            add(&seg.text)?;
+            continue;
+        }
+        let mut rest = seg.text.as_str();
+        while let Some(i) = rest.find('<') {
+            add(&rest[..i])?;
+            add("<")?;
+            rest = &rest[i + 1..];
+        }
+        add(rest)?;
+    }
+    Ok(out)
 }
 
 /// The sampler chain and, separately, the grammar. Running the grammar over
@@ -518,6 +629,13 @@ mod tests {
             "<|im_start|>system\ns<|im_end|>\n<|im_start|>user\nu<|im_end|>\n\
              <|im_start|>assistant\n<think>\n\n</think>\n\n"
         );
+    }
+
+    #[test]
+    fn normalizing_gives_unit_length() {
+        let v = l2_normalized(&[3.0, 4.0]);
+        assert!((v[0] - 0.6).abs() < 1e-6 && (v[1] - 0.8).abs() < 1e-6);
+        assert_eq!(l2_normalized(&[0.0, 0.0]), vec![0.0, 0.0]);
     }
 
     #[test]

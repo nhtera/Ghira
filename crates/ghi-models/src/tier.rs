@@ -126,6 +126,9 @@ pub struct Preset {
     /// Registry id of the notes LLM. No 8B is pinned yet, so every tier uses
     /// the 4B.
     pub llm_id: &'static str,
+    /// Registry id of the embedding model for semantic search; `None` on
+    /// Light, which keeps full-text search only.
+    pub embed_id: Option<&'static str>,
     /// Memory Ghira plans to use at most on this tier.
     pub ram_budget_bytes: u64,
     /// Registry ids of the speech models (ASR, diarization).
@@ -143,6 +146,7 @@ pub fn preset(tier: Tier) -> Preset {
         asr_chunk_ms,
         final_asr_chunk_ms: 1120,
         llm_id: "qwen3-4b",
+        embed_id: (tier != Tier::Light).then_some("qwen3-embedding-0.6b"),
         ram_budget_bytes,
         speech_models: vec!["nemotron-3.5-asr".into(), "nemotron-3-diarization".into()],
     }
@@ -197,6 +201,10 @@ mod tests {
             let p = preset(t);
             assert_eq!(p.final_asr_chunk_ms, 1120);
             assert!(crate::find(p.llm_id).is_some());
+            assert_eq!(p.embed_id.is_some(), t != Tier::Light);
+            if let Some(id) = p.embed_id {
+                assert_eq!(crate::find(id).unwrap().role, "embed");
+            }
             for id in &p.speech_models {
                 assert!(crate::find(id).is_some(), "{id}");
             }

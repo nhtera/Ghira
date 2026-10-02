@@ -61,6 +61,10 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 4,
         step: Step::Sql(include_str!("migrations/0004_waveforms.sql")),
     },
+    Migration {
+        version: 5,
+        step: Step::Sql(include_str!("migrations/0005_embeddings.sql")),
+    },
 ];
 
 /// The schema version this build expects.

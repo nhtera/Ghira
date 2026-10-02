@@ -419,7 +419,7 @@ pub fn worker_path() -> Result<PathBuf> {
 mod tests {
     use super::*;
 
-    const HELLO: &str = r#"echo '{"kind":"hello","protocol":2,"worker":"fake"}'"#;
+    const HELLO: &str = r#"echo '{"kind":"hello","protocol":3,"worker":"fake"}'"#;
     const T: Duration = Duration::from_secs(5);
 
     /// A fake worker: `/bin/sh -c "<hello>; <script>"`.

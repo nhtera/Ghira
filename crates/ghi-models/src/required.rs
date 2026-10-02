@@ -26,13 +26,15 @@ pub struct RequiredModel {
     pub partial_bytes: u64,
 }
 
-/// The models a tier needs, speech first, then the LLM. Cheap: file sizes only.
+/// The models a tier needs: speech first, then the LLM, then the embedding
+/// model (Balanced and Max). Cheap: file sizes only.
 pub fn required_for_tier(dir: &Path, tier: Tier) -> Vec<RequiredModel> {
     let p = preset(tier);
     p.speech_models
         .iter()
         .map(String::as_str)
         .chain([p.llm_id])
+        .chain(p.embed_id)
         .filter_map(find)
         .map(|m| {
             let dest = path_in(dir, &m);
@@ -71,8 +73,15 @@ mod tests {
         let ids: Vec<_> = all.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(
             ids,
-            ["nemotron-3.5-asr", "nemotron-3-diarization", "qwen3-4b"]
+            [
+                "nemotron-3.5-asr",
+                "nemotron-3-diarization",
+                "qwen3-4b",
+                "qwen3-embedding-0.6b"
+            ]
         );
+        let light = required_for_tier(dir.path(), Tier::Light);
+        assert!(light.iter().all(|r| r.role != "embed"));
         assert!(all.iter().all(|r| !r.installed && r.partial_bytes == 0));
 
         let llm = find("qwen3-4b").unwrap();

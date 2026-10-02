@@ -299,6 +299,11 @@ impl Store {
             &format!("DELETE FROM notes_fts WHERE rowid IN (SELECT id FROM notes_blocks WHERE gid IN ({NOTES_CITING}))"),
             params![m.id, t_cut_ms],
         )?;
+        // Vectors of chunks reaching into the window encode what was discarded.
+        tx.execute(
+            "DELETE FROM embeddings WHERE meeting_id = ?1 AND t1_ms > ?2",
+            params![m.id, t_cut_ms],
+        )?;
         rep.notes = tx.execute(
             &format!("DELETE FROM notes_blocks WHERE gid IN ({NOTES_CITING})"),
             params![m.id, t_cut_ms],
