@@ -265,6 +265,24 @@ export const commands = {
 	/**  "Restart to update": swaps in the downloaded version and relaunches. */
 	installUpdate: () => typedError<null, string>(__TAURI_INVOKE("install_update")),
 	/**
+	 *  Whether the app is locked. The first call after launch locks it when the
+	 *  setting is on (nothing is shown before that).
+	 */
+	lockState: () => typedError<boolean, string>(__TAURI_INVOKE("lock_state")),
+	/**  "Lock now" (Settings, and the app menu's "Lock Ghira"). */
+	lockNow: () => typedError<boolean, string>(__TAURI_INVOKE("lock_now")),
+	/**
+	 *  Unlocks after Touch ID or the Mac's password. `reason` is shown in the
+	 *  system prompt ("Ghira is trying to <reason>"). False: not confirmed.
+	 */
+	unlock: (reason: string) => typedError<boolean, string>(__TAURI_INVOKE("unlock", { reason })),
+	/**
+	 *  Turns the app lock on or off, or changes its idle time. Turning it on or
+	 *  off asks first (on: so nobody locks themselves out; off: so nobody at an
+	 *  unlocked Mac turns it off); changing the time while on doesn't.
+	 */
+	setAppLock: (on: boolean, afterMinutes: number, reason: string) => typedError<AppSettings, string>(__TAURI_INVOKE("set_app_lock", { on, afterMinutes, reason })),
+	/**
 	 *  A system notification (notes ready, recovered); clicking it brings the
 	 *  app forward. The text comes localized from the UI.
 	 */
@@ -276,6 +294,7 @@ export const events = {
 	coreEvent: makeEvent<CoreEvent>("core-event"),
 	importStaged: makeEvent<ImportStaged>("import-staged"),
 	importUpdate: makeEvent<ImportUpdate>("import-update"),
+	lockChanged: makeEvent<LockChanged>("lock-changed"),
 	meetingDetected: makeEvent<MeetingDetected>("meeting-detected"),
 	menuAction: makeEvent<MenuAction>("menu-action"),
 	modelDownload: makeEvent<ModelDownload>("model-download"),
@@ -338,6 +357,18 @@ export type AppSettings = {
 	consentMessageVi: string,
 	/**  Check for app updates at launch and daily (never under strict offline). */
 	updateCheck: boolean,
+	/**
+	 *  App lock: open locked, lock after `lock_after_minutes` idle and after
+	 *  sleep; unlock with Touch ID or the Mac's password (`set_app_lock`).
+	 */
+	appLock: boolean,
+	/**  Idle minutes before the app locks (0: only at launch and after sleep). */
+	lockAfterMinutes: number,
+	/**
+	 *  The live transcript's trade-off (doc 02 §B); applies from the next
+	 *  recording. 8 GB Macs always use Fast.
+	 */
+	liveMode: LiveMode,
 };
 
 /**  Versions shown in Settings → About. */
@@ -616,6 +647,19 @@ export type LineInfo = {
 	/**  Two speakers talked over each other. */
 	overlap: boolean,
 	words: WordInfo[],
+};
+
+export type LiveMode = 
+/**  Chosen by the hardware tier. */
+"auto" | 
+/**  Lighter on the Mac; captions come a little later (1.1 s chunks). */
+"fast" | 
+/**  Captions sooner, more processing while recording (0.56 s chunks). */
+"accurate";
+
+/**  The lock changed (every window follows it). */
+export type LockChanged = {
+	locked: boolean,
 };
 
 export type MarkView = {
@@ -958,6 +1002,7 @@ export type SettingsPatch = {
 	consentMessageEn?: string | null,
 	consentMessageVi?: string | null,
 	updateCheck?: boolean | null,
+	liveMode?: LiveMode | null,
 };
 
 export type SpeakerInfo = {

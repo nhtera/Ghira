@@ -11,6 +11,7 @@ mod dialogs;
 mod export_cmd;
 mod import_cmd;
 mod library;
+mod lock_cmd;
 mod menu;
 mod models_cmd;
 mod navigation;
@@ -153,7 +154,7 @@ async fn discard_from(
 ) -> Result<f64, String> {
     let tokens = tokens.inner().clone();
     blocking(&core, move |c| {
-        c.with_session(|s| {
+        c.with_session_unlocked(|s| {
             let cut = s
                 .discard_from(from_ms.max(0.0) as i64)
                 .map(|t| t as f64)
@@ -175,7 +176,7 @@ async fn discard_last(
 ) -> Result<f64, String> {
     let tokens = tokens.inner().clone();
     blocking(&core, move |c| {
-        c.with_session(|s| {
+        c.with_session_unlocked(|s| {
             let cut = s
                 .discard(seconds)
                 .map(|t| t as f64)
@@ -191,13 +192,13 @@ async fn discard_last(
 #[tauri::command]
 #[specta::specta]
 async fn rename_speaker(core: CoreState<'_>, id: u32, name: String) -> Result<(), String> {
-    core.with_session(|s| s.rename(id, &name))
+    core.with_session_unlocked(|s| s.rename(id, &name))
 }
 
 #[tauri::command]
 #[specta::specta]
 async fn merge_speakers(core: CoreState<'_>, from: u32, into: u32) -> Result<(), String> {
-    core.with_session(|s| s.merge(from, into))
+    core.with_session_unlocked(|s| s.merge(from, into))
 }
 
 /// Moves the given lines (segment gids) to a new speaker; returns its id.
@@ -209,7 +210,7 @@ async fn split_speaker(
     lines: Vec<String>,
 ) -> Result<Option<u32>, String> {
     blocking(&core, move |c| {
-        c.with_session(|s| s.split(from, lines).map_err(|e| e.to_string()))?
+        c.with_session_unlocked(|s| s.split(from, lines).map_err(|e| e.to_string()))?
     })
     .await
 }
@@ -217,7 +218,7 @@ async fn split_speaker(
 #[tauri::command]
 #[specta::specta]
 async fn speaker_not_a_person(core: CoreState<'_>, id: u32) -> Result<(), String> {
-    core.with_session(|s| s.not_a_person(id))
+    core.with_session_unlocked(|s| s.not_a_person(id))
 }
 
 /// The UI should go to `route` (a window was brought forward for it).
@@ -374,6 +375,10 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             update_cmd::update_status,
             update_cmd::check_for_updates,
             update_cmd::install_update,
+            lock_cmd::lock_state,
+            lock_cmd::lock_now,
+            lock_cmd::unlock,
+            lock_cmd::set_app_lock,
             system::show_notification
         ])
         .events(tauri_specta::collect_events![
@@ -385,7 +390,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             QuitRequested,
             import_cmd::ImportStaged,
             import_cmd::ImportUpdate,
-            update_cmd::UpdateChanged
+            update_cmd::UpdateChanged,
+            lock_cmd::LockChanged
         ])
 }
 
@@ -448,6 +454,8 @@ pub fn run() {
             app.manage(Arc::new(dialogs::LastExport::default()));
             app.manage(Arc::new(cloud_cmd::CloudPlans::default()));
             app.manage(Arc::new(update_cmd::Updates::default()));
+            app.manage(Arc::new(lock_cmd::Lock::default()));
+            lock_cmd::spawn_watch(app.handle().clone());
             update_cmd::cleanup_after_update();
             update_cmd::spawn_checks(app.handle().clone());
             #[cfg(target_os = "macos")]

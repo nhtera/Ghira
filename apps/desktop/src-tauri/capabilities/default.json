@@ -105,6 +105,10 @@
     "allow-acknowledge-crash",
     "allow-update-status",
     "allow-check-for-updates",
-    "allow-install-update"
+    "allow-install-update",
+    "allow-lock-state",
+    "allow-lock-now",
+    "allow-unlock",
+    "allow-set-app-lock"
   ]
 }

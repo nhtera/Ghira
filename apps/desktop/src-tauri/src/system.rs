@@ -60,6 +60,40 @@ pub struct AppSettings {
     pub consent_message_vi: String,
     /// Check for app updates at launch and daily (never under strict offline).
     pub update_check: bool,
+    /// App lock: open locked, lock after `lock_after_minutes` idle and after
+    /// sleep; unlock with Touch ID or the Mac's password (`set_app_lock`).
+    pub app_lock: bool,
+    /// Idle minutes before the app locks (0: only at launch and after sleep).
+    pub lock_after_minutes: u32,
+    /// The live transcript's trade-off (doc 02 §B); applies from the next
+    /// recording. 8 GB Macs always use Fast.
+    pub live_mode: LiveMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum LiveMode {
+    /// Chosen by the hardware tier.
+    #[default]
+    Auto,
+    /// Lighter on the Mac; captions come a little later (1.1 s chunks).
+    Fast,
+    /// Captions sooner, more processing while recording (0.56 s chunks).
+    Accurate,
+}
+
+impl LiveMode {
+    /// The live ASR chunk for this mode on a machine of `tier`.
+    pub fn chunk_ms(self, tier: ghi_models::Tier) -> u32 {
+        const FAST: u32 = 1120;
+        const ACCURATE: u32 = 560;
+        match (tier, self) {
+            (ghi_models::Tier::Light, _) => FAST,
+            (_, LiveMode::Fast) => FAST,
+            (_, LiveMode::Accurate) => ACCURATE,
+            (t, LiveMode::Auto) => ghi_models::preset(t).asr_chunk_ms,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
@@ -100,6 +134,9 @@ impl Default for AppSettings {
             consent_message_en: String::new(),
             consent_message_vi: String::new(),
             update_check: true,
+            app_lock: false,
+            lock_after_minutes: 5,
+            live_mode: LiveMode::Auto,
         }
     }
 }
@@ -121,6 +158,12 @@ pub struct SettingsPatch {
     pub consent_message_en: Option<String>,
     pub consent_message_vi: Option<String>,
     pub update_check: Option<bool>,
+    pub live_mode: Option<LiveMode>,
+    /// Only through `set_app_lock` (which asks for Touch ID first).
+    #[serde(skip)]
+    pub app_lock: Option<bool>,
+    #[serde(skip)]
+    pub lock_after_minutes: Option<u32>,
 }
 
 /// Short text settings stay short.
@@ -143,8 +186,17 @@ fn from_stored(v: Option<serde_json::Value>) -> AppSettings {
     if let (Some(serde_json::Value::Object(stored)), serde_json::Value::Object(b)) = (v, &mut base)
     {
         for (k, v) in stored {
-            if b.contains_key(&k) {
-                b.insert(k, v);
+            if !b.contains_key(&k) {
+                continue;
+            }
+            // Field by field: a value this build can't read (a newer
+            // version's option) keeps its default instead of resetting
+            // every setting, the app lock included.
+            let old = b.insert(k.clone(), v);
+            if serde_json::from_value::<AppSettings>(serde_json::Value::Object(b.clone())).is_err()
+                && let Some(old) = old
+            {
+                b.insert(k, old);
             }
         }
     }
@@ -183,7 +235,20 @@ pub async fn update_settings(
     core: CoreState<'_>,
     patch: SettingsPatch,
 ) -> Result<AppSettings, String> {
-    let r = blocking(&core, move |c| {
+    let core = core.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || patch_settings(&app, &core, patch))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Applies a settings change (the app lock fields only come from
+/// `set_app_lock`: the command's `SettingsPatch` can't carry them).
+pub fn patch_settings(
+    app: &tauri::AppHandle,
+    c: &Core,
+    patch: SettingsPatch,
+) -> Result<AppSettings, String> {
+    let r = (|| {
         // One change at a time: two patches can't lose each other's fields.
         static WRITING: Mutex<()> = Mutex::new(());
         let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
@@ -201,6 +266,9 @@ pub async fn update_settings(
             meeting_language: patch.meeting_language.unwrap_or(cur.meeting_language),
             cloud_redact: patch.cloud_redact.unwrap_or(cur.cloud_redact),
             update_check: patch.update_check.unwrap_or(cur.update_check),
+            live_mode: patch.live_mode.unwrap_or(cur.live_mode),
+            app_lock: patch.app_lock.unwrap_or(cur.app_lock),
+            lock_after_minutes: patch.lock_after_minutes.unwrap_or(cur.lock_after_minutes),
             audio_retention_days: patch
                 .audio_retention_days
                 .map(|d| d.min(3650))
@@ -229,10 +297,9 @@ pub async fn update_settings(
             apply_retention(c, s.audio_retention_days)?;
         }
         Ok(s)
-    })
-    .await;
+    })();
     // Onboarding finished or the setting changed: (un)register ⌘⇧R.
-    crate::tray::sync_record_shortcut(&app);
+    crate::tray::sync_record_shortcut(app);
     r
 }
 
@@ -503,6 +570,25 @@ mod tests {
         // An older store without newer fields keeps their defaults.
         let s = from_stored(Some(serde_json::json!({ "onboardingDone": true })));
         assert!(s.onboarding_done && !s.strict_offline);
+        // One unreadable value keeps its default; the others stay.
+        let s = from_stored(Some(serde_json::json!({
+            "appLock": true,
+            "liveMode": "turbo",
+            "strictOffline": true
+        })));
+        assert!(s.app_lock && s.strict_offline);
+        assert_eq!(s.live_mode, LiveMode::Auto);
+    }
+
+    #[test]
+    fn live_modes_pick_the_chunk_and_light_macs_stay_fast() {
+        use ghi_models::Tier;
+        assert_eq!(LiveMode::Auto.chunk_ms(Tier::Balanced), 560);
+        assert_eq!(LiveMode::Fast.chunk_ms(Tier::Balanced), 1120);
+        assert_eq!(LiveMode::Accurate.chunk_ms(Tier::Max), 560);
+        for m in [LiveMode::Auto, LiveMode::Fast, LiveMode::Accurate] {
+            assert_eq!(m.chunk_ms(Tier::Light), 1120, "8 GB: Fast is forced");
+        }
     }
 }
 

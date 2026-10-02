@@ -20,6 +20,7 @@ import type {
   SpeakerInfo,
   UpdateChanged,
   UpdateStatus,
+  LockChanged,
   Stage,
 } from "../bindings";
 import type { Commands, Ipc } from "./ipc";
@@ -161,6 +162,9 @@ let settings: AppSettings = {
   meetingLanguage: "auto",
   globalRecordShortcut: true,
   updateCheck: true,
+  appLock: new URLSearchParams(location.search).has("locked"),
+  lockAfterMinutes: 5,
+  liveMode: "auto",
   cloudProvider: "",
   cloudModel: "",
   cloudRedact: true,
@@ -189,7 +193,28 @@ const updateStatus = (): UpdateStatus => ({
 });
 const updateListeners = new Set<(e: UpdateChanged) => void>();
 
+// App lock: `?locked=1` opens locked; unlocking always succeeds on the mock.
+let locked = settings.appLock;
+const lockListeners = new Set<(e: LockChanged) => void>();
+const setLocked = (v: boolean) => {
+  locked = v;
+  lockListeners.forEach((l) => l({ locked: v }));
+};
+
 const commands: Commands = {
+  lockState: () => ok(locked),
+  lockNow: () => {
+    if (settings.appLock) setLocked(true);
+    return ok(locked);
+  },
+  unlock: () => {
+    setLocked(false);
+    return ok(true);
+  },
+  setAppLock: (on, afterMinutes) => {
+    settings = { ...settings, appLock: on, lockAfterMinutes: afterMinutes };
+    return ok(settings);
+  },
   updateStatus: () => Promise.resolve(updateStatus()),
   checkForUpdates: () => {
     const status = updateStatus();
@@ -513,6 +538,7 @@ export const mockIpc: Ipc = {
   onImportStaged,
   onImportUpdate,
   onUpdateChanged: on(updateListeners),
+  onLockChanged: on(lockListeners),
   audioUrl,
 };
 

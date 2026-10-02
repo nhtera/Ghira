@@ -65,3 +65,13 @@ test("shows a ready update with a confirmed restart", async ({ page }) => {
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("button", { name: "Restart to update" })).toBeVisible();
 });
+
+test("turns the app lock on, locks now and unlocks", async ({ page }) => {
+  await open(page, "privacy");
+  await page.getByRole("switch", { name: "Lock Ghira with Windows Hello" }).click();
+  await expect(page.getByRole("switch", { name: "Lock Ghira with Windows Hello" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("button", { name: "Lock now" }).click();
+  await expect(page.getByText("Ghira is locked")).toBeVisible();
+  await page.getByRole("button", { name: "Unlock with Windows Hello" }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "Privacy" })).toBeVisible();
+});

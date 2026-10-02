@@ -4,9 +4,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, InlineConfirm, Segmented, cn, useToast, usePlatform } from "@ghi/ui";
-import { APP_NAME, type Locale } from "@ghi/i18n";
+import { type Locale } from "@ghi/i18n";
 import { ipc } from "../../ipc";
 import { MIN_PASSWORD, RETENTION_DAYS, deleteWord, deleteWordMatches, passwordIssue, passwordStrength, retentionDeletes } from "./logic";
+import { AppLockCard } from "./app-lock-card";
 import { Card, Note, Row, Switch, SwitchRow, inputCls, useFail, useSettings } from "./parts";
 
 export function PrivacySection() {
@@ -17,10 +18,8 @@ export function PrivacySection() {
     <div className="flex flex-col gap-4">
       <Card title={t("settings.privacy.encrypt")}>
         <Note icon="lock">{t("settings.privacy.encryptBody", { context })}</Note>
-        <Row label={t("settings.privacy.lock", { context, app: APP_NAME })} hint={t("settings.privacy.comingLater")}>
-          <Switch checked={false} onChange={() => {}} label={t("settings.privacy.lock", { context, app: APP_NAME })} disabled />
-        </Row>
       </Card>
+      <AppLockCard />
       {settings && <Retention days={settings.audioRetentionDays} onApply={(d) => patch({ audioRetentionDays: d })} />}
       <Card>
         <Row label={t("settings.privacy.learnVoices")} hint={t("settings.privacy.comingLater")}>

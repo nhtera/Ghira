@@ -49,6 +49,12 @@ rfd = "0.17"
 # Non-activating panels for the menu-bar popover and the mini-recorder.
 tauri-nspanel = "2.1"
 objc2-app-kit = { version = "0.3", features = ["NSWindow"] }
+# App lock: Touch ID / the login password (LocalAuthentication).
+objc2-local-authentication = { version = "0.3", features = ["LAContext", "block2"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSError"] }
+block2 = "0.6"
+objc2 = "0.6"
+core-foundation = "0.10"
 
 [dev-dependencies]
 tempfile = "3"

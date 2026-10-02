@@ -2,24 +2,37 @@
 // Health indicator (brief D4): one quiet line that opens into rows (speech
 // recognition, speaker detection, audio route, disk). Warnings also come up
 // as inline banners; this is where the numbers live.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
-import { Icon, cn, usePlatform, type IconName } from "@ghi/ui";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button, Icon, cn, useToast, usePlatform, type IconName } from "@ghi/ui";
+import { ipc } from "../../ipc";
+import { settingsQuery } from "../../shell/root-view";
 import { useLive } from "../../state/live";
 import { LAG_WARN_S, formatBytes, minutesLeft } from "./logic";
 
-type Row = { id: string; icon: IconName; title: string; detail: string; warn: boolean; hint?: string };
+type Row = { id: string; icon: IconName; title: string; detail: string; warn: boolean; hint?: ReactNode };
 
 export function Health() {
   const { t, i18n } = useTranslation();
   const platform = usePlatform();
   const [open, setOpen] = useState(false);
+  const { show } = useToast();
+  const queryClient = useQueryClient();
   const h = useLive(useShallow((s) => ({ lag: s.asrLagS, aec: s.aec, hfp: s.capture.bluetoothHfp, low: s.capture.diskLowBytes, full: s.capture.diskFull, recordOnly: s.recordOnly })));
   const seconds = Math.round(h.lag * 10) / 10;
   const lagging = h.lag > LAG_WARN_S;
+  // The lag hint acts: Fast mode applies from the next recording.
+  const switchToFast = async () => {
+    const r = await ipc.commands.updateSettings({ liveMode: "fast" });
+    if (r.status === "ok") {
+      queryClient.setQueryData(settingsQuery.queryKey, r.data);
+      show({ tone: "success", title: t("live.health.fastOn") });
+    } else show({ tone: "warning", title: t("system.commandFailed", { message: r.error }) });
+  };
   const rows: Row[] = [
-    { id: "asr", icon: "subtitles", title: t("live.health.transcription.title"), detail: h.recordOnly ? t("live.health.recordOnly") : t("live.health.transcription.detail", { context: platform, seconds }), warn: lagging, hint: lagging ? t("live.health.switchToFast") : undefined },
+    { id: "asr", icon: "subtitles", title: t("live.health.transcription.title"), detail: h.recordOnly ? t("live.health.recordOnly") : t("live.health.transcription.detail", { context: platform, seconds }), warn: lagging, hint: lagging ? <Button size="sm" variant="ghost" onClick={() => void switchToFast()}>{t("live.health.switchToFast")}</Button> : undefined },
     { id: "speakers", icon: "groups", title: t("live.health.speakers.title"), detail: t("live.health.speakers.detail", { seconds }), warn: lagging },
     { id: "audio", icon: "headphones", title: t("live.health.audio.title"), detail: h.aec ? t("live.audio.speakersAecOn") : t("live.audio.headphonesAecOff"), warn: h.hfp, hint: h.hfp ? t("live.health.bluetoothHfp") : undefined },
     {

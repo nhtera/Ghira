@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// The app lock (Touch ID / Windows Hello, phase 12; not wired yet). Covers the
+// The app lock screen (Touch ID / Windows Hello; shell/lock-gate.tsx). Covers the
 // whole window; nothing behind it is readable or focusable.
 import { useTranslation } from "react-i18next";
 import { Button, Icon, usePlatform } from "@ghi/ui";
@@ -17,7 +17,7 @@ export function LockedScreen({ onUnlock, onPassword, error }: { onUnlock: () => 
         <p className="m-0 text-[14px] leading-relaxed text-muted">{t("system.locked.body")}</p>
         {error && (
           <p role="alert" className="m-0 text-[12.5px] text-warn">
-            {t("system.commandFailed", { message: error })}
+            {error}
           </p>
         )}
         <Button variant="primary" size="lg" autoFocus onClick={onUnlock}>

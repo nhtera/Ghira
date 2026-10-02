@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { formatClock } from "@ghi/i18n";
 import { Avatar, Button, LevelMeter, cn } from "@ghi/ui";
+import { useLock } from "../../state/lock";
 import { ipc } from "../../ipc";
 import { elapsedMs, isActive, useLive } from "../../state/live";
 import { speakerNumber, useSpeakerLabel } from "../../state/speaker-label";
@@ -39,6 +40,8 @@ export function MiniRecorder() {
     return id == null ? undefined : s.speakers[id];
   });
   const speakerLabel = useSpeakerLabel();
+  // Locked: the controls stay, the words don't.
+  const locked = useLock((st) => st.locked === true);
   const now = useNow(state === "recording");
   // Opens as a pill (`#/mini?compact=1`): a full window would show text on a shared screen.
   const [compact, setCompact] = useState(
@@ -187,7 +190,7 @@ export function MiniRecorder() {
         data-tauri-drag-region
         className="m-0 flex items-center gap-1.5 text-[13px] text-muted"
       >
-        {!error && speaker && (
+        {!error && !locked && speaker && (
           <>
             <Avatar
               name={speakerLabel(speaker)}
@@ -202,7 +205,7 @@ export function MiniRecorder() {
           </>
         )}
         <span className="min-w-0 truncate">
-          {error ? t("system.commandFailed", { message: error }) : text}
+          {error ? t("system.commandFailed", { message: error }) : locked ? t("system.locked.title") : text}
         </span>
       </p>
       <LevelMeter db={mic} source="mic" />

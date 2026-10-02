@@ -341,7 +341,7 @@ pub struct DiscardPreview {
 #[specta::specta]
 pub async fn discard_preview(core: CoreState<'_>, seconds: f64) -> Result<DiscardPreview, String> {
     blocking(&core, move |c| {
-        let (meeting, now) = c.with_session(|s| (s.meeting().to_string(), s.now_ms()))?;
+        let (meeting, now) = c.with_session_unlocked(|s| (s.meeting().to_string(), s.now_ms()))?;
         let from = (now - (seconds.clamp(0.0, 24.0 * 3600.0) * 1000.0) as i64).max(0);
         let store = c.store()?;
         let lines = store
@@ -399,9 +399,12 @@ pub async fn set_consent_confirmed(
 pub async fn session_snapshot(
     core: CoreState<'_>,
 ) -> Result<Option<ghi_core::events::SessionSnapshot>, String> {
-    blocking(&core, |c| match c.with_session(|s| s.snapshot()) {
-        Ok(snap) => Ok(Some(snap)),
-        Err(_) => Ok(None),
+    blocking(&core, |c| {
+        // The transcript and speakers are content: re-read after unlocking.
+        if c.locked() {
+            return Err("the app is locked".into());
+        }
+        Ok(c.with_session(|s| s.snapshot()).ok())
     })
     .await
 }

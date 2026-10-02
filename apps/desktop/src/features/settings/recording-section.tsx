@@ -5,8 +5,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Icon, usePlatform } from "@ghi/ui";
+import { Button, Icon, Segmented, usePlatform } from "@ghi/ui";
 import { APP_NAME } from "@ghi/i18n";
+import type { LiveMode } from "../../bindings";
 import { ipc } from "../../ipc";
 import { Card, Note, Row, SwitchRow, inputCls, useSettings } from "./parts";
 
@@ -29,6 +30,7 @@ export function RecordingSection() {
         </Row>
         <Note icon="check_circle">{t("settings.recording.echoOn")}</Note>
       </Card>
+      {settings && <LiveModeCard mode={settings.liveMode} onChange={(liveMode) => void patch({ liveMode })} />}
       <Card title={t("settings.recording.consentMessage")} hint={t("settings.recording.consentMessageHint")}>
         {settings && (
           <>
@@ -38,6 +40,40 @@ export function RecordingSection() {
         )}
       </Card>
     </div>
+  );
+}
+
+export function LiveModeCard({ mode, onChange }: { mode: LiveMode; onChange: (m: LiveMode) => void }) {
+  const { t } = useTranslation();
+  const context = usePlatform();
+  const { data: tier } = useQuery({
+    queryKey: ["models-tier"],
+    queryFn: async () => {
+      const r = await ipc.commands.modelsStatus();
+      return r.status === "ok" ? r.data.tier : null;
+    },
+  });
+  // 8 GB computers always run Fast: shown, but not changeable.
+  const locked = tier === "light";
+  const shown: LiveMode = locked ? "fast" : mode;
+  const label = t("settings.recording.liveMode.title");
+  return (
+    <Card title={label}>
+      <fieldset disabled={locked} className="m-0 min-w-0 border-0 p-0">
+        <Segmented<LiveMode>
+          label={label}
+          value={shown}
+          onChange={onChange}
+          options={[
+            { value: "auto", label: t("settings.recording.liveMode.auto") },
+            { value: "fast", label: t("settings.recording.liveMode.fast") },
+            { value: "accurate", label: t("settings.recording.liveMode.accurate") },
+          ]}
+        />
+      </fieldset>
+      <Note>{locked ? t("settings.recording.liveMode.lightTier", { context }) : t(`settings.recording.liveMode.${shown}Desc`)}</Note>
+      {!locked && <Note icon="schedule">{t("settings.recording.liveMode.applies")}</Note>}
+    </Card>
   );
 }
 

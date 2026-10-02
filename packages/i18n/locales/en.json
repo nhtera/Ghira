@@ -73,7 +73,8 @@
       "diskRow": "{{free}} free · about {{minutes}} min",
       "title": "Needs attention",
       "recordOnly": "Waiting for speech models",
-      "bluetoothHfp": "Bluetooth headset in call mode: audio quality is lower."
+      "bluetoothHfp": "Bluetooth headset in call mode: audio quality is lower.",
+      "fastOn": "Fast mode is on from the next recording"
     },
     "localLine_mac": "Audio and text stay on this Mac",
     "localLine_win": "Audio and text stay on this PC",
@@ -700,7 +701,19 @@
       "echoOn": "Echo cancellation is on in call mode. Nobody is counted twice.",
       "consentEn": "English",
       "consentVi": "Tiếng Việt",
-      "consentReset": "Use the built-in message"
+      "consentReset": "Use the built-in message",
+      "liveMode": {
+        "title": "Live transcript",
+        "auto": "Auto",
+        "fast": "Fast",
+        "accurate": "Accurate",
+        "autoDesc": "Chosen for this computer’s hardware.",
+        "fastDesc": "Lighter on this computer. Captions appear a little later.",
+        "accurateDesc": "Captions appear sooner. More processing while recording.",
+        "applies": "Applies from the next recording.",
+        "lightTier_mac": "This Mac uses Fast mode (8 GB memory).",
+        "lightTier_win": "This PC uses Fast mode (8 GB memory)."
+      }
     },
     "ai": {
       "local": {
@@ -802,7 +815,6 @@
       "encryptHint": "Always on. The key never leaves this computer.",
       "lock_mac": "Lock {{app}} with Touch ID",
       "lock_win": "Lock {{app}} with Windows Hello",
-      "lockHint": "After 15 minutes away.",
       "keepAudio": "Keep audio for",
       "keepOptions": {
         "days7": "7 days",
@@ -845,7 +857,18 @@
       "exported": "Saved {{name}}",
       "dangerTitle": "Danger zone",
       "dangerBody": "Deletes every meeting, note, audio file and voice profile on this computer, and the keys. This can’t be undone.",
-      "typeToConfirm": "Type {{word}} to confirm"
+      "typeToConfirm": "Type {{word}} to confirm",
+      "lockAfter": "Lock after",
+      "lockAfterOptions": {
+        "0": "Only at launch and after sleep",
+        "1": "1 minute",
+        "5": "5 minutes",
+        "15": "15 minutes",
+        "60": "1 hour"
+      },
+      "lockNow": "Lock now",
+      "lockNote": "Locking hides your meetings. A recording keeps going.",
+      "lockEncrypted": "Your meetings stay encrypted either way."
     },
     "sync": {
       "pairTitle": "Pair a phone",
@@ -950,7 +973,14 @@
       "body": "Your meetings are encrypted on this computer.",
       "unlock_mac": "Unlock with Touch ID",
       "unlock_win": "Unlock with Windows Hello",
-      "usePassword": "Use password"
+      "usePassword": "Use password",
+      "reason": "unlock your meetings",
+      "reasonChange": "change the app lock",
+      "errors": {
+        "noAuthMethod": "This Mac has no password or Touch ID to unlock with.",
+        "noAnswer": "The unlock prompt got no answer. Try again.",
+        "notConfirmed": "Not unlocked. Try again."
+      }
     },
     "audioAccessOff": "System audio access is off. Calls record your mic only.",
     "turnOn": "Turn this on",

@@ -6,6 +6,7 @@ import type {
   CoreEvent,
   ImportStaged,
   ImportUpdate,
+  LockChanged,
   MeetingDetected,
   UpdateChanged,
   MenuAction,
@@ -36,6 +37,8 @@ export interface Ipc {
   onImportStaged(cb: (e: ImportStaged) => void): Promise<Unlisten>;
   /** A queued import moved on (queued, decoding with progress, done, failed, cancelled). */
   onImportUpdate(cb: (e: ImportUpdate) => void): Promise<Unlisten>;
+  /** The app lock engaged or was lifted (every window). */
+  onLockChanged(cb: (e: LockChanged) => void): Promise<Unlisten>;
   /** The app-update status changed (a check, a download, an error). */
   onUpdateChanged(cb: (e: UpdateChanged) => void): Promise<Unlisten>;
   /** The URL an `<audio>` element plays for a ghi-audio token (issueAudioPlay, issueAudioSample). */

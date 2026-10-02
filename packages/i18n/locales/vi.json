@@ -72,7 +72,8 @@
       "diskRow": "Còn {{free}} · khoảng {{minutes}} phút",
       "title": "Cần chú ý",
       "recordOnly": "Đang chờ tải mô hình giọng nói",
-      "bluetoothHfp": "Tai nghe Bluetooth đang ở chế độ gọi: chất lượng âm thanh thấp hơn."
+      "bluetoothHfp": "Tai nghe Bluetooth đang ở chế độ gọi: chất lượng âm thanh thấp hơn.",
+      "fastOn": "Chế độ Nhanh bật từ lần ghi tiếp theo"
     },
     "localLine_mac": "Âm thanh và văn bản chỉ lưu trên máy này",
     "localLine_win": "Âm thanh và văn bản chỉ lưu trên máy này",
@@ -684,7 +685,19 @@
       "echoOn": "Khử tiếng vọng luôn bật ở chế độ cuộc gọi. Không ai bị tính hai lần.",
       "consentEn": "Tiếng Anh",
       "consentVi": "Tiếng Việt",
-      "consentReset": "Dùng lời thông báo có sẵn"
+      "consentReset": "Dùng lời thông báo có sẵn",
+      "liveMode": {
+        "title": "Bản ghi trực tiếp",
+        "auto": "Tự động",
+        "fast": "Nhanh",
+        "accurate": "Chính xác",
+        "autoDesc": "Chọn theo cấu hình của máy này.",
+        "fastDesc": "Nhẹ máy hơn. Phụ đề hiện chậm hơn một chút.",
+        "accurateDesc": "Phụ đề hiện sớm hơn. Xử lý nhiều hơn khi đang ghi.",
+        "applies": "Áp dụng từ lần ghi tiếp theo.",
+        "lightTier_mac": "Máy này dùng chế độ Nhanh (bộ nhớ 8 GB).",
+        "lightTier_win": "Máy này dùng chế độ Nhanh (bộ nhớ 8 GB)."
+      }
     },
     "ai": {
       "local": {
@@ -786,7 +799,6 @@
       "encryptHint": "Luôn bật. Khoá không bao giờ rời khỏi máy.",
       "lock_mac": "Khoá {{app}} bằng Touch ID",
       "lock_win": "Khoá {{app}} bằng Windows Hello",
-      "lockHint": "Sau 15 phút không dùng.",
       "keepAudio": "Giữ âm thanh trong",
       "keepOptions": {
         "days7": "7 ngày",
@@ -826,7 +838,18 @@
       "exported": "Đã lưu {{name}}",
       "dangerTitle": "Khu vực nguy hiểm",
       "dangerBody": "Xoá mọi cuộc họp, ghi chú, âm thanh và hồ sơ giọng nói trên máy này, cùng các khoá. Không thể hoàn tác.",
-      "typeToConfirm": "Gõ {{word}} để xác nhận"
+      "typeToConfirm": "Gõ {{word}} để xác nhận",
+      "lockAfter": "Khoá sau",
+      "lockAfterOptions": {
+        "0": "Chỉ khi mở và sau khi máy ngủ",
+        "1": "1 phút",
+        "5": "5 phút",
+        "15": "15 phút",
+        "60": "1 giờ"
+      },
+      "lockNow": "Khoá ngay",
+      "lockNote": "Khoá sẽ ẩn các cuộc họp. Đang ghi âm thì vẫn tiếp tục.",
+      "lockEncrypted": "Cuộc họp luôn được mã hoá, dù khoá hay không."
     },
     "sync": {
       "pairTitle": "Ghép nối điện thoại",
@@ -930,7 +953,14 @@
       "body": "Các cuộc họp được mã hoá trên máy này.",
       "unlock_mac": "Mở khoá bằng Touch ID",
       "unlock_win": "Mở khoá bằng Windows Hello",
-      "usePassword": "Dùng mật khẩu"
+      "usePassword": "Dùng mật khẩu",
+      "reason": "mở khoá các cuộc họp",
+      "reasonChange": "thay đổi khoá ứng dụng",
+      "errors": {
+        "noAuthMethod": "Máy Mac này chưa có mật khẩu hay Touch ID để mở khoá.",
+        "noAnswer": "Lời nhắc mở khoá không được trả lời. Hãy thử lại.",
+        "notConfirmed": "Chưa mở khoá. Hãy thử lại."
+      }
     },
     "audioAccessOff": "Quyền âm thanh hệ thống đang tắt. Cuộc gọi chỉ ghi được micro.",
     "turnOn": "Bật mục này",

@@ -10,6 +10,7 @@ import type { CoreEvent } from "../bindings";
 import { ipc } from "../ipc";
 import { useLive } from "../state/live";
 import { QuitDialog } from "./quit-dialog";
+import { LockGate } from "./lock-gate";
 import { useImportListeners } from "../features/import/import-store";
 
 /** Main window only: files dropped on the window or the Dock (D10) and import
@@ -65,6 +66,23 @@ export function RootView() {
     };
   }, [apply, restore]);
 
+  // The core sends no transcript while locked: read the recording again on unlock.
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let gone = false;
+    void ipc
+      .onLockChanged(async (e) => {
+        if (e.locked) return;
+        const r = await ipc.commands.sessionSnapshot();
+        if (!gone && r.status === "ok" && r.data) restore(r.data);
+      })
+      .then((u) => (gone ? u() : (off = u)));
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, [restore]);
+
   useEffect(() => {
     if (!panel && settings && !settings.onboardingDone && !path.startsWith("/onboarding")) {
       void navigate({ to: "/onboarding/$step", params: { step: "welcome" } });
@@ -72,7 +90,9 @@ export function RootView() {
   }, [panel, settings, path, navigate]);
   return (
     <>
-      <Outlet />
+      <LockGate mode={path.startsWith("/mini") || path.startsWith("/detect") ? "controls" : "full"}>
+        <Outlet />
+      </LockGate>
       {/* Here, not in the shell: quitting must ask during onboarding's test too. */}
       {!panel && <QuitDialog />}
       {!panel && <ImportListeners />}

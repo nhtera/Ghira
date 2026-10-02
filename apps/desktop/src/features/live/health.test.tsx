@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-import { cleanup, render, screen, act } from "@testing-library/react";
+import { cleanup, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ipc } from "../../ipc";
+
 import { Health } from "./health";
 import { LiveBanners } from "./banners";
 import { renderLive, setLive } from "./test-utils";
@@ -16,30 +18,41 @@ afterEach(() => {
 describe("Health", () => {
   it("is quiet when all is well", () => {
     setLive({ state: "recording" });
-    render(<Health />);
+    renderLive(<Health />);
     expect(screen.getByRole("button", { name: /All good/ })).toBeTruthy();
   });
 
   it("suggests Fast mode past 3 s of lag", async () => {
     setLive({ state: "recording", asrLagS: 4.2 });
-    render(<Health />);
+    renderLive(<Health />);
     const toggle = screen.getByRole("button", { name: /4\.2 s behind/ });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     await userEvent.click(toggle);
-    expect(screen.getByText("Switch to Fast mode")).toBeTruthy();
-    expect(screen.getByRole("list").querySelector('[data-row="asr"]')?.getAttribute("data-warn")).toBe("true");
+    expect(screen.getByRole("button", { name: "Switch to Fast mode" })).toBeTruthy();
+    expect(screen.getByTestId("health").querySelector('[data-row="asr"]')?.getAttribute("data-warn")).toBe("true");
+  });
+
+  it("turns the hint into a button that sets Fast mode", async () => {
+    setLive({ state: "recording", asrLagS: 4.2 });
+    const update = vi.spyOn(ipc.commands, "updateSettings");
+    renderLive(<Health />);
+    await userEvent.click(screen.getByRole("button", { name: /4\.2 s behind/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Switch to Fast mode" }));
+    expect(update).toHaveBeenCalledWith({ liveMode: "fast" });
+    expect(await screen.findByText("Fast mode is on from the next recording")).toBeTruthy();
+    update.mockRestore();
   });
 
   it("does not warn at 3 s", async () => {
     setLive({ state: "recording", asrLagS: 3 });
-    render(<Health />);
+    renderLive(<Health />);
     await userEvent.click(screen.getByRole("button"));
-    expect(screen.queryByText("Switch to Fast mode")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Switch to Fast mode" })).toBeNull();
   });
 
   it("reports the audio route and a low disk", async () => {
     setLive({ state: "recording", aec: false, capture: { ...initialLive.capture, bluetoothHfp: true, diskLowBytes: 480_000_000 } });
-    render(<Health />);
+    renderLive(<Health />);
     await userEvent.click(screen.getByRole("button"));
     expect(screen.getByText(/Bluetooth headset/)).toBeTruthy();
     expect(screen.getByText(/Only 480 MB left/)).toBeTruthy();

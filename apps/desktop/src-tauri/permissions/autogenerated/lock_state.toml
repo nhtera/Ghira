@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lock-state"
+description = "Enables the lock_state command without any pre-configured scope."
+commands.allow = ["lock_state"]
+
+[[permission]]
+identifier = "deny-lock-state"
+description = "Denies the lock_state command without any pre-configured scope."
+commands.deny = ["lock_state"]

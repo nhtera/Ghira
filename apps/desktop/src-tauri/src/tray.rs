@@ -189,8 +189,9 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
                         let _ = t.set_title(Some(clock(ms)));
                     }
                 } else if tick.is_multiple_of(3) && state != TrayState::Attention as u8 {
+                    // Job state only (no content): also while the app is locked.
                     let busy = core
-                        .store()
+                        .store_even_locked()
                         .ok()
                         .and_then(|s| s.active_jobs().ok())
                         .is_some_and(|jobs| {

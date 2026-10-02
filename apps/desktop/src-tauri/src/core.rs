@@ -37,6 +37,9 @@ pub struct Core {
     lifecycle: Mutex<()>,
     /// "Delete all data" is running: the store must not be reopened.
     deleting: std::sync::atomic::AtomicBool,
+    /// The app lock is on: commands get no store, and transcript events
+    /// don't reach the webview (lock_cmd.rs).
+    locked: Arc<std::sync::atomic::AtomicBool>,
     runner: Mutex<Option<Arc<JobRunner>>>,
     /// Meetings closed by crash recovery at this launch (D12 "recovered"),
     /// until the user dismisses the notice.
@@ -217,11 +220,27 @@ impl Core {
         let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
         let (events, rx) = bus();
         let handle = app.clone();
+        let locked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let gate = locked.clone();
         std::thread::Builder::new()
             .name("ghi-events".into())
             .spawn(move || {
                 for env in rx {
                     on_event(&env.event);
+                    // While locked, what was said and who said it stays out
+                    // of the webview; it re-reads the snapshot on unlock.
+                    use ghi_core::events::Event as E;
+                    let content = matches!(
+                        env.event,
+                        E::TranscriptPartial { .. }
+                            | E::TranscriptFinal { .. }
+                            | E::SpeakerArrived { .. }
+                            | E::SpeakerConfirmed { .. }
+                            | E::SpeakerRenamed { .. }
+                    );
+                    if content && gate.load(std::sync::atomic::Ordering::Acquire) {
+                        continue;
+                    }
                     let _ = CoreEvent(env).emit(&handle);
                 }
             })
@@ -232,6 +251,7 @@ impl Core {
             session: Mutex::new(None),
             lifecycle: Mutex::new(()),
             deleting: std::sync::atomic::AtomicBool::new(false),
+            locked,
             runner: Mutex::new(None),
             runner_thread: Mutex::new(None),
             llm: Mutex::new(None),
@@ -294,6 +314,16 @@ impl Core {
         }
     }
 
+    /// The app lock is on (lock_cmd.rs).
+    pub fn locked(&self) -> bool {
+        self.locked.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    pub fn set_locked(&self, locked: bool) {
+        self.locked
+            .store(locked, std::sync::atomic::Ordering::Release);
+    }
+
     /// The app's data directory (store, models, updates, diagnostics).
     pub fn data_dir(&self) -> &Path {
         &self.data
@@ -308,6 +338,9 @@ impl Core {
     /// keys; a fresh key ring is saved. The app restarts into onboarding.
     pub fn delete_everything(&self) -> Result<(), String> {
         use std::sync::atomic::Ordering;
+        if self.locked() {
+            return Err("the app is locked".into());
+        }
         // No recording can start meanwhile.
         let _lifecycle = lock(&self.lifecycle);
         if lock(&self.session).is_some() {
@@ -364,6 +397,19 @@ impl Core {
 
     /// Opens the store on first use, runs crash recovery and starts the job runner.
     pub fn store(&self) -> Result<Arc<Store>, String> {
+        if self.deleting.load(std::sync::atomic::Ordering::Acquire) {
+            return Err("all data is being deleted".into());
+        }
+        if self.locked() {
+            return Err("the app is locked".into());
+        }
+        self.store_even_locked()
+    }
+
+    /// The store for what keeps working while the app is locked: starting a
+    /// recording (⌘⇧R, detection) and imports. Never for a command that
+    /// returns content to the webview.
+    pub(crate) fn store_even_locked(&self) -> Result<Arc<Store>, String> {
         if self.deleting.load(std::sync::atomic::Ordering::Acquire) {
             return Err("all data is being deleted".into());
         }
@@ -454,7 +500,7 @@ impl Core {
         // Remembered in the store too: a quit or crash during the test must
         // not leave it behind as a meeting (deleted at the next launch,
         // before crash recovery would process it).
-        let store = self.store()?;
+        let store = self.store_even_locked()?;
         store
             .set_setting(TEST_MEETING_KEY, &serde_json::json!(id))
             .map_err(|e| e.to_string())?;
@@ -509,18 +555,23 @@ impl Core {
         if lock(&self.session).is_some() {
             return Err("a recording is already running".into());
         }
-        let store = self.store()?;
+        let store = self.store_even_locked()?;
         // Models missing: record now, transcribe when they arrive. Engines
         // that fail to load must not cost the recording either. They load
         // after the jobs paused (the session calls this once recording is
         // announced), so the notes LLM and NeMo are never resident together.
         let models = self.models();
         let events = self.events.clone();
+        // Fast / Accurate (doc 02 §B), read when the recording starts.
+        let chunk_ms = crate::system::load_settings(self)
+            .map(|s| s.live_mode)
+            .unwrap_or_default()
+            .chunk_ms(preset().tier);
         let load = move || {
             if !speech_ready(&models) {
                 return Ok(None);
             }
-            Ok(engines(&models, preset().asr_chunk_ms)
+            Ok(engines(&models, chunk_ms)
                 .inspect_err(|e| {
                     events.emit(ghi_core::events::Event::Error {
                         meeting: None,
@@ -585,6 +636,15 @@ impl Core {
     }
 
     /// Runs `f` on the recording in progress, without holding the lock.
+    /// The recording in progress, for a command from the window: refused
+    /// while the app is locked (its transcript and speakers are content).
+    pub fn with_session_unlocked<T>(&self, f: impl FnOnce(&Session) -> T) -> Result<T, String> {
+        if self.locked() {
+            return Err("the app is locked".into());
+        }
+        self.with_session(f)
+    }
+
     pub fn with_session<T>(&self, f: impl FnOnce(&Session) -> T) -> Result<T, String> {
         let s = lock(&self.session).clone().ok_or("nothing is recording")?;
         Ok(f(&s))
@@ -597,7 +657,7 @@ impl Core {
 
     /// The local notes model's factory (once the store is open).
     pub fn llm(&self) -> Result<ghi_core::notes_job::LlmFactory, String> {
-        self.store()?;
+        self.store_even_locked()?;
         lock(&self.llm)
             .clone()
             .ok_or_else(|| "the notes model is not set up".into())
@@ -619,7 +679,7 @@ impl Core {
         if !path.is_absolute() || !path.is_file() {
             return Err("not a file".into());
         }
-        let store = self.store()?;
+        let store = self.store_even_locked()?;
         let r = ghi_core::import::import_file(&store, path, &opts, &self.events)?;
         if let Some(runner) = lock(&self.runner).as_ref() {
             runner.notify();

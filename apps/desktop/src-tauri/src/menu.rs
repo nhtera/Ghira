@@ -61,10 +61,12 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .build(app)?;
     let name = app.package_info().name.clone();
     let name_for_quit = name.clone();
+    let name_for_lock = name.clone();
     let app_menu = SubmenuBuilder::new(app, name)
         .about(None)
         .separator()
         .item(&item("settings")?)
+        .item(&MenuItemBuilder::with_id("lock", format!("Lock {name_for_lock}")).build(app)?)
         .separator()
         .services()
         .separator()
@@ -112,6 +114,18 @@ pub fn on_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     let id = event.id().as_ref();
     if id == "quit" {
         crate::request_quit(app);
+        return;
+    }
+    if id == "lock" {
+        // Locks only when the app lock is on (Settings → Privacy).
+        let app = app.clone();
+        std::thread::spawn(move || {
+            let core = app
+                .state::<std::sync::Arc<crate::core::Core>>()
+                .inner()
+                .clone();
+            let _ = crate::lock_cmd::lock(&app, &core);
+        });
         return;
     }
     if id == "minimize" {
