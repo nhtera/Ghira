@@ -310,7 +310,14 @@ pub fn import_tracks(
         })
         .map_err(err)?
         .gid;
+    // Reported per whole percent: the loop below runs many times a second,
+    // and every event makes the UI re-read the meeting list.
+    let reported = std::cell::Cell::new(-1);
     let progress = |p: f32| {
+        let pct = (p.clamp(0.0, 1.0) * 100.0) as i32;
+        if reported.replace(pct) == pct {
+            return;
+        }
         if let Some(f) = &opts.on_progress {
             (f.0)(&meeting, p);
         }
@@ -512,7 +519,14 @@ pub fn import_file(
         .map_err(err)?
         .gid;
     // Any failure from here removes the half-made meeting (and frees the hash).
+    // Reported per whole percent: the loop below runs many times a second,
+    // and every event makes the UI re-read the meeting list.
+    let reported = std::cell::Cell::new(-1);
     let progress = |p: f32| {
+        let pct = (p.clamp(0.0, 1.0) * 100.0) as i32;
+        if reported.replace(pct) == pct {
+            return;
+        }
         if let Some(f) = &opts.on_progress {
             (f.0)(&meeting, p);
         }
