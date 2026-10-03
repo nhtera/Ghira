@@ -39,6 +39,12 @@
   --ios-tab-h: 49px;
 }
 
+/* Speaker slot 2 as text on the phone's bg: #B45309 was 4.42:1, this is 4.8:1
+   (tokens.json iosOverride; a test keeps the two in step). Light only. */
+[data-platform="ios"]:not([data-theme="dark"]) {
+  --s2: #ba4000;
+}
+
 /* One root size drives the rem scale. data-platform and --ghi-text-scale are
    set on <html> (the app's shell, the gallery), so rem follows. */
 :root[data-platform="ios"] {
