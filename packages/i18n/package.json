@@ -6,13 +6,17 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./mobile": "./src/mobile-entry.ts",
     "./locales/*.json": "./locales/*.json"
   },
   "scripts": {
     "build": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run && node scripts/gen-ios-strings.mjs --check",
+    "gen:ios-strings": "node scripts/gen-ios-strings.mjs",
+    "check:ios-strings": "node scripts/gen-ios-strings.mjs --check",
+    "extract:mobile": "node scripts/extract-mobile.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

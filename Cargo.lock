@@ -2036,7 +2036,9 @@ dependencies = [
 name = "ghi-mobile"
 version = "0.1.0"
 dependencies = [
+ "ghi-app",
  "ghi-audio",
+ "ghi-core",
  "ghi-models",
  "ghi-speech",
  "libc",

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-models-download"
+description = "Enables the models_download command without any pre-configured scope."
+commands.allow = ["models_download"]
+
+[[permission]]
+identifier = "deny-models-download"
+description = "Denies the models_download command without any pre-configured scope."
+commands.deny = ["models_download"]

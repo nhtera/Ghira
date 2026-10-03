@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-record-stop"
+description = "Enables the record_stop command without any pre-configured scope."
+commands.allow = ["record_stop"]
+
+[[permission]]
+identifier = "deny-record-stop"
+description = "Denies the record_stop command without any pre-configured scope."
+commands.deny = ["record_stop"]

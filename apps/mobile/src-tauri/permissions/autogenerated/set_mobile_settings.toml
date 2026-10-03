@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-mobile-settings"
+description = "Enables the set_mobile_settings command without any pre-configured scope."
+commands.allow = ["set_mobile_settings"]
+
+[[permission]]
+identifier = "deny-set-mobile-settings"
+description = "Denies the set_mobile_settings command without any pre-configured scope."
+commands.deny = ["set_mobile_settings"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-take-recovered-meetings"
+description = "Enables the take_recovered_meetings command without any pre-configured scope."
+commands.allow = ["take_recovered_meetings"]
+
+[[permission]]
+identifier = "deny-take-recovered-meetings"
+description = "Denies the take_recovered_meetings command without any pre-configured scope."
+commands.deny = ["take_recovered_meetings"]

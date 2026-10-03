@@ -1,116 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Ghira iOS spike (phase 7, doc 05 §10 S7): records with the screen locked,
-//! runs live ASR + diarization while the screen is on, pauses GPU work on
-//! lock and catches up on unlock, with a Live Activity (Stop/Mark).
+//! Ghira iOS app: a Tauri shell over the shared `ghi-app` commands, the
+//! mobile-owned commands in [`cmd`] (recording, lifecycle, models, privacy,
+//! inbox, onboarding, voice) and the Swift side over the C ABI in
+//! [`platform`].
 //!
-//! Commands are typed with tauri-specta; regenerate the TypeScript bindings
-//! with `GHI_UPDATE_BINDINGS=1 cargo test -p ghi-mobile`.
+//! Commands and events are typed with tauri-specta; regenerate the TypeScript
+//! bindings with `GHI_UPDATE_BINDINGS=1 cargo test -p ghi-mobile`.
+//!
+//! The spike session (`session`, `engine`, `gate`, `backlog`) stays until
+//! slice 16-D rewrites it onto `ghi-core`; nothing registers its commands any
+//! more, so only the Live Activity intents and the self-test reach it.
 
+#[allow(dead_code)] // replaced by 16-D
 mod backlog;
+pub mod cmd;
+#[allow(dead_code)] // replaced by 16-D
 mod engine;
+#[allow(dead_code)] // replaced by 16-D
 mod gate;
 mod platform;
+#[allow(dead_code)] // replaced by 16-D
 mod session;
 #[cfg(feature = "test-hooks")]
 mod spikes;
 
-use std::path::PathBuf;
+use std::sync::Arc;
 
-use serde::Serialize;
-use specta::Type;
 use tauri::Manager;
-
-use session::{Session, Snapshot};
 
 // The same navigation guard as the desktop app (RT-6).
 #[path = "../../../desktop/src-tauri/src/navigation.rs"]
 mod navigation;
 
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelStatus {
-    pub id: String,
-    /// Present with the pinned size.
-    pub ready: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct Status {
-    /// The recording in progress, or the last one.
-    pub session: Option<Snapshot>,
-    pub models: Vec<ModelStatus>,
-    /// This build includes the speech engine.
-    pub engine_built: bool,
-    /// Where recordings and models live (the app's Documents on iOS).
-    pub data_dir: String,
-}
-
-struct Paths {
-    data: PathBuf,
-}
-
-impl Paths {
-    fn models(&self) -> PathBuf {
-        self.data.join("models")
-    }
-}
-
-#[tauri::command]
-#[specta::specta]
-fn snapshot(paths: tauri::State<'_, Paths>, since: u32) -> Status {
-    let models = paths.models();
-    Status {
-        session: session::current().map(|s| s.snapshot(since)),
-        models: engine::MODELS
-            .iter()
-            .map(|id| ModelStatus {
-                id: (*id).to_owned(),
-                ready: engine::model_file(&models, id).is_some(),
-            })
-            .collect(),
-        engine_built: cfg!(feature = "nemo"),
-        data_dir: paths.data.display().to_string(),
-    }
-}
-
-/// Async so the setup (files, threads, AVAudioSession) runs off the main thread.
-#[tauri::command]
-#[specta::specta]
-async fn start_recording(paths: tauri::State<'_, Paths>) -> Result<String, String> {
-    Session::start(&paths.data, paths.models()).map(|s| s.id.clone())
-}
-
-#[tauri::command]
-#[specta::specta]
-fn stop_recording() {
-    if let Some(s) = session::current() {
-        s.stop();
-    }
-}
-
-#[tauri::command]
-#[specta::specta]
-fn mark_moment() {
-    if let Some(s) = session::current()
-        && !s.shared.capture_done()
-    {
-        s.mark();
-    }
-}
-
-fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
-    tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
-        snapshot,
-        start_recording,
-        stop_recording,
-        mark_moment
-    ])
-}
-
-/// Writes the TypeScript bindings for all commands to `path`.
+/// Writes the TypeScript bindings for all commands and events to `path`.
 pub fn export_bindings(path: &str) {
-    specta_builder()
+    cmd::builder()
         .export(
             specta_typescript::Typescript::default()
                 .header("// SPDX-License-Identifier: Apache-2.0\n"),
@@ -190,7 +114,7 @@ pub fn run() {
     configure_ggml();
     #[cfg(feature = "test-hooks")]
     eprintln!("ghira: TEST HOOKS ENABLED (simulator build)");
-    let builder = specta_builder();
+    let builder = cmd::builder();
     let tauri_builder = tauri::Builder::default();
     #[cfg(feature = "test-hooks")]
     let tauri_builder =
@@ -200,6 +124,12 @@ pub fn run() {
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
+            cmd::events::install(app.handle());
+            // The store-facing state the shared commands take. Nothing is
+            // opened here: 16-G builds the core's data dir and starts it.
+            app.manage(Arc::new(ghi_app::core::Core::new(app.handle(), |_| {})?));
+            app.manage(Arc::new(ghi_app::audio_protocol::AudioTokens::default()));
+            app.manage(Arc::new(ghi_app::cloud_cmd::CloudPlans::default()));
             // iOS: Documents (visible in the Files app, where the owner pulls
             // recordings and metrics); elsewhere the app data dir.
             let data = if cfg!(target_os = "ios") {
@@ -217,7 +147,6 @@ pub fn run() {
                 eprintln!("ghira: could not capture stderr: {e}");
             }
             selftest_on_launch(&data);
-            app.manage(Paths { data });
             platform::init();
             let window = tauri::WebviewWindowBuilder::new(
                 app,
@@ -237,7 +166,7 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running the Ghira spike app");
+        .expect("error while running the Ghira app");
 }
 
 #[cfg(test)]
@@ -260,6 +189,65 @@ mod tests {
         assert_eq!(
             committed, fresh,
             "src/bindings.ts is stale: run `GHI_UPDATE_BINDINGS=1 cargo test -p ghi-mobile`"
+        );
+    }
+
+    /// `build.rs`, `capabilities/default.json` and the registered commands
+    /// (as written in the bindings) name the same set.
+    #[test]
+    fn commands_are_granted() {
+        let dir = env!("CARGO_MANIFEST_DIR");
+        let read = |p: &str| std::fs::read_to_string(format!("{dir}/{p}")).unwrap();
+        let mut built: Vec<String> = read("build.rs")
+            .lines()
+            .filter_map(|l| {
+                let name = l.trim().strip_prefix('"')?.strip_suffix("\",")?;
+                Some(name.to_owned())
+            })
+            .collect();
+        let capability: serde_json::Value =
+            serde_json::from_str(&read("capabilities/default.json")).unwrap();
+        let permissions: Vec<&str> = capability["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p.as_str().unwrap())
+            .collect();
+        // Exactly core:default plus one allow-* per command: nothing else is granted.
+        let others: Vec<&str> = permissions
+            .iter()
+            .copied()
+            .filter(|p| !p.starts_with("allow-"))
+            .collect();
+        assert_eq!(others, ["core:default"]);
+        let mut granted: Vec<String> = permissions
+            .iter()
+            .filter_map(|p| Some(p.strip_prefix("allow-")?.replace('-', "_")))
+            .collect();
+        let mut bound: Vec<String> = read("../src/bindings.ts")
+            .lines()
+            .filter_map(|l| {
+                let rest = l.strip_prefix('\t')?.split("__TAURI_INVOKE").nth(1)?;
+                Some(rest.split('"').nth(1)?.to_owned())
+            })
+            .collect();
+        for v in [&mut built, &mut granted, &mut bound] {
+            v.sort();
+        }
+        let diff = |a: &[String], b: &[String]| -> Vec<String> {
+            a.iter().filter(|x| !b.contains(x)).cloned().collect()
+        };
+        assert!(
+            built == bound,
+            "build.rs vs bindings: only in build.rs {:?}, only in bindings {:?}",
+            diff(&built, &bound),
+            diff(&bound, &built)
+        );
+        assert!(
+            granted == bound,
+            "capabilities vs bindings: only granted {:?}, only in bindings {:?}",
+            diff(&granted, &bound),
+            diff(&bound, &granted)
         );
     }
 }

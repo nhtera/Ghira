@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-record-mark"
+description = "Enables the record_mark command without any pre-configured scope."
+commands.allow = ["record_mark"]
+
+[[permission]]
+identifier = "deny-record-mark"
+description = "Denies the record_mark command without any pre-configured scope."
+commands.deny = ["record_mark"]

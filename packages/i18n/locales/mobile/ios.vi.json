@@ -1,0 +1,34 @@
+{
+  "mobile": {
+    "ios": {
+      "activity": {
+        "marks_other": "{{count}} dấu",
+        "mark": "Đánh dấu",
+        "phase": {
+          "catchingUp": "Đang bắt kịp",
+          "live": "Trực tiếp",
+          "pausedForCall": "Tạm dừng vì có cuộc gọi",
+          "recording": "Đang ghi",
+          "stopped": "Đã dừng"
+        },
+        "stop": "Dừng"
+      },
+      "share": {
+        "cancel": "Huỷ",
+        "cloudNotes": "Ghi chú qua Cloud",
+        "done": "Đã thêm vào {{app}}",
+        "import": "Nhập",
+        "importing": "Đang nhập…",
+        "language": "Ngôn ngữ",
+        "languageAuto": "Tự động",
+        "myDesktop": "Máy tính của tôi",
+        "myDesktopDisabled": "Hãy ghép nối máy tính trước",
+        "processOn": "Xử lý trên",
+        "thisPhone": "Điện thoại",
+        "title": "Mở trong {{app}}",
+        "unsupported": "Chưa hỗ trợ loại file này.",
+        "unsupportedCaf": "Phiên bản này chưa hỗ trợ file CAF."
+      }
+    }
+  }
+}

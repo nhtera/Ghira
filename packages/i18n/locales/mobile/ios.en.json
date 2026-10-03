@@ -1,0 +1,35 @@
+{
+  "mobile": {
+    "ios": {
+      "activity": {
+        "marks_one": "{{count}} mark",
+        "marks_other": "{{count}} marks",
+        "mark": "Mark",
+        "phase": {
+          "catchingUp": "Catching up",
+          "live": "Live",
+          "pausedForCall": "Paused for a call",
+          "recording": "Recording",
+          "stopped": "Stopped"
+        },
+        "stop": "Stop"
+      },
+      "share": {
+        "cancel": "Cancel",
+        "cloudNotes": "Cloud notes",
+        "done": "Added to {{app}}",
+        "import": "Import",
+        "importing": "Importing…",
+        "language": "Language",
+        "languageAuto": "Auto",
+        "myDesktop": "My desktop",
+        "myDesktopDisabled": "Pair a desktop first",
+        "processOn": "Process on",
+        "thisPhone": "This phone",
+        "title": "Open in {{app}}",
+        "unsupported": "This file type isn’t supported yet.",
+        "unsupportedCaf": "CAF files aren’t supported in this version."
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-onboarding-complete-step"
+description = "Enables the onboarding_complete_step command without any pre-configured scope."
+commands.allow = ["onboarding_complete_step"]
+
+[[permission]]
+identifier = "deny-onboarding-complete-step"
+description = "Denies the onboarding_complete_step command without any pre-configured scope."
+commands.deny = ["onboarding_complete_step"]

@@ -1,0 +1,152 @@
+{
+  "mobile": {
+    "callLimit": {
+      "body": "Điện thoại không thể ghi âm cuộc gọi của ứng dụng khác. Hãy bật loa ngoài và dùng chế độ Phòng họp.",
+      "consent": "Hãy báo cho người kia biết bạn đang ghi âm trước khi bắt đầu.",
+      "ready": "Đã bật loa ngoài. Chế độ Phòng họp đã sẵn sàng.",
+      "title": "Điện thoại không ghi được cuộc gọi",
+      "useRoom": "Bật loa ngoài và chế độ Phòng họp",
+      "useRoomShort": "Dùng Phòng họp"
+    },
+    "chip": {
+      "failed": "Lỗi · Chạm để thử lại",
+      "finalOnDesktop": "Xử lý cuối trên {{device}} · {{percent}}%",
+      "processedOnPhone": "Đã xử lý trên điện thoại",
+      "synced": "Đã đồng bộ",
+      "waitingForWifi": "Chờ Wi-Fi"
+    },
+    "common": {
+      "cancel": "Huỷ",
+      "continue": "Tiếp tục",
+      "notNow": "Để sau",
+      "openSettings": "Mở Cài đặt",
+      "replay": "Xem lại",
+      "skip": "Bỏ qua"
+    },
+    "detail": {
+      "aiWrote": "{{app}} viết",
+      "notes": "Ghi chú",
+      "playFrom": "Phát từ {{time}}",
+      "transcript": "Bản ghi",
+      "unassigned": "Chưa giao",
+      "youWrote": "Bạn viết"
+    },
+    "import": {
+      "action": "Nhập",
+      "added": "Đã thêm vào {{app}}",
+      "detected": "Nhận diện: {{source}} · {{duration}}",
+      "doneDesktop": "{{app}} sẽ gửi sang {{device}} khi hai máy cùng Wi-Fi.",
+      "donePhone": "Đang xử lý trên điện thoại. {{app}} sẽ báo khi có ghi chú.",
+      "lang": {
+        "auto": "Tự động",
+        "both": "Cả hai",
+        "en": "EN",
+        "vi": "VI"
+      },
+      "language": "Ngôn ngữ",
+      "processOn": "Xử lý trên",
+      "target": {
+        "desktop": "Máy tính",
+        "phone": "Điện thoại"
+      },
+      "title": "Nhập vào {{app}}"
+    },
+    "ios": {
+      "liveActivitySubtitle": "{{app}} · Đang ghi trên điện thoại"
+    },
+    "meetings": {
+      "filter": {
+        "all": "Tất cả",
+        "imported": "Đã nhập",
+        "needsNames": "Cần tên"
+      },
+      "paired": "Đã ghép · {{device}}",
+      "today": "Hôm nay",
+      "yesterday": "Hôm qua"
+    },
+    "onboarding": {
+      "done": {
+        "body": "Bấm Ghi âm trong cuộc họp, hoặc chia sẻ bản ghi sang {{app}}. {{app}} không bao giờ tự ghi âm.",
+        "start": "Bắt đầu ghi",
+        "title": "Đã sẵn sàng"
+      },
+      "languages": {
+        "both": "Cả hai, thường xen kẽ",
+        "en": "English",
+        "subtitle": "{{app}} hiểu cả hai trong cùng một câu, như “chốt scope cho bản beta”.",
+        "title": "Bạn thường họp bằng ngôn ngữ nào?",
+        "vi": "Tiếng Việt"
+      },
+      "mic": {
+        "allowed": "Đã cho phép micro",
+        "body": "{{app}} chỉ ghi âm khi bạn bấm Ghi âm. Âm thanh ở lại điện thoại, trừ khi bạn gửi sang máy tính đã ghép.",
+        "denied": "Micro đang tắt với {{app}}. Bật trong Cài đặt → {{app}} → Micro.",
+        "title": "{{app}} cần dùng micro"
+      },
+      "processing": {
+        "title": "Xử lý bản ghi ở đâu?"
+      }
+    },
+    "pair": {
+      "body": "Trên máy tính, mở {{app}} → Cài đặt → Đồng bộ rồi quét mã hiển thị ở đó.",
+      "paired": "Đã ghép với {{device}}",
+      "scanning": "đang tìm mã",
+      "syncNote": "Hồ sơ giọng nói và ghi chú đồng bộ qua Wi-Fi.",
+      "title": "Ghép nối với máy tính",
+      "wifiNote": "Hai thiết bị cần cùng mạng Wi-Fi. Không có gì đi qua internet."
+    },
+    "privacy": {
+      "audioStaysLine": "Âm thanh chỉ ở trên thiết bị của bạn.",
+      "localOnly": "Chỉ trên máy"
+    },
+    "record": {
+      "identifying": "Đang nhận diện…",
+      "listening": "Đang nghe",
+      "mark": "Đánh dấu",
+      "onPhone": "Trên điện thoại",
+      "pause": "Tạm dừng",
+      "pausedCall": {
+        "body": "{{app}} dừng lúc {{time}} nên cuộc gọi không bị ghi. Mọi thứ trước đó đã được lưu.",
+        "title": "Đã tạm dừng vì có cuộc gọi"
+      },
+      "pocket": {
+        "hint": "Hãy đặt ngửa điện thoại trên bàn để {{app}} nghe rõ mọi người.",
+        "title": "Âm thanh bị bí. Điện thoại có đang trong túi?"
+      },
+      "recording": "Đang ghi",
+      "resume": "Tiếp tục",
+      "resumeRecording": "Tiếp tục ghi",
+      "speaker": "Người nói",
+      "speaking": "{{name}} đang nói",
+      "stop": "Dừng",
+      "stopAndSave": "Dừng và lưu",
+      "title": "Ghi âm phòng họp"
+    },
+    "search": {
+      "placeholder": "Tìm · gõ không dấu cũng được"
+    },
+    "tabs": {
+      "meetings": "Cuộc họp",
+      "record": "Ghi âm",
+      "search": "Tìm",
+      "settings": "Cài đặt"
+    },
+    "target": {
+      "cloud": "Cloud · tắt",
+      "desktop": "Máy tính",
+      "finalOn": "Xử lý cuối trên",
+      "hintDesktop": "Gửi sang {{device}} qua Wi-Fi nội bộ khi hai máy ở gần nhau.",
+      "hintPhone": "Chạy trên điện thoại sau khi dừng. Tốn pin hơn.",
+      "phone": "Điện thoại"
+    },
+    "voice": {
+      "body": "Đọc một đoạn 20 giây để {{app}} gắn nhãn bạn là “Tôi”. Hồ sơ được mã hoá trên điện thoại.",
+      "consent": "Tôi đồng ý lưu hồ sơ giọng nói của mình trên điện thoại. Tôi có thể xoá trong Cài đặt.",
+      "listening": "Đang nghe…",
+      "record": "Ghi giọng",
+      "saved": "Đã lưu",
+      "start": "Bắt đầu đọc",
+      "title": "Giọng của bạn · không bắt buộc"
+    }
+  }
+}

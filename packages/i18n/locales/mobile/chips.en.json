@@ -1,0 +1,9 @@
+{
+  "mobile": {
+    "chip": {
+      "processingOnPhone": "Processing on phone · {{percent}}%",
+      "recorded": "Recorded",
+      "waitingForModels": "Waiting for models"
+    }
+  }
+}

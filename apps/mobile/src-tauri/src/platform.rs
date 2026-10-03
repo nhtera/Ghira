@@ -54,6 +54,31 @@ mod swift {
         pub fn ghi_swift_battery_level() -> f32;
         /// Sets `NSURLIsExcludedFromBackupKey` on a directory; false on failure.
         pub fn ghi_swift_exclude_from_backup(path: *const std::ffi::c_char) -> bool;
+        /// A phone call is active (CXCallObserver).
+        pub fn ghi_swift_call_active() -> bool;
+        /// Writes the machine identifier (`iPhone16,1`) as a NUL-terminated
+        /// string into `buf` (capacity `cap`); returns its length.
+        pub fn ghi_swift_device_model(buf: *mut std::ffi::c_char, cap: usize) -> usize;
+        /// `ProcessInfo.physicalMemory` in bytes.
+        pub fn ghi_swift_physical_memory() -> u64;
+        /// Dynamic Type as a multiplier (1.0 = Large), capped at 2.0.
+        pub fn ghi_swift_text_scale() -> f32;
+        /// Presents the share sheet for a file; false if it could not be shown.
+        pub fn ghi_swift_share_file(path: *const std::ffi::c_char) -> bool;
+        /// Opens this app's page in Settings.
+        pub fn ghi_swift_open_settings();
+        /// `beginBackgroundTask`; returns a token for `end_bg_task` (0: none granted).
+        pub fn ghi_swift_begin_bg_task(name: *const std::ffi::c_char) -> u64;
+        pub fn ghi_swift_end_bg_task(token: u64);
+        /// Covers the window (app switcher snapshot, app lock).
+        pub fn ghi_swift_set_privacy_cover(on: bool);
+        /// Nanoseconds from a clock that keeps counting while the device sleeps
+        /// (`mach_continuous_time`).
+        pub fn ghi_swift_continuous_ns() -> u64;
+        /// 0 not determined, 1 granted, 2 denied.
+        pub fn ghi_swift_mic_permission() -> i32;
+        /// Shows the system prompt (first time only); poll `mic_permission`.
+        pub fn ghi_swift_request_mic_permission();
     }
 }
 
@@ -237,4 +262,166 @@ pub extern "C" fn ghi_ios_mark_requested() {
     {
         s.mark();
     }
+}
+
+// --- Rust → Swift wrappers (no-ops off iOS) ---------------------------------
+
+/// Wrappers that later slices wire up (16-D session, 16-E native, 16-G services).
+#[allow(dead_code)]
+mod wrappers {
+    use crate::cmd::onboarding::MicPermission;
+
+    #[cfg(target_os = "ios")]
+    use super::swift;
+
+    pub fn call_active() -> bool {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        return unsafe { swift::ghi_swift_call_active() };
+        #[cfg(not(target_os = "ios"))]
+        false
+    }
+
+    /// The machine identifier; on the simulator the simulated model.
+    pub fn device_model() -> String {
+        #[cfg(target_os = "ios")]
+        {
+            let mut buf = [0 as std::ffi::c_char; 64];
+            // SAFETY: `buf` is writable for `buf.len()` bytes; Swift NUL-terminates.
+            let n = unsafe { swift::ghi_swift_device_model(buf.as_mut_ptr(), buf.len()) };
+            let bytes: Vec<u8> = buf
+                .iter()
+                .take(n.min(buf.len() - 1))
+                .map(|&c| c as u8)
+                .collect();
+            String::from_utf8_lossy(&bytes).into_owned()
+        }
+        #[cfg(not(target_os = "ios"))]
+        String::new()
+    }
+
+    pub fn physical_memory() -> u64 {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        return unsafe { swift::ghi_swift_physical_memory() };
+        #[cfg(not(target_os = "ios"))]
+        0
+    }
+
+    pub fn text_scale() -> f32 {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        return unsafe { swift::ghi_swift_text_scale() };
+        #[cfg(not(target_os = "ios"))]
+        1.0
+    }
+
+    pub fn share_file(path: &std::path::Path) -> Result<(), String> {
+        #[cfg(target_os = "ios")]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let c =
+                std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(|e| e.to_string())?;
+            // SAFETY: `c` is a valid NUL-terminated path for the duration of the call.
+            if unsafe { swift::ghi_swift_share_file(c.as_ptr()) } {
+                return Ok(());
+            }
+        }
+        let _ = path;
+        Err("the share sheet could not be shown".into())
+    }
+
+    pub fn open_settings() {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        unsafe {
+            swift::ghi_swift_open_settings()
+        }
+    }
+
+    /// Asks iOS for background time (finishing a stop, an export); 0 when none was granted.
+    pub fn begin_bg_task(name: &str) -> u64 {
+        #[cfg(target_os = "ios")]
+        if let Ok(c) = std::ffi::CString::new(name) {
+            // SAFETY: `c` is a valid NUL-terminated string for the duration of the call.
+            return unsafe { swift::ghi_swift_begin_bg_task(c.as_ptr()) };
+        }
+        let _ = name;
+        0
+    }
+
+    pub fn end_bg_task(token: u64) {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        unsafe {
+            swift::ghi_swift_end_bg_task(token)
+        }
+        let _ = token;
+    }
+
+    pub fn set_privacy_cover(on: bool) {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        unsafe {
+            swift::ghi_swift_set_privacy_cover(on)
+        }
+        let _ = on;
+    }
+
+    /// A clock that includes device sleep (phase 15 needs it for lease times).
+    pub fn continuous_ns() -> u64 {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        return unsafe { swift::ghi_swift_continuous_ns() };
+        #[cfg(not(target_os = "ios"))]
+        0
+    }
+
+    pub fn mic_permission() -> MicPermission {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        return match unsafe { swift::ghi_swift_mic_permission() } {
+            1 => MicPermission::Granted,
+            2 => MicPermission::Denied,
+            _ => MicPermission::NotDetermined,
+        };
+        #[cfg(not(target_os = "ios"))]
+        MicPermission::Granted
+    }
+
+    pub fn request_mic_permission() {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        unsafe {
+            swift::ghi_swift_request_mic_permission()
+        }
+    }
+}
+
+pub use wrappers::*;
+
+// --- More Swift → Rust ---------------------------------------------------------
+
+/// Dynamic Type changed: `scale` multiplies the root font size (capped at 2.0).
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_ios_text_scale_changed(scale: f32) {
+    crate::cmd::events::emit(crate::cmd::MobileEvent::TextScale { scale });
+}
+
+/// The audio route changed (`AVAudioSession.RouteChangeReason` raw value).
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_ios_route_changed(reason: i32) {
+    crate::cmd::events::emit(crate::cmd::MobileEvent::Route { reason });
+}
+
+/// The system sent a memory warning.
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_ios_memory_warning() {
+    crate::cmd::events::emit(crate::cmd::MobileEvent::MemoryWarning);
+}
+
+/// The share extension put files in the App Group inbox.
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_ios_inbox_changed() {
+    crate::cmd::events::emit(crate::cmd::MobileEvent::InboxChanged);
 }

@@ -1,0 +1,14 @@
+{
+  "mobile": {
+    "shell": {
+      "empty": {
+        "meetings": "Các cuộc họp của bạn sẽ hiện ở đây.",
+        "record": "Tính năng ghi âm sắp ra mắt.",
+        "search": "Tìm trong các cuộc họp, gõ không dấu cũng được.",
+        "settings": "Phần cài đặt sắp ra mắt.",
+        "onboarding": "Chào mừng đến với {{app}}."
+      },
+      "tabs": "Thanh tab"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-record-call-active"
+description = "Enables the record_call_active command without any pre-configured scope."
+commands.allow = ["record_call_active"]
+
+[[permission]]
+identifier = "deny-record-call-active"
+description = "Denies the record_call_active command without any pre-configured scope."
+commands.deny = ["record_call_active"]

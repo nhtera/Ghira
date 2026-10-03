@@ -3,7 +3,7 @@
 // tint only reinforces. "Failed" becomes a button when a retry is possible.
 import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "../../icons/icon";
-import { usePlatform } from "../../platform/platform";
+import { usePlatformContext } from "../../platform/platform";
 import { cn } from "../../utils/cn";
 
 export type StatusKind =
@@ -40,7 +40,7 @@ const TONE: Record<StatusKind, { icon: IconName; cls: string }> = {
 
 export function StatusPill({ status, percent, onRetry, className }: StatusPillProps) {
   const { t } = useTranslation();
-  const platform = usePlatform();
+  const ctx = usePlatformContext();
   const { icon, cls } = TONE[status];
   const label = {
     ready: () => t("library.status.ready"),
@@ -48,8 +48,8 @@ export function StatusPill({ status, percent, onRetry, className }: StatusPillPr
       percent === undefined ? t("library.status.processing") : t("library.status.processingPercent", { percent: Math.round(percent) }),
     finalPass: () =>
       percent === undefined
-        ? t("library.status.finalPassLocal", { context: platform })
-        : t("library.status.finalPassLocalPercent", { context: platform, percent: Math.round(percent) }),
+        ? t("library.status.finalPassLocal", { context: ctx("library.status.finalPassLocal") })
+        : t("library.status.finalPassLocalPercent", { context: ctx("library.status.finalPassLocalPercent"), percent: Math.round(percent) }),
     needsNames: () => t("library.status.needsSpeakerNames"),
     cloudEnhanced: () => t("library.status.cloudEnhanced"),
     failed: () => t("library.status.failedRetry"),

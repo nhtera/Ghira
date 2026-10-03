@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-record-consent-message"
+description = "Enables the record_consent_message command without any pre-configured scope."
+commands.allow = ["record_consent_message"]
+
+[[permission]]
+identifier = "deny-record-consent-message"
+description = "Denies the record_consent_message command without any pre-configured scope."
+commands.deny = ["record_consent_message"]

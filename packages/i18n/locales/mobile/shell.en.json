@@ -1,0 +1,14 @@
+{
+  "mobile": {
+    "shell": {
+      "empty": {
+        "meetings": "Your meetings will appear here.",
+        "record": "Recording is coming soon.",
+        "search": "Search your meetings, accents optional.",
+        "settings": "Settings are coming soon.",
+        "onboarding": "Welcome to {{app}}."
+      },
+      "tabs": "Tabs"
+    }
+  }
+}

@@ -3,7 +3,7 @@ import js from "@eslint/js";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
-import { noNetwork, safeRendering } from "../../eslint.shared.mjs";
+import { noLiteralStrings, noNetwork, safeRendering } from "../../eslint.shared.mjs";
 
 export default tseslint.config(
   { ignores: ["dist", "src-tauri", "src/bindings.ts"] },
@@ -16,4 +16,5 @@ export default tseslint.config(
   },
   { files: ["src/**/*.{ts,tsx}"], ...noNetwork },
   { files: ["src/**/*.{ts,tsx}"], ...safeRendering },
+  { files: ["src/**/*.tsx"], ignores: ["src/**/*.test.tsx"], ...noLiteralStrings },
 );

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-privacy-export-all-share"
+description = "Enables the privacy_export_all_share command without any pre-configured scope."
+commands.allow = ["privacy_export_all_share"]
+
+[[permission]]
+identifier = "deny-privacy-export-all-share"
+description = "Denies the privacy_export_all_share command without any pre-configured scope."
+commands.deny = ["privacy_export_all_share"]

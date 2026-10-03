@@ -1,0 +1,152 @@
+{
+  "mobile": {
+    "callLimit": {
+      "body": "Phones can't record other apps' calls. Use speakerphone and Room mode instead.",
+      "consent": "Tell the other person you’re recording before you start.",
+      "ready": "Speakerphone on. Room mode is ready.",
+      "title": "Phones can’t record calls",
+      "useRoom": "Use speakerphone and Room mode",
+      "useRoomShort": "Use Room mode"
+    },
+    "chip": {
+      "failed": "Failed · Tap to retry",
+      "finalOnDesktop": "Final pass on {{device}} · {{percent}}%",
+      "processedOnPhone": "Processed on phone",
+      "synced": "Synced",
+      "waitingForWifi": "Waiting for Wi-Fi"
+    },
+    "common": {
+      "cancel": "Cancel",
+      "continue": "Continue",
+      "notNow": "Not now",
+      "openSettings": "Open Settings",
+      "replay": "Replay",
+      "skip": "Skip"
+    },
+    "detail": {
+      "aiWrote": "Written by {{app}}",
+      "notes": "Notes",
+      "playFrom": "Play from {{time}}",
+      "transcript": "Transcript",
+      "unassigned": "Unassigned",
+      "youWrote": "You wrote"
+    },
+    "import": {
+      "action": "Import",
+      "added": "Added to {{app}}",
+      "detected": "Detected: {{source}} · {{duration}}",
+      "doneDesktop": "{{app}} sends it to your {{device}} when both are on Wi-Fi.",
+      "donePhone": "Processing on this phone. You’ll get a notification when notes are ready.",
+      "lang": {
+        "auto": "Auto",
+        "both": "Both",
+        "en": "EN",
+        "vi": "VI"
+      },
+      "language": "Language",
+      "processOn": "Process on",
+      "target": {
+        "desktop": "My computer",
+        "phone": "This phone"
+      },
+      "title": "Import to {{app}}"
+    },
+    "ios": {
+      "liveActivitySubtitle": "{{app}} · Recording on this phone"
+    },
+    "meetings": {
+      "filter": {
+        "all": "All",
+        "imported": "Imported",
+        "needsNames": "Needs names"
+      },
+      "paired": "Paired · {{device}}",
+      "today": "Today",
+      "yesterday": "Yesterday"
+    },
+    "onboarding": {
+      "done": {
+        "body": "Tap Record in a meeting, or share a recording to {{app}}. {{app}} never starts recording on its own.",
+        "start": "Start recording",
+        "title": "You’re set"
+      },
+      "languages": {
+        "both": "Both, often mixed",
+        "en": "English",
+        "subtitle": "{{app}} understands both in one sentence, like “chốt scope cho bản beta”.",
+        "title": "Which languages do you speak in meetings?",
+        "vi": "Tiếng Việt"
+      },
+      "mic": {
+        "allowed": "Microphone allowed",
+        "body": "It records the room only when you tap Record. Audio stays on this phone unless you send it to your paired computer.",
+        "denied": "Microphone is off for {{app}}. Turn it on in Settings → {{app}} → Microphone.",
+        "title": "{{app}} needs the microphone"
+      },
+      "processing": {
+        "title": "Where should recordings be processed?"
+      }
+    },
+    "pair": {
+      "body": "On your computer, open {{app}} → Settings → Sync and scan the code shown there.",
+      "paired": "Paired with {{device}}",
+      "scanning": "looking for a code",
+      "syncNote": "Voice profiles and notes sync over Wi-Fi.",
+      "title": "Pair with your computer",
+      "wifiNote": "Both devices need to be on the same Wi-Fi. Nothing goes through the internet."
+    },
+    "privacy": {
+      "audioStaysLine": "Audio stays on your devices.",
+      "localOnly": "Local only"
+    },
+    "record": {
+      "identifying": "Identifying…",
+      "listening": "Listening",
+      "mark": "Mark",
+      "onPhone": "On this phone",
+      "pause": "Pause",
+      "pausedCall": {
+        "body": "{{app}} stopped at {{time}} so the call wasn’t recorded. Everything before it is saved.",
+        "title": "Paused for a phone call"
+      },
+      "pocket": {
+        "hint": "Put it face up on the table so {{app}} can hear everyone.",
+        "title": "Sound is muffled. Is the phone in a pocket?"
+      },
+      "recording": "Recording",
+      "resume": "Resume",
+      "resumeRecording": "Resume recording",
+      "speaker": "Speaker",
+      "speaking": "{{name}} speaking",
+      "stop": "Stop",
+      "stopAndSave": "Stop and save",
+      "title": "Room recording"
+    },
+    "search": {
+      "placeholder": "Search · accents optional"
+    },
+    "tabs": {
+      "meetings": "Meetings",
+      "record": "Record",
+      "search": "Search",
+      "settings": "Settings"
+    },
+    "target": {
+      "cloud": "Cloud · off",
+      "desktop": "My computer",
+      "finalOn": "Final pass runs on",
+      "hintDesktop": "Sent to your {{device}} over local Wi-Fi when both are nearby.",
+      "hintPhone": "Runs on this phone after you stop. Uses more battery.",
+      "phone": "This phone"
+    },
+    "voice": {
+      "body": "Read a 20-second passage so {{app}} labels you as “Me”. The profile stays encrypted on this phone.",
+      "consent": "I agree to store a voice profile of myself on this phone. I can delete it in Settings.",
+      "listening": "Listening…",
+      "record": "Record voice",
+      "saved": "Saved",
+      "start": "Start reading",
+      "title": "Your voice · optional"
+    }
+  }
+}

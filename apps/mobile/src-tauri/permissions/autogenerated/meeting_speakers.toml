@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-meeting-speakers"
+description = "Enables the meeting_speakers command without any pre-configured scope."
+commands.allow = ["meeting_speakers"]
+
+[[permission]]
+identifier = "deny-meeting-speakers"
+description = "Denies the meeting_speakers command without any pre-configured scope."
+commands.deny = ["meeting_speakers"]

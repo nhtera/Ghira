@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-inbox-dismiss"
+description = "Enables the inbox_dismiss command without any pre-configured scope."
+commands.allow = ["inbox_dismiss"]
+
+[[permission]]
+identifier = "deny-inbox-dismiss"
+description = "Denies the inbox_dismiss command without any pre-configured scope."
+commands.deny = ["inbox_dismiss"]

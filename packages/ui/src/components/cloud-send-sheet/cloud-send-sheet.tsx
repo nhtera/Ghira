@@ -9,7 +9,7 @@ import { Icon } from "../../icons/icon";
 import { Button } from "../../primitives/button";
 import { Dialog } from "../../primitives/dialog";
 import { Segmented } from "../../primitives/segmented";
-import { usePlatform } from "../../platform/platform";
+import { usePlatformContext } from "../../platform/platform";
 import { cn } from "../../utils/cn";
 
 export type CloudSendState = "default" | "sending" | "sent" | "failed";
@@ -38,7 +38,7 @@ export type CloudSendSheetProps = {
 
 export function CloudSendSheet(p: CloudSendSheetProps) {
   const { t, i18n } = useTranslation();
-  const platform = usePlatform();
+  const ctx = usePlatformContext();
   const redactId = useId();
   const busy = p.state === "sending";
   const provider = p.providers.find((x) => x.id === p.providerId)?.name ?? "";
@@ -88,8 +88,8 @@ export function CloudSendSheet(p: CloudSendSheetProps) {
           />
         </div>
 
-        <section aria-label={t("cloud.whatLeaves", { context: platform })} className="flex flex-col gap-1.5 rounded-row bg-surface2 p-3 text-[13px]">
-          <h3 className="text-label m-0 text-muted">{t("cloud.whatLeaves", { context: platform })}</h3>
+        <section aria-label={t("cloud.whatLeaves", { context: ctx("cloud.whatLeaves") })} className="flex flex-col gap-1.5 rounded-row bg-surface2 p-3 text-[13px]">
+          <h3 className="text-label m-0 text-muted">{t("cloud.whatLeaves", { context: ctx("cloud.whatLeaves") })}</h3>
           <p className="m-0 flex items-center gap-2 text-ink">
             <Icon name="description" size={17} className="text-muted" />
             {t("cloud.textOnly", { words: fmt.format(p.words), tokens: fmt.format(p.tokens) })}
@@ -123,7 +123,7 @@ export function CloudSendSheet(p: CloudSendSheetProps) {
         </div>
 
         <div className="grid gap-2.5 sm:grid-cols-2">
-          <PreviewPane title={t("cloud.before", { context: platform })} text={p.rawText} />
+          <PreviewPane title={t("cloud.before", { context: ctx("cloud.before") })} text={p.rawText} />
           <PreviewPane title={t("cloud.after")} text={sent} tone={p.redact ? "safe" : "warn"} />
         </div>
         {!p.redact && (

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-record-pause"
+description = "Enables the record_pause command without any pre-configured scope."
+commands.allow = ["record_pause"]
+
+[[permission]]
+identifier = "deny-record-pause"
+description = "Denies the record_pause command without any pre-configured scope."
+commands.deny = ["record_pause"]

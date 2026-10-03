@@ -1,0 +1,70 @@
+// SPDX-License-Identifier: Apache-2.0
+// A scripted core for the browser: the same command and event types as the
+// real one (bindings.ts). Commands nobody scripted yet answer like the real
+// stubs ("not mocked"), so a screen sees its error path, never a crash.
+// Tests drive events through `window.__ghiMock`.
+import type { CoreEvent, MobileEvent } from "../bindings";
+import type { Commands, Ipc } from "./ipc";
+import { meetingCommands } from "./mock-meetings";
+import { recordCommands } from "./mock-record";
+import { settingsCommands } from "./mock-settings";
+
+const coreListeners = new Set<(e: CoreEvent) => void>();
+const mobileListeners = new Set<(e: MobileEvent) => void>();
+
+const scripted: Partial<Commands> = {
+  appVersion: async () => ({ app: "0.1.0", core: "0.1.0" }),
+  micPermission: async () => "granted",
+  openAppSettings: async () => undefined,
+  ...recordCommands,
+  ...meetingCommands,
+  ...settingsCommands,
+};
+
+/**
+ * Commands that return their value directly (no `{ status, data }` result):
+ * unscripted, they throw like a failed invoke instead of answering a result.
+ * mock.test.ts checks this list against bindings.ts.
+ */
+export const RAW_COMMANDS = new Set(["appVersion", "cloudModels", "micPermission", "openAppSettings", "requestMicPermission"]);
+
+const commands = new Proxy(scripted, {
+  get(target, name: string) {
+    const scriptedCommand = (target as Record<string, unknown>)[name];
+    if (scriptedCommand) return scriptedCommand;
+    if (RAW_COMMANDS.has(name)) {
+      return async () => {
+        throw new Error(`not mocked: ${name}`);
+      };
+    }
+    return async () => ({ status: "error", error: `not mocked: ${name}` });
+  },
+}) as Commands;
+
+export const mockIpc: Ipc = {
+  kind: "mock",
+  commands,
+  onCoreEvent: async (cb) => {
+    coreListeners.add(cb);
+    return () => coreListeners.delete(cb);
+  },
+  onMobileEvent: async (cb) => {
+    mobileListeners.add(cb);
+    return () => mobileListeners.delete(cb);
+  },
+  audioUrl: (token) => token,
+};
+
+declare global {
+  interface Window {
+    __ghiMock?: {
+      simulateMobileEvent(e: MobileEvent): void;
+      simulateCoreEvent(e: CoreEvent): void;
+    };
+  }
+}
+
+window.__ghiMock = {
+  simulateMobileEvent: (e) => mobileListeners.forEach((l) => l(e)),
+  simulateCoreEvent: (e) => coreListeners.forEach((l) => l(e)),
+};

@@ -14,32 +14,48 @@ import vi from "../locales/vi.json";
 export type Locale = "en" | "vi";
 export type Messages = typeof en;
 
+/**
+ * Extra keys an app types on top of the shared ones. The iOS app augments this
+ * (`apps/mobile/src/i18n-types.d.ts`) with its `mobile.*` keys, so they exist
+ * only in its type surface; the desktop never sees them.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ExtraMessages {}
+
 export const APP_NAME = "Ghira";
 export const locales: Record<Locale, Messages> = { en, vi: vi as Messages };
 
 declare module "i18next" {
   interface CustomTypeOptions {
     defaultNS: "translation";
-    resources: { translation: Messages };
+    resources: { translation: Messages & ExtraMessages };
   }
 }
 
-/** Initializes the shared i18next instance (idempotent; switches language). */
-export function initI18n(lng: Locale = "en"): I18n {
+/** Initializes the shared instance with these resources (the iOS entry adds `mobile.*`). */
+export function initResources(lng: Locale, resources: Record<Locale, object>): I18n {
   if (!i18next.isInitialized) {
     void i18next.use(initReactI18next).init({
       lng,
       fallbackLng: "en",
-      resources: { en: { translation: en }, vi: { translation: vi } },
+      resources: { en: { translation: resources.en }, vi: { translation: resources.vi } },
       // React escapes text nodes; strings are never rendered as HTML (RT-6).
       interpolation: { escapeValue: false, defaultVariables: { app: APP_NAME } },
       returnNull: false,
       initAsync: false,
     });
-  } else if (i18next.language !== lng) {
-    void i18next.changeLanguage(lng);
+  } else {
+    for (const l of ["en", "vi"] as const) {
+      i18next.addResourceBundle(l, "translation", resources[l], true, true);
+    }
+    if (i18next.language !== lng) void i18next.changeLanguage(lng);
   }
   return i18next;
+}
+
+/** Initializes the shared i18next instance (idempotent; switches language). */
+export function initI18n(lng: Locale = "en"): I18n {
+  return initResources(lng, { en, vi });
 }
 
 export { i18next };

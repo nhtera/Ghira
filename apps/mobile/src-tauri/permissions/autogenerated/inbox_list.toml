@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-inbox-list"
+description = "Enables the inbox_list command without any pre-configured scope."
+commands.allow = ["inbox_list"]
+
+[[permission]]
+identifier = "deny-inbox-list"
+description = "Denies the inbox_list command without any pre-configured scope."
+commands.deny = ["inbox_list"]

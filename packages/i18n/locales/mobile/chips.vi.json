@@ -1,0 +1,9 @@
+{
+  "mobile": {
+    "chip": {
+      "processingOnPhone": "Đang xử lý trên điện thoại · {{percent}}%",
+      "recorded": "Đã ghi",
+      "waitingForModels": "Chờ tải mô hình"
+    }
+  }
+}

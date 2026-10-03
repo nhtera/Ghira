@@ -26,5 +26,42 @@ void ghi_ios_interruption(bool began);
 // Live Activity intents.
 void ghi_ios_stop_requested(void);
 void ghi_ios_mark_requested(void);
+// Dynamic Type changed: the root font-size multiplier (1.0 = Large, capped at 2.0).
+void ghi_ios_text_scale_changed(float scale);
+// The audio route changed (AVAudioSession.RouteChangeReason raw value).
+void ghi_ios_route_changed(int32_t reason);
+// The system sent a memory warning.
+void ghi_ios_memory_warning(void);
+// The share extension added files to the App Group inbox.
+void ghi_ios_inbox_changed(void);
+
+// --- Swift side (implemented in native/ios/GhiAudio/GhiPlatform.swift with
+// @_cdecl; declared here as the full contract, Rust declares the same in
+// apps/mobile/src-tauri/src/platform.rs) -------------------------------------
+
+// A phone call is active (CXCallObserver).
+bool ghi_swift_call_active(void);
+// Writes the machine identifier ("iPhone16,1"; the simulated model on the
+// simulator) NUL-terminated into buf (capacity cap); returns its length.
+size_t ghi_swift_device_model(char *buf, size_t cap);
+// ProcessInfo.physicalMemory, bytes.
+uint64_t ghi_swift_physical_memory(void);
+// Dynamic Type multiplier (1.0 = Large), capped at 2.0.
+float ghi_swift_text_scale(void);
+// Presents the share sheet for the file at path; false if it could not be shown.
+bool ghi_swift_share_file(const char *path);
+// Opens this app's page in the Settings app.
+void ghi_swift_open_settings(void);
+// beginBackgroundTask; returns a token for ghi_swift_end_bg_task (0: none granted).
+uint64_t ghi_swift_begin_bg_task(const char *name);
+void ghi_swift_end_bg_task(uint64_t token);
+// Covers the window (app-switcher snapshot, app lock).
+void ghi_swift_set_privacy_cover(bool on);
+// Nanoseconds from a clock that keeps counting while the device sleeps.
+uint64_t ghi_swift_continuous_ns(void);
+// Microphone permission: 0 not determined, 1 granted, 2 denied.
+int32_t ghi_swift_mic_permission(void);
+// Shows the system prompt (first time only); poll ghi_swift_mic_permission.
+void ghi_swift_request_mic_permission(void);
 
 #endif

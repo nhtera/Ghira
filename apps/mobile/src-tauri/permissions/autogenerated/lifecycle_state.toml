@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lifecycle-state"
+description = "Enables the lifecycle_state command without any pre-configured scope."
+commands.allow = ["lifecycle_state"]
+
+[[permission]]
+identifier = "deny-lifecycle-state"
+description = "Denies the lifecycle_state command without any pre-configured scope."
+commands.deny = ["lifecycle_state"]

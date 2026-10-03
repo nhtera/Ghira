@@ -1,66 +1,54 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-:root {
-  color-scheme: light dark;
-  --bg: #f7f5f1;
-  --panel: #ffffff;
-  --ink: #1b1b1b;
-  --muted: #6b6560;
-  --line: #e4dfd8;
-  --accent: #c92a2a;
-  --ok: #2b8a3e;
-  font-family: -apple-system, system-ui, sans-serif;
+/* iOS shell: viewport, safe areas and the Dynamic Type multiplier (--ghi-text-scale,
+   set from MobileEvent.textScale). Tokens and components come from @ghi/ui. */
+html {
+  font-size: calc(14px * var(--ghi-text-scale, 1));
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141414;
-    --panel: #1e1e1e;
-    --ink: #eeeeee;
-    --muted: #9a948c;
-    --line: #2c2c2c;
-  }
-}
-* { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
-body { background: var(--bg); color: var(--ink); -webkit-user-select: none; user-select: none; }
-.screen {
+html,
+body,
+#root {
   height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.tab-shell {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: max(env(safe-area-inset-top), 12px) 16px max(env(safe-area-inset-bottom), 12px);
+  height: 100%;
+  padding-top: env(safe-area-inset-top);
 }
-.bar { display: flex; justify-content: space-between; align-items: center; }
-.bar h1 { font-size: 20px; margin: 0 0 4px; }
-.timer { font-variant-numeric: tabular-nums; font-size: 28px; font-weight: 600; }
-.chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted); }
-.chip.phase-live { background: var(--accent); color: #fff; }
-.chip.phase-catchingUp, .chip.phase-loading { background: #e8590c; color: #fff; }
-.chip.phase-done { background: var(--ok); color: #fff; }
-.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-button {
-  font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-  border-radius: 10px; padding: 10px 16px; min-height: 44px;
+.tab-shell > main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
-button.record { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.stop { background: var(--ink); color: var(--bg); }
-button.ghost { background: transparent; }
-button:disabled { opacity: 0.5; }
-.notice { margin: 0; font-size: 13px; color: var(--muted); background: var(--panel); border-left: 3px solid #e8590c; padding: 8px 10px; }
-.transcript { flex: 1; min-height: 0; overflow-y: auto; background: var(--panel); border-radius: 12px; -webkit-overflow-scrolling: touch; }
-.test-box { flex: 1; min-height: 0; display: flex; }
-.test-box .transcript { flex: 1; }
-.empty { color: var(--muted); padding: 16px; margin: 0; }
-.row { padding: 8px 12px; border-bottom: 1px solid var(--line); }
-.row p { margin: 4px 0 0; font-size: 15px; line-height: 1.4; -webkit-user-select: text; user-select: text; }
-.row .partial { color: var(--muted); font-style: italic; }
-.meta { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
-.speaker { border: 1.5px solid; border-radius: 999px; padding: 0 6px; font-weight: 700; font-size: 11px; }
-.speaker.unknown { color: var(--muted); border-color: var(--line); }
-.stats {
-  display: grid; grid-template-columns: repeat(3, auto 1fr); gap: 2px 8px; margin: 0; font-size: 12px;
-  font-variant-numeric: tabular-nums;
+.tab-bar {
+  display: flex;
+  border-top: 1px solid var(--line);
+  background: var(--surface, var(--bg));
+  padding-bottom: env(safe-area-inset-bottom);
 }
-.stats dt { color: var(--muted); }
-.stats dd { margin: 0; }
-.pass { color: var(--ok); margin: 0; font-weight: 600; }
-.fail { color: var(--accent); margin: 0; font-weight: 600; }
+.tab-bar a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 49px;
+  min-width: 44px;
+  color: var(--ink-3, var(--ink));
+  text-decoration: none;
+  font-size: 0.75rem;
+}
+.tab-bar a[aria-current="page"] {
+  color: var(--accent);
+  font-weight: 600;
+}

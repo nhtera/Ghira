@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cloud-models"
+description = "Enables the cloud_models command without any pre-configured scope."
+commands.allow = ["cloud_models"]
+
+[[permission]]
+identifier = "deny-cloud-models"
+description = "Denies the cloud_models command without any pre-configured scope."
+commands.deny = ["cloud_models"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-waveform-peaks"
+description = "Enables the waveform_peaks command without any pre-configured scope."
+commands.allow = ["waveform_peaks"]
+
+[[permission]]
+identifier = "deny-waveform-peaks"
+description = "Denies the waveform_peaks command without any pre-configured scope."
+commands.deny = ["waveform_peaks"]

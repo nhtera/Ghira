@@ -1,6 +1,6 @@
 [package]
 name = "ghi-mobile"
-description = "Ghira iOS spike (phase 7): Tauri 2 shell, Swift audio over a C ABI, live speech engines."
+description = "Ghira iOS app: Tauri 2 shell, Swift audio over a C ABI, the shared ghi-app commands."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -15,7 +15,7 @@ crate-type = ["staticlib", "rlib"]
 
 [features]
 # Live ASR + diarization (NeMo-Speech.cpp). iOS: tools/scripts/build-nemo-ios.sh.
-nemo = ["ghi-speech/nemo"]
+nemo = ["ghi-speech/nemo", "ghi-app/nemo"]
 # Test-only hooks for the Simulator harness (fake mic, Darwin-notification
 # triggers). Paired with the Swift condition GHI_TEST_HOOKS; on only for
 # `build-ios.sh --sim --test-hooks`, never in a release or device build.
@@ -32,6 +32,8 @@ serde_json = "1"
 specta = "=2.0.0-rc.25"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 specta-typescript = "=0.0.12"
+ghi-app = { path = "../../../crates/ghi-app", default-features = false, features = ["specta", "voice"] }
+ghi-core = { path = "../../../crates/ghi-core", features = ["specta", "voice"] }
 ghi-audio = { path = "../../../crates/ghi-audio" }
 ghi-models = { path = "../../../crates/ghi-models" }
 ghi-speech = { path = "../../../crates/ghi-speech" }

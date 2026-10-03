@@ -39,11 +39,11 @@ final class GhiAudio {
         UIDevice.current.isBatteryMonitoringEnabled = true
         updateBattery()
         GhiLiveActivity.shared.endStale()
+        TextScaleCache.shared.refresh()
         #if GHI_TEST_HOOKS
         GhiTestHooks.install()
         #endif
-        // Ask at launch, so Record never blocks on the permission prompt.
-        AVAudioApplication.requestRecordPermission { _ in }
+        // The microphone prompt is shown by onboarding (ghi_swift_request_mic_permission).
         let nc = NotificationCenter.default
         observers = [
             nc.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { _ in
@@ -79,6 +79,13 @@ final class GhiAudio {
             nc.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { note in
                 let reason = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) ?? 0
                 NSLog("ghira: audio route changed (reason \(reason))")
+                ghi_ios_route_changed(Int32(reason))
+            },
+            nc.addObserver(forName: UIContentSizeCategory.didChangeNotification, object: nil, queue: .main) { _ in
+                ghi_ios_text_scale_changed(TextScaleCache.shared.refresh())
+            },
+            nc.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
+                ghi_ios_memory_warning()
             },
         ]
     }

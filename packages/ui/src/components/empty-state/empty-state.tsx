@@ -3,7 +3,7 @@
 import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "../../icons/icon";
 import { Button } from "../../primitives/button";
-import { usePlatform } from "../../platform/platform";
+import { usePlatformContext } from "../../platform/platform";
 import { cn } from "../../utils/cn";
 
 export type EmptyKind = "library" | "search" | "people" | "ask" | "import";
@@ -31,9 +31,9 @@ const ICON: Record<EmptyKind, IconName> = {
 
 export function EmptyState({ kind, query, onPrimary, onSecondary, hint, className }: EmptyStateProps) {
   const { t } = useTranslation();
-  const platform = usePlatform();
+  const ctx = usePlatformContext();
   const copy = {
-    library: { title: t("library.empty.title"), body: t("library.empty.body", { context: platform }), primary: t("library.empty.record"), secondary: t("library.empty.importFile") },
+    library: { title: t("library.empty.title"), body: t("library.empty.body", { context: ctx("library.empty.body") }), primary: t("library.empty.record"), secondary: t("library.empty.importFile") },
     search: { title: t("library.emptySearch.title", { query: query ?? "" }), body: t("library.emptySearch.body") },
     people: { title: t("people.empty.title"), body: t("people.empty.body") },
     ask: { title: t("ask.empty.title"), body: t("ask.empty.body") },
