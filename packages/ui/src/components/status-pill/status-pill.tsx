@@ -3,7 +3,7 @@
 // tint only reinforces. "Failed" becomes a button when a retry is possible.
 import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "../../icons/icon";
-import { usePlatformContext } from "../../platform/platform";
+import { useAppPlatform, usePlatformContext } from "../../platform/platform";
 import { cn } from "../../utils/cn";
 
 export type StatusKind =
@@ -41,6 +41,7 @@ const TONE: Record<StatusKind, { icon: IconName; cls: string }> = {
 export function StatusPill({ status, percent, onRetry, className }: StatusPillProps) {
   const { t } = useTranslation();
   const ctx = usePlatformContext();
+  const ios = useAppPlatform() === "ios";
   const { icon, cls } = TONE[status];
   const label = {
     ready: () => t("library.status.ready"),
@@ -58,13 +59,16 @@ export function StatusPill({ status, percent, onRetry, className }: StatusPillPr
     recording: () => t("library.status.recording"),
   }[status]();
   const base = cn(
-    "inline-flex h-[26px] items-center gap-1.5 rounded-full px-2.5 text-[12px] font-semibold whitespace-nowrap",
+    // iOS: rem sizing that wraps, so it follows the text scale instead of clipping.
+    ios
+      ? "inline-flex min-h-[1.625rem] items-center gap-1.5 rounded-[1rem] px-2.5 py-0.5 text-start text-ios-caption1 font-semibold"
+      : "inline-flex h-[26px] items-center gap-1.5 rounded-full px-2.5 text-[12px] font-semibold whitespace-nowrap",
     cls,
     className,
   );
   const content = (
     <>
-      <Icon name={icon} size={15} className={status === "processing" ? "animate-spin motion-reduce:animate-none" : undefined} />
+      <Icon name={icon} size={15} className={cn(ios && "size-[1.0625rem] shrink-0", status === "processing" && "animate-spin motion-reduce:animate-none")} />
       {label}
     </>
   );

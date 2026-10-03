@@ -3,6 +3,7 @@
 @import "tailwindcss";
 @import "./fonts.css";
 @import "./tokens/tokens.css";
+@import "./tokens/ios.css";
 
 /* Apps import this through node_modules, which Tailwind doesn't scan. */
 @source "./";

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { ICON_NAMES } from "../icons/icon-data";
 import { Icon } from "../icons/icon";
+import { PHONE_ICONS } from "../icons/phone-icons";
 import type { Story, StoryMeta } from "../story";
 import { Button } from "./button";
 import { Dialog } from "./dialog";
@@ -59,7 +60,7 @@ export const Icons: Story = {
   note: "Material Symbols Rounded on mac; Fluent 20 Regular on Windows (?platform=win).",
   render: () => (
     <div className="grid grid-cols-8 gap-3 text-muted">
-      {ICON_NAMES.map((n) => (
+      {ICON_NAMES.filter((n) => !(PHONE_ICONS as readonly string[]).includes(n)).map((n) => (
         <span key={n} title={n} className="grid place-items-center">
           <Icon name={n} size={20} label={n} />
         </span>

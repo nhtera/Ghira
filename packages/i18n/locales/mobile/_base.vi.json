@@ -1,5 +1,8 @@
 {
   "mobile": {
+    "banner": {
+      "dismiss": "Bỏ qua"
+    },
     "callLimit": {
       "body": "Điện thoại không thể ghi âm cuộc gọi của ứng dụng khác. Hãy bật loa ngoài và dùng chế độ Phòng họp.",
       "consent": "Hãy báo cho người kia biết bạn đang ghi âm trước khi bắt đầu.",
@@ -10,6 +13,7 @@
     },
     "chip": {
       "failed": "Lỗi · Chạm để thử lại",
+      "failedNoRetry": "Lỗi",
       "finalOnDesktop": "Xử lý cuối trên {{device}} · {{percent}}%",
       "processedOnPhone": "Đã xử lý trên điện thoại",
       "synced": "Đã đồng bộ",
@@ -63,6 +67,9 @@
       "paired": "Đã ghép · {{device}}",
       "today": "Hôm nay",
       "yesterday": "Hôm qua"
+    },
+    "nav": {
+      "back": "Quay lại"
     },
     "onboarding": {
       "done": {
@@ -120,10 +127,22 @@
       "speaking": "{{name}} đang nói",
       "stop": "Dừng",
       "stopAndSave": "Dừng và lưu",
-      "title": "Ghi âm phòng họp"
+      "title": "Ghi âm phòng họp",
+      "hot": {
+        "title": "Điện thoại đang quá nóng",
+        "body": "Việc chép lời tạm dừng cho đến khi máy nguội. Ghi âm vẫn tiếp tục."
+      },
+      "recordOnly": {
+        "title": "Chỉ ghi âm trên điện thoại này",
+        "body": "Chép lời cần điện thoại đời mới hơn. Hãy gửi bản ghi âm sang máy tính của bạn."
+      }
     },
     "search": {
       "placeholder": "Tìm · gõ không dấu cũng được"
+    },
+    "sheet": {
+      "close": "Đóng",
+      "handle": "Đổi kích thước bảng"
     },
     "tabs": {
       "meetings": "Cuộc họp",

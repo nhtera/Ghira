@@ -2,7 +2,7 @@
 // Every component state renders under the production CSP with no violation
 // (catches libraries that inject inline styles or fetch anything).
 import { expect, test } from "@playwright/test";
-import { galleryEntries, storyUrl } from "./gallery";
+import { galleryEntries, isPhone, storyUrl } from "./gallery";
 
 test("no CSP violations across every story and state", async ({ page }) => {
   test.setTimeout(10 * 60_000);
@@ -17,7 +17,7 @@ test("no CSP violations across every story and state", async ({ page }) => {
   const violations: string[] = [];
   for (const e of entries) {
     for (const state of e.states) {
-      for (const platform of ["mac", "win"]) {
+      for (const platform of isPhone(e) ? ["ios"] : ["mac", "win"]) {
         await page.goto(storyUrl(e.id, { theme: "dark", lang: "vi" }, { state, platform }));
         await page.waitForLoadState("load");
         const seen = await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp);

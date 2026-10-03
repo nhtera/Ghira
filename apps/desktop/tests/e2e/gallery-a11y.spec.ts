@@ -3,7 +3,7 @@
 // en/vi: no serious or critical violations (phase 9 success criterion).
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
-import { VARIANTS, galleryEntries, storyUrl } from "./gallery";
+import { PHONE_VARIANTS, VARIANTS, galleryEntries, isPhone, phoneUrl, storyUrl } from "./gallery";
 
 test("axe: no serious violations in any story", async ({ page }) => {
   test.setTimeout(10 * 60_000);
@@ -12,9 +12,11 @@ test("axe: no serious violations in any story", async ({ page }) => {
   const entries = await galleryEntries(page);
   const found: string[] = [];
   for (const e of entries) {
-    for (const v of VARIANTS) {
+    // The phone's stories at the phone's size and text scale (incl. 200%).
+    await page.setViewportSize(isPhone(e) ? { width: 390, height: 844 } : { width: 1280, height: 720 });
+    for (const v of isPhone(e) ? PHONE_VARIANTS : VARIANTS) {
       for (const state of e.states) {
-        await page.goto(storyUrl(e.id, v, { state }));
+        await page.goto(isPhone(e) ? phoneUrl(e.id, v as (typeof PHONE_VARIANTS)[number], { state }) : storyUrl(e.id, v, { state }));
         await page.waitForLoadState("load");
         const serious = async () => {
           // Settled: fonts in and two frames painted (a busy machine can be

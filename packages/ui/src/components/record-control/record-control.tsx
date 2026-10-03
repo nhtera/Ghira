@@ -6,7 +6,9 @@ import { formatClock } from "@ghi/i18n";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../../icons/icon";
 import { Menu } from "../../primitives/menu";
+import { useAppPlatform } from "../../platform/platform";
 import { cn } from "../../utils/cn";
+import { RecordControlThumb } from "./record-control-thumb";
 
 export type RecordState = "idle" | "starting" | "recording" | "paused" | "stopping" | "error";
 export type RecordMode = "call" | "room";
@@ -37,7 +39,11 @@ function RecordShape({ recording }: { recording: boolean }) {
 
 export function RecordControl({ state, mode, elapsedMs = 0, onStart, onPause, onResume, onStop, onModeChange, onFix, className }: RecordControlProps) {
   const { t } = useTranslation();
+  const ios = useAppPlatform() === "ios";
   const clock = formatClock(elapsedMs);
+
+  // The phone gets the thumb-zone variant (large buttons, labels under them).
+  if (ios) return <RecordControlThumb {...{ state, mode, elapsedMs, onStart, onPause, onResume, onStop, onModeChange, onFix, className }} />;
 
   if (state === "starting" || state === "stopping") {
     const starting = state === "starting";

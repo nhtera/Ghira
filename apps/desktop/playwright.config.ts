@@ -4,7 +4,8 @@
 // - gallery-csp: every component story under the prod CSP, zero violations;
 // - gallery-a11y: axe on every story, light/dark × en/vi (chromium);
 // - gallery-visual: one screenshot per story × theme × language, webkit on
-//   macOS only (WKWebView is what ships there; CI runs Linux).
+//   macOS only (WKWebView is what ships there; CI runs Linux);
+// - gallery-visual-ios: the same for the phone's stories (platform=ios) at 390×844.
 import { defineConfig, devices } from "@playwright/test";
 
 const gallery = "http://127.0.0.1:4174";
@@ -22,8 +23,14 @@ export default defineConfig({
     { name: "gallery-a11y", testMatch: /gallery-a11y/, use: { ...devices["Desktop Chrome"], baseURL: gallery, bypassCSP: true } },
     {
       name: "gallery-visual",
-      testMatch: /gallery-visual/,
+      testMatch: /gallery-visual\.spec/,
       use: { ...devices["Desktop Safari"], baseURL: gallery, viewport: { width: 1280, height: 900 } },
+    },
+    // The phone's stories (platform=ios) at iPhone size; its own baselines.
+    {
+      name: "gallery-visual-ios",
+      testMatch: /gallery-visual-ios/,
+      use: { ...devices["Desktop Safari"], baseURL: gallery, viewport: { width: 390, height: 844 } },
     },
   ],
   webServer: [

@@ -11,6 +11,12 @@ export type StoryMeta = {
   title: string;
   /** Width of each state's frame in the contact sheet (px). */
   width?: number;
+  /**
+   * "ios": the stories need the phone's strings and tokens. The gallery renders
+   * them with platform=ios, full width, and the e2e suites visit them there
+   * (and only there) at 390 x 844.
+   */
+  platform?: "ios";
 };
 
 export type Story = {

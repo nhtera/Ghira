@@ -1,5 +1,8 @@
 {
   "mobile": {
+    "banner": {
+      "dismiss": "Dismiss"
+    },
     "callLimit": {
       "body": "Phones can't record other apps' calls. Use speakerphone and Room mode instead.",
       "consent": "Tell the other person you’re recording before you start.",
@@ -10,6 +13,7 @@
     },
     "chip": {
       "failed": "Failed · Tap to retry",
+      "failedNoRetry": "Failed",
       "finalOnDesktop": "Final pass on {{device}} · {{percent}}%",
       "processedOnPhone": "Processed on phone",
       "synced": "Synced",
@@ -63,6 +67,9 @@
       "paired": "Paired · {{device}}",
       "today": "Today",
       "yesterday": "Yesterday"
+    },
+    "nav": {
+      "back": "Back"
     },
     "onboarding": {
       "done": {
@@ -120,10 +127,22 @@
       "speaking": "{{name}} speaking",
       "stop": "Stop",
       "stopAndSave": "Stop and save",
-      "title": "Room recording"
+      "title": "Room recording",
+      "hot": {
+        "title": "The phone is too hot",
+        "body": "Transcription pauses until it cools down. Recording continues."
+      },
+      "recordOnly": {
+        "title": "Recording only on this phone",
+        "body": "Transcribing needs a newer phone. Send the recording to your computer."
+      }
     },
     "search": {
       "placeholder": "Search · accents optional"
+    },
+    "sheet": {
+      "close": "Close",
+      "handle": "Resize sheet"
     },
     "tabs": {
       "meetings": "Meetings",
