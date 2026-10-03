@@ -163,6 +163,19 @@ def cmd_speakerid_report(args) -> int:
     return 0
 
 
+def cmd_recluster_report(args) -> int:
+    import json
+
+    from .recluster import score_variants
+
+    report = score_variants(args.dataset, per_file=args.per_file)
+    text = json.dumps(report, indent=2)
+    if args.out:
+        args.out.write_text(text + "\n", encoding="utf-8")
+    print(text)
+    return 0
+
+
 def _check_id(value: str) -> str:
     from .manifest import ID_RE
 
@@ -324,6 +337,17 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--voices", type=Path, required=True)
     sp.add_argument("--fill-persons", action="store_true", help="persons = RTTM labels (AMI)")
     sp.add_argument("--scores-out", type=Path, help="write speaker_scores.tsv")
+    sp.add_argument("--out", type=Path, help="write the aggregate report JSON")
+
+    sp = add(
+        "recluster-report",
+        cmd_recluster_report,
+        "DER and speaker-count error of capped vs re-clustered diarization (hyp/<variant>/)",
+    )
+    sp.add_argument("--dataset", type=Path, required=True)
+    sp.add_argument(
+        "--per-file", action="store_true", help="include per-file DER (not for reports)"
+    )
     sp.add_argument("--out", type=Path, help="write the aggregate report JSON")
 
     conv = sub.add_parser("convert", help="label converters")

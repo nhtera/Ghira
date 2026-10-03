@@ -92,6 +92,15 @@ VOX_ZIP = (
 VOX_SMALL = ["aepyx", "dohag", "euqef", "fuzfh", "msbyq", "neiye", "xkmqx"]  # shortest, ~7 min
 # v0.0.2 and v0.3 references are identical for the small subset (aiqwk is the one file among
 # the shortest ones that differs), so both revisions share the hashes below.
+# Files with 9+ reference speakers (more than the diarizer's cap of 8), shortest first, for the
+# re-cluster eval (`--subset many`): speakers/seconds in the comment.
+VOX_MANY = (
+    "fpfvy cwbvu xtzoq gukoa ezxso aggyz uqxlg fzwtp mclsr qeejz byapz wlfsf usqam vtzqw "
+    "nitgx jeymh"  # 11/121 10/121 11/185 10/247 10/277 13/260 15/288 11/284 11/289 14/292 ...
+).split()
+# Control for the same eval (`--subset ctrl`): 7-8 reference speakers, where the capped diarizer
+# is right or nearly so and re-clustering must not make things worse.
+VOX_CTRL = ("nqcpi erslt kpjud gfneh isrps ralnu dzxut cadba aiqwk eoyaz ygrip qadia").split()
 VOX_RTTM_SHA256 = {
     (VOX_REV, "aepyx"): "fd5bf3e0ecfacaba66d749e75f39574162b8cb472e7910ecadf0fc949d00e9c9",
     (VOX_REV, "dohag"): "7e16664718898767562103aa8c1c0cc4d725bdf4728ba02439221b9efa73f7da",
@@ -588,7 +597,15 @@ def fetch_voxconverse(out: Path, subset: str, with_published_hyp: bool = False, 
     # The published DER was computed against v0.0.2 references, so that flag switches to them.
     rev = VOX_REV_V002 if with_published_hyp else VOX_REV
     label = "voxconverse-v0.0.2" if with_published_hyp else "voxconverse"
-    ids = None if subset == "full" else VOX_SMALL
+    ids = (
+        None
+        if subset == "full"
+        else VOX_MANY
+        if subset == "many"
+        else VOX_CTRL
+        if subset == "ctrl"
+        else VOX_SMALL
+    )
     log(f"  opening {VOX_ZIP} (only the needed files are read)")
     zf = zipfile.ZipFile(RangeFile(VOX_ZIP))
     members = _vox_zip_members(zf)
@@ -711,7 +728,13 @@ def plan(name: str, subset: str, with_hyp: bool, out: Path) -> list[str]:
         lines = [AMI_RTTM.format(id=i) for i in ids] + [AMI_WAV.format(id=i) for i in ids]
     elif name == "voxconverse":
         rev = VOX_REV_V002 if with_hyp else VOX_REV
-        ids = ["<all 232 test files>"] if subset == "full" else VOX_SMALL
+        ids = (
+            ["<all 232 test files>"]
+            if subset == "full"
+            else VOX_MANY
+            if subset == "many"
+            else VOX_SMALL
+        )
         lines = [f"{VOX_ZIP}  (HTTP Range: only the listed files)"]
         lines += [VOX_RTTM.format(rev=rev, id=i) for i in ids]
         if with_hyp:
@@ -730,7 +753,12 @@ def main(argv: list[str] | None = None) -> int:
         help=f"comma-separated: {', '.join(ALL_SETS)}, or 'all' (default: %(default)s)",
     )
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT, help="default: tools/eval/data")
-    ap.add_argument("--subset", choices=["small", "full"], default="small")
+    ap.add_argument(
+        "--subset",
+        choices=["small", "full", "many", "ctrl"],
+        default="small",
+        help="voxconverse only: many = 9+ speakers, ctrl = 7-8 (re-cluster eval)",
+    )
     ap.add_argument(
         "--with-published-hyp",
         action="store_true",

@@ -92,7 +92,9 @@ pub fn mean_normalized(vs: &[Vec<f32>]) -> Option<Vec<f32>> {
             *s += x;
         }
     }
-    normalized(&sum)
+    let out = normalized(&sum);
+    sum.zeroize();
+    out
 }
 
 // ----------------------------------------------------------------- scoring
