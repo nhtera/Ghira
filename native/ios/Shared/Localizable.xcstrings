@@ -87,6 +87,23 @@
         }
       }
     },
+    "mobile.ios.activity.phase.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tạm dừng"
+          }
+        }
+      }
+    },
     "mobile.ios.activity.phase.pausedForCall": {
       "extractionState": "manual",
       "localizations": {
@@ -219,6 +236,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Đã thêm vào Ghira"
+          }
+        }
+      }
+    },
+    "mobile.ios.share.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t add this file."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không thể thêm file này."
           }
         }
       }

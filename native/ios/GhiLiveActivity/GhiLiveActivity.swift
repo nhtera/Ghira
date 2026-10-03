@@ -32,7 +32,7 @@ struct RecordingLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
-                        Text(context.state.label).font(.caption)
+                        Text(detail(context.state)).font(.caption)
                         Spacer()
                         if !context.state.stopped {
                             Buttons(marks: context.state.marks)
@@ -56,10 +56,11 @@ private struct LockScreenView: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Label(context.state.stopped ? "Stopped" : "Recording", systemImage: "record.circle")
+                Label(context.state.stopped ? String(localized: ActivityPhase.done.label) : String(localized: "mobile.ios.liveActivitySubtitle"),
+                      systemImage: "record.circle")
                     .font(.headline)
                     .foregroundStyle(context.state.stopped ? .gray : .red)
-                Text(context.state.label)
+                Text(detail(context.state))
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.8))
             }
@@ -73,6 +74,15 @@ private struct LockScreenView: View {
             }
         }
     }
+}
+
+/// "Live", or "Live · 2 marks".
+private func detail(_ state: RecordingAttributes.ContentState) -> String {
+    let label = String(localized: state.label)
+    guard state.marks > 0 else { return label }
+    let marks = String.localizedStringWithFormat(
+        NSLocalizedString("mobile.ios.activity.marks", comment: "Mark count"), state.marks)
+    return "\(label) · \(marks)"
 }
 
 /// Running time while recording; nothing once stopped.
@@ -94,11 +104,11 @@ private struct Buttons: View {
     var body: some View {
         HStack(spacing: 8) {
             Button(intent: MarkMomentIntent()) {
-                Label(marks > 0 ? "Mark \(marks)" : "Mark", systemImage: "bookmark")
+                Label(String(localized: "mobile.ios.activity.mark"), systemImage: "bookmark")
             }
             .tint(.orange)
             Button(intent: StopRecordingIntent()) {
-                Label("Stop", systemImage: "stop.fill")
+                Label(String(localized: "mobile.ios.activity.stop"), systemImage: "stop.fill")
             }
             .tint(.red)
         }

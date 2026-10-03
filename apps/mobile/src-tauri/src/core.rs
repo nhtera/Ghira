@@ -173,11 +173,10 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
 }
 
 /// The app was launched in the background (a Live Activity intent, a
-/// relaunch), so the job runner must start paused. Swift does not report this
-/// yet (a `ghi_swift_` call for 16-E): until then a launch counts as a
-/// foreground one and `ghi_ios_entered_background` pauses the runner later.
+/// relaunch), so the job runner must start paused (Swift:
+/// `ghi_swift_launched_in_background`; false off iOS).
 fn launched_in_background() -> bool {
-    false
+    crate::platform::launched_in_background()
 }
 
 /// Imports one inbox item with the user's (or the extension's) choices.
@@ -241,8 +240,9 @@ fn spawn_inbox_watch(
 /// `didEnterBackground` at once when the delay is 0; and on `didBecomeActive`
 /// when the app has been away for at least the delay, before the UI is shown.
 /// The privacy cover goes up at `willResignActive` whenever the lock is on
-/// (the app switcher snapshot is taken after it), and follows the lock after
-/// that. The lock gates the store commands and the transcript events; a
+/// (the app switcher snapshot is taken after it) and always comes down at
+/// `didBecomeActive`: it is only for that snapshot, the web lock gate covers
+/// the content while locked. The lock gates the store commands and the transcript events; a
 /// recording carries on behind it (`store_even_locked`), and while one runs the
 /// app only covers the UI in the background: it locks for real on return.
 pub struct BgLock {
@@ -335,7 +335,9 @@ fn wire_app_lock(
                 if gate.foreground() {
                     ghi_app::lock_cmd::engage(&app, &core);
                 }
-                crate::platform::set_privacy_cover(core.locked());
+                // The cover is only for the app-switcher snapshot; the web
+                // lock gate hides the content while locked.
+                crate::platform::set_privacy_cover(false);
             }
         }));
     }
@@ -347,7 +349,6 @@ fn wire_app_lock(
                 if core.store_even_locked().is_ok() {
                     refresh();
                     if ghi_app::lock_cmd::lock(&app, &core).is_ok() {
-                        crate::platform::set_privacy_cover(core.locked());
                         return;
                     }
                 }

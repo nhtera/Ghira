@@ -127,6 +127,10 @@ targets:
       # Wi-Fi-only model downloads (models_cmd: SCNetworkReachability).
       - sdk: SystemConfiguration.framework
       - sdk: ActivityKit.framework
+      - sdk: AppIntents.framework
+      # Phone calls (CXCallObserver) and the network path cost (NWPathMonitor).
+      - sdk: CallKit.framework
+      - sdk: Network.framework
       - target: GhiLiveActivity
         embed: true
       - target: GhiShareExtension
@@ -175,18 +179,23 @@ targets:
       - sdk: SwiftUI.framework
       - sdk: WidgetKit.framework
       - sdk: ActivityKit.framework
-  # Ghira: share extension "Open in Ghira" (M5). A stub here; 16-E fills it in.
+  # Ghira: share extension "Open in Ghira" (M5): SwiftUI sheet that copies the
+  # audio into the App Group inbox (never decodes).
   GhiShareExtension:
     type: app-extension
     platform: iOS
     sources:
       - path: ../../../../../native/ios/GhiShareExtension
+      - path: ../../../../../native/ios/Shared
+        includes: [Localizable.xcstrings, InboxShared.swift]
       - path: ../../../../../native/ios/PrivacyInfo.xcprivacy
         buildPhase: resources
     info:
       path: GhiShareExtension/Info.plist
       properties:
         CFBundleDisplayName: Ghira
+        CFBundleLocalizations: [en, vi]
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "0.1.0"
         NSExtension:
@@ -210,4 +219,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
     dependencies:
       - sdk: UIKit.framework
+      - sdk: SwiftUI.framework
+      - sdk: AVFoundation.framework
+      # (the toolchain warns "no AppIntents.framework dependency" for any target without it)
+      - sdk: AppIntents.framework
       - sdk: UniformTypeIdentifiers.framework

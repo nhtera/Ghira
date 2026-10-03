@@ -20,17 +20,38 @@ pub struct DeviceStats {
     pub battery: Option<f64>,
 }
 
-fn phase_code(p: Phase) -> i32 {
-    match p {
-        Phase::Loading => 0,
-        Phase::Live => 1,
-        Phase::Locked => 2,
-        Phase::CatchingUp => 3,
-        Phase::Hot => 4,
-        Phase::Interrupted => 5,
-        Phase::Finishing => 6,
-        Phase::Done => 7,
-        Phase::RecordOnly => 8,
+/// The Live Activity's phase on the Swift side: `ActivityPhase` in
+/// `native/ios/Shared/ActivityPhase.swift`, case for case. The discriminants
+/// are the C ABI contract (a test pins them).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+enum ActivityPhase {
+    Loading = 0,
+    Live = 1,
+    Locked = 2,
+    CatchingUp = 3,
+    Hot = 4,
+    Interrupted = 5,
+    Finishing = 6,
+    Done = 7,
+    RecordOnly = 8,
+    /// Interrupted by something other than a phone call, or paused by the user.
+    Paused = 9,
+}
+
+impl From<Phase> for ActivityPhase {
+    fn from(p: Phase) -> ActivityPhase {
+        match p {
+            Phase::Loading => ActivityPhase::Loading,
+            Phase::Live => ActivityPhase::Live,
+            Phase::Locked => ActivityPhase::Locked,
+            Phase::CatchingUp => ActivityPhase::CatchingUp,
+            Phase::Hot => ActivityPhase::Hot,
+            Phase::Interrupted => ActivityPhase::Interrupted,
+            Phase::Finishing => ActivityPhase::Finishing,
+            Phase::Done => ActivityPhase::Done,
+            Phase::RecordOnly => ActivityPhase::RecordOnly,
+        }
     }
 }
 
@@ -56,6 +77,10 @@ mod swift {
         pub fn ghi_swift_exclude_from_backup(path: *const std::ffi::c_char) -> bool;
         /// A phone call is active (CXCallObserver).
         pub fn ghi_swift_call_active() -> bool;
+        /// The process was launched in the background.
+        pub fn ghi_swift_launched_in_background() -> bool;
+        /// The network path is expensive or constrained (NWPathMonitor).
+        pub fn ghi_swift_on_expensive_network() -> bool;
         /// Writes the machine identifier (`iPhone16,1`) as a NUL-terminated
         /// string into `buf` (capacity `cap`); returns its length.
         pub fn ghi_swift_device_model(buf: *mut std::ffi::c_char, cap: usize) -> usize;
@@ -116,6 +141,8 @@ pub fn audio_start() -> Result<(), String> {
     match unsafe { swift::ghi_swift_audio_start() } {
         0 => Ok(()),
         1 => Err("microphone access is off: allow it in Settings → Ghira".into()),
+        // Resume while a call is still on: the UI keeps asking until it ends.
+        4 => Err(crate::session::ERR_CALL_ACTIVE.into()),
         code => Err(format!("the audio session could not start (code {code})")),
     }
 }
@@ -133,8 +160,16 @@ pub fn audio_stop() {
     }
 }
 
+/// The Live Activity's code: an interruption is a "call" only while a call is on.
+fn activity_code(phase: Phase) -> i32 {
+    match ActivityPhase::from(phase) {
+        ActivityPhase::Interrupted if !call_active() => ActivityPhase::Paused as i32,
+        other => other as i32,
+    }
+}
+
 pub fn activity_start(phase: Phase) {
-    let _code = phase_code(phase);
+    let _code = activity_code(phase);
     // SAFETY: plain C call into Swift.
     #[cfg(target_os = "ios")]
     unsafe {
@@ -145,7 +180,7 @@ pub fn activity_start(phase: Phase) {
 /// Updates the Live Activity, or ends it once the session is `finished`
 /// (capture stopped and the engine done).
 pub fn activity_update(phase: Phase, marks: u32, finished: bool) {
-    let _args = (phase_code(phase), marks, finished);
+    let _args = (activity_code(phase), marks, finished);
     // SAFETY: plain C calls into Swift.
     #[cfg(target_os = "ios")]
     unsafe {
@@ -267,6 +302,26 @@ mod wrappers {
         // SAFETY: plain C call into Swift.
         #[cfg(target_os = "ios")]
         return unsafe { swift::ghi_swift_call_active() };
+        #[cfg(not(target_os = "ios"))]
+        false
+    }
+
+    /// The process was launched in the background (a relaunch, an intent):
+    /// the job runner starts paused.
+    pub fn launched_in_background() -> bool {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        return unsafe { swift::ghi_swift_launched_in_background() };
+        #[cfg(not(target_os = "ios"))]
+        false
+    }
+
+    /// Cellular, Personal Hotspot or Low Data Mode (`NWPath.isExpensive` /
+    /// `isConstrained`); never off iOS.
+    pub fn on_expensive_network() -> bool {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        return unsafe { swift::ghi_swift_on_expensive_network() };
         #[cfg(not(target_os = "ios"))]
         false
     }
@@ -423,4 +478,51 @@ pub extern "C" fn ghi_ios_memory_warning() {
 #[unsafe(no_mangle)]
 pub extern "C" fn ghi_ios_inbox_changed() {
     crate::cmd::events::emit(crate::cmd::MobileEvent::InboxChanged);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Swift enum and `ActivityPhase` list the same cases with the same numbers.
+    #[test]
+    fn activity_phase_matches_the_swift_enum() {
+        let swift = include_str!("../../../../native/ios/Shared/ActivityPhase.swift");
+        let rust = [
+            ("loading", ActivityPhase::Loading),
+            ("live", ActivityPhase::Live),
+            ("locked", ActivityPhase::Locked),
+            ("catchingUp", ActivityPhase::CatchingUp),
+            ("hot", ActivityPhase::Hot),
+            ("interrupted", ActivityPhase::Interrupted),
+            ("finishing", ActivityPhase::Finishing),
+            ("done", ActivityPhase::Done),
+            ("recordOnly", ActivityPhase::RecordOnly),
+            ("paused", ActivityPhase::Paused),
+        ];
+        for (name, phase) in rust {
+            let line = format!("case {name} = {}\n", phase as i32);
+            assert!(swift.contains(&line), "Swift has no `{}`", line.trim());
+        }
+        assert_eq!(
+            swift.matches("    case ").count() - swift.matches("        case ").count(),
+            rust.len()
+        );
+    }
+
+    /// Off iOS there is no call: an interruption shows as a plain pause.
+    #[test]
+    fn an_interruption_without_a_call_is_a_pause() {
+        assert_eq!(
+            activity_code(Phase::Interrupted),
+            ActivityPhase::Paused as i32
+        );
+        assert_eq!(activity_code(Phase::Live), ActivityPhase::Live as i32);
+    }
+
+    #[test]
+    fn every_session_phase_maps() {
+        assert_eq!(ActivityPhase::from(Phase::Interrupted) as i32, 5);
+        assert_eq!(ActivityPhase::from(Phase::Done) as i32, 7);
+    }
 }

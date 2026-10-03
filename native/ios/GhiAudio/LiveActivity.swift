@@ -20,7 +20,7 @@ final class GhiLiveActivity {
         }
     }
 
-    func start(phase: Int) {
+    func start(phase: ActivityPhase) {
         queue.async {
             guard ActivityAuthorizationInfo().areActivitiesEnabled else {
                 NSLog("ghira: Live Activities are off in Settings")
@@ -54,7 +54,7 @@ final class GhiLiveActivity {
         queue.async { self.endAll() }
     }
 
-    func update(phase: Int, marks: Int) {
+    func update(phase: ActivityPhase, marks: Int) {
         queue.async {
             guard let activity = self.activity else { return }
             let state = RecordingAttributes.ContentState(phase: phase, marks: marks)
@@ -66,7 +66,7 @@ final class GhiLiveActivity {
         queue.async {
             guard let activity = self.activity else { return }
             self.activity = nil
-            let state = RecordingAttributes.ContentState(phase: 7, marks: 0)
+            let state = RecordingAttributes.ContentState(phase: .done, marks: 0)
             self.chain { await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: .default) }
         }
     }
@@ -74,12 +74,12 @@ final class GhiLiveActivity {
 
 @_cdecl("ghi_swift_activity_start")
 public func ghiSwiftActivityStart(_ phase: Int32) {
-    GhiLiveActivity.shared.start(phase: Int(phase))
+    GhiLiveActivity.shared.start(phase: ActivityPhase(rawValue: Int(phase)) ?? .locked)
 }
 
 @_cdecl("ghi_swift_activity_update")
 public func ghiSwiftActivityUpdate(_ phase: Int32, _ marks: UInt32) {
-    GhiLiveActivity.shared.update(phase: Int(phase), marks: Int(marks))
+    GhiLiveActivity.shared.update(phase: ActivityPhase(rawValue: Int(phase)) ?? .locked, marks: Int(marks))
 }
 
 @_cdecl("ghi_swift_activity_end")

@@ -7,6 +7,7 @@
         "phase": {
           "catchingUp": "Đang bắt kịp",
           "live": "Trực tiếp",
+          "paused": "Tạm dừng",
           "pausedForCall": "Tạm dừng vì có cuộc gọi",
           "recording": "Đang ghi",
           "stopped": "Đã dừng"
@@ -27,6 +28,7 @@
         "thisPhone": "Điện thoại",
         "title": "Mở trong {{app}}",
         "unsupported": "Chưa hỗ trợ loại file này.",
+        "failed": "Không thể thêm file này.",
         "unsupportedCaf": "Phiên bản này chưa hỗ trợ file CAF."
       }
     }

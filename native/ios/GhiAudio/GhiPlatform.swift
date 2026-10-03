@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Device and system facts for Rust (phase 16 contracts, C ABI in
-// include/ghi_ios.h). Trivial ones are real; the rest are stubs that 16-E
-// fills in (marked TODO(16-E)).
+// include/ghi_ios.h): calls, network cost, sharing, background tasks, the
+// privacy cover. UIKit state is main-thread only, so Rust-facing getters read
+// cached copies; nothing here blocks on the main thread.
 
 import AVFoundation
+import CallKit
 import GhiIOS
+import Network
 import UIKit
 
 /// Copies `s` into a C buffer; returns the length written (NUL-terminated).
@@ -52,10 +55,169 @@ final class TextScaleCache {
     }
 }
 
+/// Whether the app is active and whether it was launched in the background.
+/// `applicationState` is main-thread only: `install()` runs there and the
+/// notifications keep `active` current.
+final class AppLifecycleState {
+    static let shared = AppLifecycleState()
+    private let lock = NSLock()
+    private var active = false
+    private var launchedInBackground = false
+    private var observers: [NSObjectProtocol] = []
+
+    private var seenState = false
+
+    /// Main thread only.
+    func install() {
+        captureLaunchState()
+        set(UIApplication.shared.applicationState == .active)
+        let nc = NotificationCenter.default
+        observers = [
+            nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: nil) { [weak self] _ in
+                self?.set(true)
+            },
+            nc.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: nil) { [weak self] _ in
+                self?.set(false)
+            },
+        ]
+    }
+
+    /// Called from `ghi_swift_launched_in_background` on the main thread
+    /// (Rust's setup runs there) so the answer is right before `install`.
+    func captureLaunchState() {
+        lock.lock()
+        if !seenState {
+            launchedInBackground = UIApplication.shared.applicationState == .background
+            seenState = true
+        }
+        lock.unlock()
+    }
+
+    private func set(_ value: Bool) {
+        lock.lock()
+        active = value
+        lock.unlock()
+    }
+
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return active
+    }
+
+    var wasLaunchedInBackground: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return launchedInBackground
+    }
+}
+
+/// CXCallObserver: any call that has not ended (ringing, dialing, held, connected).
+final class CallMonitor: NSObject, CXCallObserverDelegate {
+    static let shared = CallMonitor()
+    private let observer = CXCallObserver()
+    private let queue = DispatchQueue(label: "ghira.calls")
+    private let lock = NSLock()
+    private var started = false
+    private var isActive = false
+    #if GHI_TEST_HOOKS
+    /// The call-active / call-ended test hooks stand in for a real call.
+    private var forced: Bool?
+    #endif
+
+    func start() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !started else { return }
+        started = true
+        observer.setDelegate(self, queue: queue)
+        isActive = observer.calls.contains { !$0.hasEnded }
+    }
+
+    var active: Bool {
+        start()
+        lock.lock()
+        defer { lock.unlock() }
+        #if GHI_TEST_HOOKS
+        if let forced { return forced }
+        #endif
+        return isActive
+    }
+
+    /// Records the new state and tells Rust when it changed.
+    private func update(_ now: Bool) {
+        lock.lock()
+        let changed = now != isActive
+        isActive = now
+        lock.unlock()
+        if changed { ghi_ios_call_active_changed(now) }
+    }
+
+    func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
+        update(callObserver.calls.contains { !$0.hasEnded })
+    }
+
+    #if GHI_TEST_HOOKS
+    /// Same path as a real call change (the state change goes to Rust through `update`).
+    func testSet(_ active: Bool) {
+        lock.lock()
+        forced = active
+        lock.unlock()
+        update(active)
+    }
+    #endif
+}
+
+/// NWPathMonitor: cellular and Personal Hotspot are "expensive", Low Data Mode
+/// is "constrained"; the models download is Wi-Fi only.
+final class NetworkMonitor {
+    static let shared = NetworkMonitor()
+    private let monitor = NWPathMonitor()
+    private let queue = DispatchQueue(label: "ghira.network")
+    private let lock = NSLock()
+    private var started = false
+
+    func start() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !started else { return }
+        started = true
+        monitor.pathUpdateHandler = { _ in }
+        monitor.start(queue: queue)
+    }
+
+    var metered: Bool {
+        start()
+        let path = monitor.currentPath
+        return path.isExpensive || path.isConstrained
+    }
+}
+
+/// Darwin notification from the share extension: new items in the inbox.
+enum InboxObserver {
+    static func install() {
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(), nil,
+            { _, _, _, _, _ in ghi_ios_inbox_changed() },
+            InboxShared.changedNotification as CFString, nil, .deliverImmediately)
+    }
+}
+
 @_cdecl("ghi_swift_call_active")
 public func ghiSwiftCallActive() -> Bool {
-    // TODO(16-E): CXCallObserver.
-    false
+    CallMonitor.shared.active
+}
+
+@_cdecl("ghi_swift_launched_in_background")
+public func ghiSwiftLaunchedInBackground() -> Bool {
+    // Rust's setup runs on the main thread; elsewhere the install() value is used.
+    if Thread.isMainThread { AppLifecycleState.shared.captureLaunchState() }
+    return AppLifecycleState.shared.wasLaunchedInBackground
+}
+
+@_cdecl("ghi_swift_on_expensive_network")
+public func ghiSwiftOnExpensiveNetwork() -> Bool {
+    NetworkMonitor.shared.metered
 }
 
 @_cdecl("ghi_swift_device_model")
@@ -93,10 +255,51 @@ public func ghiSwiftTextScale() -> Float {
     TextScaleCache.shared.current
 }
 
+/// The view controller on top of the key window's hierarchy (main thread).
+private func topViewController() -> UIViewController? {
+    let scene = UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .first { $0.activationState == .foregroundActive }
+    var top = scene?.windows.first(where: \.isKeyWindow)?.rootViewController
+    while let presented = top?.presentedViewController { top = presented }
+    return top
+}
+
+/// Main thread. False (the file is kept for Rust's sweep) when there is nothing to present from.
+private func presentShare(_ url: URL) -> Bool {
+    guard let top = topViewController() else { return false }
+    let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    // The file was made for this share (an export): gone once the sheet closes
+    // (finished, or dismissed with no activity chosen). A hand-off to another
+    // app (`activityType` set, not completed) may still be reading it.
+    sheet.completionWithItemsHandler = { activityType, completed, _, _ in
+        if completed || activityType == nil { try? FileManager.default.removeItem(at: url) }
+    }
+    top.present(sheet, animated: true)
+    return true
+}
+
 @_cdecl("ghi_swift_share_file")
 public func ghiSwiftShareFile(_ path: UnsafePointer<CChar>) -> Bool {
-    // TODO(16-E): UIActivityViewController over the key window's top controller.
-    false
+    let url = URL(fileURLWithPath: String(cString: path))
+    guard FileManager.default.fileExists(atPath: url.path) else { return false }
+    if Thread.isMainThread { return presentShare(url) }
+    // From a Rust thread: wait briefly for the main thread's answer (never forever:
+    // if it is busy the sheet may still appear, so the answer is then "shown").
+    let box = ShareResult()
+    let done = DispatchSemaphore(value: 0)
+    DispatchQueue.main.async {
+        box.set(presentShare(url))
+        done.signal()
+    }
+    return done.wait(timeout: .now() + 1) == .timedOut ? true : box.value
+}
+
+private final class ShareResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ok = false
+    var value: Bool { lock.lock(); defer { lock.unlock() }; return ok }
+    func set(_ v: Bool) { lock.lock(); ok = v; lock.unlock() }
 }
 
 @_cdecl("ghi_swift_open_settings")
@@ -107,20 +310,80 @@ public func ghiSwiftOpenSettings() {
     }
 }
 
+/// Background-task tokens handed to Rust (a UIBackgroundTaskIdentifier is not stable across the ABI).
+private enum BackgroundTasks {
+    static let lock = NSLock()
+    static var next: UInt64 = 1
+    static var tasks: [UInt64: UIBackgroundTaskIdentifier] = [:]
+
+    static func end(_ token: UInt64) {
+        lock.lock()
+        let id = tasks.removeValue(forKey: token)
+        lock.unlock()
+        if let id { UIApplication.shared.endBackgroundTask(id) }
+    }
+}
+
 @_cdecl("ghi_swift_begin_bg_task")
 public func ghiSwiftBeginBgTask(_ name: UnsafePointer<CChar>) -> UInt64 {
-    // TODO(16-E): UIApplication.beginBackgroundTask with a token table.
-    0
+    let label = String(cString: name)
+    // The table is locked across begin + store, so an expiration handler that
+    // fires at once waits for the entry and then ends it.
+    BackgroundTasks.lock.lock()
+    defer { BackgroundTasks.lock.unlock() }
+    let token = BackgroundTasks.next
+    BackgroundTasks.next += 1
+    // beginBackgroundTask may be called from any thread.
+    let id = UIApplication.shared.beginBackgroundTask(withName: label) {
+        BackgroundTasks.end(token)
+    }
+    guard id != .invalid else { return 0 }
+    BackgroundTasks.tasks[token] = id
+    return token
 }
 
 @_cdecl("ghi_swift_end_bg_task")
 public func ghiSwiftEndBgTask(_ token: UInt64) {
-    // TODO(16-E)
+    BackgroundTasks.end(token)
+}
+
+/// One opaque window above everything (the app-switcher snapshot cover), so
+/// windows created later are covered too. Main thread only.
+private enum PrivacyCover {
+    static var window: UIWindow?
+
+    static func set(_ on: Bool) {
+        guard on else {
+            window?.isHidden = true
+            window = nil
+            return
+        }
+        guard window == nil,
+              let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first
+        else { return }
+        let cover = UIWindow(windowScene: scene)
+        cover.windowLevel = UIWindow.Level(rawValue: UIWindow.Level.alert.rawValue + 1000)
+        let controller = UIViewController()
+        controller.view.backgroundColor = .systemBackground
+        let mark = UIImageView(image: UIImage(systemName: "lock.fill"))
+        mark.tintColor = .secondaryLabel
+        mark.translatesAutoresizingMaskIntoConstraints = false
+        controller.view.addSubview(mark)
+        NSLayoutConstraint.activate([
+            mark.centerXAnchor.constraint(equalTo: controller.view.centerXAnchor),
+            mark.centerYAnchor.constraint(equalTo: controller.view.centerYAnchor),
+        ])
+        cover.rootViewController = controller
+        cover.isHidden = false
+        window = cover
+    }
 }
 
 @_cdecl("ghi_swift_set_privacy_cover")
 public func ghiSwiftSetPrivacyCover(_ on: Bool) {
-    // TODO(16-E): a cover view on the key window.
+    // Synchronous when already on the main thread: the lifecycle observer raises
+    // it from willResignActive, before the snapshot.
+    if Thread.isMainThread { PrivacyCover.set(on) } else { DispatchQueue.main.async { PrivacyCover.set(on) } }
 }
 
 @_cdecl("ghi_swift_continuous_ns")

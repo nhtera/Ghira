@@ -44,6 +44,12 @@ void ghi_ios_inbox_changed(void);
 
 // A phone call is active (CXCallObserver).
 bool ghi_swift_call_active(void);
+// The app process was launched while in the background (a relaunch, a Live
+// Activity intent): the job runner must start paused.
+bool ghi_swift_launched_in_background(void);
+// The network path is expensive (cellular, Personal Hotspot) or constrained
+// (Low Data Mode): NWPathMonitor.
+bool ghi_swift_on_expensive_network(void);
 // Writes the machine identifier ("iPhone16,1"; the simulated model on the
 // simulator) NUL-terminated into buf (capacity cap); returns its length.
 size_t ghi_swift_device_model(char *buf, size_t cap);
@@ -54,6 +60,7 @@ int64_t ghi_swift_available_capacity(void);
 // Dynamic Type multiplier (1.0 = Large), capped at 2.0.
 float ghi_swift_text_scale(void);
 // Presents the share sheet for the file at path; false if it could not be shown.
+// The file is deleted when the sheet closes.
 bool ghi_swift_share_file(const char *path);
 // Opens this app's page in the Settings app.
 void ghi_swift_open_settings(void);
@@ -64,6 +71,11 @@ void ghi_swift_end_bg_task(uint64_t token);
 void ghi_swift_set_privacy_cover(bool on);
 // Nanoseconds from a clock that keeps counting while the device sleeps.
 uint64_t ghi_swift_continuous_ns(void);
+// Live Activity. `phase` is the raw value of `ActivityPhase`
+// (native/ios/Shared/ActivityPhase.swift; mirrored in platform.rs).
+void ghi_swift_activity_start(int32_t phase);
+void ghi_swift_activity_update(int32_t phase, uint32_t marks);
+void ghi_swift_activity_end(void);
 // Microphone permission: 0 not determined, 1 granted, 2 denied.
 int32_t ghi_swift_mic_permission(void);
 // Shows the system prompt (first time only); poll ghi_swift_mic_permission.

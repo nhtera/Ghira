@@ -104,6 +104,7 @@ mod tests {
             tags: vec![],
             source_app: None,
             summary: None,
+            unnamed_voices: 0,
         }
     }
 

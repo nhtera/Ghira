@@ -11,11 +11,15 @@
 //   `xcrun simctl spawn <udid> notifyutil -p <name>`:
 //     com.nhtera.ghira.test.interrupt-begin / interrupt-end
 //     com.nhtera.ghira.test.thermal-serious / thermal-nominal
-//     com.nhtera.ghira.test.route-change / call-active (logged only until 16-E)
+//     com.nhtera.ghira.test.route-change / memory-warning
+//     com.nhtera.ghira.test.call-active / call-ended
+//     com.nhtera.ghira.test.probe-engine (writes engine-running.txt in the App Group)
 
 #if GHI_TEST_HOOKS
+import AVFoundation
 import Foundation
 import notify
+import UIKit
 import Security
 import GhiIOS
 
@@ -41,13 +45,37 @@ enum GhiTestHooks {
         }
         if ProcessInfo.processInfo.environment["GHI_SPIKE"] == "storage" { storageSpike() }
         let prefix = "com.nhtera.ghira.test."
+        let nc = NotificationCenter.default
         let actions: [(String, () -> Void)] = [
-            ("interrupt-begin", { ghi_ios_interruption(true) }),
-            ("interrupt-end", { ghi_ios_interruption(false) }),
+            // Through the same Swift handlers as the real events: the engine
+            // stops first (as iOS does), then the notification is posted.
+            ("interrupt-begin", {
+                GhiAudio.shared.testStopEngine()
+                nc.post(name: AVAudioSession.interruptionNotification, object: nil, userInfo: [
+                    AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue,
+                ])
+            }),
+            ("interrupt-end", {
+                nc.post(name: AVAudioSession.interruptionNotification, object: nil, userInfo: [
+                    AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.ended.rawValue,
+                    AVAudioSessionInterruptionOptionKey: AVAudioSession.InterruptionOptions.shouldResume.rawValue,
+                ])
+            }),
+            // ProcessInfo's thermal state cannot be forced: straight to Rust.
             ("thermal-serious", { ghi_ios_thermal_changed(2) }),
             ("thermal-nominal", { ghi_ios_thermal_changed(0) }),
-            ("route-change", { NSLog("ghira: test hook: route-change") }),
-            ("call-active", { NSLog("ghira: test hook: call-active") }),
+            // oldDeviceUnavailable (a headset unplugged).
+            ("route-change", {
+                nc.post(name: AVAudioSession.routeChangeNotification, object: nil, userInfo: [
+                    AVAudioSessionRouteChangeReasonKey: AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue,
+                ])
+            }),
+            ("memory-warning", { nc.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil) }),
+            // A CXCall cannot be made up: the monitor's own state change path.
+            ("call-active", { CallMonitor.shared.testSet(true) }),
+            ("call-ended", { CallMonitor.shared.testSet(false) }),
+            // Writes `engine-running.txt` ("1" / "0") into the App Group container.
+            ("probe-engine", { writeProbe() }),
         ]
         for (name, action) in actions {
             var token: Int32 = 0
@@ -57,6 +85,12 @@ enum GhiTestHooks {
             }
             tokens.append(token)
         }
+    }
+
+    private static func writeProbe() {
+        guard let dir = InboxShared.containerURL() else { return }
+        let value = GhiAudio.shared.engineRunning ? "1" : "0"
+        try? value.write(to: dir.appendingPathComponent("engine-running.txt"), atomically: true, encoding: .utf8)
     }
 
     /// Spike 16-B(b): App Group container, shared UserDefaults and a

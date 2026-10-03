@@ -8,6 +8,7 @@
         "phase": {
           "catchingUp": "Catching up",
           "live": "Live",
+          "paused": "Paused",
           "pausedForCall": "Paused for a call",
           "recording": "Recording",
           "stopped": "Stopped"
@@ -28,6 +29,7 @@
         "thisPhone": "This phone",
         "title": "Open in {{app}}",
         "unsupported": "This file type isn’t supported yet.",
+        "failed": "Couldn’t add this file.",
         "unsupportedCaf": "CAF files aren’t supported in this version."
       }
     }

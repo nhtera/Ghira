@@ -42,6 +42,14 @@ pub unsafe extern "C" fn ghi_swift_exclude_from_backup(_path: *const c_char) -> 
 pub extern "C" fn ghi_swift_call_active() -> bool {
     false
 }
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_swift_launched_in_background() -> bool {
+    false
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_swift_on_expensive_network() -> bool {
+    false
+}
 /// # Safety
 /// `buf` is writable for `cap` bytes.
 #[unsafe(no_mangle)]
@@ -108,6 +116,8 @@ pub fn keep() -> usize {
         ghi_swift_battery_level as *const () as usize,
         ghi_swift_exclude_from_backup as *const () as usize,
         ghi_swift_call_active as *const () as usize,
+        ghi_swift_launched_in_background as *const () as usize,
+        ghi_swift_on_expensive_network as *const () as usize,
         ghi_swift_device_model as *const () as usize,
         ghi_swift_physical_memory as *const () as usize,
         ghi_swift_text_scale as *const () as usize,

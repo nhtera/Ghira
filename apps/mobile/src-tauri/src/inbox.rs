@@ -40,6 +40,10 @@ pub const EXTENSIONS: [&str; 11] = [
 ];
 /// Items nobody dealt with are removed after this long.
 const STALE_AFTER: Duration = Duration::from_secs(14 * 24 * 3600);
+/// The extension builds an item here before renaming it into the inbox; a
+/// killed extension leaves folders behind.
+const STAGING_DIR: &str = "inbox-staging";
+const STAGING_STALE_AFTER: Duration = Duration::from_secs(24 * 3600);
 /// Written in an item's folder when importing it failed.
 const REJECTED_MARK: &str = "rejected";
 
@@ -186,6 +190,34 @@ fn read_small(p: &Path, cap: u64) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     f.take(cap).read_to_end(&mut out).ok()?;
     Some(out)
+}
+
+/// Removes the entries of `dir` older than `age` (symlinks are unlinked,
+/// never followed); returns how many went.
+fn sweep_older_than(dir: &Path, age: Duration) -> usize {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut n = 0;
+    for e in rd.filter_map(Result::ok) {
+        let old = e
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|a| a > age);
+        let Ok(ty) = e.file_type() else { continue };
+        if old {
+            let p = e.path();
+            let r = if ty.is_dir() {
+                std::fs::remove_dir_all(&p)
+            } else {
+                std::fs::remove_file(&p)
+            };
+            n += usize::from(r.is_ok());
+        }
+    }
+    n
 }
 
 /// The inbox folder is a real directory (a symlinked root is never followed).
@@ -494,8 +526,18 @@ impl Inbox {
             .collect()
     }
 
+    /// Removes what a killed share extension left in `inbox-staging/`
+    /// (a sibling of the inbox) for over a day.
+    fn sweep_staging(&self) -> usize {
+        let Some(dir) = self.root.parent().map(|p| p.join(STAGING_DIR)) else {
+            return 0;
+        };
+        sweep_older_than(&dir, STAGING_STALE_AFTER)
+    }
+
     /// Removes items nobody dealt with for two weeks, and stray files.
     pub fn sweep(&self) -> usize {
+        let staging = self.sweep_staging();
         let busy = self.busy().clone();
         // Copies a crash left behind.
         if busy.is_empty() {
@@ -507,7 +549,7 @@ impl Inbox {
         if !root_ok(&self.root) {
             return 0;
         }
-        let mut n = 0;
+        let mut n = staging;
         for e in rd.filter_map(Result::ok) {
             let name = e.file_name().to_string_lossy().into_owned();
             let old = e
@@ -990,5 +1032,22 @@ mod tests {
             ),
             Err("desktopUnavailable".into())
         );
+    }
+
+    #[test]
+    fn staging_leftovers_are_swept_when_old() {
+        let t = tempfile::tempdir().unwrap();
+        let staging = t.path().join(STAGING_DIR);
+        std::fs::create_dir_all(staging.join(ID)).unwrap();
+        std::fs::write(staging.join(ID).join("a.m4a"), b"x").unwrap();
+        assert_eq!(sweep_older_than(&staging, STAGING_STALE_AFTER), 0);
+        assert!(staging.join(ID).exists());
+        std::thread::sleep(Duration::from_millis(20));
+        assert_eq!(sweep_older_than(&staging, Duration::from_millis(1)), 1);
+        assert!(!staging.join(ID).exists());
+        // The inbox's own sweep looks next to its root.
+        std::fs::create_dir_all(staging.join(ID)).unwrap();
+        let inbox = Inbox::new(t.path().join("inbox"), t.path().join("scratch"));
+        assert_eq!(inbox.sweep(), 0, "a fresh folder stays");
     }
 }

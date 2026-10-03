@@ -125,15 +125,16 @@ pub fn status(
     }
 }
 
-/// The phone is on a cellular path (`SCNetworkReachability` `IsWWAN`).
-/// Elsewhere (the simulator, tests) there is none.
-///
-/// Known gap: Personal Hotspot and Low Data Mode look like Wi-Fi here. The
-/// right signal is `NWPath.isExpensive` / `isConstrained`; that needs a Swift
-/// `NWPathMonitor` export in `ghi_ios.h` (16-E), then this reads it.
+/// The phone is on a metered path: Swift's `NWPath.isExpensive` /
+/// `isConstrained` (cellular, Personal Hotspot, Low Data Mode), or else
+/// `SCNetworkReachability` `IsWWAN`. Elsewhere (the simulator, tests) there
+/// is none.
 #[cfg(target_os = "ios")]
 pub fn on_cellular() -> bool {
     use std::ffi::c_void;
+    if crate::platform::on_expensive_network() {
+        return true;
+    }
     #[link(name = "SystemConfiguration", kind = "framework")]
     unsafe extern "C" {
         fn SCNetworkReachabilityCreateWithAddress(
