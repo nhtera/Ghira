@@ -52,6 +52,10 @@ describe("processing store", () => {
     apply({ type: "jobProgress", meeting: "m", job: 4, kind: "voice_learn", stage: null, progress: 0 });
     expect(useProcessing.getState().meetings.m).toBeUndefined();
   });
+  it("follows an import's conversion progress", () => {
+    useProcessing.getState().apply({ type: "jobProgress", meeting: "m", job: 0, kind: "import", stage: "decoding", progress: 0.2 });
+    expect(useProcessing.getState().meetings.m).toMatchObject({ stage: "decoding", progress: 0.2 });
+  });
   it("drops a meeting that failed or went idle", () => {
     const { apply } = useProcessing.getState();
     apply({ type: "jobProgress", meeting: "m", job: 1, kind: "final_pass", stage: "decoding", progress: 0 });
