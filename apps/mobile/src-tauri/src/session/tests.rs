@@ -232,11 +232,7 @@ fn records_without_an_engine_below_the_live_tier() {
     let r = rig(low_tier());
     let mut bad = request();
     bad.target = ProcessingTarget::Phone;
-    assert!(
-        r.recorder.start(&bad).is_err(),
-        "the Phone target is disabled"
-    );
-    bad.target = ProcessingTarget::Cloud;
+    // Below the tier a recording is allowed whatever the target.
     let id = r.recorder.start(&bad).unwrap();
     feed(3);
     r.recorder.mark().unwrap();
@@ -245,8 +241,17 @@ fn records_without_an_engine_below_the_live_tier() {
     assert_eq!(st.phase, RecordPhase::RecordOnly);
     assert_eq!(st.record_only_reason, Some(RecordOnlyReason::DeviceTier));
     assert!(!st.live);
+    assert!(st.recording, "capture is running");
     r.recorder.stop().unwrap();
+    let done = r.recorder.snapshot();
+    assert!(
+        matches!(done.phase, RecordPhase::Done | RecordPhase::Idle),
+        "a stopped record-only session is done, not recordOnly: {:?}",
+        done.phase
+    );
+    assert!(!done.recording);
     wait_for("the session to drain", || drained(&r));
+    assert_eq!(r.recorder.snapshot().phase, RecordPhase::Idle);
     let m = r.store.get_meeting(&id).unwrap();
     assert_eq!((m.status.as_str(), m.source.as_str()), ("done", "mobile"));
     assert!(m.consent_confirmed);
@@ -577,7 +582,7 @@ fn a_call_blocks_the_start_until_the_call_notice_is_acknowledged() {
     FORCE_CALL.store(true, Ordering::SeqCst);
     let mut req = request();
     // The ordinary consent flag does not lift the block.
-    assert_eq!(r.recorder.start(&req).unwrap_err(), "call_active");
+    assert_eq!(r.recorder.start(&req).unwrap_err(), "callActive");
     req.call_acknowledged = true;
     let started = r.recorder.start(&req);
     FORCE_CALL.store(false, Ordering::SeqCst);
@@ -591,7 +596,7 @@ fn refused_targets_and_idle_state() {
     let r = rig(live_tier());
     let mut req = request();
     req.target = ProcessingTarget::Desktop;
-    assert!(r.recorder.start(&req).is_err());
+    assert_eq!(r.recorder.start(&req).unwrap_err(), ERR_PAIRING);
     assert!(r.recorder.stop().is_err(), "nothing to stop");
     assert!(!r.recorder.resume_prompt().pending);
     assert_eq!(r.recorder.snapshot().phase, RecordPhase::Idle);
@@ -669,7 +674,9 @@ fn the_live_models_wait_for_a_resident_final_pass() {
     wait_for("2 s recorded", || recorder.snapshot().elapsed_s > 1.9);
     thread::sleep(Duration::from_millis(300));
     assert_eq!(r.loads.loaded.load(Ordering::SeqCst), 0, "models waited");
-    assert_eq!(recorder.snapshot().phase, RecordPhase::Loading);
+    let st = recorder.snapshot();
+    assert_eq!(st.phase, RecordPhase::Loading);
+    assert!(st.recording, "capture continues while the models wait");
     busy.store(false, Ordering::SeqCst);
     job.join().unwrap();
     wait_for("the models to load", || {
@@ -781,7 +788,7 @@ fn an_attached_tap_blocks_a_recording_and_is_released() {
     attach_tap(tap).unwrap();
     let (other, _c2) = ghi_audio::ring::ring(4800);
     assert!(attach_tap(other).is_err(), "one tap at a time");
-    assert!(r.recorder.start(&request()).is_err(), "the mic is in use");
+    assert_eq!(r.recorder.start(&request()).unwrap_err(), ERR_MIC_IN_USE);
     detach_tap();
     let id = r.recorder.start(&request()).unwrap();
     detach_tap(); // a recording's ring is not an external tap
@@ -817,4 +824,16 @@ fn two_starts_at_once_make_one_recording() {
             .count(),
         0
     );
+}
+
+#[test]
+fn the_consent_message_follows_the_meeting_language_and_the_users_words() {
+    use ghi_app::system::MeetingLanguage as L;
+    let m = Recorder::consent_message(L::Vi, "", "");
+    assert!(m.text.contains("Bản ghi âm") && !m.text.contains("Heads up"));
+    let m = Recorder::consent_message(L::En, "", "");
+    assert_eq!(m.text, m.en);
+    let m = Recorder::consent_message(L::Auto, "  Recording, OK?  ", "");
+    assert!(m.text.starts_with("Recording, OK?\n\n") && m.text.contains("Lưu ý"));
+    assert_eq!(m.en, "Recording, OK?");
 }

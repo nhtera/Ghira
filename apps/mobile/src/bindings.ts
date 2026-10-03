@@ -20,7 +20,11 @@ export const commands = {
 	/**  Marks the current moment. */
 	recordMark: () => typedError<null, string>(__TAURI_INVOKE("record_mark")),
 	recordSnapshot: () => typedError<RecordState, string>(__TAURI_INVOKE("record_snapshot")),
-	recordConsentMessage: () => typedError<ConsentMessage, string>(__TAURI_INVOKE("record_consent_message")),
+	/**
+	 *  The consent text for the meeting's `language` (the start language, not the
+	 *  UI's), from the user's settings when they wrote their own.
+	 */
+	recordConsentMessage: (language: MeetingLanguage) => typedError<ConsentMessage, string>(__TAURI_INVOKE("record_consent_message", { language })),
 	/**  A phone call is active right now (CXCallObserver). */
 	recordCallActive: () => typedError<boolean, string>(__TAURI_INVOKE("record_call_active")),
 	/**  The pending "Resume or stop and save?" question after an interruption. */
@@ -395,6 +399,11 @@ export type CloudTask =
 export type ConsentMessage = {
 	en: string,
 	vi: string,
+	/**
+	 *  The one to copy: the meeting's language (both for `auto`), in the user's
+	 *  own wording from the settings when they set one.
+	 */
+	text: string,
 };
 
 /**  Every core event, in order (`seq` is gap-free; on a gap, re-read state). */
@@ -853,6 +862,13 @@ export type RecordStart = {
  */
 export type RecordState = {
 	phase: RecordPhase,
+	/**
+	 *  Capture is running (audio is being recorded), whatever the live
+	 *  transcript is doing: `phase` may say `loading` or `locked` mid-meeting
+	 *  while this stays true, and the elapsed time keeps counting. False when
+	 *  paused, interrupted, stopped or idle.
+	 */
+	recording: boolean,
 	/**  Recorded seconds (not wall time: a pause does not count). */
 	elapsedS: number | null,
 	marks: number,

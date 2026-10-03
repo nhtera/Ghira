@@ -13,14 +13,23 @@
 //!
 //! ## What the UI can rely on
 //!
-//! - `record_start` is refused while a call is active (error `call_active`)
+//! - `record_start` errors are codes the UI maps to copy: `callActive`,
+//!   `microphoneDenied`, `diskLow` (< 500 MB), `micInUse` (voice enrollment
+//!   holds the microphone), `waitingForTranscription` (the previous recording
+//!   is still being transcribed after a minute), `alreadyRecording`,
+//!   `pairingNotAvailable` (the `desktop` target, until phase 15).
+//! - Below the live tier recording is always allowed, whatever the `target`:
+//!   it records only, queues no jobs and is processed later. The same for
+//!   missing models (the final pass waits for them).
+//! - `record_start` is refused while a call is active (error `callActive`)
 //!   until the user acknowledged M6 (`call_acknowledged`), with
 //!   `microphone_denied`, with `disk_low` (< 500 MB free), for the `Desktop`
 //!   target, and for the `Phone` target on a device below the live tier. A
 //!   previous recording still being transcribed is waited for (up to a minute).
 //! - A below-tier device records only (`DeviceTier`): no job is queued, the
 //!   meeting stays `done` (recorded; the chip is "Recorded") and the session
-//!   goes `idle`, never `ready`. Missing models also record only
+//!   goes `idle`, never `ready`. A stopped session reports phase `done`
+//!   (also after an engine failure), then `idle` once released. Missing models also record only
 //!   (`ModelsMissing`), but the final pass is queued and waits for them.
 //! - An interruption pauses the recording (`MobileEvent::Interruption`);
 //!   when it ends `record_resume_prompt` answers `pending`. Recording never
@@ -80,6 +89,11 @@ pub struct RecordStart {
 #[serde(rename_all = "camelCase")]
 pub struct RecordState {
     pub phase: RecordPhase,
+    /// Capture is running (audio is being recorded), whatever the live
+    /// transcript is doing: `phase` may say `loading` or `locked` mid-meeting
+    /// while this stays true, and the elapsed time keeps counting. False when
+    /// paused, interrupted, stopped or idle.
+    pub recording: bool,
     /// Recorded seconds (not wall time: a pause does not count).
     pub elapsed_s: f64,
     pub marks: u32,
@@ -111,6 +125,9 @@ pub enum RecordOnlyReason {
 pub struct ConsentMessage {
     pub en: String,
     pub vi: String,
+    /// The one to copy: the meeting's language (both for `auto`), in the user's
+    /// own wording from the settings when they set one.
+    pub text: String,
 }
 
 /// What to ask after an interruption ended. `pending` is false when there is
@@ -193,10 +210,21 @@ pub async fn record_snapshot(app: tauri::AppHandle) -> Result<RecordState, Strin
     blocking(move || Ok(rec.snapshot())).await
 }
 
+/// The consent text for the meeting's `language` (the start language, not the
+/// UI's), from the user's settings when they wrote their own.
 #[tauri::command]
 #[specta::specta]
-pub async fn record_consent_message() -> Result<ConsentMessage, String> {
-    Ok(Recorder::consent_message())
+pub async fn record_consent_message(
+    app: tauri::AppHandle,
+    language: MeetingLanguage,
+) -> Result<ConsentMessage, String> {
+    // Settings can be unreadable (locked app): the defaults then.
+    let (en, vi) = app
+        .try_state::<Arc<ghi_app::core::Core>>()
+        .and_then(|core| ghi_app::system::load_settings(&core).ok())
+        .map(|s| (s.consent_message_en, s.consent_message_vi))
+        .unwrap_or_default();
+    Ok(Recorder::consent_message(language, &en, &vi))
 }
 
 /// A phone call is active right now (CXCallObserver).

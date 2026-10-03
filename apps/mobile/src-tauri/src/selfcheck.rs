@@ -168,8 +168,8 @@ mod tests {
     #[test]
     fn the_host_run_writes_a_result_and_skips_the_class_check() {
         let t = tempfile::tempdir().unwrap();
-        let checks = vec![protection(&t.path().join("store"))];
-        assert_eq!(checks[0]["skipped"], true);
+        let check = protection(&t.path().join("store"));
+        assert_eq!(check["skipped"], true);
         // On the host the keychain checks may legitimately fail (no entitlement
         // in a test binary); the file is written either way.
         run(t.path());

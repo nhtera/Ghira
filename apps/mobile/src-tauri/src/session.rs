@@ -64,6 +64,15 @@ const DISK_EVERY: Duration = Duration::from_secs(60);
 /// The recording stops with "disk low" below this much free space (and does
 /// not start).
 pub const MIN_FREE_BYTES: u64 = 500 * 1024 * 1024;
+/// Error codes of `record_start` (camelCase strings the UI maps to copy).
+pub const ERR_DISK_LOW: &str = "diskLow";
+pub const ERR_CALL_ACTIVE: &str = "callActive";
+pub const ERR_MIC_IN_USE: &str = "micInUse";
+pub const ERR_MIC_DENIED: &str = "microphoneDenied";
+pub const ERR_WAITING: &str = "waitingForTranscription";
+pub const ERR_PAIRING: &str = "pairingNotAvailable";
+pub const ERR_RUNNING: &str = "alreadyRecording";
+
 /// Ring between the Swift tap and the pump: 2 s at 48 kHz.
 const RING_SAMPLES: usize = 96_000;
 /// How long a start waits for the previous recording's engine to drain.
@@ -368,12 +377,10 @@ impl Shared {
     pub fn phase(&self) -> RecordPhase {
         let s = self.lock();
         let behind = s.backlog_samples() as f64 / RATE;
+        // A stopped recording is done whatever the engine did: record-only
+        // sessions and failed engines never fall back to `RecordOnly` here.
         if s.engine_done || (s.stopped && !s.engine_expected) {
-            return if s.engine_failed || s.record_only.is_some() {
-                RecordPhase::RecordOnly
-            } else {
-                RecordPhase::Done
-            };
+            return RecordPhase::Done;
         }
         // Stopped or interrupted first: while locked the Live Activity must
         // not claim "Recording" when nothing is.
@@ -481,7 +488,7 @@ static TAP_EXTERNAL: AtomicBool = AtomicBool::new(false);
 pub fn attach_tap(producer: RingProducer) -> Result<(), String> {
     let mut slot = PRODUCER.lock().unwrap_or_else(|e| e.into_inner());
     if slot.is_some() {
-        return Err("the microphone is in use".into());
+        return Err(ERR_MIC_IN_USE.into());
     }
     *slot = Some(producer);
     TAP_EXTERNAL.store(true, Ordering::Release);
@@ -707,22 +714,20 @@ impl Recorder {
     pub fn start(self: &Arc<Self>, req: &RecordStart) -> Result<String, String> {
         let RecordMode::Room = req.mode;
         match req.target {
-            ProcessingTarget::Desktop => {
-                return Err("desktop processing is not available yet".into());
-            }
-            ProcessingTarget::Phone if self.deps.tier.tier != TierClass::Live => {
-                return Err("this phone cannot process recordings on the device".into());
-            }
-            _ => {}
+            // Pairing arrives in phase 15.
+            ProcessingTarget::Desktop => return Err(ERR_PAIRING.into()),
+            // Below the live tier a recording is always allowed: it records
+            // only, queues no jobs and is processed later.
+            ProcessingTarget::Phone | ProcessingTarget::Cloud => {}
         }
         if call_active() && !req.call_acknowledged {
-            return Err("call_active".into());
+            return Err(ERR_CALL_ACTIVE.into());
         }
         if platform::mic_permission() == crate::cmd::onboarding::MicPermission::Denied {
-            return Err("microphone_denied".into());
+            return Err(ERR_MIC_DENIED.into());
         }
         if free_bytes(&self.deps.backlog_dir).is_some_and(|f| f < MIN_FREE_BYTES) {
-            return Err("disk_low".into());
+            return Err(ERR_DISK_LOW.into());
         }
         // One at a time; a draining engine owns the lifecycle events, the Live
         // Activity and the GPU.
@@ -731,11 +736,11 @@ impl Recorder {
             let until = Instant::now() + DRAIN_WAIT;
             while let Some(s) = slot.as_ref() {
                 if !s.stopped.load(Ordering::Acquire) {
-                    return Err("a recording is already running".into());
+                    return Err(ERR_RUNNING.into());
                 }
                 let left = until.saturating_duration_since(Instant::now());
                 if left.is_zero() {
-                    return Err("the last recording is still being transcribed; try again".into());
+                    return Err(ERR_WAITING.into());
                 }
                 slot = self
                     .freed
@@ -744,7 +749,7 @@ impl Recorder {
                     .0;
             }
             if self.starting.swap(true, Ordering::AcqRel) {
-                return Err("a recording is already starting".into());
+                return Err(ERR_RUNNING.into());
             }
         }
         // Cleared however this start ends (the slot holds the session by then).
@@ -900,7 +905,7 @@ impl Recorder {
                     drop(persist_tx);
                     let _ = pump_thread.join();
                     let _ = persist_thread.join();
-                    return Err("the microphone is in use".into());
+                    return Err(ERR_MIC_IN_USE.into());
                 }
                 *slot = Some(producer);
             }
@@ -1033,6 +1038,7 @@ impl Recorder {
             Some(s) => s.state(),
             None => RecordState {
                 phase: RecordPhase::Idle,
+                recording: false,
                 elapsed_s: 0.0,
                 marks: 0,
                 level_db: -100.0,
@@ -1069,16 +1075,38 @@ impl Recorder {
         }
     }
 
-    /// The text a user copies to tell the room they are being recorded.
-    pub fn consent_message() -> ConsentMessage {
-        ConsentMessage {
-            en: "Heads up: I'm recording this meeting on my phone to take notes. \
-                 The recording stays on my device. Tell me if you'd rather I didn't."
-                .into(),
-            vi: "Lưu ý: mình đang ghi âm cuộc họp này trên điện thoại để ghi chú. \
-                 Bản ghi chỉ nằm trên máy của mình. Nếu ai không muốn được ghi âm, xin cho mình biết."
-                .into(),
-        }
+    /// The text a user copies to tell the room they are being recorded: the
+    /// user's own wording when set (settings), else the defaults. `language`
+    /// is the meeting's (start) language, not the UI's; `Auto` gets both.
+    pub fn consent_message(
+        language: ghi_app::system::MeetingLanguage,
+        custom_en: &str,
+        custom_vi: &str,
+    ) -> ConsentMessage {
+        use ghi_app::system::MeetingLanguage as L;
+        let pick = |custom: &str, default: &str| {
+            if custom.trim().is_empty() {
+                default.to_owned()
+            } else {
+                custom.trim().to_owned()
+            }
+        };
+        let en = pick(
+            custom_en,
+            "Heads up: I'm recording this meeting on my phone to take notes. \
+             The recording stays on my device. Tell me if you'd rather I didn't.",
+        );
+        let vi = pick(
+            custom_vi,
+            "Lưu ý: mình đang ghi âm cuộc họp này trên điện thoại để ghi chú. \
+             Bản ghi âm chỉ nằm trên máy của mình. Nếu ai không muốn được ghi âm, xin cho mình biết.",
+        );
+        let text = match language {
+            L::En => en.clone(),
+            L::Vi => vi.clone(),
+            L::Auto => format!("{en}\n\n{vi}"),
+        };
+        ConsentMessage { en, vi, text }
     }
 }
 
@@ -1345,6 +1373,7 @@ impl Session {
         let s = self.shared.lock();
         RecordState {
             phase,
+            recording: !s.stopped && !s.interrupted && !s.paused,
             elapsed_s: self.shared.now_ms() as f64 / 1000.0,
             marks: s.marks,
             level_db: s.level_db,
