@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Routes: code-based, hash history (the app is served from a custom scheme).
 // A tab shell (Meetings / Record / Search / Settings) holds the main screens;
-// onboarding renders full-screen outside it. Screens arrive with 16-H..J.
+// onboarding renders full-screen outside it. Screens: routes/<area>/ (16-H..J).
 import {
   createHashHistory,
   createRootRoute,
@@ -12,7 +12,11 @@ import {
 } from "@tanstack/react-router";
 import { RootView } from "./shell/root-view";
 import { TabShell } from "./shell/tab-shell";
-import { Placeholder } from "./routes/placeholder";
+import { meetingsRoutes } from "./routes/meetings";
+import { onboardingRoutes } from "./routes/onboarding";
+import { recordRoutes } from "./routes/record";
+import { searchRoutes } from "./routes/search";
+import { settingsRoutes } from "./routes/settings";
 
 const root = createRootRoute({ component: RootView });
 
@@ -26,20 +30,15 @@ const index = createRoute({
   },
 });
 
-const tab = <P extends string>(path: P, screen: "meetings" | "record" | "search" | "settings") =>
-  createRoute({ getParentRoute: () => shell, path, component: () => <Placeholder screen={screen} /> });
-
-const meetings = tab("/meetings", "meetings");
-const record = tab("/record", "record");
-const search = tab("/search", "search");
-const settings = tab("/settings", "settings");
+// Each area builds its own routes (routes/<area>/index.tsx); only the
+// mount points live here.
+const meetings = meetingsRoutes(shell);
+const record = recordRoutes(shell);
+const search = searchRoutes(shell);
+const settings = settingsRoutes(shell);
 
 // Outside the shell: first launch (M1).
-const onboarding = createRoute({
-  getParentRoute: () => root,
-  path: "/onboarding",
-  component: () => <Placeholder screen="onboarding" />,
-});
+const onboarding = onboardingRoutes(root);
 
 const routeTree = root.addChildren([shell.addChildren([index, meetings, record, search, settings]), onboarding]);
 
