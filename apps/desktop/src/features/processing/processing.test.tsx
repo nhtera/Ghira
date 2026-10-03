@@ -38,6 +38,20 @@ describe("processing store", () => {
     forget("n");
     expect(useProcessing.getState().meetings.n).toBeUndefined();
   });
+  it("stays done after notesReady: the runner's done event and later jobs don't bring the stepper back", () => {
+    const { apply } = useProcessing.getState();
+    // The real order: final pass, notes, then the semantic index (job runner events included).
+    apply({ type: "jobProgress", meeting: "m", job: 1, kind: "final_pass", stage: "improvingTranscript", progress: 0.9 });
+    apply({ type: "jobProgress", meeting: "m", job: 1, kind: "final_pass", stage: null, progress: 1 });
+    expect(useProcessing.getState().meetings.m).toMatchObject({ stage: "improvingTranscript" });
+    apply({ type: "jobProgress", meeting: "m", job: 2, kind: "notes_final", stage: null, progress: 0 });
+    apply({ type: "notesReady", meeting: "m", version: 2 });
+    apply({ type: "jobProgress", meeting: "m", job: 2, kind: "notes_final", stage: null, progress: 1 });
+    apply({ type: "jobProgress", meeting: "m", job: 3, kind: "embed_index", stage: null, progress: 0 });
+    apply({ type: "jobProgress", meeting: "m", job: 3, kind: "embed_index", stage: null, progress: 0.5 });
+    apply({ type: "jobProgress", meeting: "m", job: 4, kind: "voice_learn", stage: null, progress: 0 });
+    expect(useProcessing.getState().meetings.m).toBeUndefined();
+  });
   it("drops a meeting that failed or went idle", () => {
     const { apply } = useProcessing.getState();
     apply({ type: "jobProgress", meeting: "m", job: 1, kind: "final_pass", stage: "decoding", progress: 0 });

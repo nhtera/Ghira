@@ -19,6 +19,12 @@ type State = {
 
 export const STAGES: Stage[] = ["decoding", "refiningSpeakers", "matchingVoices", "improvingTranscript", "writingNotes"];
 
+/**
+ * The jobs that make a meeting's notes. Others (the search index, voice
+ * learning) run after the notes are ready and must not bring the stepper back.
+ */
+const PIPELINE = new Set(["import", "final_pass", "notes_live", "notes_final"]);
+
 /** `notes_live` / `notes_final` jobs carry no stage: they are the writing step. */
 export function stageOf(kind: string, stage: Stage | null): Stage | null {
   if (stage) return stage;
@@ -38,7 +44,10 @@ export const useProcessing = create<State>((set) => ({
     set((s) => {
       switch (e.type) {
         case "jobProgress":
-          if (!e.meeting) return s;
+          if (!e.meeting || !PIPELINE.has(e.kind)) return s;
+          // The runner's "job done" (no stage, 100%) arrives after `notesReady`:
+          // the next step (or `notesReady`) moves the stepper, never this.
+          if (e.stage === null && (e.progress ?? 0) >= 1) return s;
           return { meetings: { ...s.meetings, [e.meeting]: { stage: stageOf(e.kind, e.stage), kind: e.kind, progress: e.progress } } };
         case "stateChanged":
           if (e.state === "processing") return s.meetings[e.meeting] ? s : { meetings: { ...s.meetings, [e.meeting]: { stage: null, kind: "final_pass", progress: null } } };
