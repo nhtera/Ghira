@@ -62,6 +62,14 @@ export const commands = {
 	 *  with the ids `list_meetings` returned and again on `coreEvent` job changes.
 	 */
 	meetingChips: (ids: string[]) => typedError<MeetingChipRow[], string>(__TAURI_INVOKE("meeting_chips", { ids })),
+	/**
+	 *  Renders the meeting (notes and transcript) as Markdown or text into a
+	 *  temporary file under the data directory and presents the system share
+	 *  sheet for it (the path never reaches the webview). Resolves once the sheet
+	 *  is presented; Swift deletes the file when it closes, Rust after an hour or
+	 *  at launch. Refused while the app is locked.
+	 */
+	shareMeetingExport: (meeting: string, format: ShareFormat) => typedError<null, string>(__TAURI_INVOKE("share_meeting_export", { meeting, format })),
 	mobileSettings: () => typedError<MobileSettings, string>(__TAURI_INVOKE("mobile_settings")),
 	setMobileSettings: (settings: MobileSettings) => typedError<MobileSettings, string>(__TAURI_INVOKE("set_mobile_settings", { settings })),
 	/**
@@ -995,6 +1003,9 @@ export type SettingsPatch = {
 	updateCheck?: boolean | null,
 	liveMode?: LiveMode | null,
 };
+
+/**  The file kinds the share sheet offers for a meeting. */
+export type ShareFormat = "md" | "txt";
 
 export type SpeakerInfo = {
 	/**  Session speaker id (stable for the meeting). */

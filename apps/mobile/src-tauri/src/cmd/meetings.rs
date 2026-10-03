@@ -3,7 +3,7 @@
 //! rows; the chip per row is derived on the Rust side by [`super::types::chip_for`]
 //! so the UI never re-implements it.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use super::types::MeetingChip;
@@ -24,6 +24,46 @@ pub async fn meeting_chips(
     ids: Vec<String>,
 ) -> Result<Vec<MeetingChipRow>, String> {
     ghi_app::blocking(&core, move |c| chips(c, &ids)).await
+}
+
+/// The file kinds the share sheet offers for a meeting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum ShareFormat {
+    Md,
+    Txt,
+}
+
+/// Renders the meeting (notes and transcript) as Markdown or text into a
+/// temporary file under the data directory and presents the system share
+/// sheet for it (the path never reaches the webview). Resolves once the sheet
+/// is presented; Swift deletes the file when it closes, Rust after an hour or
+/// at launch. Refused while the app is locked.
+#[tauri::command]
+#[specta::specta]
+pub async fn share_meeting_export(
+    core: ghi_app::CoreState<'_>,
+    meeting: String,
+    format: ShareFormat,
+) -> Result<(), String> {
+    ghi_app::blocking(&core, move |c| {
+        let store = c.store()?;
+        let vietnamese = ghi_app::system::load_settings(c)?.meeting_language
+            == ghi_app::system::MeetingLanguage::Vi;
+        let format = match format {
+            ShareFormat::Md => ghi_core::export::Format::Markdown,
+            ShareFormat::Txt => ghi_core::export::Format::Text,
+        };
+        crate::share::share_meeting(
+            &store,
+            c.data_dir(),
+            &meeting,
+            format,
+            vietnamese,
+            &crate::share::share_file,
+        )
+    })
+    .await
 }
 
 /// The device tier is fixed for the life of the process: probed once.

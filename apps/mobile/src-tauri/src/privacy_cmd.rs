@@ -108,14 +108,24 @@ pub fn export_and_share(
         let _ = std::fs::remove_file(&out);
         return Err(e);
     }
-    // Swift deletes it when the sheet closes; this is the backstop.
+    forget_later(out);
+    Ok(())
+}
+
+/// Swift deletes a shared file when the sheet closes; this removes it after
+/// [`EXPORT_TTL`] if that never happened (launch also sweeps the folder).
+pub fn forget_later(path: PathBuf) {
     let _ = std::thread::Builder::new()
         .name("ghi-export-sweep".into())
         .spawn(move || {
             std::thread::sleep(EXPORT_TTL);
-            let _ = std::fs::remove_file(out);
+            let _ = std::fs::remove_file(path);
         });
-    Ok(())
+}
+
+/// The folder temporary shared files live in (see [`EXPORT_DIR`]).
+pub fn share_dir(data: &Path) -> PathBuf {
+    export_dir(data)
 }
 
 /// Deletes everything (see the module docs). `busy` says a recording or an

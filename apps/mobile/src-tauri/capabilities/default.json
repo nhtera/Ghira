@@ -26,6 +26,7 @@
     "allow-privacy-export-all-share",
     "allow-privacy-delete-all",
     "allow-meeting-chips",
+    "allow-share-meeting-export",
     "allow-mobile-settings",
     "allow-set-mobile-settings",
     "allow-inbox-list",

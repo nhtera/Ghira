@@ -53,6 +53,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             privacy::privacy_export_all_share,
             privacy::privacy_delete_all,
             meetings::meeting_chips,
+            meetings::share_meeting_export,
             settings::mobile_settings,
             settings::set_mobile_settings,
             import::inbox_list,

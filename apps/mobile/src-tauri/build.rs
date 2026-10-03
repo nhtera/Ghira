@@ -23,6 +23,7 @@ fn main() {
             "privacy_export_all_share",
             "privacy_delete_all",
             "meeting_chips",
+            "share_meeting_export",
             "mobile_settings",
             "set_mobile_settings",
             "inbox_list",
