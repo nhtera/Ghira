@@ -90,7 +90,7 @@ describe("waveform slider", () => {
   it("is a slider with the time as its value", () => {
     slider();
     const s = screen.getByRole("slider", { name: "Playback position" });
-    expect(s.getAttribute("aria-valuetext")).toBe("0:20 / 1:00");
+    expect(s.getAttribute("aria-valuetext")).toBe("00:20 / 01:00");
     expect(s.getAttribute("aria-valuemax")).toBe("60");
   });
 

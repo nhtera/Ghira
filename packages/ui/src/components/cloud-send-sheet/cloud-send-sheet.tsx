@@ -47,20 +47,20 @@ export function CloudSendSheet(p: CloudSendSheetProps) {
 
   const footer =
     p.state === "sent" ? (
-      <Button variant="secondary" onClick={() => p.onOpenChange(false)}>
+      <Button variant="secondary" size="lg" onClick={() => p.onOpenChange(false)}>
         {t("cloud.close")}
       </Button>
     ) : (
       <>
-        <Button variant="secondary" onClick={p.onKeepLocal} disabled={busy}>
+        <Button variant="secondary" size="lg" icon="cloud_off" onClick={p.onKeepLocal} disabled={busy}>
           {t("cloud.keepLocal")}
         </Button>
         {p.state === "failed" ? (
-          <Button variant="primary" onClick={p.onRetry ?? p.onSend}>
+          <Button variant="primary" size="lg" icon="refresh" onClick={p.onRetry ?? p.onSend}>
             {t("common.tryAgain")}
           </Button>
         ) : (
-          <Button variant="primary" icon={busy ? "progress_activity" : undefined} onClick={p.onSend} disabled={busy} aria-busy={busy}>
+          <Button variant="primary" size="lg" icon={busy ? "progress_activity" : "cloud_upload"} onClick={p.onSend} disabled={busy} aria-busy={busy}>
             {busy ? t("cloud.sendingButton") : t("cloud.send")}
           </Button>
         )}

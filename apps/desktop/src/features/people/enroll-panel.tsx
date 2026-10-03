@@ -32,21 +32,27 @@ export function EnrollPanel({
   const consentId = useId();
   const key = useConsentKey();
   const busy = state.phase !== "idle";
-  const percent = Math.min(100, (state.seconds / state.maxSeconds) * 100);
+  const shown = state.phase === "done" ? 100 : Math.round(Math.min(100, (state.seconds / state.maxSeconds) * 100));
   return (
     <>
       <p lang="vi" className="m-0 rounded-xl bg-surface2 px-5 py-4 font-serif text-[19px] leading-[1.7]">
         {t("onboarding.voice.passage")}
       </p>
-      <div
-        role="progressbar"
-        aria-label={t("onboarding.voice.title")}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={state.phase === "done" ? 100 : Math.round(percent)}
-        className="h-2 overflow-hidden rounded bg-sunk"
-      >
-        <i className="block h-full bg-accent" style={{ width: `${state.phase === "done" ? 100 : percent}%` }} />
+      <div className="flex items-center gap-3">
+        <Icon name="mic" size={20} className="flex-none text-muted" />
+        <div
+          role="progressbar"
+          aria-label={t("onboarding.voice.title")}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={shown}
+          className="h-2 min-w-0 flex-1 overflow-hidden rounded bg-sunk"
+        >
+          <i className="block h-full bg-accent" style={{ width: `${shown}%` }} />
+        </div>
+        <span aria-hidden className="text-mono w-10 flex-none text-right text-[12px] text-muted">
+          {shown}%
+        </span>
       </div>
       {state.phase === "reading" && <LevelMeter db={toDb(state.level)} source="mic" />}
       <div className="flex items-start gap-2.5 text-[13px] leading-normal">

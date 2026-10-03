@@ -130,6 +130,7 @@ fn notes_then_final_pass_then_final_notes() {
             title: "beta".into(),
             queue_jobs: true,
             lossless: true,
+            echo_cancellation: true,
         },
         tx,
         Some(runner.clone()),
@@ -194,6 +195,11 @@ fn notes_then_final_pass_then_final_notes() {
     let notes = store.note_blocks(&meeting).unwrap();
     assert_eq!(notes.len(), 1);
     assert_eq!(notes[0].body, "Chốt lịch beta");
+    // The detail's footer says which model wrote them.
+    assert_eq!(
+        store.notes_model(&meeting).unwrap().as_deref(),
+        Some("scripted")
+    );
     let versions: Vec<u32> = rx
         .try_iter()
         .filter_map(|e| match e.event {
@@ -277,6 +283,7 @@ fn record_now_process_when_models_arrive() {
             queue_jobs: true,
             // Ignored without engines (nothing to wait for).
             lossless: true,
+            echo_cancellation: true,
         },
         tx,
         Some(runner.clone()),

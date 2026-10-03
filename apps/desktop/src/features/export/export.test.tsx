@@ -89,6 +89,16 @@ describe("ExportSheet", () => {
     expect(obs).toHaveBeenLastCalledWith("m1", expect.anything(), true, expect.any(String));
   });
 
+  it("says where the file goes (the remembered folder's name) and Change… picks another", async () => {
+    const choose = vi.spyOn(ipc.commands, "chooseExportFolder").mockResolvedValue({ status: "ok", data: "Notes" });
+    sheet(["m1"]);
+    const line = await screen.findByTestId("export-destination");
+    await vi.waitFor(() => expect(line.textContent).toMatch(/Documents/));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /^(Change…|export\.changeDestination)$/ })));
+    expect(choose).toHaveBeenCalled();
+    await vi.waitFor(() => expect(line.textContent).toMatch(/Notes/));
+  });
+
   it("headings follow the app language", async () => {
     await changeLanguage("vi");
     const exp = vi.spyOn(ipc.commands, "exportMeeting").mockResolvedValue({ status: "ok", data: "x.md" });

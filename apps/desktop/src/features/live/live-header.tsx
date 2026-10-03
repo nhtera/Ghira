@@ -49,7 +49,7 @@ function Clock() {
     <span className="flex flex-none items-center gap-2">
       <span aria-hidden="true" className={cn("size-2.5 rounded-full", state === "recording" ? "bg-rec" : "bg-faint")} />
       <span data-testid="live-clock" className="min-w-[62px] text-mono text-[20px] font-medium tabular-nums">
-        {formatClock(elapsedMs(clock, now))}
+        {formatClock(elapsedMs(clock, now), { pad: true })}
       </span>
     </span>
   );

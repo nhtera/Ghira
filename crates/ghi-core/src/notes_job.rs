@@ -112,8 +112,9 @@ pub fn save_notes(
     meeting: &str,
     n: &Notes,
     segs: &[Segment],
+    model: &str,
 ) -> Result<ReplacedNotes, String> {
-    save_notes_with(store, meeting, n, segs, Vec::new())
+    save_notes_with(store, meeting, n, segs, Vec::new(), model)
 }
 
 /// The user's own notes, expanded from the transcript with citations (doc 02
@@ -193,13 +194,15 @@ pub fn previous_enhanced(store: &Store, meeting: &str) -> Result<Vec<NewNoteBloc
         .collect())
 }
 
-/// [`save_notes`] plus `extra` AI blocks (the enhanced user notes).
+/// [`save_notes`] plus `extra` AI blocks (the enhanced user notes). `model`
+/// is recorded as the one that wrote the notes (the detail's footer).
 pub fn save_notes_with(
     store: &Store,
     meeting: &str,
     n: &Notes,
     segs: &[Segment],
     extra: Vec<NewNoteBlock>,
+    model: &str,
 ) -> Result<ReplacedNotes, String> {
     let anchors = |ids: &[u64]| anchors_for(store, meeting, segs, ids);
     let mut blocks = Vec::new();
@@ -247,9 +250,12 @@ pub fn save_notes_with(
             ..Default::default()
         });
     }
-    store
+    let saved = store
         .replace_ai_notes(meeting, blocks, actions)
-        .map_err(store_err)
+        .map_err(store_err)?;
+    // Not worth failing the save over.
+    let _ = store.set_notes_model(meeting, Some(model));
+    Ok(saved)
 }
 
 /// Opens the local model for a transcript of `transcript_bytes`.
@@ -269,6 +275,21 @@ fn choose_template(
         .flatten()
         .find_map(|id| ghi_llm::template::builtin(&id).ok())
         .unwrap_or_else(|| default.clone())
+}
+
+/// The app setting `notesLanguage` (`meeting`, `en`, `vi`); `meeting` (the
+/// transcript's own language) when unset or unreadable.
+fn default_notes_language(store: &Store) -> String {
+    store
+        .get_setting("app")
+        .ok()
+        .flatten()
+        .and_then(|v| {
+            v.get("notesLanguage")
+                .and_then(|l| l.as_str().map(str::to_string))
+        })
+        .filter(|l| matches!(l.as_str(), "meeting" | "en" | "vi"))
+        .unwrap_or_else(|| "meeting".into())
 }
 
 /// `notes_live` / `notes_final`.
@@ -342,10 +363,11 @@ impl JobHandler for NotesJob {
                 suggested,
                 &self.template,
             );
+            let setting = default_notes_language(ctx.store);
             let lang = payload
                 .get("lang")
                 .and_then(|v| v.as_str())
-                .unwrap_or("meeting");
+                .unwrap_or(&setting);
             let mut opts = Options::new(
                 template,
                 OutLang::resolve(lang, &t)
@@ -365,8 +387,9 @@ impl JobHandler for NotesJob {
             } else {
                 Vec::new()
             };
+            let model = llm.engine().name;
             drop(llm); // frees the model before anything else loads
-            save_notes_with(ctx.store, meeting, &run.notes, &segs, extra)?;
+            save_notes_with(ctx.store, meeting, &run.notes, &segs, extra, &model)?;
         }
         if self.version >= 2 {
             ctx.store
@@ -388,6 +411,40 @@ impl JobHandler for NotesJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saving_notes_records_the_model_that_wrote_them() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            tmp.path(),
+            std::sync::Arc::new(ghi_store::keys::MemoryKeyStore::default()),
+            ghi_store::keys::Protection::default(),
+        )
+        .unwrap();
+        let m = store
+            .create_meeting(ghi_store::store::NewMeeting::default())
+            .unwrap()
+            .gid;
+        let notes = Notes {
+            template: "general".into(),
+            lang: "en".into(),
+            tldr: vec![],
+            decisions: vec![],
+            action_items: vec![],
+            open_questions: vec![],
+            key_quotes: vec![],
+            topics: vec![],
+            sections: vec![],
+        };
+        // The CLI, the job and a cloud send all go through this.
+        save_notes(&store, &m, &notes, &[], "qwen3-4b").unwrap();
+        assert_eq!(store.notes_model(&m).unwrap().as_deref(), Some("qwen3-4b"));
+        save_notes_with(&store, &m, &notes, &[], Vec::new(), "gpt-4.1-mini").unwrap();
+        assert_eq!(
+            store.notes_model(&m).unwrap().as_deref(),
+            Some("gpt-4.1-mini")
+        );
+    }
 
     #[test]
     fn template_order_is_asked_then_meeting_then_calendar_then_default() {

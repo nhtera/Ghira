@@ -58,12 +58,15 @@ type Session = {
   arrived: Set<number>;
 };
 let session: Session | null = null;
+/** `?nomodels=1`: speech models are missing, so a recording only records. */
+const noModels = new URLSearchParams(location.search).has("nomodels");
 let meetings = 0;
 
 const nowMs = (s: Session) => (s.pausedAt ?? Date.now()) - s.startedAt - s.pausedMs;
 
-function speaker(i: number, mode: RecordMode): SpeakerInfo {
-  const me = i === 0 && mode === "call";
+function speaker(i: number): SpeakerInfo {
+  // Room mode: the room's first voice matches Me's voice profile.
+  const me = i === 0;
   return {
     id: i + 1,
     label: me ? "Me" : `Speaker ${i + 1}`,
@@ -81,7 +84,7 @@ function playLine(s: Session) {
   const at = nowMs(s);
   if (!s.arrived.has(line.s)) {
     s.arrived.add(line.s);
-    emit({ type: "speakerArrived", meeting: s.id, speaker: speaker(line.s, s.mode) });
+    emit({ type: "speakerArrived", meeting: s.id, speaker: speaker(line.s) });
   }
   const words = line.x.split(" ");
   emit({ type: "transcriptPartial", meeting: s.id, track: line.s === 0 ? 0 : 1, text: words.slice(0, 3).join(" ") });
@@ -111,10 +114,10 @@ function playLine(s: Session) {
 function tick(s: Session) {
   if (session !== s) return;
   if (s.pausedAt == null) {
-    playLine(s);
+    if (!noModels) playLine(s);
     emit({ type: "levelMeter", meeting: s.id, micDbfs: -18 - Math.random() * 12, systemDbfs: s.mode === "call" ? -20 - Math.random() * 14 : null });
   }
-  if (s.next < sample.transcript.length) s.timers.push(window.setTimeout(() => tick(s), LINE_MS));
+  if (noModels || s.next < sample.transcript.length) s.timers.push(window.setTimeout(() => tick(s), LINE_MS));
 }
 
 const STAGES: Stage[] = ["decoding", "refiningSpeakers", "matchingVoices", "improvingTranscript", "writingNotes"];
@@ -159,7 +162,10 @@ const rows: MeetingRow[] = library.rows.map((r, i) => ({
   cloudUsed: r.st === "cloud",
   consentConfirmed: false,
   template: null,
-  people: r.ppl.filter((p) => p !== "Me" && p !== "?").map((name, k) => ({ name, colorSlot: SLOTS[(k + 1) % SLOTS.length]! })),
+  people: r.ppl
+    .filter((p) => p !== "?")
+    .map((name, k) => ({ name: name === "Me" ? "" : name, colorSlot: SLOTS[k % SLOTS.length]!, isMe: name === "Me" })),
+  unnamedVoices: r.ppl.filter((p) => p === "?").length,
   job: r.st === "final" ? { kind: "final_pass", progress: (("pct" in r ? r.pct : 0) ?? 0) / 100, waitingForModels: false } : null,
   folder: null,
   tags: [],
@@ -187,6 +193,14 @@ let settings: AppSettings = {
   audioRetentionDays: 0,
   consentMessageEn: "",
   consentMessageVi: "",
+  openAtLogin: true,
+  showInMenuBar: true,
+  notesLanguage: "meeting",
+  detectApps: ["zoom", "teams", "meet", "slack", "zalo"],
+  echoCancellation: true,
+  appAudioOnly: true,
+  // `?cloud=1` turns the cloud entry points on for tests and captures.
+  cloudOffered: typeof location !== "undefined" && new URLSearchParams(location.search).get("cloud") === "1",
 };
 let lineSeq = 0;
 /** Speakers made by a split in this session (ids after the scripted ones). */
@@ -268,6 +282,7 @@ const commands: Commands = {
       consentConfirmed: false,
       template: null,
       people: [],
+      unnamedVoices: 0,
       job: null,
       folder: null,
       tags: [],
@@ -277,6 +292,7 @@ const commands: Commands = {
     emit({ type: "stateChanged", meeting: id, state: "starting" });
     emit({ type: "sessionStarted", meeting: id, mode, language: null, title: "" });
     emit({ type: "stateChanged", meeting: id, state: "recording" });
+    if (noModels) emit({ type: "error", meeting: id, kind: "modelsMissing", message: "" });
     const s = session;
     s.timers.push(window.setTimeout(() => tick(s), 600));
     return ok(id);
@@ -320,7 +336,7 @@ const commands: Commands = {
   },
   renameSpeaker: (id, name) => {
     if (!session) return fail("nothing is recording");
-    emit({ type: "speakerRenamed", meeting: session.id, speaker: { ...speaker(id - 1, session.mode), label: name } });
+    emit({ type: "speakerRenamed", meeting: session.id, speaker: { ...speaker(id - 1), label: name } });
     return ok(null);
   },
   mergeSpeakers: (from, into) => {
@@ -389,6 +405,9 @@ const commands: Commands = {
   },
   micPermission: () => Promise.resolve("granted"),
   requestMicPermission: () => ok("granted"),
+  requestNotifications: () => ok("granted"),
+  probeSystemAudio: () => ok("heard"),
+  retryCapture: () => ok(null),
   replyMeetingDetected: () => ok(null),
   // The mock serves no audio; the UI handles a sample that doesn't load.
   issueAudioSample: () => fail("no audio on the mock core"),
@@ -406,8 +425,8 @@ const commands: Commands = {
             meeting: session.id,
             state: session.pausedAt != null ? "paused" : "recording",
             nowMs: nowMs(session),
-            transcribing: true,
-            speakers: [...session.arrived].map((i) => speaker(i, session!.mode)),
+            transcribing: !noModels,
+            speakers: [...session.arrived].map((i) => speaker(i)),
             lines: [],
             marks: [],
             mode: session.mode,
@@ -420,7 +439,7 @@ const commands: Commands = {
   modelsStatus: () =>
     ok({
       tier: "balanced",
-      models: MODELS.map((m) => ({ ...m, installed: m.role === "voice" ? voiceInstalled : true, partialBytes: 0, damaged: false })),
+      models: MODELS.map((m) => ({ ...m, installed: m.role === "voice" ? voiceInstalled : true, partialBytes: 0, damaged: modelDamaged && m.role === "asr" })),
       downloading: false,
     }),
   // `?recovered=1` in the URL pretends the last session crashed mid-meeting.
@@ -582,6 +601,8 @@ export const mockIpc: Ipc = {
 };
 
 
+let modelDamaged = false;
+
 // Playwright and the dev console drive the mock through these (mock only;
 // the Tauri build never loads this module).
 (window as unknown as { __ghiMock: object }).__ghiMock = {
@@ -589,6 +610,11 @@ export const mockIpc: Ipc = {
   simulateMeetingDetected,
   simulateQuitRequested,
   simulateImportDrop,
+  /** Makes the speech model report a failed checksum (the banner re-reads on the engine error). */
+  setModelDamaged: (on = true) => {
+    modelDamaged = on;
+    simulateCoreEvent({ type: "error", meeting: null, kind: "engine", message: "checksum" } as Event);
+  },
   /** Stores a (fake) API key, as Settings → AI would. */
   setCloudKey: (provider: string) => commands.setCloudKey(provider, "test-key"),
 };

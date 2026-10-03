@@ -81,7 +81,7 @@ function AnswerCard({ entry, model, onOpen, onSearch }: { entry: Entry; model: s
           {a.citations.map((c, i) => {
             const { missing, t0Ms } = c.citation;
             const playable = t0Ms != null && !missing;
-            const time = t0Ms != null ? formatClock(t0Ms) : null;
+            const time = t0Ms != null ? formatClock(t0Ms, { pad: true }) : null;
             const name = time ? t("ask.openAt", { title: c.meeting.title, time }) : t("ask.openMeeting", { title: c.meeting.title });
             return (
               <button

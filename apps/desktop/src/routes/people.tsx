@@ -11,5 +11,9 @@ export function PeopleScreen() {
   const platform = usePlatform();
   const q = usePeople();
   const people = q.data?.people ?? [];
-  return <PeopleBody title={t("nav.people")} subtitle={q.data ? t("people.subtitle", { context: platform, people: people.length, profiles: people.filter((p) => p.voice.kind !== "none").length }) : undefined} />;
+  const profiles = people.filter((p) => p.voice.kind !== "none").length;
+  const subtitle = q.data
+    ? t("people.summary", { context: platform, people: t("people.peopleCount", { count: people.length }), profiles: t("people.profilesCount", { count: profiles }) })
+    : undefined;
+  return <PeopleBody title={t("nav.people")} subtitle={subtitle} />;
 }

@@ -18,10 +18,12 @@ export type DialogProps = {
   /** false: Escape and outside clicks do nothing. */
   dismissible?: boolean;
   width?: number;
+  /** `sheet` (default): a mac sheet under the title bar, centred on Windows. `center`: centred on both. */
+  placement?: "sheet" | "center";
 };
 
-export function Dialog({ open, onOpenChange, title, description, children, footer, dismissible = true, width = 480 }: DialogProps) {
-  const sheet = usePlatform() === "mac";
+export function Dialog({ open, onOpenChange, title, description, children, footer, dismissible = true, width = 480, placement = "sheet" }: DialogProps) {
+  const sheet = usePlatform() === "mac" && placement === "sheet";
   const block = (e: Event) => {
     if (!dismissible) e.preventDefault();
   };

@@ -56,7 +56,7 @@ const TAIL = 2;
 
 export function TranscriptLine({ startMs, speaker, words, partial, marked, edited, overlap, overlapHint = true, playing, activeWordIndex, selected, small, onPlay, onEdit, onChangeSpeaker, className }: TranscriptLineProps) {
   const { t } = useTranslation();
-  const time = formatClock(startMs);
+  const time = formatClock(startMs, { pad: true });
   const color = speaker && speaker.colorSlot > 0 ? `var(--s${speaker.colorSlot})` : undefined;
 
   return (

@@ -277,7 +277,7 @@ describe("CitationLink", () => {
       />,
     );
     await user.click(
-      screen.getByRole("button", { name: "Show in transcript 0:12" }),
+      screen.getByRole("button", { name: "Show in transcript 00:12" }),
     );
     expect(play).toHaveBeenCalledWith(12_000, 15_000);
   });
@@ -309,12 +309,12 @@ describe("CitationLink", () => {
       />,
     );
     fireEvent.focus(
-      screen.getByRole("button", { name: "Show in transcript 0:12" }),
+      screen.getByRole("button", { name: "Show in transcript 00:12" }),
     );
     const preview = await screen.findByRole("group", { name: "Quote preview" });
     expect(preview.textContent).toContain("we ship on the 12th");
     expect(preview.textContent).toContain("Sarah");
-    expect(screen.getByRole("button", { name: "Play from 0:12" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Play from 00:12" })).toBeTruthy();
   });
 });
 

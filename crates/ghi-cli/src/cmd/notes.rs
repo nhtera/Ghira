@@ -507,7 +507,8 @@ pub fn store_notes(
     let run = out.run;
 
     let n = &run.notes;
-    let r = ghi_core::notes_job::save_notes(&store, meeting, n, &segs).map_err(internal)?;
+    let r = ghi_core::notes_job::save_notes(&store, meeting, n, &segs, &run.engine.name)
+        .map_err(internal)?;
     let mut extra = out.extra;
     extra.insert("meeting".into(), json!(meeting));
     extra.insert(

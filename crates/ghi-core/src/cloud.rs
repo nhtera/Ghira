@@ -72,7 +72,26 @@ pub struct Plan {
     version: i64,
 }
 
+/// Longest excerpt of the request's text shown in the send sheet (characters).
+pub const EXCERPT_MAX: usize = 4000;
+
 impl Plan {
+    /// The request's user text before and after redaction, for the sheet's
+    /// "on this Mac" / "what is sent" box, each cut to [`EXCERPT_MAX`]. `None`
+    /// when the request shape has no user text. Never the system prompt.
+    pub fn excerpts(&self) -> Option<(String, String)> {
+        let after = ghi_llm::preview::user_text(&self.preview.payload);
+        if after.is_empty() {
+            return None;
+        }
+        let before = self.redactor.restore(&after).text;
+        let cut = |s: String| match s.char_indices().nth(EXCERPT_MAX) {
+            Some((i, _)) => format!("{}…", s[..i].trim_end()),
+            None => s,
+        };
+        Some((cut(before), cut(after)))
+    }
+
     /// A notes request (else an Ask).
     pub fn is_notes(&self) -> bool {
         matches!(self.task, Prepared2::Notes { .. })
@@ -313,7 +332,14 @@ pub fn send(store: &Store, plan: Plan, key: &Secret, policy: NetPolicy) -> Resul
             n.map_text(|s| plain_text(&plan.redactor.restore(s).text));
             // The user's own notes keep their expansions (cloud gets no notes).
             let keep = previous_enhanced(store, &plan.meeting)?;
-            let saved = save_notes_with(store, &plan.meeting, &n, &plan.segs, keep)?;
+            let saved = save_notes_with(
+                store,
+                &plan.meeting,
+                &n,
+                &plan.segs,
+                keep,
+                &plan.provider.model,
+            )?;
             Ok(Outcome::Done(Sent::Notes(saved)))
         }
         Prepared2::Ask { prepared, question } => {
@@ -417,6 +443,13 @@ mod tests {
         assert!(p.preview.payload.contains("pricing deck"));
         assert!(p.redactions.iter().any(|(_, n)| *n > 0));
         assert_eq!(p.preview.sha256, ghi_net::sha256_hex(&p.prepared.body));
+        // The sheet's before / after box: names back on this Mac, hidden in
+        // what is sent, and never the system prompt.
+        let (before, after) = p.excerpts().expect("user text");
+        assert!(before.contains("Nguyễn Thị Lan"), "{before}");
+        assert!(!after.contains("Nguyễn Thị Lan"), "{after}");
+        assert!(after.contains("pricing deck"));
+        assert!(!after.contains("JSON"), "not the system prompt: {after}");
         // Same input, same bytes: the user confirms what is sent.
         let Planned::Send(again) = plan(
             &store,
@@ -509,6 +542,7 @@ mod tests {
             event: "e".into(),
             title: "Sync".into(),
             attendees: vec!["Hoàng Gia Bảo".into()],
+            emails: Vec::new(),
             calendar: None,
         };
         store

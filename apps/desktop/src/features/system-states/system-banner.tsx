@@ -10,7 +10,7 @@ export type BannerTone = "warn" | "rec" | "info";
 const TONE: Record<BannerTone, string> = { warn: "bg-warn-soft text-warn", rec: "bg-rec-soft text-rec-ink", info: "bg-surface2 text-ink" };
 
 /** The banner's action: outlined in the banner's own color, as in the design. */
-export const BANNER_ACTION = "border border-current bg-transparent text-current hover:bg-transparent hover:brightness-90";
+export const BANNER_ACTION = "h-8.5! rounded-lg! border! border-current! bg-transparent! px-3! text-[13px]! text-current! hover:bg-transparent! hover:brightness-90";
 
 export function SystemBanner({
   id,

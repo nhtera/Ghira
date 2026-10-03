@@ -282,6 +282,56 @@ impl Drop for MacCapture {
     }
 }
 
+/// What a short system-audio capture heard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemProbe {
+    /// Audio came through the tap: access is on.
+    Heard,
+    /// Only digital silence: nothing was playing, or access is denied (a
+    /// denied tap delivers zeros, and macOS cannot be asked which).
+    Silent,
+    /// Starting the capture was refused for lack of access.
+    Denied,
+}
+
+/// Captures the system's audio for `listen` and drops it (nothing is kept):
+/// the first start shows macOS's "screen & system audio recording" prompt.
+/// `on_started` runs once the tap is running (play the test sound there).
+/// Blocks; do not call it on the main thread of an app.
+pub fn probe_system_audio(
+    listen: std::time::Duration,
+    on_started: impl FnOnce(),
+) -> Result<SystemProbe, MacError> {
+    let started = match MacCapture::start(&CaptureConfig {
+        mic: false,
+        system: true,
+        tap_pids: Vec::new(),
+    }) {
+        Ok(s) => s,
+        Err(e) if e.code == MacError::SYSTEM_PERMISSION => return Ok(SystemProbe::Denied),
+        Err(e) => return Err(e),
+    };
+    on_started();
+    let mut ring = started.system;
+    let mut block = Vec::new();
+    let mut peak = 0.0f32;
+    let end = std::time::Instant::now() + listen;
+    while std::time::Instant::now() < end {
+        if let Some(r) = ring.as_mut() {
+            while r.pop_into(&mut block).is_some() {
+                peak = block.iter().fold(peak, |p, s| p.max(s.abs()));
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    drop(started.capture);
+    Ok(if peak > 1e-4 {
+        SystemProbe::Heard
+    } else {
+        SystemProbe::Silent
+    })
+}
+
 fn split(on: bool) -> (Option<RingProducer>, Option<RingConsumer>) {
     if on {
         let (tx, rx) = ring(RING_SAMPLES);

@@ -3,7 +3,7 @@
 // explains, it does not give legal advice; the copyable message is the same
 // one the live screen offers).
 import { useTranslation } from "react-i18next";
-import { Button, Icon, shortcutLabel, useToast, usePlatform } from "@ghi/ui";
+import { Button, Icon, Kbd, shortcutLabel, useToast, usePlatform } from "@ghi/ui";
 import { SHORTCUTS } from "../../shell/shortcuts";
 import { StepActions, StepFrame, type StepNav } from "./step-frame";
 
@@ -32,7 +32,7 @@ export function DoneStep({ nav, finishing }: { nav: StepNav; finishing?: boolean
       <ul className="m-0 flex list-none flex-col gap-2 p-0">
         {keys.map((k) => (
           <li key={k.chord} className="flex items-center gap-3">
-            <kbd className="text-mono rounded-[10px] border border-line2 bg-surface2 px-3.5 py-2 text-[16px]">{shortcutLabel(k.chord, platform)}</kbd>
+            <Kbd size="lg" shortcut={shortcutLabel(k.chord, platform)} />
             <span className="text-[13px] text-muted">{k.label}</span>
           </li>
         ))}

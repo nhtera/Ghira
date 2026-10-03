@@ -80,6 +80,12 @@ pub struct MeetingDetail {
     pub audio_available: bool,
     pub speakers: Vec<MeetingSpeaker>,
     pub job: Option<MeetingJob>,
+    /// The model that wrote the current notes (`None`: no notes, or written
+    /// before this was recorded).
+    pub notes_model: Option<String>,
+    /// Where an imported file came from: `zoom`, `teams`, `meet`, `plaud`,
+    /// `voice_memos`.
+    pub source_app: Option<String>,
 }
 
 /// A citation resolved against the current transcript.
@@ -317,6 +323,8 @@ pub async fn meeting_detail(core: CoreState<'_>, meeting: String) -> Result<Meet
         let job = active_jobs(c, &store)?.remove(&meeting);
         Ok(MeetingDetail {
             audio_available: store.audio_available(&meeting).map_err(err)?,
+            notes_model: store.notes_model(&meeting).map_err(err)?,
+            source_app: m.source_app,
             speakers,
             job,
             gid: m.gid,

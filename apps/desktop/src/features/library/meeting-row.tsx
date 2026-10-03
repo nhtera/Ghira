@@ -77,15 +77,19 @@ export function MeetingRowView({ row, status, title, line, locale, folderName, o
         <span className="flex items-center">
           {row.people.slice(0, SHOWN_PEOPLE).map((p) => (
             <Avatar
-              key={p.name}
+              key={p.isMe ? "me" : p.name}
+              kind={p.isMe ? "me" : "person"}
               name={p.name}
               colorSlot={p.colorSlot}
               size="md"
-              label={p.name}
+              label={p.isMe ? t("speakers.me") : p.name}
               className="-ml-1.5 border-2 border-surface first:ml-0"
             />
           ))}
           {row.people.length > SHOWN_PEOPLE && <Avatar kind="group" count={row.people.length - SHOWN_PEOPLE} size="md" className="-ml-1.5 border-2 border-surface" />}
+          {row.unnamedVoices > 0 && (
+            <Avatar kind="unknown" size="md" label={t("library.unnamedVoices", { count: row.unnamedVoices })} className="-ml-1.5 border-2 border-surface bg-sunk first:ml-0" />
+          )}
         </span>
         <span className="flex items-center gap-1.5 text-[12px] text-muted">
           <Icon name={(kind && KIND_ICON[kind]) || "graphic_eq"} size={17} className="flex-none" />

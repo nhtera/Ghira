@@ -89,6 +89,16 @@ pub struct ProviderKey {
     pub stored: bool,
 }
 
+/// Any provider has a stored key (the `cloudOffered` migration; a keychain
+/// error counts as none).
+pub(crate) fn any_key_stored(c: &Core) -> bool {
+    c.secrets().is_ok_and(|s| {
+        PROVIDERS
+            .iter()
+            .any(|p| s.get(&format!("provider-{p}")).ok().flatten().is_some())
+    })
+}
+
 /// Which providers have a key (never the key).
 #[tauri::command]
 #[specta::specta]
@@ -209,6 +219,11 @@ pub struct CloudPreview {
     /// Things in the text that still look like personal data.
     pub warnings: Vec<String>,
     pub redactions: Vec<Redaction>,
+    /// The request's text as it is on this Mac (names and personal data
+    /// restored), shortened; `None` when it has no user text.
+    pub excerpt_before: Option<String>,
+    /// The same text as sent (placeholders for what is hidden).
+    pub excerpt_after: Option<String>,
 }
 
 /// An answer to "Ask this meeting".
@@ -286,7 +301,9 @@ pub async fn cloud_preview(
 ) -> Result<CloudPreviewResult, String> {
     let plans = plans.inner().clone();
     blocking(&core, move |c| {
-        if crate::system::load_settings(c)?.strict_offline {
+        let settings = crate::system::load_settings(c)?;
+        crate::system::cloud_allowed(&settings)?;
+        if settings.strict_offline {
             return Err("strict offline is on: nothing can be sent".into());
         }
         let store = c.store()?;
@@ -332,6 +349,10 @@ pub async fn cloud_preview(
                         count: *n as u32,
                     })
                     .collect();
+                let (excerpt_before, excerpt_after) = match p.excerpts() {
+                    Some((b, a)) => (Some(b), Some(a)),
+                    None => (None, None),
+                };
                 let id = plans.put(p);
                 Ok(CloudPreviewResult::Preview(CloudPreview {
                     id,
@@ -345,6 +366,8 @@ pub async fn cloud_preview(
                     retention_note: pv.retention_note,
                     warnings: pv.warnings,
                     redactions,
+                    excerpt_before,
+                    excerpt_after,
                 }))
             }
         }
@@ -381,7 +404,9 @@ pub async fn cloud_send(
 ) -> Result<CloudSendResult, String> {
     let plans = plans.inner().clone();
     blocking(&core, move |c| {
-        let policy = if crate::system::load_settings(c)?.strict_offline {
+        let settings = crate::system::load_settings(c)?;
+        crate::system::cloud_allowed(&settings)?;
+        let policy = if settings.strict_offline {
             NetPolicy::StrictOffline
         } else {
             NetPolicy::Default

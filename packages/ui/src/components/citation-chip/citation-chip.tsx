@@ -23,7 +23,7 @@ export type CitationChipProps = {
 
 export function CitationChip({ timeMs, index, broken, text: shownText, visited, onClick, className }: CitationChipProps) {
   const { t } = useTranslation();
-  const time = timeMs != null ? formatClock(timeMs) : undefined;
+  const time = timeMs != null ? formatClock(timeMs, { pad: true }) : undefined;
   const text = shownText ?? time ?? String(index ?? "");
   const name =
     time != null

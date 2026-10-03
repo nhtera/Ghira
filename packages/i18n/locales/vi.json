@@ -132,6 +132,7 @@
       "roomHint": "Chuyển sang chế độ Phòng để ghi mọi người qua micro.",
       "micLost": "Micro đã bị ngắt. Hãy cắm lại để tiếp tục ghi giọng bạn.",
       "systemLost": "Âm thanh hệ thống đã dừng. Những người khác trong cuộc gọi không được ghi.",
+      "appAudioFallback": "Đang ghi toàn bộ âm thanh hệ thống. Không tìm thấy ứng dụng họp.",
       "diskFull": "Ổ đĩa đã đầy. Bản ghi âm không thể lưu thêm. Hãy giải phóng dung lượng ngay."
     },
     "manyVoices": "Hơn 8 giọng nói. Các giọng thêm tạm chung làn Khác; {{app}} sẽ tách riêng sau cuộc họp."
@@ -417,7 +418,8 @@
       "hours": "{{hours}} giờ",
       "hoursMinutes": "{{hours}} giờ {{minutes}} phút"
     },
-    "recordGroup": "Bắt đầu ghi"
+    "recordGroup": "Bắt đầu ghi",
+    "unnamedVoices_other": "{{count}} giọng chưa có tên"
   },
   "tray": {
     "detected": {
@@ -587,7 +589,11 @@
       "checkedInTest": "Kiểm tra ở bước thử",
       "notNeeded": "Không cần",
       "systemAudioNote": "macOS không cho {{app}} biết quyền này đã bật chưa. Bước ghi âm thử sẽ cho thấy.",
-      "askedLater": "Hỏi khi cần"
+      "askedLater": "Hỏi khi cần",
+      "confirmedInTest": "Sẽ xác nhận trong lần ghi âm thử",
+      "allowFor": "Cho phép {{name}}",
+      "openSettingsFor_mac": "Mở Cài đặt hệ thống cho {{name}}",
+      "openSettingsFor_win": "Mở Cài đặt cho {{name}}"
     },
     "osDialog": {
       "microphone": "“{{app}}” muốn truy cập micro.",
@@ -737,7 +743,16 @@
         "lightTier_mac": "Máy này dùng chế độ Nhanh (bộ nhớ 8 GB).",
         "lightTier_win": "Máy này dùng chế độ Nhanh (bộ nhớ 8 GB)."
       },
-      "copyFor": "Sao chép {{label}}"
+      "copyFor": "Sao chép {{label}}",
+      "app": {
+        "zoom": "Zoom",
+        "teams": "Microsoft Teams",
+        "meet": "Google Meet",
+        "slack": "Slack huddles",
+        "zalo": "Zalo",
+        "webex": "Webex",
+        "facetime": "FaceTime"
+      }
     },
     "ai": {
       "local": {
@@ -791,7 +806,8 @@
       "redactDefault": "Mặc định ẩn tên và dữ liệu cá nhân",
       "redactDefaultHint": "Tên, email và số điện thoại được thay thế trước khi gửi, rồi khôi phục tại máy này.",
       "alwaysPreview": "{{app}} luôn cho xem đúng nội dung yêu cầu trước khi gửi.",
-      "perMeeting": "Theo từng cuộc họp"
+      "perMeeting": "Theo từng cuộc họp",
+      "mode": "Chế độ AI"
     },
     "models": {
       "presetTitle": "Tốc độ và chất lượng",
@@ -914,7 +930,8 @@
       "voiceProfilesHint": "Để điện thoại cũng gọi được tên người nói.",
       "localOnly": "Chỉ qua mạng nội bộ. Không qua internet.",
       "soonTitle": "Đồng bộ giữa các thiết bị sắp có",
-      "soonBody": "Hiện tại cuộc họp chỉ nằm trên máy này."
+      "soonBody": "Hiện tại cuộc họp chỉ nằm trên máy này.",
+      "laterNote": "Chưa có đồng bộ với điện thoại. Các tuỳ chọn này tạm tắt cho đến khi có."
     },
     "shortcuts": {
       "startStop": "Bắt đầu hoặc dừng ghi",
@@ -1121,7 +1138,11 @@
       "tooShort": "Đoạn đọc quá ngắn. Hãy đọc hết đoạn văn, khoảng 20 giây.",
       "tooQuiet": "Gần như không nghe thấy bạn. Hãy lại gần micro và thử lại."
     },
-    "stopSample": "Dừng phát mẫu"
+    "stopSample": "Dừng phát mẫu",
+    "peopleCount_other": "{{count}} người",
+    "profilesCount_other": "{{count}} hồ sơ giọng nói",
+    "summary_mac": "{{people}} · {{profiles}} · mã hoá trên máy này",
+    "summary_win": "{{people}} · {{profiles}} · mã hoá trên máy này"
   },
   "consent": {
     "title": "Lưu giọng của {{name}}?",
@@ -1202,7 +1223,10 @@
     "reveal_win": "Hiện trong File Explorer",
     "copied": "Đã sao chép",
     "copyText": "Sao chép dạng văn bản",
-    "toObsidian": "Xuất sang Obsidian…"
+    "toObsidian": "Xuất sang Obsidian…",
+    "saveTo": "Lưu vào:",
+    "askWhere": "Bạn chọn nơi lưu mỗi lần",
+    "changeDestination": "Đổi…"
   },
   "email": {
     "title": "Soạn email follow-up",
@@ -1225,7 +1249,9 @@
     "rewrite": "Viết lại",
     "writing": "Đang viết… {{seconds}} giây",
     "body": "Nội dung",
-    "notSent": "{{app}} không gửi gì cả. Hãy sao chép email vào ứng dụng thư của bạn."
+    "notSent": "{{app}} không gửi gì cả. Hãy sao chép email vào ứng dụng thư của bạn.",
+    "truncated": "Ứng dụng thư nhận được bản đã rút gọn.",
+    "copyFull": "Sao chép email đầy đủ"
   },
   "ask": {
     "subtitle": "Câu trả lời lấy từ các cuộc họp và dẫn về đúng thời điểm được nói.",
@@ -1344,7 +1370,8 @@
       "stereo": "Tách kênh stereo",
       "stereoHint": "Zoom lưu bạn và người khác trên hai kênh riêng. {{app}} dùng điều đó để phân biệt người nói.",
       "language": "Ngôn ngữ",
-      "stereoSides": "Bạn ở kênh trái, những người khác ở kênh phải."
+      "stereoSides": "Bạn ở kênh trái, những người khác ở kênh phải.",
+      "stereoOnly": "Chỉ áp dụng cho tệp stereo. Không tệp nào ở đây có hai kênh."
     },
     "importFiles_other": "Nhập {{count}} file",
     "queue": {

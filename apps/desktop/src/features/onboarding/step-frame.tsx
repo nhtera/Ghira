@@ -3,7 +3,10 @@
 // button carries `data-onboarding-primary` so Enter can press it.
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Icon, type ButtonProps } from "@ghi/ui";
+import { Button, Icon, cn, type ButtonProps } from "@ghi/ui";
+
+/** The design's onboarding button: 42 px tall, 10 px corners, 14 px text (the `!` beats the Button size). */
+export const OB_BUTTON = "h-[42px]! rounded-[10px]! px-5.5! text-[14px]!";
 
 export type StepNav = {
   next: () => void;
@@ -53,18 +56,18 @@ export function StepActions({
     <>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {start}
-        <Button variant="primary" size="lg" data-onboarding-primary={enter ? "" : undefined} onClick={onPrimary ?? nav.next} {...primaryProps}>
+        <Button variant="primary" size="lg" data-onboarding-primary={enter ? "" : undefined} onClick={onPrimary ?? nav.next} {...primaryProps} className={cn(OB_BUTTON, primaryProps?.className)}>
           {primary ?? t("common.continue")}
         </Button>
         {skip && (
-          <Button variant="ghost" size="lg" className="text-muted" onClick={onSkip ?? nav.next}>
+          <Button variant="ghost" size="lg" className={cn(OB_BUTTON, "px-3.5! text-[13.5px]! font-medium text-muted")} onClick={onSkip ?? nav.next}>
             {skip}
           </Button>
         )}
       </div>
       {nav.canGoBack && (
         <div>
-          <Button variant="ghost" size="sm" className="-ml-2 text-muted" icon="chevron_left" onClick={nav.back}>
+          <Button variant="ghost" size="sm" className="-ml-2 text-[13px]! font-normal text-muted" icon="chevron_left" onClick={nav.back}>
             {t("common.back")}
           </Button>
         </div>

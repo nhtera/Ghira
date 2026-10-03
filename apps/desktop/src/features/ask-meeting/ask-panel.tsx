@@ -10,6 +10,7 @@ import type { AskAnswer, MeetingDetail } from "../../bindings";
 import { ipc } from "../../ipc";
 import { AskError } from "../ask/ask-error";
 import { CitationLink } from "../citation/citation-link";
+import { useCloudOffered } from "../cloud-sheet/cloud-offered";
 import { CloudSheet } from "../cloud-sheet/cloud-sheet";
 import { providerName } from "../cloud-sheet/provider-names";
 
@@ -135,6 +136,7 @@ export function AskPanel({
 }) {
   const { t } = useTranslation();
   const platform = usePlatform();
+  const offered = useCloudOffered();
   const [question, setQuestion] = useState("");
   const [engine, setEngine] = useState<Engine>("local");
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -175,7 +177,7 @@ export function AskPanel({
     const q = question.trim();
     if (!q || thinking) return;
     setQuestion("");
-    if (engine === "cloud") setCloudQuestion(q);
+    if (offered && engine === "cloud") setCloudQuestion(q);
     else void askLocal(q);
   };
 
@@ -212,6 +214,7 @@ export function AskPanel({
         <div ref={logEnd} />
       </div>
       <div className="flex flex-col gap-2 border-t border-line px-4 py-3">
+        {offered && (
         <Segmented<Engine>
           label={t("ask.meeting.engine")}
           value={engine}
@@ -225,6 +228,7 @@ export function AskPanel({
             { value: "cloud", label: t("ask.meeting.cloud"), icon: "cloud" },
           ]}
         />
+        )}
         <div className="flex items-center gap-2">
           <input
             // Opened on purpose (toolbar or menu): ready to type.

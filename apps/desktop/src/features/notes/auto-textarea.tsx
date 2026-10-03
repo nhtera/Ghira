@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 
 const SAVE_AFTER_MS = 800;
@@ -30,6 +31,8 @@ export type AutoTextareaProps = {
   /** Emptying the field and leaving it restores the text instead of committing "". */
   keepOnEmpty?: boolean;
   id?: string;
+  /** Shown right after the last word (citation chips), where the text ends. */
+  trailing?: ReactNode;
 };
 
 export function AutoTextarea({
@@ -44,6 +47,7 @@ export function AutoTextarea({
   clearOnEnter,
   keepOnEmpty,
   id,
+  trailing,
 }: AutoTextareaProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState(value);
@@ -65,13 +69,6 @@ export function AutoTextarea({
       setDraft(value);
     if (value.trim() !== saved.current.trim()) saved.current = value;
   }, [value]);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, [draft]);
 
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
@@ -110,7 +107,7 @@ export function AutoTextarea({
     }
   };
 
-  return (
+  const field = (
     <textarea
       ref={ref}
       id={id}
@@ -148,9 +145,23 @@ export function AutoTextarea({
         } else commit(draft);
       }}
       className={cn(
-        "m-0 block w-full resize-none overflow-hidden rounded-seg border-0 bg-transparent p-0 outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent",
+        "m-0 w-full resize-none overflow-hidden rounded-seg border-0 bg-transparent p-0 outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent",
+        "absolute inset-0 h-full",
         className,
       )}
     />
+  );
+  // One structure whether or not there is something trailing (a chip appearing must not remount the textarea):
+  // a hidden copy of the text sizes the box and carries the chips right after the last word; the textarea fills it.
+  return (
+    <div className="relative">
+      {field}
+      <div className={cn("pointer-events-none relative m-0 break-words whitespace-pre-wrap", className)}>
+        <span aria-hidden="true" className="invisible">
+          {`${draft}\u200b`}
+        </span>
+        {trailing && <span className="pointer-events-auto">{trailing}</span>}
+      </div>
+    </div>
   );
 }

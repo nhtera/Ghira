@@ -2,7 +2,6 @@
 // Meetings library (D3) with processing (D5): search (⌘F), filters, rows grouped
 // by day, multi-select with a bulk bar, delete with Undo, and the in-place
 // stepper / "Name your speakers" for meetings being processed.
-import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -38,32 +37,13 @@ import { useRelated } from "../features/search/use-related";
 import { useTemplates } from "../state/meeting-queries";
 import { SHORTCUTS, matchChord } from "../shell/shortcuts";
 import { NameSpeakers } from "../features/processing/name-speakers";
+import { useUnnamed } from "../features/processing/use-unnamed";
 import { ProcessingPanel } from "../features/processing/processing-panel";
 import { useProcessing } from "../features/processing/processing-store";
-import { adapter } from "../features/processing/speakers-adapter";
 import { overallProgress } from "../features/processing/stepper-steps";
 import { UpNextStrip } from "../features/calendar/up-next-strip";
 import { Page } from "../shell/page";
 import { useAppActions } from "../shell/actions";
-
-/** Voices still unnamed in the meeting that just finished (empty until the adapter has any). */
-function useUnnamed(meeting: string | undefined) {
-  const q = useQuery({
-    queryKey: ["unnamed-speakers", meeting],
-    enabled: !!meeting,
-    queryFn: () => adapter.unnamed(meeting!),
-  });
-  const [named, setNamed] = useState<string[]>([]);
-  const left = useMemo(
-    () => (q.data ?? []).filter((s) => !named.includes(s.gid)),
-    [q.data, named],
-  );
-  return {
-    left,
-    loaded: q.isSuccess,
-    markNamed: (gid: string) => setNamed((n) => [...n, gid]),
-  };
-}
 
 /** The URL says "none" for meetings in no folder; the filter says "". */
 const folderFromUrl = (v: string | undefined): string | null =>

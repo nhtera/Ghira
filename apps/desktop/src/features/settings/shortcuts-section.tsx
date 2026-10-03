@@ -2,7 +2,7 @@
 // Settings → Shortcuts: the keyboard map (shell/shortcuts.ts) with platform
 // labels. The two global ones (they work from any app) can be turned off.
 import { useTranslation } from "react-i18next";
-import { shortcutLabel, usePlatform } from "@ghi/ui";
+import { Kbd, shortcutLabel, usePlatform } from "@ghi/ui";
 import { APP_NAME } from "@ghi/i18n";
 import { SHORTCUTS, type ShortcutId } from "../../shell/shortcuts";
 import { Card, Row, Switch, useSettings } from "./parts";
@@ -18,7 +18,7 @@ const LOCAL: { id: ShortcutId; label: string }[] = [
 
 function Keys({ id }: { id: ShortcutId }) {
   const platform = usePlatform();
-  return <kbd className="rounded-md border border-line2 bg-surface2 px-2 py-0.5 font-mono text-[12.5px]">{shortcutLabel(SHORTCUTS[id], platform)}</kbd>;
+  return <Kbd shortcut={shortcutLabel(SHORTCUTS[id], platform)} size="md" />;
 }
 
 export function ShortcutsSection() {

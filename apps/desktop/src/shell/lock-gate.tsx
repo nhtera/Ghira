@@ -59,7 +59,8 @@ export function LockGate({ children, mode = "full" }: { children: ReactNode; mod
       if (r.status === "error") setError(lockErrorText(t, r.error));
       else if (!r.data) setError(t("system.locked.errors.notConfirmed"));
     };
-    return <LockedScreen onUnlock={() => void unlock()} error={error} />;
+    // "Use password" opens the same system prompt, which offers the password after Touch ID.
+    return <LockedScreen onUnlock={() => void unlock()} onPassword={() => void unlock()} error={error} />;
   }
   return <>{children}</>;
 }

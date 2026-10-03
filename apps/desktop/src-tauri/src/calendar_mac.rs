@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use block2::RcBlock;
-use ghi_core::calendar::{CalEvent, join_app, person_name};
+use ghi_core::calendar::{CalEvent, email_of, join_app, person_name};
 use objc2::msg_send;
 use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::Bool;
@@ -102,7 +102,7 @@ fn ms(d: &NSDate) -> i64 {
 }
 
 /// A participant's display name; `None` for the user themself.
-fn participant(p: &EKParticipant) -> Option<String> {
+fn participant(p: &EKParticipant) -> Option<(String, String)> {
     // SAFETY: plain getters on a live participant; nil is handled.
     unsafe {
         if p.isCurrentUser() {
@@ -114,7 +114,9 @@ fn participant(p: &EKParticipant) -> Option<String> {
             .and_then(|u| u.absoluteString())
             .map(|s| s.to_string())
             .unwrap_or_default();
-        Some(person_name(name.as_deref(), &addr)).filter(|n| n.trim().chars().count() >= 2)
+        Some(person_name(name.as_deref(), &addr))
+            .filter(|n| n.trim().chars().count() >= 2)
+            .map(|n| (n, email_of(&addr).unwrap_or_default()))
     }
 }
 
@@ -140,14 +142,16 @@ fn convert(e: &EKEvent) -> Option<CalEvent> {
             .map(|s| s.to_string())
             .unwrap_or_else(|| e.calendarItemIdentifier().to_string());
         let mut attendees: Vec<String> = Vec::new();
+        let mut emails: Vec<String> = Vec::new();
         let people = e
             .organizer()
             .into_iter()
             .chain(e.attendees().into_iter().flat_map(|a| a.to_vec()));
-        for name in people.filter_map(|p| participant(&p)) {
+        for (name, email) in people.filter_map(|p| participant(&p)) {
             let folded = ghi_text::fold(&name);
             if !attendees.iter().any(|a| ghi_text::fold(a) == folded) {
                 attendees.push(name);
+                emails.push(email);
             }
         }
         let url: Option<Retained<NSURL>> = msg_send![e, URL];
@@ -169,6 +173,7 @@ fn convert(e: &EKEvent) -> Option<CalEvent> {
             end_ms,
             all_day: e.isAllDay(),
             attendees,
+            emails,
             join_app: join_app(&text).map(str::to_string),
             from_ics: false,
         })

@@ -477,6 +477,41 @@ pub async fn meeting_attendees(
     .await
 }
 
+/// An attendee of the calendar event a meeting was recorded in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingContact {
+    pub name: String,
+    /// `None` when the invite had no address.
+    pub email: Option<String>,
+}
+
+/// The attendees of the meeting's calendar event with their addresses (for
+/// the follow-up email's "To"). Empty if none. Errors: `storage`.
+#[tauri::command]
+#[specta::specta]
+pub async fn meeting_contacts(
+    core: CoreState<'_>,
+    meeting: String,
+) -> Result<Vec<MeetingContact>, String> {
+    blocking(&core, move |c| {
+        let store = c.store()?;
+        Ok(calendar::info(&store, &meeting)
+            .map(|i| {
+                i.attendees
+                    .into_iter()
+                    .enumerate()
+                    .map(|(n, name)| MeetingContact {
+                        name,
+                        email: i.emails.get(n).filter(|e| !e.is_empty()).cloned(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default())
+    })
+    .await
+}
+
 /// The event that names a recording started at `now`: the one just prompted
 /// and answered with Start (while it is on), else the meeting-like one in
 /// progress (D4). A recording started by hand during such an event is named
@@ -539,6 +574,7 @@ fn name_recording(store: &Store, meeting: &str, prompted: Option<(String, i64)>)
         event: e.key.clone(),
         title: e.title.clone(),
         attendees: e.attendees.clone(),
+        emails: e.emails.clone(),
         calendar: None,
     };
     if let Ok(v) = serde_json::to_value(&info) {
@@ -652,6 +688,7 @@ mod tests {
             end_ms: start + 30 * 60_000,
             all_day: false,
             attendees: (0..people).map(|i| format!("P{i}")).collect(),
+            emails: Vec::new(),
             join_app: None,
             from_ics: false,
         }

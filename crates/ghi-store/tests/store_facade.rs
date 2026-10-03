@@ -971,6 +971,69 @@ fn named_speakers_per_meeting_in_one_call() {
 }
 
 #[test]
+fn chips_include_me_and_unnamed_voices_are_counted() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let a = common::meeting(&store, "A");
+    let b = common::meeting(&store, "B");
+    let add = |m: &str, name: Option<&str>, slot| {
+        store
+            .add_speaker(
+                m,
+                NewSpeaker {
+                    display_name: name.map(Into::into),
+                    color_slot: slot,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+    };
+    let me = add(&a, None, 1);
+    store.set_speaker_me(&me).unwrap();
+    add(&a, Some("Lan"), 2);
+    add(&a, None, 3);
+    let junk = add(&a, None, 4);
+    store.set_speaker_not_person(&junk, true).unwrap();
+    let gone = add(&a, None, 5);
+    let keep = add(&a, None, 6);
+    store.merge_speakers(&gone, &keep).unwrap();
+    add(&b, Some("Bình"), 1);
+    let gids = [a.clone(), b.clone()];
+    let chips = store.speaker_chips(&gids).unwrap();
+    assert_eq!(
+        chips[&a],
+        vec![("Me".to_string(), 1, true), ("Lan".to_string(), 2, false)]
+    );
+    assert_eq!(chips[&b], vec![("Bình".to_string(), 1, false)]);
+    let counts = store.unnamed_voice_counts(&gids).unwrap();
+    // Not Me, not "not a person", not merged away: the 3rd and the kept 6th.
+    assert_eq!(counts[&a], 2);
+    assert!(!counts.contains_key(&b));
+    assert!(store.unnamed_voice_counts(&[]).unwrap().is_empty());
+}
+
+#[test]
+fn the_notes_model_and_speaker_hint_live_and_die_with_the_meeting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let m = common::meeting(&store, "M");
+    assert_eq!(store.notes_model(&m).unwrap(), None);
+    store.set_notes_model(&m, Some("qwen3-4b")).unwrap();
+    store.set_expected_speakers(&m, 3).unwrap();
+    assert_eq!(store.notes_model(&m).unwrap().as_deref(), Some("qwen3-4b"));
+    assert_eq!(store.expected_speakers(&m).unwrap(), Some(3));
+    store.set_notes_model(&m, None).unwrap();
+    assert_eq!(store.notes_model(&m).unwrap(), None);
+    store.set_notes_model(&m, Some("gpt")).unwrap();
+    store.delete_meeting(&m).unwrap();
+    let left: Vec<_> = ["notes_model:", "expected_speakers:"]
+        .iter()
+        .filter_map(|p| store.get_setting(&format!("{p}{m}")).unwrap())
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+}
+
+#[test]
 fn cloud_lock_and_the_request_log() {
     let tmp = tempfile::tempdir().unwrap();
     let (store, _k) = common::open(tmp.path());

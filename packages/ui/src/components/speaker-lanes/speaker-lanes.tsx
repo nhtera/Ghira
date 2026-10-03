@@ -129,7 +129,7 @@ export function SpeakerLanes({ speakers, segments, durationMs, live, onSeek, scr
           aria-valuemin={0}
           aria-valuemax={total}
           aria-valuenow={Math.round(cursorMs)}
-          aria-valuetext={formatClock(cursorMs)}
+          aria-valuetext={formatClock(cursorMs, { pad: true })}
           onPointerMove={(e) => setHoverMs(at(e))}
           onPointerLeave={() => setHoverMs(null)}
           onClick={(e) => move(at(e as unknown as PointerEvent<HTMLElement>))}
@@ -146,16 +146,16 @@ export function SpeakerLanes({ speakers, segments, durationMs, live, onSeek, scr
               className="pointer-events-none absolute -top-7 -translate-x-1/2 rounded-[4px] bg-toast-bg px-1.5 py-0.5 text-mono text-[10.5px] text-toast-fg"
               style={{ left: `${pct(marker)}%` }}
             >
-              {formatClock(marker)}
+              {formatClock(marker, { pad: true })}
             </span>
           </>
         )}
       </div>
       <span aria-hidden="true" />
       <div aria-hidden="true" className="flex justify-between text-mono text-[10px] text-muted">
-        <span>{formatClock(0)}</span>
-        <span>{formatClock(total / 2)}</span>
-        <span>{formatClock(total)}</span>
+        <span>{formatClock(0, { pad: true })}</span>
+        <span>{formatClock(total / 2, { pad: true })}</span>
+        <span>{formatClock(total, { pad: true })}</span>
       </div>
     </div>
   );

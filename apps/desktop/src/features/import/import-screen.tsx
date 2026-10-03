@@ -8,11 +8,12 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { APP_NAME, formatBytes, formatClock, formatDate, type Locale } from "@ghi/i18n";
-import { Button, Icon, Segmented, cn, useToast, usePlatform, type IconName } from "@ghi/ui";
+import { Button, Icon, cn, useToast, usePlatform, type IconName } from "@ghi/ui";
 import type { ImportSource, StagedFile } from "../../bindings";
 import { ipc } from "../../ipc";
 import { Page } from "../../shell/page";
-import { IMPORT_ERROR_CODES, activeCount, doneCount, importChoice, importableFiles, isActive, isImportable, unitsOf, type Language, type QueueItem, type Unit } from "./import-model";
+import { Switch } from "../settings/parts";
+import { IMPORT_ERROR_CODES, activeCount, doneCount, importChoice, importableFiles, isActive, isImportable, unitsOf, type ExpectedSpeakers, type Language, type QueueItem, type Unit } from "./import-model";
 import { useImportStore } from "./import-store";
 
 const SOURCE_ICON: Record<ImportSource, IconName> = {
@@ -60,12 +61,13 @@ export function ImportScreen() {
   const queue = useImportStore((s) => s.queue);
   const over = useFileDragOver();
   const [language, setLanguage] = useState<Language>("auto");
+  const [speakers, setSpeakers] = useState<ExpectedSpeakers>(null);
   const [split, setSplit] = useState(true);
   const [busy, setBusy] = useState(false);
+  const hasStereo = staged.some((f) => f.channels >= 2);
   const units = unitsOf(staged);
   // A group's tracks go together; a track left alone goes as a file.
   const importable = units.flatMap(importableFiles);
-  const stereo = staged.some((f) => f.channels >= 2 && !f.group);
   const items = Object.values(queue);
   const active = activeCount(queue);
 
@@ -101,7 +103,7 @@ export function ImportScreen() {
     try {
       const r = await ipc.commands.startImport(
         importable.map((f) => f.id),
-        importChoice(language, split, importable),
+        importChoice(language, split, importable, speakers),
       );
       if (r.status === "error") return fail(r.error);
       const st = useImportStore.getState();
@@ -161,39 +163,44 @@ export function ImportScreen() {
               ),
             )}
           </ul>
-          <div className="mt-1 flex flex-col gap-3 rounded-panel bg-surface2 px-4 py-3.5" role="group" aria-label={t("import.options.title")}>
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-small font-semibold text-muted">{t("import.options.language")}</span>
-              <Segmented
+          <div className="mt-1 grid gap-4 rounded-panel bg-surface2 px-4 py-3.5 sm:grid-cols-3" role="group" aria-label={t("import.options.title")}>
+            <OptionGroup label={t("import.options.language")}>
+              <Chips
                 label={t("import.options.language")}
                 value={language}
                 onChange={setLanguage}
                 options={[
                   { value: "auto", label: t("import.options.languages.auto") },
                   { value: "en", label: t("import.options.languages.english") },
-                  {
-                    value: "vi",
-                    label: t("import.options.languages.vietnamese"),
-                  },
+                  { value: "vi", label: t("import.options.languages.vietnamese") },
+                  { value: "both", label: t("import.options.languages.both") },
                 ]}
               />
-            </div>
-            {stereo && (
-              <button
-                type="button"
-                role="checkbox"
-                aria-checked={split}
-                onClick={() => setSplit(!split)}
-                className="flex items-start gap-2 rounded-seg text-left"
-              >
-                <Icon name={split ? "check_box" : "check_box_outline_blank"} size={20} className={split ? "text-accent" : "text-muted"} />
-                <span className="flex flex-col">
-                  <span className="text-body font-medium">{t("import.options.stereo")}</span>
-                  <span className="text-small text-muted">{t("import.options.stereoHint")}</span>
-                  <span className="text-small text-muted">{t("import.options.stereoSides")}</span>
+            </OptionGroup>
+            <OptionGroup label={t("import.options.speakers")}>
+              <Chips
+                label={t("import.options.speakers")}
+                value={speakers}
+                onChange={setSpeakers}
+                options={[
+                  { value: null, label: t("import.options.speakersAuto") },
+                  { value: 1, label: "1" },
+                  { value: 2, label: "2" },
+                  { value: 3, label: "3" },
+                  { value: 4, label: "4" },
+                  { value: 5, label: "5+" },
+                ]}
+              />
+            </OptionGroup>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <Switch checked={split} onChange={setSplit} labelledBy="import-split" disabled={!hasStereo} />
+                <span id="import-split" className="text-small font-semibold text-muted">
+                  {t("import.options.stereo")}
                 </span>
-              </button>
-            )}
+              </div>
+              <span className="text-small leading-[1.45] text-muted">{hasStereo ? t("import.options.stereoHint", { app: APP_NAME }) : word(t, KEYS.stereoOnly)}</span>
+            </div>
           </div>
           <div className="mt-1 flex items-center gap-3">
             <Button variant="primary" size="lg" className="h-[38px] px-[18px] text-[13.5px]" disabled={busy || importable.length === 0} onClick={() => void start()}>
@@ -252,8 +259,55 @@ export function ImportScreen() {
   );
 }
 
+function OptionGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-small font-semibold text-muted">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/** Separate pills, one chosen (the design's option rows; a Segmented would join them into one bar). */
+function Chips<T extends string | number | null>({ label, value, onChange, options }: { label: string; value: T; onChange: (v: T) => void; options: { value: T; label: string }[] }) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="flex flex-wrap gap-1"
+      // Arrow keys move the choice (one Tab stop for the group).
+      onKeyDown={(e) => {
+        const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+        if (!step) return;
+        e.preventDefault();
+        const at = options.findIndex((o) => o.value === value);
+        const next = options[(at + step + options.length) % options.length]!;
+        onChange(next.value);
+        e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[options.indexOf(next)]?.focus();
+      }}
+    >
+      {options.map((o) => (
+        <button
+          key={String(o.value)}
+          type="button"
+          role="radio"
+          aria-checked={o.value === value}
+          tabIndex={o.value === value ? 0 : -1}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "h-7 min-w-8 rounded-seg border px-2.5 text-[12px] font-medium whitespace-nowrap",
+            o.value === value ? "border-accent bg-accent-soft text-accent" : "border-line2 bg-surface text-ink hover:bg-sunk",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Keys of the 14d import copy, not in the typed locale until PENDING-s7b.json is merged. */
-const KEYS = { superseded: "import.problems.superseded", tooManyTracks: "import.problems.tooManyTracks", separately: "import.group.separately" } as const;
+const KEYS = { superseded: "import.problems.superseded", tooManyTracks: "import.problems.tooManyTracks", separately: "import.group.separately", stereoOnly: "import.options.stereoOnly" } as const;
 
 /** A word that isn't in the typed locale until the 14d import copy (apps/desktop/PENDING-s7b.json) is merged. */
 const word = (t: TFunction, key: string): string => (t as unknown as (k: string) => string)(key);

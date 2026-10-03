@@ -3,7 +3,7 @@
 // silent system track means system audio is off, so the hint offers Room mode.
 import { useTranslation } from "react-i18next";
 import { Button, Icon, LevelMeter } from "@ghi/ui";
-import { Notice, StepActions, StepFrame, type StepNav } from "./step-frame";
+import { Notice, OB_BUTTON, StepActions, StepFrame, type StepNav } from "./step-frame";
 import { useTestCapture } from "./use-test-capture";
 
 const QUIET = -70;
@@ -70,7 +70,7 @@ export function TestStep({ nav, seconds }: { nav: StepNav; seconds?: number }) {
         nav={nav}
         start={
           !done && (
-            <Button size="lg" variant="danger" disabled={running} onClick={test.start} data-onboarding-primary={idle || test.phase === "failed" ? "" : undefined}>
+            <Button size="lg" variant="danger" className={OB_BUTTON} disabled={running} onClick={test.start} data-onboarding-primary={idle || test.phase === "failed" ? "" : undefined}>
               {running ? <Icon name="graphic_eq" size={18} /> : <span aria-hidden className="size-[9px] rounded-full bg-current" />}
               {running ? t("onboarding.test.running") : t("onboarding.test.run")}
             </Button>

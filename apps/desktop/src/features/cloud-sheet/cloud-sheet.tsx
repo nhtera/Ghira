@@ -172,8 +172,15 @@ function CloudSheetBody({
   };
 
   const fmt = new Intl.NumberFormat(i18n.language);
-  const excerpt = preview ? userText(preview.payload) : "";
-  const excerptWords = excerpt.split(/\s+/).filter(Boolean).length;
+  // The backend sends the user's text before and after redaction; without it, the payload's own text is "what is sent".
+  const fullText = preview ? userText(preview.payload) : "";
+  // "What is sent" shows the core's excerpt only when it really is part of the request body; otherwise the body's own text.
+  const sentLines = preview?.excerptAfter?.split("\n").map((l) => l.trim()).filter(Boolean) ?? [];
+  const excerptIsSent = sentLines.length > 0 && sentLines.every((l) => fullText.includes(l));
+  const after = excerptIsSent && preview?.excerptAfter ? clip(preview.excerptAfter) : clip(fullText);
+  const before = excerptIsSent && preview?.excerptBefore?.trim() ? clip(preview.excerptBefore) : null;
+  const excerpt = after;
+  const excerptWords = fullText.split(/\s+/).filter(Boolean).length;
   const cost =
     preview?.costEstUsd == null
       ? null
@@ -185,13 +192,15 @@ function CloudSheetBody({
   const provider = sel ? providerName(sel.provider) : "";
 
   const footer = failure ? (
-    <Button variant="primary" onClick={() => onOpenChange(false)}>
+    <Button variant="primary" size="lg" onClick={() => onOpenChange(false)}>
       {t("cloud.close")}
     </Button>
   ) : (
     <>
       <Button
         variant="secondary"
+        size="lg"
+        icon="cloud_off"
         onClick={() => onOpenChange(false)}
         disabled={sending}
       >
@@ -199,7 +208,8 @@ function CloudSheetBody({
       </Button>
       <Button
         variant="primary"
-        icon={sending ? "progress_activity" : undefined}
+        size="lg"
+        icon={sending ? "progress_activity" : "cloud_upload"}
         onClick={() => void send()}
         disabled={!preview || sending || blocked}
         aria-busy={sending}
@@ -370,18 +380,31 @@ function CloudSheetBody({
                         ))}
                       </ul>
                     )}
-                    <div className="flex min-w-0 flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1.5">
                       {excerpt && (
-                        <>
-                      <span className="text-[12.5px] font-semibold text-warn">{t("cloud.after")}</span>
-                          {/* Text node only: the transcript inside is never parsed as markup (RT-6). */}
-                          <p
-                            data-testid="cloud-excerpt"
-                            className="text-mono m-0 max-h-28 overflow-hidden rounded-row bg-warn-soft p-3 text-[12.5px] leading-normal whitespace-pre-wrap break-words text-ink"
-                          >
-                            {excerpt.split("\n").slice(0, 4).join("\n")}
-                          </p>
-                        </>
+                        <div className={before ? "grid grid-cols-2 gap-2.5" : "grid gap-2.5"}>
+                          {before && (
+                            <div className="flex min-w-0 flex-col gap-1">
+                              <span className="text-[11.5px] font-semibold text-faint">{t("cloud.before", { context: platform })}</span>
+                              {/* Text node only: the transcript inside is never parsed as markup (RT-6). */}
+                              <p
+                                data-testid="cloud-excerpt-before"
+                                className="text-mono m-0 max-h-32 overflow-hidden rounded-row border border-line bg-surface2 p-2.5 text-[11.5px] leading-[1.55] whitespace-pre-wrap break-words text-ink"
+                              >
+                                {before}
+                              </p>
+                            </div>
+                          )}
+                          <div className="flex min-w-0 flex-col gap-1">
+                            <span className="text-[11.5px] font-semibold text-warn">{t("cloud.after")}</span>
+                            <p
+                              data-testid="cloud-excerpt"
+                              className="text-mono m-0 max-h-32 overflow-hidden rounded-row bg-warn-soft p-2.5 text-[11.5px] leading-[1.55] whitespace-pre-wrap break-words text-ink"
+                            >
+                              {after}
+                            </p>
+                          </div>
+                        </div>
                       )}
                       <span className="text-small text-faint">
                         {preview.redactions.length > 0
@@ -469,6 +492,9 @@ function CloudSheetBody({
     </Dialog>
   );
 }
+
+/** The first lines of an excerpt: the box shows a sample, "Show exact data" the whole request. */
+const clip = (text: string) => text.split("\n").slice(0, 6).join("\n");
 
 const KINDS = [
   "person",

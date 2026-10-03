@@ -224,7 +224,7 @@ describe("iOS variants of shared components", () => {
     const onStop = vi.fn();
     const onPause = vi.fn();
     ios(<RecordControl state="recording" mode="room" elapsedMs={65_000} onStop={onStop} onPause={onPause} />);
-    expect(screen.getByText("1:05")).toBeTruthy();
+    expect(screen.getByText("01:05")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Stop" }));
     await userEvent.click(screen.getByRole("button", { name: "Pause" }));
     expect(onStop).toHaveBeenCalledOnce();

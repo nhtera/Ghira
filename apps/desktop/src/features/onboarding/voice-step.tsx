@@ -10,7 +10,7 @@ import { Button } from "@ghi/ui";
 import { EnrollPanel, useConsentKey } from "../people/enroll-panel";
 import { useInvalidatePeople, useVoiceStatus } from "../people/queries";
 import { useVoiceEnroll } from "../people/use-voice-enroll";
-import { StepActions, StepFrame, type StepNav } from "./step-frame";
+import { OB_BUTTON, StepActions, StepFrame, type StepNav } from "./step-frame";
 
 export function VoiceStep({ nav, voiceDownloading = false, strictOffline = false }: { nav: StepNav; voiceDownloading?: boolean; strictOffline?: boolean }) {
   const { t } = useTranslation();
@@ -30,12 +30,12 @@ export function VoiceStep({ nav, voiceDownloading = false, strictOffline = false
         nav={nav}
         start={
           phase === "reading" ? (
-            <Button size="lg" variant="primary" icon="stop" onClick={() => void enroll.finish()}>
+            <Button size="lg" variant="primary" icon="stop" className={OB_BUTTON} onClick={() => void enroll.finish()}>
               {t("onboarding.voice.stop")}
             </Button>
           ) : (
             (phase === "idle" || phase === "starting") && (
-              <Button size="lg" variant="primary" icon="mic" disabled={!consent || !modelReady || phase === "starting"} onClick={() => void enroll.start()}>
+              <Button size="lg" variant="primary" icon="mic" className={OB_BUTTON} disabled={!consent || !modelReady || phase === "starting"} onClick={() => void enroll.start()}>
                 {error ? t("onboarding.voice.again") : t("onboarding.voice.start")}
               </Button>
             )

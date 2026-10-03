@@ -130,6 +130,9 @@ pub struct ImportChoice {
     pub language: Option<String>,
     /// Keep a stereo file's two channels as you / the others.
     pub split_channels: bool,
+    /// How many people spoke, if the user knows: a hint for the speaker
+    /// separation (`None`: decide automatically).
+    pub expected_speakers: Option<u32>,
 }
 
 struct Staged {
@@ -718,7 +721,15 @@ pub fn start_import(
         let progress_id = id.clone();
         // At most a few updates a second.
         let last = Arc::new(Mutex::new((Instant::now(), -1.0f32)));
+        // The user's speaker count is kept with the meeting once it exists.
+        let hint_core = hold_core.clone();
+        let hint = std::sync::Mutex::new(choice.expected_speakers.filter(|n| (1..=64).contains(n)));
         let on_progress = OnProgress(Arc::new(move |meeting: &str, p: f32| {
+            if let Some(n) = lock(&hint).take()
+                && let Ok(store) = hint_core.store_even_locked()
+            {
+                let _ = store.set_expected_speakers(meeting, n);
+            }
             let mut l = lock(&last);
             if p >= 1.0 || (l.0.elapsed() >= Duration::from_millis(250) && p - l.1 >= 0.01) {
                 *l = (Instant::now(), p);

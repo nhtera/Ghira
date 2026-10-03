@@ -41,7 +41,7 @@ export const TopicRail = memo(function TopicRail({ topics, onJump }: { topics: r
               onClick={() => topic.tMs != null && onJump(topic.tMs)}
               className={cn("flex w-full flex-col items-start gap-0.5 rounded-ctl border-l-2 px-2 py-1.5 text-left hover:bg-sunk", i === now ? "border-accent bg-accent-soft" : "border-transparent")}
             >
-              <span className="text-mono text-[11px] text-muted">{formatClock(topic.tMs ?? 0)}</span>
+              <span className="text-mono text-[11px] text-muted">{formatClock(topic.tMs ?? 0, { pad: true })}</span>
               <span className="text-[13px] leading-snug">{topic.title}</span>
             </button>
           </li>

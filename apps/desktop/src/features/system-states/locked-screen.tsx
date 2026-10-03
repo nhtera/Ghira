@@ -23,11 +23,11 @@ export function LockedScreen({ onUnlock, onPassword, error }: { onUnlock: () => 
             {error}
           </p>
         )}
-        <Button variant="primary" size="lg" autoFocus icon={context === "win" ? "face" : "fingerprint"} className="mt-2.5 h-11 rounded-[10px] px-5 text-[14px]" onClick={onUnlock}>
+        <Button variant="primary" size="lg" autoFocus icon={context === "win" ? "face" : "fingerprint"} className="mt-2.5 h-11! rounded-[10px]! px-6! text-[14px]!" onClick={onUnlock}>
           {t(`system.locked.unlock_${context}`)}
         </Button>
         {onPassword && (
-          <Button variant="ghost" className="text-muted" onClick={onPassword}>
+          <Button variant="ghost" className="font-normal! text-muted" onClick={onPassword}>
             {t("system.locked.usePassword")}
           </Button>
         )}

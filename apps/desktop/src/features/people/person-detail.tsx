@@ -6,16 +6,20 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { APP_NAME, formatClock } from "@ghi/i18n";
-import { useQueryClient } from "@tanstack/react-query";
-import { Avatar, Button, ConfirmArea, Icon, InlineConfirm, Menu, useToast } from "@ghi/ui";
-import type { PersonRow, VoiceSample } from "../../bindings";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { Avatar, Button, ConfirmArea, Icon, InlineConfirm, Menu, useToast, type IconName } from "@ghi/ui";
+import type { MeetingRow, PersonRow, VoiceSample } from "../../bindings";
 import { ipc } from "../../ipc";
+import { kindOf } from "../library/meeting-row";
+import { MEETINGS_KEY } from "../library/use-meetings";
 import { useWhen } from "../meeting/use-when";
 import { EnrollDialog } from "./enroll-dialog";
 import { errorText } from "./error-text";
 import { personName } from "./person-label";
 import { personKey, useInvalidatePeople, usePersonDetail, useVoiceStatus } from "./queries";
 import { VoiceBadge } from "./voice-badge";
+
+const KIND_ICON: Record<string, IconName> = { call: "videocam", room: "groups", mobile: "mobile", import: "upload_file" };
 
 function Samples({ samples, name }: { samples: VoiceSample[]; name: string }) {
   const { t } = useTranslation();
@@ -45,10 +49,10 @@ function Samples({ samples, name }: { samples: VoiceSample[]; name: string }) {
                 onClick={() => (on ? setPlaying(null) : void play(s, key))}
                 className="grid size-[30px] flex-none place-items-center rounded-full bg-accent-soft text-accent hover:bg-accent hover:text-on-accent"
               >
-                <Icon name={on ? "stop" : "play_arrow"} size={18} />
+                <Icon name={on ? "stop" : "play_arrow_fill"} size={18} />
               </button>
               <span className="min-w-0 flex-1 truncate text-[13px]">{s.meetingTitle}</span>
-              {s.t0Ms != null && <span className="text-mono text-faint">{formatClock(s.t0Ms)}</span>}
+              {s.t0Ms != null && <span className="text-mono text-faint">{formatClock(s.t0Ms, { pad: true })}</span>}
             </li>
           );
         })}
@@ -67,6 +71,8 @@ export function PersonDetailView({ gid, people, thirdParty, onSelect }: { gid: s
   const invalidate = useInvalidatePeople();
   const detail = usePersonDetail(gid);
   const voice = useVoiceStatus();
+  // The library rows (when it was opened) say whether each meeting was a call, a room, the phone or a file.
+  const library = client.getQueryData<InfiniteData<MeetingRow[]>>(MEETINGS_KEY)?.pages.flat() ?? [];
   const [enrolling, setEnrolling] = useState(false);
   const [mergeInto, setMergeInto] = useState<PersonRow | null>(null);
 
@@ -106,6 +112,10 @@ export function PersonDetailView({ gid, people, thirdParty, onSelect }: { gid: s
     invalidate();
   };
 
+  const kindOfMeeting = (id: string) => {
+    const row = library.find((r) => r.gid === id);
+    return row ? kindOf(row) : "";
+  };
   const mergeTargets = people.filter((p) => !p.isMe && p.gid !== gid);
   // A voice profile can't be merged without other people's voice profiles being on (the core refuses with thirdPartyOff).
   const hasProfile = (p: PersonRow) => p.voice.kind !== "none" && !thirdParty;
@@ -123,7 +133,7 @@ export function PersonDetailView({ gid, people, thirdParty, onSelect }: { gid: s
           <Menu
             label={t("people.merge.action")}
             trigger={
-              <Button icon="call_merge" disabled={hasProfile(person)} aria-label={t("people.merge.action")}>
+              <Button icon="call_merge" disabled={hasProfile(person)} title={t("people.merge.hint")} aria-label={t("people.merge.action")}>
                 {t("people.merge.action")}
               </Button>
             }
@@ -131,9 +141,8 @@ export function PersonDetailView({ gid, people, thirdParty, onSelect }: { gid: s
           />
         )}
       </div>
-      {!person.isMe && (
+      {!person.isMe && (mergeBlocked || mergeInto) && (
         <div className="-mt-5 flex flex-col gap-1.5">
-          <p className="text-small m-0 text-muted">{t("people.merge.hint")}</p>
           {mergeBlocked && <p className="text-small m-0 text-muted">{t("people.merge.blocked")}</p>}
           {mergeInto && (
             <InlineConfirm
@@ -197,7 +206,7 @@ export function PersonDetailView({ gid, people, thirdParty, onSelect }: { gid: s
         {meetings.length === 0 && <span className="text-small text-muted">{t("people.noMeetings")}</span>}
         {meetings.map((m) => (
           <button key={m.gid} type="button" onClick={() => openMeeting(m.gid)} className="grid h-10 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-seg px-2 text-left hover:bg-surface2">
-            <Icon name="graphic_eq" size={18} className="text-muted" />
+            <Icon name={KIND_ICON[kindOfMeeting(m.gid)] ?? "graphic_eq"} size={18} className="text-muted" />
             <span className="truncate text-[13.5px] font-medium">{m.title}</span>
             {m.startedAt != null && <span className="text-small text-faint">{when(m.startedAt)}</span>}
           </button>

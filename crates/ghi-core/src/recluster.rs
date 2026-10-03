@@ -220,6 +220,20 @@ impl Diarized {
         p: Params,
         stop: &dyn Fn() -> bool,
     ) -> Option<(Vec<SpeakerSegment>, usize)> {
+        self.assign_to(p, None, stop)
+    }
+
+    /// [`Diarized::assign`] with the number of voices the user said spoke:
+    /// merging goes on past the threshold while more clusters than that
+    /// remain (a cap: it never keeps apart what the threshold merges).
+    /// (Clusters that are too small to be a
+    /// voice still join a neighbour afterwards, so fewer can result.)
+    pub fn assign_to(
+        &self,
+        p: Params,
+        target: Option<usize>,
+        stop: &dyn Fn() -> bool,
+    ) -> Option<(Vec<SpeakerSegment>, usize)> {
         let with: Vec<usize> = (0..self.items.len())
             .filter(|&i| self.items[i].vec.is_some())
             .collect();
@@ -242,11 +256,14 @@ impl Diarized {
         }
         let mut members: Vec<Vec<usize>> = (0..n).map(|i| vec![i]).collect();
         let mut alive = vec![true; n];
+        let mut live = n;
         loop {
             if stop() {
                 return None;
             }
-            let mut best = (p.threshold, usize::MAX, usize::MAX);
+            let over = target.is_some_and(|t| live > t.max(1));
+            let floor = if over { f32::MIN } else { p.threshold };
+            let mut best = (floor, usize::MAX, usize::MAX);
             for i in (0..n).filter(|&i| alive[i]) {
                 for j in i + 1..n {
                     if alive[j] && sim[i][j] >= best.0 {
@@ -267,6 +284,7 @@ impl Diarized {
             let moved = std::mem::take(&mut members[j]);
             members[i].extend(moved);
             alive[j] = false;
+            live -= 1;
         }
         let mut clusters: Vec<Cluster> = (0..n)
             .filter(|&i| alive[i])
@@ -372,6 +390,19 @@ pub fn run_with(
     stop: &dyn Fn() -> bool,
     params: Params,
 ) -> Result<Option<Vec<SpeakerSegment>>, String> {
+    run_with_target(pcm, engines, embedder, segs, stop, params, None)
+}
+
+/// [`run_with`] with the user's speaker count (see [`Diarized::assign_to`]).
+pub fn run_with_target(
+    pcm: &[f32],
+    engines: &dyn SpeechEngines,
+    embedder: &mut dyn VoiceEmbed,
+    segs: &[SpeakerSegment],
+    stop: &dyn Fn() -> bool,
+    params: Params,
+    target: Option<usize>,
+) -> Result<Option<Vec<SpeakerSegment>>, String> {
     let mut distinct: Vec<u32> = segs.iter().map(|s| s.speaker).collect();
     distinct.sort_unstable();
     distinct.dedup();
@@ -381,7 +412,7 @@ pub fn run_with(
     let Some(d) = analyse(pcm, engines, embedder, stop)? else {
         return Ok(None);
     };
-    Ok(d.assign(params, stop)
+    Ok(d.assign_to(params, target, stop)
         .filter(|(_, n)| *n > SATURATED_AT)
         .map(|(s, _)| s))
 }
@@ -395,9 +426,18 @@ pub fn run(
     embedder: &mut dyn VoiceEmbed,
     segs: &[SpeakerSegment],
     stop: &dyn Fn() -> bool,
+    expected_speakers: Option<usize>,
 ) -> Result<Option<Vec<SpeakerSegment>>, String> {
     if !ENABLED {
         return Ok(None);
     }
-    run_with(pcm, engines, embedder, segs, stop, PARAMS)
+    run_with_target(
+        pcm,
+        engines,
+        embedder,
+        segs,
+        stop,
+        PARAMS,
+        expected_speakers,
+    )
 }

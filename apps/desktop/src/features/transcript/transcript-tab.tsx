@@ -249,7 +249,7 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
   return (
     <div onKeyDown={onKeyDown} className="flex items-start gap-3">
       <div className="min-w-0 flex-1">
-        <div className="sticky top-0 z-10 bg-bg pt-1 pb-2">
+        <div className="sticky top-0 z-10 bg-surface pt-1 pb-2">
           <FindBar
             ref={findInput}
             query={query}
@@ -272,8 +272,8 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
                   {row.kind === "topic" ? (
                     <div className="flex items-center gap-2 px-2 pt-4 pb-1">
                       <h3 className="m-0 text-[12px] font-semibold tracking-wide text-muted uppercase">{row.title}</h3>
-                      <button type="button" onClick={() => jumpTo(row.tMs)} aria-label={t("detail.playFrom", { time: formatClock(row.tMs) })} className="h-6 rounded-seg px-1 text-mono text-[11px] text-muted hover:text-ink">
-                        {formatClock(row.tMs)}
+                      <button type="button" onClick={() => jumpTo(row.tMs)} aria-label={t("detail.playFrom", { time: formatClock(row.tMs, { pad: true }) })} className="h-6 rounded-seg px-1 text-mono text-[11px] text-muted hover:text-ink">
+                        {formatClock(row.tMs, { pad: true })}
                       </button>
                       <span aria-hidden="true" className="h-px flex-1 bg-line" />
                     </div>

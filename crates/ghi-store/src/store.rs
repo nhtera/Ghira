@@ -352,6 +352,14 @@ pub(crate) struct MeetingRef {
     pub version: i64,
 }
 
+/// `(name, color slot, is Me)` of a speaker chip ([`Store::speaker_chips`]).
+pub type Chip = (String, i64, bool);
+
+/// Settings key prefix of the model that wrote a meeting's notes.
+const NOTES_MODEL_PREFIX: &str = "notes_model:";
+/// Settings key prefix of the speaker count the user gave at import.
+const EXPECTED_SPEAKERS_PREFIX: &str = "expected_speakers:";
+
 /// Job kind queued when finishing an interrupted delete failed.
 pub const FINISH_DELETE_JOB: &str = "finish_delete";
 
@@ -1026,6 +1034,111 @@ impl Store {
             out.entry(meeting).or_default().push((name, slot));
         }
         Ok(out)
+    }
+
+    /// Like [`Store::named_speakers`] plus Me (who has no display name), as
+    /// `(name, color slot, is_me)`; an unnamed Me is called "Me". The
+    /// library's people chips.
+    pub fn speaker_chips(&self, meeting_gids: &[String]) -> Result<HashMap<String, Vec<Chip>>> {
+        let conn = self.conn();
+        let want =
+            serde_json::to_string(meeting_gids).map_err(|e| StoreError::Invalid(e.to_string()))?;
+        let mut stmt = conn.prepare_cached(
+            "SELECT m.id, m.gid, s.gid, s.display_name_ct, s.color_slot, s.is_me
+             FROM speakers s JOIN meetings m ON m.id = s.meeting_id
+             WHERE (s.display_name_ct IS NOT NULL OR s.is_me = 1) AND s.merged_into IS NULL
+               AND m.gid IN (SELECT value FROM json_each(?1))
+             ORDER BY m.id, s.label_idx, s.id",
+        )?;
+        let rows = stmt
+            .query_map([want], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<Vec<u8>>>(3)?,
+                    r.get::<_, i64>(4)?,
+                    r.get::<_, bool>(5)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut out: HashMap<String, Vec<Chip>> = HashMap::new();
+        for (id, meeting, gid, ct, slot, is_me) in rows {
+            let name = match ct {
+                Some(ct) => {
+                    let dek = self.dek(&conn, id)?;
+                    open_text(&dek, &ct, &row_aad("speakers", "display_name_ct", &gid))?
+                }
+                None => "Me".to_string(),
+            };
+            out.entry(meeting).or_default().push((name, slot, is_me));
+        }
+        Ok(out)
+    }
+
+    /// How many speakers of each of `meeting_gids` still have no name (not
+    /// Me, not "not a person", not merged away); meetings with none are left
+    /// out. The library's "unnamed voices" count, in one query.
+    pub fn unnamed_voice_counts(&self, meeting_gids: &[String]) -> Result<HashMap<String, u32>> {
+        let conn = self.conn();
+        let want =
+            serde_json::to_string(meeting_gids).map_err(|e| StoreError::Invalid(e.to_string()))?;
+        let mut stmt = conn.prepare_cached(
+            "SELECT m.gid, COUNT(*)
+             FROM speakers s JOIN meetings m ON m.id = s.meeting_id
+             WHERE s.display_name_ct IS NULL AND s.is_me = 0 AND s.not_person = 0
+               AND s.merged_into IS NULL
+               AND m.gid IN (SELECT value FROM json_each(?1))
+             GROUP BY m.id",
+        )?;
+        let rows = stmt
+            .query_map([want], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
+            })?
+            .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+        Ok(rows)
+    }
+
+    /// Records which model wrote the meeting's current notes (`None` clears).
+    /// A settings row keyed by the meeting, removed with it.
+    pub fn set_notes_model(&self, meeting_gid: &str, model: Option<&str>) -> Result<()> {
+        check_gid(meeting_gid)?;
+        let key = format!("{NOTES_MODEL_PREFIX}{meeting_gid}");
+        match model {
+            Some(m) => self.set_setting(&key, &serde_json::Value::String(m.to_string())),
+            None => {
+                self.conn()
+                    .execute("DELETE FROM settings WHERE key = ?1", [key])?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Records how many people the user said spoke in an imported meeting (a
+    /// hint kept with it; the diarizer has no speaker-count input yet).
+    pub fn set_expected_speakers(&self, meeting_gid: &str, n: u32) -> Result<()> {
+        check_gid(meeting_gid)?;
+        self.set_setting(
+            &format!("{EXPECTED_SPEAKERS_PREFIX}{meeting_gid}"),
+            &serde_json::Value::from(n),
+        )
+    }
+
+    /// The speaker count given at import, if any.
+    pub fn expected_speakers(&self, meeting_gid: &str) -> Result<Option<u32>> {
+        check_gid(meeting_gid)?;
+        Ok(self
+            .get_setting(&format!("{EXPECTED_SPEAKERS_PREFIX}{meeting_gid}"))?
+            .and_then(|v| v.as_u64())
+            .and_then(|n| u32::try_from(n).ok()))
+    }
+
+    /// The model that wrote the meeting's notes, if recorded.
+    pub fn notes_model(&self, meeting_gid: &str) -> Result<Option<String>> {
+        check_gid(meeting_gid)?;
+        Ok(self
+            .get_setting(&format!("{NOTES_MODEL_PREFIX}{meeting_gid}"))?
+            .and_then(|v| v.as_str().map(str::to_string)))
     }
 
     /// The first TL;DR note body of each of `meeting_gids` that has one, in
@@ -1982,6 +2095,12 @@ impl Store {
             "DELETE FROM notes_fts WHERE rowid IN (SELECT id FROM notes_blocks WHERE meeting_id = ?1)",
             [m.id],
         )?;
+        for prefix in [NOTES_MODEL_PREFIX, EXPECTED_SPEAKERS_PREFIX] {
+            tx.execute(
+                "DELETE FROM settings WHERE key = ?1",
+                [format!("{prefix}{gid}")],
+            )?;
+        }
         tx.execute("DELETE FROM meetings WHERE id = ?1", [m.id])?;
         crate::people::gc_persons(&tx, &persons)?;
         tx.commit()?;

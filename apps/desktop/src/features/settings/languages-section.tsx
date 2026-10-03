@@ -5,11 +5,11 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Icon, Segmented } from "@ghi/ui";
-import type { MeetingLanguage, Vocabulary } from "../../bindings";
+import type { AppSettings, MeetingLanguage, Vocabulary } from "../../bindings";
 import { APP_NAME, formatDate, formatTime, type Locale } from "@ghi/i18n";
 import { ipc } from "../../ipc";
 import { addTerm, editTerm, type TermResult } from "./logic";
-import { Card, Row, Switch, inputCls, useFail, useSettings } from "./parts";
+import { Card, Row, Switch, bigSegCls, inputCls, useFail, useSettings } from "./parts";
 
 const vocabKey = ["vocabulary"] as const;
 /** The sample shown under "Dates and times". */
@@ -26,12 +26,28 @@ export function LanguagesSection() {
           {settings && (
             <Segmented<MeetingLanguage>
               label={t("settings.languages.meetingLanguages")}
+              className={bigSegCls}
               value={settings.meetingLanguage}
               onChange={(v) => void patch({ meetingLanguage: v })}
               options={[
                 { value: "en", label: t("onboarding.languages.english") },
                 { value: "vi", label: t("onboarding.languages.vietnamese") },
                 { value: "auto", label: t("onboarding.languages.both") },
+              ]}
+            />
+          )}
+        </Row>
+        <Row label={t("settings.languages.notesLanguage")}>
+          {settings && (
+            <Segmented<AppSettings["notesLanguage"]>
+              label={t("settings.languages.notesLanguage")}
+              className={bigSegCls}
+              value={settings.notesLanguage}
+              onChange={(v) => void patch({ notesLanguage: v })}
+              options={[
+                { value: "meeting", label: t("settings.languages.sameAsMeeting") },
+                { value: "en", label: t("settings.languages.english") },
+                { value: "vi", label: t("settings.languages.vietnamese") },
               ]}
             />
           )}
@@ -124,7 +140,7 @@ export function VocabularyCard() {
               }}
               onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && void submit()}
             />
-            <Button icon="add" onClick={() => void submit()} disabled={full || saving || !draft.trim()}>
+            <Button size="lg" icon="add" onClick={() => void submit()} disabled={full || saving || !draft.trim()}>
               {t("settings.languages.vocab.addButton")}
             </Button>
             <span className="text-small min-w-12 text-right text-muted tabular-nums" data-testid="vocab-count">

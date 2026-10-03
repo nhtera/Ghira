@@ -66,4 +66,11 @@ describe("LockGate", () => {
     emit({ locked: true });
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
   });
+
+  it("Use password opens the same system prompt", async () => {
+    setup(true);
+    const unlock = vi.spyOn(ipc.commands, "unlock").mockResolvedValue({ status: "ok", data: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Use password" }));
+    expect(unlock).toHaveBeenCalledWith("unlock your meetings");
+  });
 });

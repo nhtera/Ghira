@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PlatformProvider, ToastProvider } from "@ghi/ui";
@@ -14,11 +15,13 @@ afterEach(() => {
 
 const view = () =>
   render(
-    <PlatformProvider value="mac">
-      <ToastProvider label="toasts">
-        <FollowupEmailDialog open onOpenChange={() => {}} meeting="m1" />
-      </ToastProvider>
-    </PlatformProvider>,
+    <QueryClientProvider client={new QueryClient()}>
+      <PlatformProvider value="mac">
+        <ToastProvider label="toasts">
+          <FollowupEmailDialog open onOpenChange={() => {}} meeting="m1" />
+        </ToastProvider>
+      </PlatformProvider>
+    </QueryClientProvider>,
   );
 const ok = { status: "ok", data: { subject: "Sync notes", body: "Hi all,\n\nThanks." } } as const;
 
@@ -31,14 +34,52 @@ describe("FollowupEmailDialog", () => {
     const draft = vi.spyOn(ipc.commands, "draftFollowupEmail").mockResolvedValue(ok);
     view();
     fireEvent.click(screen.getByRole("radio", { name: "Formal" }));
-    fireEvent.click(screen.getByRole("radio", { name: "Tiếng Việt" }));
+    fireEvent.click(screen.getByRole("button", { name: "VI" }));
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Write draft" })));
     expect(draft).toHaveBeenCalledWith("m1", "vi", "formal");
     const subject = screen.getByRole("textbox", { name: "Subject" }) as HTMLInputElement;
     expect(subject.value).toBe("Sync notes");
     fireEvent.change(subject, { target: { value: "Edited" } });
     expect(screen.getByRole("button", { name: "Rewrite" })).toBeTruthy();
-    expect(screen.getByText(/Nothing is sent from/)).toBeTruthy();
+    expect(screen.getByText(/nothing is sent|Nothing is sent from/)).toBeTruthy();
+  });
+
+  it("lists the people it can go to; Open in Mail hands the ticked addresses and the edited draft to the mail app", async () => {
+    vi.spyOn(ipc.commands, "draftFollowupEmail").mockResolvedValue(ok);
+    const open = vi.spyOn(ipc.commands, "openMailDraft").mockResolvedValue({ status: "ok", data: { truncated: false } });
+    view();
+    const minh = await screen.findByRole("checkbox", { name: /Minh/ });
+    fireEvent.click(minh);
+    expect(minh.getAttribute("aria-checked")).toBe("false");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Write draft" })));
+    expect(screen.getByText("linh.tran@studio.vn, sarah@studio.vn")).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Open in Mail" })));
+    expect(open).toHaveBeenCalledWith(["linh.tran@studio.vn", "sarah@studio.vn"], "Sync notes", "Hi all,\n\nThanks.");
+  });
+
+  it("presses no language when the notes' language is unknown, and a click on either sets it", async () => {
+    const draft = vi.spyOn(ipc.commands, "draftFollowupEmail").mockResolvedValue(ok);
+    view();
+    const en = screen.getByRole("button", { name: "EN" });
+    expect(en.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "VI" }).getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(en);
+    expect(en.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Write draft" })));
+    expect(draft).toHaveBeenCalledWith("m1", "en", "friendly");
+  });
+
+  it("a shortened body is announced, and the full email is copied only on the tap", async () => {
+    vi.spyOn(ipc.commands, "draftFollowupEmail").mockResolvedValue(ok);
+    vi.spyOn(ipc.commands, "openMailDraft").mockResolvedValue({ status: "ok", data: { truncated: true } });
+    const write = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
+    view();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Write draft" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Open in Mail" })));
+    expect(write).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(await screen.findByRole("button", { name: /^(Copy the full email|email\.copyFull)$/, hidden: true })));
+    expect(write).toHaveBeenCalledWith("Sync notes\n\nHi all,\n\nThanks.");
   });
 
   it("counts seconds while writing", async () => {

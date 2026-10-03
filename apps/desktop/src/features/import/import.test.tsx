@@ -35,9 +35,10 @@ describe("import rules", () => {
     for (const p of ["unsupported", "empty", "duplicate", "superseded", "tooManyTracks"] as const) expect(isImportable(file("a", { problems: [p] }))).toBe(false);
   });
   it("the choice: language null = detect; split only with a 2-channel file", () => {
-    expect(importChoice("auto", true, [file("a")])).toEqual({ language: null, splitChannels: false });
-    expect(importChoice("vi", true, [file("a"), file("b", { channels: 2 })])).toEqual({ language: "vi", splitChannels: true });
-    expect(importChoice("en", false, [file("b", { channels: 2 })])).toEqual({ language: "en", splitChannels: false });
+    expect(importChoice("auto", true, [file("a")])).toEqual({ language: null, splitChannels: false, expectedSpeakers: null });
+    expect(importChoice("vi", true, [file("a"), file("b", { channels: 2 })])).toEqual({ language: "vi", splitChannels: true, expectedSpeakers: null });
+    expect(importChoice("en", false, [file("b", { channels: 2 })])).toEqual({ language: "en", splitChannels: false, expectedSpeakers: null });
+    expect(importChoice("both", false, [file("a")], 5)).toEqual({ language: null, splitChannels: false, expectedSpeakers: 5 });
   });
 });
 
@@ -150,8 +151,9 @@ describe("ImportScreen", () => {
     // ok + zoom + long can be imported.
     const go = screen.getByRole("button", { name: "Import 3 files" });
     fireEvent.click(screen.getByRole("radio", { name: "Tiếng Việt" }));
+    fireEvent.click(screen.getByRole("radio", { name: "3" }));
     await act(async () => fireEvent.click(go));
-    expect(start).toHaveBeenCalledWith(["ok", "zoom", "long"], { language: "vi", splitChannels: true });
+    expect(start).toHaveBeenCalledWith(["ok", "zoom", "long"], { language: "vi", splitChannels: true, expectedSpeakers: 3 });
     // The started files move to the queue; blocked ones stay staged.
     expect(await screen.findByText("memo.m4a")).toBeTruthy();
     expect(useImportStore.getState().staged.map((f) => f.id)).toEqual(["bad", "dup"]);
@@ -213,7 +215,7 @@ describe("ImportScreen", () => {
     expect(screen.getByText("audio_only.m4a")).toBeTruthy();
     expect(screen.getByText("Won’t be imported")).toBeTruthy();
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Import 3 files" })));
-    expect(start).toHaveBeenCalledWith(["t1", "t2", "t3"], { language: null, splitChannels: false });
+    expect(start).toHaveBeenCalledWith(["t1", "t2", "t3"], { language: null, splitChannels: false, expectedSpeakers: null });
     // The queue has one item named for the meeting, under the group's id; the mixed file stays.
     expect(Object.keys(useImportStore.getState().queue)).toEqual(["g1"]);
     expect(useImportStore.getState().queue.g1!.name).toBe("Sprint planning");
@@ -322,5 +324,17 @@ describe("ImportScreen", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Choose files…" }));
     expect(await screen.findByText(/Over 4 hours/)).toBeTruthy();
     expect(screen.getByText(/can’t read this file/)).toBeTruthy();
+  });
+
+  it("option pills move with the arrow keys; the stereo switch is disabled without a stereo file", async () => {
+    vi.spyOn(ipc.commands, "pickImportFiles").mockResolvedValue({ status: "ok", data: [file("a", { name: "a.mp3" })] });
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Choose files…" }));
+    const auto = await screen.findByRole("radio", { name: "Auto-detect" });
+    expect(auto.getAttribute("tabindex")).toBe("0");
+    expect(screen.getByRole("radio", { name: "English" }).getAttribute("tabindex")).toBe("-1");
+    fireEvent.keyDown(auto, { key: "ArrowRight" });
+    expect(screen.getByRole("radio", { name: "English" }).getAttribute("aria-checked")).toBe("true");
+    expect((screen.getByRole("switch") as HTMLButtonElement).disabled).toBe(true);
   });
 });

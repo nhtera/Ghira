@@ -20,7 +20,7 @@ export function Provenance({ kind }: { kind: BlockRowKind }) {
   const label = {
     user: [t("notes.youWrote"), "person"],
     ai: [t("notes.writtenByApp"), "auto_awesome"],
-    edited: [t("notes.editedKept"), "bookmark"],
+    edited: [t("notes.editedKept"), "push_pin"],
     missing: [t("notes.notFound"), "search"],
   } as const;
   const [text, icon] = label[kind];
@@ -82,28 +82,35 @@ export function BlockRow({
         onBackspaceEmpty={onBackspaceEmpty}
         autoFocus={autoFocus}
         keepOnEmpty={block.origin !== "user"}
+        trailing={
+          (block.citations.length > 0 || kind === "edited") && (
+            <>
+              {block.citations.map((c, i) => (
+                <span key={i} className="ml-1.5 align-[2px]">
+                  <CitationLink citation={c} speakers={speakers} audioAvailable={audioAvailable} />
+                </span>
+              ))}
+              {/* Edited blocks say so right after the text, like the design. */}
+              {kind === "edited" && (
+                <span className="ml-2 align-[2px] font-sans">
+                  <Provenance kind="edited" />
+                </span>
+              )}
+            </>
+          )
+        }
         className={cn(
           "font-serif text-notes",
           kind === "ai" ? "text-ai" : "text-ink",
           kind === "user" && "font-bold",
         )}
       />
-      {block.citations.length > 0 && (
-        <span className="flex flex-wrap gap-1.5">
-          {block.citations.map((c, i) => (
-            <CitationLink
-              key={i}
-              citation={c}
-              speakers={speakers}
-              audioAvailable={audioAvailable}
-            />
-          ))}
+      {/* The legend above the notes says what the two colors mean; edited and unmatched blocks still say it themselves. */}
+      {kind !== "edited" && (
+        <span className={cn((kind === "ai" || kind === "user") && "sr-only")}>
+          <Provenance kind={kind} />
         </span>
       )}
-      {/* The legend above the notes says what the two colors mean; edited and unmatched blocks still say it themselves. */}
-      <span className={cn((kind === "ai" || kind === "user") && "sr-only")}>
-        <Provenance kind={kind} />
-      </span>
     </div>
   );
 }

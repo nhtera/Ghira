@@ -44,7 +44,7 @@ describe("ActionItem", () => {
   it("citation chips report which one was activated", async () => {
     const onCite = vi.fn();
     render(<ActionItem text="x" owner={owner} citations={[{ timeMs: 65_000 }]} onCite={onCite} />);
-    await userEvent.click(screen.getByRole("button", { name: "Show in transcript 1:05" }));
+    await userEvent.click(screen.getByRole("button", { name: "Show in transcript 01:05" }));
     expect(onCite).toHaveBeenCalledWith(0, { timeMs: 65_000 });
   });
 });

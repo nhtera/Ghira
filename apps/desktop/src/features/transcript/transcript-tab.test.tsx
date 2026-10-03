@@ -90,7 +90,7 @@ describe("TranscriptTab", () => {
     mount();
     fireEvent.click(await screen.findByText("tốt"));
     await waitFor(() => expect(usePlayer.getState().seekRequest).toMatchObject({ ms: 14_000, play: true }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Play from 0:20" })[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "Play from 00:20" })[0]!);
     expect(usePlayer.getState().seekRequest).toMatchObject({ ms: 20_000, play: true });
   });
 

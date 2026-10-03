@@ -10,8 +10,8 @@ describe("CitationChip", () => {
   it("is a button named after the moment and fires onClick", async () => {
     const onClick = vi.fn();
     render(<CitationChip timeMs={572_000} onClick={onClick} />);
-    const b = screen.getByRole("button", { name: "Show in transcript 9:32" });
-    expect(b.textContent).toBe("9:32");
+    const b = screen.getByRole("button", { name: "Show in transcript 09:32" });
+    expect(b.textContent).toBe("09:32");
     await userEvent.click(b);
     expect(onClick).toHaveBeenCalledOnce();
   });

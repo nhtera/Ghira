@@ -23,6 +23,10 @@ pub struct CalEvent {
     pub all_day: bool,
     /// Display names of the other attendees (not the user).
     pub attendees: Vec<String>,
+    /// Their addresses, one per attendee in the same order ("" when the
+    /// invite has none). Kept only in the sealed record of a recorded meeting.
+    #[serde(default)]
+    pub emails: Vec<String>,
     /// `zoom`, `teams` or `meet` when the invite has such a link.
     pub join_app: Option<String>,
     /// From an ICS file, which may list the user among the attendees.
@@ -36,6 +40,10 @@ pub struct CalendarInfo {
     pub event: String,
     pub title: String,
     pub attendees: Vec<String>,
+    /// Addresses parallel to `attendees` ("" when unknown); older records
+    /// have none.
+    #[serde(default)]
+    pub emails: Vec<String>,
     /// The calendar the event came from.
     pub calendar: Option<String>,
 }
@@ -266,6 +274,7 @@ fn proto_event(e: &Event, all_day: bool, user: Option<&str>) -> CalEvent {
         .take(MAX_TITLE_CHARS)
         .collect();
     let mut attendees: Vec<String> = Vec::new();
+    let mut emails: Vec<String> = Vec::new();
     let mut add = |name: String, address: &str| {
         let n = name.trim().to_string();
         let folded = ghi_text::fold(&n);
@@ -276,6 +285,7 @@ fn proto_event(e: &Event, all_day: bool, user: Option<&str>) -> CalEvent {
             && !attendees.iter().any(|a| ghi_text::fold(a) == folded)
         {
             attendees.push(n);
+            emails.push(email_of(address).unwrap_or_default());
         }
     };
     if let Some(p) = e.properties().get("ORGANIZER") {
@@ -306,9 +316,22 @@ fn proto_event(e: &Event, all_day: bool, user: Option<&str>) -> CalEvent {
         end_ms: 0,
         all_day,
         attendees,
+        emails,
         join_app: join_app(&text).map(str::to_string),
         from_ics: true,
     }
+}
+
+/// The mail address in a calendar address (`mailto:a@b.c` or `a@b.c`), if it
+/// is one.
+pub fn email_of(address: &str) -> Option<String> {
+    let a = address.trim();
+    let a = a
+        .strip_prefix("mailto:")
+        .or_else(|| a.strip_prefix("MAILTO:"))
+        .unwrap_or(a)
+        .trim();
+    (a.contains('@') && !a.contains(char::is_whitespace) && a.len() <= 254).then(|| a.to_string())
 }
 
 /// A display name: the invite's common name, else the address before `@`
@@ -613,6 +636,14 @@ fn has_phrase(text: &str, phrase: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn calendar_addresses_become_plain_emails() {
+        assert_eq!(email_of("mailto:Lan@x.vn").as_deref(), Some("Lan@x.vn"));
+        assert_eq!(email_of("MAILTO:a@b.co").as_deref(), Some("a@b.co"));
+        assert_eq!(email_of("urn:uuid:1234"), None);
+        assert_eq!(email_of("a b@c"), None);
+    }
+
     use super::*;
     use chrono::Utc;
 
@@ -639,6 +670,7 @@ mod tests {
             end_ms: start + 30 * MIN_MS,
             all_day: false,
             attendees: attendees.iter().map(|s| s.to_string()).collect(),
+            emails: Vec::new(),
             join_app: join.map(str::to_string),
             from_ics: false,
         }
@@ -1154,6 +1186,7 @@ ATTENDEE;CN=Me Myself:mailto:me@acme.com\r\nATTENDEE;CN={other}:mailto:{other}@a
             event: "a1@5".into(),
             title: "Sprint planning".into(),
             attendees: vec!["Lê Minh Anh".into(), "Sarah".into()],
+            emails: Vec::new(),
             calendar: Some("Work".into()),
         };
         store

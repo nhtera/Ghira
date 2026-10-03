@@ -41,7 +41,7 @@ function OwnerMenu({ item }: { item: ActionItemView }) {
           aria-label={t("notes.ownerOf", {
             owner: who?.name ?? t("notes.unassigned"),
           })}
-          className="inline-flex h-6 items-center gap-1.5 rounded-full pr-1.5 text-[12.5px] text-muted hover:bg-sunk"
+          className="inline-flex h-[26px] items-center gap-1.5 rounded-full border border-line py-0 pr-2.5 pl-[3px] text-[12.5px] font-semibold text-ink hover:bg-sunk"
         >
           {who ? (
             <Avatar
@@ -49,10 +49,10 @@ function OwnerMenu({ item }: { item: ActionItemView }) {
               name={who.name}
               initial={who.initial}
               colorSlot={who.colorSlot}
-              size="md"
+              size="sm"
             />
           ) : (
-            <Avatar kind="unknown" size="md" />
+            <Avatar kind="unknown" size="sm" />
           )}
           {who ? who.name : t("notes.unassigned")}
         </button>
@@ -102,25 +102,32 @@ function ActionRow({ item }: { item: ActionItemView }) {
               id={`action-text-${item.gid}`}
               keepOnEmpty
               label={t("notes.actionLabel")}
+              trailing={
+                item.citations.length > 0 && (
+                  <>
+                    {item.citations.map((c, i) => (
+                      <span key={i} className="ml-1.5 align-[2px]">
+                        <CitationLink citation={c} speakers={speakers} audioAvailable={audioAvailable} />
+                      </span>
+                    ))}
+                  </>
+                )
+              }
               onCommit={(text) =>
                 text.trim() &&
                 text.trim() !== item.text &&
                 void edit.editAction(item.gid, text.trim())
               }
               className={cn(
-                "text-body",
-                item.done ? "text-muted line-through" : "text-ink",
+                "font-serif text-notes",
+                item.done
+                  ? "text-muted line-through"
+                  : item.origin === "user"
+                    ? "text-ink"
+                    : "text-ai",
               )}
             />
           </div>
-          {item.citations.map((c, i) => (
-            <CitationLink
-              key={i}
-              citation={c}
-              speakers={speakers}
-              audioAvailable={audioAvailable}
-            />
-          ))}
           <OwnerMenu item={item} />
           {item.dueText && (
             <span className="inline-flex items-center gap-1 text-[12.5px] text-muted">
@@ -138,7 +145,8 @@ function ActionRow({ item }: { item: ActionItemView }) {
           </button>
         </div>
       </div>
-      <span className="ml-8">
+      {/* The legend above the notes says what the two colors mean; an edited item still says it. */}
+      <span className={cn("ml-8", provenance !== "edited" && "sr-only")}>
         <Provenance kind={provenance} />
       </span>
     </li>

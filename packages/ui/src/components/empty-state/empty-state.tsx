@@ -3,6 +3,7 @@
 import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "../../icons/icon";
 import { Button } from "../../primitives/button";
+import { Kbd } from "../kbd";
 import { usePlatformContext } from "../../platform/platform";
 import { cn } from "../../utils/cn";
 
@@ -16,7 +17,7 @@ export type EmptyStateProps = {
   onPrimary?: () => void;
   /** Library: Import a file. */
   onSecondary?: () => void;
-  /** Library: the record shortcut, under the buttons. */
+  /** Library: the record shortcut label ("⌘⇧R"), shown as a keycap chip under the buttons. */
   hint?: string;
   className?: string;
 };
@@ -59,7 +60,7 @@ export function EmptyState({ kind, query, onPrimary, onSecondary, hint, classNam
           )}
         </div>
       )}
-      {hint && <span className="mt-1.5 text-[12px] text-faint">{hint}</span>}
+      {hint && <Kbd shortcut={hint} className="mt-1.5" />}
     </div>
   );
 }

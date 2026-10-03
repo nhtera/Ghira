@@ -124,6 +124,22 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// The processes of the meeting app in a call, for a per-app system-audio
+/// tap (the setting "only the meeting app's audio"). Empty (the whole
+/// system is captured instead) when none is in a call or the platform
+/// cannot list audio processes.
+#[cfg(target_os = "macos")]
+fn meeting_app_pids(apps: &[String]) -> Vec<i32> {
+    ghi_audio::macos::audio_processes()
+        .map(|p| ghi_audio::detect::meeting_app_pids(&p, Some(apps), std::process::id() as i32))
+        .unwrap_or_default()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn meeting_app_pids(_apps: &[String]) -> Vec<i32> {
+    Vec::new()
+}
+
 fn keystore(dir: &Path) -> Result<Arc<dyn KeyStore>, String> {
     #[cfg(debug_assertions)]
     if std::env::var("GHI_KEYSTORE").as_deref() != Ok("keychain") {
@@ -937,8 +953,18 @@ impl Core {
                 })
                 .ok())
         };
+        let settings = crate::system::load_settings(self).unwrap_or_default();
+        let want_app_only = mode == Mode::Call && settings.app_audio_only;
+        let tap_pids = if want_app_only {
+            meeting_app_pids(&settings.detect_apps)
+        } else {
+            Vec::new()
+        };
+        // No meeting app in a call: all system audio is recorded, and the
+        // recording says so. The pids are resolved once, here.
+        let app_audio_fallback = want_app_only && tap_pids.is_empty();
         let capture =
-            ghi_core::capture::live(mode == Mode::Call, &[]).map_err(|e| e.to_string())?;
+            ghi_core::capture::live(mode == Mode::Call, &tap_pids).map_err(|e| e.to_string())?;
         let hooks = lock(&self.runner)
             .clone()
             .map(|r| r as Arc<dyn ghi_core::session::RecordingHooks>);
@@ -952,6 +978,7 @@ impl Core {
                 title,
                 queue_jobs,
                 lossless: false,
+                echo_cancellation: settings.echo_cancellation,
             },
             self.events.clone(),
             hooks,
@@ -959,6 +986,11 @@ impl Core {
         .map_err(|e| e.to_string())?;
         let id = s.meeting().to_string();
         *lock(&self.session) = Some(Arc::new(s));
+        if app_audio_fallback {
+            self.events.emit(ghi_core::events::Event::AppAudioFallback {
+                meeting: id.clone(),
+            });
+        }
         Ok(id)
     }
 

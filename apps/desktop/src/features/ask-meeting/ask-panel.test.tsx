@@ -77,6 +77,7 @@ beforeEach(() => {
       cloudProvider: "openai",
       cloudModel: "",
       cloudRedact: true,
+      cloudOffered: true,
       strictOffline: false,
     }),
   );
@@ -183,7 +184,7 @@ describe("AskPanel", () => {
       ok({ kind: "failed", reason: "503", leftDevice: true }),
     );
     commands.askMeeting.mockReturnValue(ok(answered));
-    fireEvent.click(screen.getByRole("radio", { name: /cloud/i }));
+    fireEvent.click(await screen.findByRole("radio", { name: /cloud/i }));
     ask("Why NeMo?");
     expect(commands.askMeeting).not.toHaveBeenCalled();
     const send = await screen.findByRole("button", {

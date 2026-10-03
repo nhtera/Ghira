@@ -25,6 +25,7 @@ const row: MeetingRow = {
   tags: [],
   sourceApp: null,
   summary: null,
+  unnamedVoices: 0,
 };
 const view = (over: Partial<MeetingRow>, status: Parameters<typeof MeetingRowView>[0]["status"], onRetry = vi.fn()) =>
   render(
@@ -56,5 +57,11 @@ describe("MeetingRowView", () => {
     );
     expect(screen.queryByText(/min/)).toBeNull();
     expect(container.querySelector("[data-status]")).toBeNull();
+  });
+  it("shows the Me avatar and a ? for voices without a name", () => {
+    view({ people: [{ name: "", colorSlot: 1, isMe: true }, { name: "Linh", colorSlot: 2, isMe: false }], unnamedVoices: 2 }, { status: "ready" });
+    expect(screen.getByRole("img", { name: "Me" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Linh" })).toBeTruthy();
+    expect(screen.getByText("?")).toBeTruthy();
   });
 });

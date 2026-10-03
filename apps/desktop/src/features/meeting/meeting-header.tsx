@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Detail header (D6): editable title, when and how long, source chips,
 // participants, status and where the notes were written.
-import { formatClock } from "@ghi/i18n";
 import {
   Icon,
   StatusPill,
@@ -16,8 +15,10 @@ import { useTranslation } from "react-i18next";
 import type { MeetingDetail } from "../../bindings";
 import { ipc } from "../../ipc";
 import { meetingKeys, useMeetingNotes } from "../../state/meeting-queries";
+import { durationLabel } from "../library/duration";
 import { MEETINGS_KEY } from "../library/use-meetings";
 import { detailStatus } from "./detail-status";
+import { sourceAppName } from "../folders/source-app";
 import { FolderTags } from "../folders/folder-tags";
 import { StoredSpeaker } from "../speakers/stored-speaker";
 import { useLlmName } from "./llm-name";
@@ -103,7 +104,9 @@ function TitleField({ detail }: { detail: MeetingDetail }) {
 function EnginePill({ detail }: { detail: MeetingDetail }) {
   const { t } = useTranslation();
   const platform = usePlatform();
-  const model = useLlmName();
+  const installed = useLlmName();
+  // The model that wrote these notes (recorded with them), else the one installed.
+  const model = detail.notesModel ?? installed;
   const cloud = detail.cloudUsed;
   const notes = useMeetingNotes(detail.gid);
   // Nothing was written yet (still processing, or failed): no engine to name.
@@ -112,11 +115,15 @@ function EnginePill({ detail }: { detail: MeetingDetail }) {
     <span
       className={cn(
         "inline-flex h-[26px] flex-none items-center gap-1.5 rounded-full px-2.5 text-[12px] font-semibold",
-        cloud ? "bg-warn-soft text-warn" : "bg-accent-soft text-accent",
+        cloud ? "bg-warn-soft text-warn" : "bg-sunk text-muted",
       )}
     >
-      <Icon name={cloud ? "cloud" : "lock"} size={15} />
-      {cloud ? t("library.status.cloudEnhanced") : [t("ask.onDevice", { context: platform }), model].filter(Boolean).join(" · ")}
+      <Icon name={cloud ? "cloud" : "memory"} size={15} />
+      {cloud
+        ? t("library.status.cloudEnhanced")
+        : model
+          ? t("notes.engineLocal", { context: platform, model })
+          : t("ask.onDevice", { context: platform })}
     </span>
   );
 }
@@ -155,8 +162,8 @@ export function MeetingHeader({ detail }: { detail: MeetingDetail }) {
           <Icon name={SOURCE_ICON[sourceKey as keyof typeof SOURCE_ICON] ?? "headphones"} size={16} />
           {[
             detail.startedAt != null ? when(detail.startedAt) : null,
-            detail.durationMs != null ? formatClock(detail.durationMs) : null,
-            sourceLabel,
+            detail.durationMs != null ? durationLabel(t, detail.durationMs) : null,
+            sourceAppName(detail.sourceApp) ?? sourceLabel,
           ]
             .filter(Boolean)
             .join(" · ")}

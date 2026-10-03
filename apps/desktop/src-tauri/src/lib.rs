@@ -18,9 +18,12 @@ mod export_cmd;
 mod import_cmd;
 mod library;
 mod lock_cmd;
+mod login_item;
 mod menu;
 mod models_cmd;
 mod navigation;
+#[cfg(target_os = "macos")]
+mod notify_mac;
 mod organize_cmd;
 mod panels;
 mod people_cmd;
@@ -319,6 +322,9 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             system::update_settings,
             system::mic_permission,
             system::request_mic_permission,
+            system::request_notifications,
+            system::probe_system_audio,
+            system::retry_capture,
             system::reply_meeting_detected,
             audio_protocol::issue_audio_sample,
             windows::show_main,
@@ -350,6 +356,10 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             audio_protocol::waveform_peaks,
             export_cmd::export_meeting,
             export_cmd::export_meetings,
+            export_cmd::export_destination,
+            export_cmd::choose_export_folder,
+            export_cmd::open_mail_draft,
+            calendar_cmd::meeting_contacts,
             export_cmd::export_obsidian,
             export_cmd::meeting_as_text,
             export_cmd::reveal_last_export,
@@ -481,7 +491,11 @@ pub fn run() {
                 tray::on_event(&tray_app, e)
             })?);
             // Onboarding finished or a setting changed: (un)register ⌘⇧R.
-            core.set_settings_hook(Arc::new(tray::sync_record_shortcut));
+            core.set_settings_hook(Arc::new(|app| {
+                tray::sync_record_shortcut(app);
+                tray::sync_visibility(app);
+                login_item::sync(app);
+            }));
             core.init_in_background();
             let detection = Arc::new(system::Detection::default());
             system::spawn_detection(app.handle().clone(), core.clone(), detection.clone());

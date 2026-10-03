@@ -126,6 +126,20 @@ export const commands = {
 	micPermission: () => __TAURI_INVOKE<Permission>("mic_permission"),
 	/**  Shows the OS prompt when undetermined (blocks until answered). */
 	requestMicPermission: () => typedError<Permission, string>(__TAURI_INVOKE("request_mic_permission")),
+	/**  Asks for permission to show notifications (the OS prompt on macOS). */
+	requestNotifications: () => typedError<NotificationAccess, string>(__TAURI_INVOKE("request_notifications")),
+	/**
+	 *  Captures the system's audio for a moment and keeps nothing, so macOS shows
+	 *  its "screen & system audio recording" prompt the first time. A very quiet
+	 *  system sound plays meanwhile, so "heard" proves access. Not while a
+	 *  recording runs (it owns the capture).
+	 */
+	probeSystemAudio: () => typedError<SystemAudioProbe, string>(__TAURI_INVOKE("probe_system_audio")),
+	/**
+	 *  Tries the microphone again after "mic taken": the running recording
+	 *  rebuilds its capture devices and carries on in the same meeting.
+	 */
+	retryCapture: () => typedError<null, string>(__TAURI_INVOKE("retry_capture")),
 	replyMeetingDetected: (app: string, reply: DetectReply) => typedError<null, string>(__TAURI_INVOKE("reply_meeting_detected", { app, reply })),
 	/**
 	 *  A token for `ghi-audio://localhost/<token>` (build the URL with
@@ -186,8 +200,9 @@ export const commands = {
 	 */
 	waveformPeaks: (meeting: string) => typedError<Waveform, string>(__TAURI_INVOKE("waveform_peaks", { meeting })),
 	/**
-	 *  Saves one meeting (a save dialog first). Returns the file name, or `None`
-	 *  if the user cancelled.
+	 *  Saves one meeting into the remembered export folder (nothing is
+	 *  overwritten); with none chosen yet, a save dialog first. Returns the file
+	 *  name, or `None` if the user cancelled.
 	 */
 	exportMeeting: (meeting: string, format: ExportFormat, content: ExportContent) => typedError<string | null, string>(__TAURI_INVOKE("export_meeting", { meeting, format, content })),
 	/**
@@ -195,6 +210,26 @@ export const commands = {
 	 *  were written, or `None` if the user cancelled.
 	 */
 	exportMeetings: (meetings: string[], format: ExportFormat, content: ExportContent, title: string) => typedError<number | null, string>(__TAURI_INVOKE("export_meetings", { meetings, format, content, title })),
+	/**
+	 *  The name (not the path) of the folder exports go to, or `None` when none
+	 *  was chosen yet or it is gone.
+	 */
+	exportDestination: () => typedError<string | null, string>(__TAURI_INVOKE("export_destination")),
+	/**
+	 *  Asks for the export folder (a native dialog starting at the current one),
+	 *  remembers it and returns its name; `None` if the user cancelled.
+	 */
+	chooseExportFolder: (title: string) => typedError<string | null, string>(__TAURI_INVOKE("choose_export_folder", { title })),
+	/**
+	 *  Opens the default mail app with a new message (nothing is sent, and the
+	 *  app makes no network request).
+	 */
+	openMailDraft: (to: string[], subject: string, body: string) => typedError<MailDraft, string>(__TAURI_INVOKE("open_mail_draft", { to, subject, body })),
+	/**
+	 *  The attendees of the meeting's calendar event with their addresses (for
+	 *  the follow-up email's "To"). Empty if none. Errors: `storage`.
+	 */
+	meetingContacts: (meeting: string) => typedError<MeetingContact[], string>(__TAURI_INVOKE("meeting_contacts", { meeting })),
 	/**
 	 *  Writes the meeting as a note into an Obsidian vault folder (chosen once,
 	 *  then remembered; `chooseFolder` asks again). Returns the note's name, or
@@ -541,6 +576,31 @@ export type AppSettings = {
 	 *  recording. 8 GB Macs always use Fast.
 	 */
 	liveMode: LiveMode,
+	/**  Start Ghira when the user logs in (macOS login item, Windows Run key). */
+	openAtLogin: boolean,
+	/**  Show the menu-bar / tray icon. */
+	showInMenuBar: boolean,
+	/**
+	 *  The language notes are written in by default (`meeting`: the
+	 *  transcript's own).
+	 */
+	notesLanguage: NotesLanguage,
+	/**
+	 *  Meeting apps to detect (`zoom`, `teams`, `meet` for browsers, `slack`,
+	 *  `zalo`, `webex`, `facetime`); default all. Discord is not on the list:
+	 *  it is always detected while `detect_meetings` is on.
+	 */
+	detectApps: string[],
+	/**  Cancel the Mac's speaker output from the mic in call mode. */
+	echoCancellation: boolean,
+	/**  Capture only the detected meeting app's audio, not the whole system's. */
+	appAudioOnly: boolean,
+	/**
+	 *  Cloud AI is offered ("Cloud, only when you ask"): the per-meeting
+	 *  cloud actions appear, each still opt-in and previewed. Off: "On this
+	 *  device", and the cloud commands refuse ([`CLOUD_OFF`]).
+	 */
+	cloudOffered: boolean,
 };
 
 /**  Versions shown in Settings → About. */
@@ -670,6 +730,13 @@ export type CloudPreview = {
 	/**  Things in the text that still look like personal data. */
 	warnings: string[],
 	redactions: Redaction[],
+	/**
+	 *  The request's text as it is on this Mac (names and personal data
+	 *  restored), shortened; `None` when it has no user text.
+	 */
+	excerptBefore: string | null,
+	/**  The same text as sent (placeholders for what is hidden). */
+	excerptAfter: string | null,
 };
 
 export type CloudPreviewResult = {
@@ -806,6 +873,18 @@ track: number; text: string } | { type: "transcriptFinal"; meeting: string; line
 /**  A capture device vanished (0 = mic, 1 = system). */
 { type: "trackLost"; meeting: string; track: number } | 
 /**
+ *  "Only the meeting app's audio" was on but no meeting app was in a call
+ *  when recording started: all system audio is recorded instead.
+ */
+{ type: "appAudioFallback"; meeting: string } | 
+/**
+ *  After `retry_capture`: the devices are back (also when nothing had
+ *  been lost).
+ */
+{ type: "captureRecovered"; meeting: string } | 
+/**  After `retry_capture`: the devices could not be rebuilt. */
+{ type: "captureRetryFailed"; meeting: string; message: string } | 
+/**
  *  The audio route changed; `bluetooth_hfp`: the input is a Bluetooth
  *  headset, whose mic drops the whole link to call quality.
  */
@@ -862,6 +941,11 @@ export type ImportChoice = {
 	language: string | null,
 	/**  Keep a stereo file's two channels as you / the others. */
 	splitChannels: boolean,
+	/**
+	 *  How many people spoke, if the user knows: a hint for the speaker
+	 *  separation (`None`: decide automatically).
+	 */
+	expectedSpeakers: number | null,
 };
 
 export type ImportProblem = 
@@ -930,6 +1014,12 @@ export type LockChanged = {
 	locked: boolean,
 };
 
+/**  What `open_mail_draft` did. */
+export type MailDraft = {
+	/**  The body was cut to fit the OS's limit: offer "Copy the full email". */
+	truncated: boolean,
+};
+
 export type MarkView = {
 	tMs: number | null,
 	/**  `mark`, `decision`, `action`, `question`. */
@@ -941,6 +1031,13 @@ export type MeProfile = {
 	atMs: number | null,
 	/**  Voice samples kept (windows of their speech). */
 	samples: number,
+};
+
+/**  An attendee of the calendar event a meeting was recorded in. */
+export type MeetingContact = {
+	name: string,
+	/**  `None` when the invite had no address. */
+	email: string | null,
 };
 
 export type MeetingDetail = {
@@ -967,6 +1064,16 @@ export type MeetingDetail = {
 	audioAvailable: boolean,
 	speakers: MeetingSpeaker[],
 	job: MeetingJob | null,
+	/**
+	 *  The model that wrote the current notes (`None`: no notes, or written
+	 *  before this was recorded).
+	 */
+	notesModel: string | null,
+	/**
+	 *  Where an imported file came from: `zoom`, `teams`, `meet`, `plaud`,
+	 *  `voice_memos`.
+	 */
+	sourceApp: string | null,
 };
 
 /**  A meeting app started using the microphone. */
@@ -1041,6 +1148,8 @@ export type MeetingRow = {
 	 *  while the meeting has no notes.
 	 */
 	summary: string | null,
+	/**  Speakers still without a name (not Me, not "not a person"). */
+	unnamedVoices: number,
 };
 
 export type MeetingSpeaker = {
@@ -1150,6 +1259,11 @@ export type NotesLanguage =
 /**  The meeting's own (dominant) language. */
 "meeting" | "en" | "vi";
 
+/**  Whether notifications are allowed, as far as the OS says. */
+export type NotificationAccess = "granted" | "denied" | 
+/**  Not asked, or this run cannot ask (an unbundled dev build). */
+"unknown";
+
 export type Origin = "user" | "ai" | 
 /**  AI-written, then changed by the user (kept by a regenerate). */
 "aiEdited";
@@ -1187,6 +1301,8 @@ export type PersonChip = {
 	name: string,
 	/**  Palette slot 1..8 (0: Others). */
 	colorSlot: number,
+	/**  The user ("Me"): shown as "Me" in the app's language, whatever `name`. */
+	isMe: boolean,
 };
 
 export type PersonDetail = {
@@ -1382,6 +1498,13 @@ export type SettingsPatch = {
 	consentMessageVi?: string | null,
 	updateCheck?: boolean | null,
 	liveMode?: LiveMode | null,
+	openAtLogin?: boolean | null,
+	showInMenuBar?: boolean | null,
+	notesLanguage?: NotesLanguage | null,
+	detectApps?: string[] | null,
+	echoCancellation?: boolean | null,
+	appAudioOnly?: boolean | null,
+	cloudOffered?: boolean | null,
 };
 
 export type SpeakerInfo = {
@@ -1435,6 +1558,15 @@ export type Stopped = {
 	meeting: string,
 	durationMs: number | null,
 };
+
+/**  What the system-audio test heard. */
+export type SystemAudioProbe = 
+/**  Sound came through: access is on. */
+"heard" | 
+/**  Only silence: nothing played, or access is off (macOS cannot say). */
+"silent" | "denied" | 
+/**  Could not be tried (other platform, or the capture failed). */
+"unknown";
 
 /**  A tag on a meeting row. */
 export type TagChip = {

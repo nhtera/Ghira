@@ -15,11 +15,25 @@ const keysKey = ["cloud-keys"] as const;
 
 export function AiSection() {
   const { t } = useTranslation();
+  const { settings, patch } = useSettings();
+  const local = !(settings?.cloudOffered ?? false);
   return (
     <div className="flex flex-col">
-      <div className="grid gap-2 pt-3">
-        <ModeCard selected icon="laptop_mac" title={t("settings.ai.local.title")} body={t("settings.ai.local.body")} badge={t("settings.ai.default")} />
-        <ModeCard icon="cloud" title={t("settings.ai.cloud.title")} body={t("settings.ai.cloud.body")} badge={t("settings.ai.perMeeting")} />
+      <div
+        role="radiogroup"
+        aria-label={t("settings.ai.mode")}
+        className="grid gap-2 pt-3"
+        // Arrow keys move the choice (one Tab stop for the group).
+        onKeyDown={(e) => {
+          if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(e.key) || !settings) return;
+          e.preventDefault();
+          const next = !settings.cloudOffered;
+          void patch({ cloudOffered: next });
+          e.currentTarget.querySelector<HTMLElement>(`[data-mode="${next ? "cloud" : "local"}"]`)?.focus();
+        }}
+      >
+        <ModeCard mode="local" selected={local} onSelect={() => void patch({ cloudOffered: false })} icon="laptop_mac" title={t("settings.ai.local.title")} body={t("settings.ai.local.body")} badge={t("settings.ai.default")} />
+        <ModeCard mode="cloud" selected={!local} onSelect={() => void patch({ cloudOffered: true })} icon="cloud" title={t("settings.ai.cloud.title")} body={t("settings.ai.cloud.body")} badge={t("settings.ai.perMeeting")} />
       </div>
       <KeysCard />
       <DefaultsCard />
@@ -33,18 +47,26 @@ export function AiSection() {
   );
 }
 
-/** The AI mode as the design draws it. Cloud is chosen per meeting, so these cards show the default and are not controls. */
-function ModeCard({ selected, icon, title, body, badge }: { selected?: boolean; icon: IconName; title: string; body: string; badge: string }) {
+/** The AI mode as the design draws it: a radio card bound to `cloudOffered` (off: local only; on: cloud offered per meeting). */
+function ModeCard({ mode, selected, onSelect, icon, title, body, badge }: { mode: string; selected: boolean; onSelect: () => void; icon: IconName; title: string; body: string; badge: string }) {
   return (
-    <div className={cn("grid grid-cols-[24px_24px_minmax(0,1fr)] items-start gap-x-3 rounded-xl border-[1.5px] bg-surface px-4 py-3.5", selected ? "border-accent" : "border-ctl")}>
-      {selected ? <Icon name="check_circle" size={20} className="text-accent" /> : <span />}
+    <button
+      type="button"
+      role="radio"
+      data-mode={mode}
+      tabIndex={selected ? 0 : -1}
+      aria-checked={selected}
+      onClick={onSelect}
+      className={cn("grid w-full grid-cols-[24px_24px_minmax(0,1fr)] items-start gap-x-3 rounded-xl border-[1.5px] bg-surface px-4 py-3.5 text-left", selected ? "border-accent" : "border-ctl hover:bg-surface2")}
+    >
+      <Icon name={selected ? "radio_button_checked" : "radio_button_unchecked"} size={20} className={selected ? "text-accent" : "text-muted"} />
       <Icon name={icon} size={20} className="text-muted" />
       <span>
         <b className="text-[14px]">{title}</b>
         <span className={cn("ml-1 text-[11.5px] font-semibold", selected ? "text-accent" : "text-muted")}>{badge}</span>
         <span className="mt-0.5 block text-[12.5px] leading-normal text-muted">{body}</span>
       </span>
-    </div>
+    </button>
   );
 }
 

@@ -27,6 +27,7 @@ const row = (gid: string, over: Partial<MeetingRow> = {}): MeetingRow => ({
   tags: [],
   sourceApp: null,
   summary: null,
+  unnamedVoices: 0,
   ...over,
 });
 

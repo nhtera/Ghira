@@ -12,7 +12,7 @@ import { columnSlots, reducePeaks, timeAt } from "./waveform-math";
 
 const BAR = 2;
 const GAP = 1;
-const HEIGHT = 44;
+const HEIGHT = 38;
 const STEP_MS = 5000;
 
 type Colors = { slots: string[]; idle: string; accent: string };
@@ -122,7 +122,7 @@ export function WaveformSlider({
       aria-valuemin={0}
       aria-valuemax={Math.round(durationMs / 1000)}
       aria-valuenow={Math.round(currentMs / 1000)}
-      aria-valuetext={`${formatClock(currentMs)} / ${formatClock(durationMs)}`}
+      aria-valuetext={`${formatClock(currentMs, { pad: true })} / ${formatClock(durationMs, { pad: true })}`}
       onKeyDown={onKey}
       onPointerDown={(e) => {
         dragging.current = true;
@@ -133,7 +133,7 @@ export function WaveformSlider({
       onPointerUp={() => (dragging.current = false)}
       onPointerCancel={() => (dragging.current = false)}
       data-testid="waveform"
-      className="relative h-11 min-w-0 flex-1 cursor-pointer touch-none rounded-seg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="relative h-[38px] min-w-0 flex-1 cursor-pointer touch-none rounded-seg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
     >
       <canvas ref={canvas} aria-hidden="true" style={{ width: "100%", height: HEIGHT }} className="block" />
     </div>

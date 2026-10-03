@@ -137,6 +137,7 @@ fn record(
             title: "voices".into(),
             queue_jobs: true,
             lossless: true,
+            echo_cancellation: true,
         },
         tx,
         Some(runner.clone()),

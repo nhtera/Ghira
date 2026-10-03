@@ -76,6 +76,126 @@ pub async fn request_mic_permission() -> Result<Permission, String> {
     Ok(Permission::Unsupported)
 }
 
+/// Whether notifications are allowed, as far as the OS says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum NotificationAccess {
+    Granted,
+    Denied,
+    /// Not asked, or this run cannot ask (an unbundled dev build).
+    Unknown,
+}
+
+/// Asks for permission to show notifications (the OS prompt on macOS).
+#[tauri::command]
+#[specta::specta]
+pub async fn request_notifications(app: AppHandle) -> Result<NotificationAccess, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        tauri::async_runtime::spawn_blocking(|| match crate::notify_mac::request() {
+            Some(true) => NotificationAccess::Granted,
+            Some(false) => NotificationAccess::Denied,
+            None => NotificationAccess::Unknown,
+        })
+        .await
+        .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Desktop platforms without a permission model: the plugin says so.
+        use tauri_plugin_notification::{NotificationExt, PermissionState};
+        Ok(match app.notification().request_permission() {
+            Ok(PermissionState::Granted) => NotificationAccess::Granted,
+            Ok(PermissionState::Denied) => NotificationAccess::Denied,
+            _ => NotificationAccess::Unknown,
+        })
+    }
+}
+
+/// What the system-audio test heard.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum SystemAudioProbe {
+    /// Sound came through: access is on.
+    Heard,
+    /// Only silence: nothing played, or access is off (macOS cannot say).
+    Silent,
+    Denied,
+    /// Could not be tried (other platform, or the capture failed).
+    Unknown,
+}
+
+/// How long the probe listens.
+#[cfg(target_os = "macos")]
+const PROBE_LISTEN: Duration = Duration::from_millis(1500);
+
+/// Captures the system's audio for a moment and keeps nothing, so macOS shows
+/// its "screen & system audio recording" prompt the first time. A very quiet
+/// system sound plays meanwhile, so "heard" proves access. Not while a
+/// recording runs (it owns the capture).
+#[tauri::command]
+#[specta::specta]
+pub async fn probe_system_audio(core: CoreState<'_>) -> Result<SystemAudioProbe, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use ghi_audio::macos::{SystemProbe, probe_system_audio as probe};
+        if core.busy() {
+            return Ok(SystemAudioProbe::Unknown);
+        }
+        tauri::async_runtime::spawn_blocking(|| {
+            // A quiet chime, played twice, once the tap is running (so it
+            // is not missed while the tap starts); the probe works without
+            // it (then it can only tell silence from sound that happens to
+            // play).
+            let mut chime = None;
+            let r = probe(PROBE_LISTEN, || {
+                chime = std::thread::Builder::new()
+                    .name("ghi-probe-chime".into())
+                    .spawn(|| {
+                        for _ in 0..2 {
+                            let _ = std::process::Command::new("/usr/bin/afplay")
+                                .args(["-v", "0.25", "/System/Library/Sounds/Tink.aiff"])
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::null())
+                                .status();
+                            std::thread::sleep(Duration::from_millis(150));
+                        }
+                    })
+                    .ok();
+            });
+            if let Some(c) = chime {
+                let _ = c.join();
+            }
+            match r {
+                Ok(SystemProbe::Heard) => SystemAudioProbe::Heard,
+                Ok(SystemProbe::Silent) => SystemAudioProbe::Silent,
+                Ok(SystemProbe::Denied) => SystemAudioProbe::Denied,
+                Err(e) => {
+                    log::warn!("system audio probe: {e}");
+                    SystemAudioProbe::Unknown
+                }
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = core;
+        Ok(SystemAudioProbe::Unknown)
+    }
+}
+
+/// Tries the microphone again after "mic taken": the running recording
+/// rebuilds its capture devices and carries on in the same meeting.
+#[tauri::command]
+#[specta::specta]
+pub async fn retry_capture(core: CoreState<'_>) -> Result<(), String> {
+    blocking(&core, |c| c.with_session(|s| s.retry_capture())).await
+}
+
 /// A pane of the OS privacy settings, for a denied permission.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -242,9 +362,11 @@ fn detection_loop(app: AppHandle, core: Arc<Core>, detection: Arc<Detection>) {
         let Ok(processes) = ghi_audio::macos::audio_processes() else {
             continue;
         };
+        let only = load_settings(&core).ok().map(|s| s.detect_apps);
         let prompt = {
             let mut slot = detection.0.lock().unwrap_or_else(|e| e.into_inner());
             let Some(d) = slot.as_mut() else { continue };
+            d.set_only(only.as_deref());
             let p = d.poll(&processes, SystemTime::now());
             if p.is_some() {
                 persist(&core, d);

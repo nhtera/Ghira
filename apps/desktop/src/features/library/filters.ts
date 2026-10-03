@@ -67,6 +67,6 @@ export function searchParams(f: LibraryFilters, now: Date): Pick<SearchRequest, 
 /** People names seen in the rows, most common first. */
 export function peopleOf(rows: MeetingRow[]): string[] {
   const n = new Map<string, number>();
-  for (const r of rows) for (const p of r.people) n.set(p.name, (n.get(p.name) ?? 0) + 1);
+  for (const r of rows) for (const p of r.people.filter((q) => !q.isMe)) n.set(p.name, (n.get(p.name) ?? 0) + 1);
   return [...n.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
 }

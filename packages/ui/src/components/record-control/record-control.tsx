@@ -40,7 +40,7 @@ function RecordShape({ recording }: { recording: boolean }) {
 export function RecordControl({ state, mode, elapsedMs = 0, onStart, onPause, onResume, onStop, onModeChange, onFix, className }: RecordControlProps) {
   const { t } = useTranslation();
   const ios = useAppPlatform() === "ios";
-  const clock = formatClock(elapsedMs);
+  const clock = formatClock(elapsedMs, { pad: true });
 
   // The phone gets the thumb-zone variant (large buttons, labels under them).
   if (ios) return <RecordControlThumb {...{ state, mode, elapsedMs, onStart, onPause, onResume, onStop, onModeChange, onFix, className }} />;

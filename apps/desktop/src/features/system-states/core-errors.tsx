@@ -17,12 +17,26 @@ const SHOWN: ErrorKind[] = ["capture", "storage", "permission"];
 export function useCoreErrors() {
   const [errors, setErrors] = useState<CoreError[]>([]);
   const [dismissed, setDismissed] = useState<string[]>([]);
+  // A retry is answered by an event, not by the command: busy until one arrives.
+  const [retrying, setRetrying] = useState(false);
+  const [retryFailed, setRetryFailed] = useState<string | null>(null);
   useEffect(() => {
     let off: (() => void) | undefined;
     let alive = true;
     void ipc
       .onCoreEvent((env) => {
         const e = env.event;
+        if (e.type === "captureRecovered") {
+          setRetrying(false);
+          setRetryFailed(null);
+          setErrors((prev) => prev.filter((x) => x.kind !== "capture"));
+          return;
+        }
+        if (e.type === "captureRetryFailed") {
+          setRetrying(false);
+          setRetryFailed(e.message);
+          return;
+        }
         if (e.type !== "error" || !SHOWN.includes(e.kind)) return;
         const key = `${e.kind}|${e.meeting ?? ""}|${e.message}`;
         setErrors((prev) => (prev.some((x) => x.key === key) ? prev : [...prev, { key, kind: e.kind, message: e.message, meeting: e.meeting }]));
@@ -36,6 +50,18 @@ export function useCoreErrors() {
   return {
     errors: errors.filter((e) => !dismissed.includes(e.key)),
     dismiss: (key: string) => setDismissed((d) => [...d, key]),
+    retrying,
+    retryFailed,
+    startRetry: () => {
+      setRetrying(true);
+      setRetryFailed(null);
+    },
+    stopRetry: () => setRetrying(false),
+    /** Forget an error so the same one can be reported again if it comes back. */
+    clear: (key: string) => {
+      setErrors((prev) => prev.filter((x) => x.key !== key));
+      setDismissed((d) => d.filter((k) => k !== key));
+    },
   };
 }
 
@@ -68,7 +94,7 @@ export function CoreErrorBanners() {
   const { t } = useTranslation();
   const context = usePlatform();
   const { show } = useToast();
-  const { errors, dismiss } = useCoreErrors();
+  const { errors, dismiss, retrying, retryFailed, startRetry, stopRetry } = useCoreErrors();
   // Only "the store couldn't open" (no meeting) blocks. A write failing during a
   // recording also arrives as `storage`, with the meeting: that is a banner.
   const storage = errors.find((e) => e.kind === "storage" && e.meeting == null);
@@ -77,6 +103,14 @@ export function CoreErrorBanners() {
   const openAudioSettings = async () => {
     const r = await ipc.commands.openPrivacySettings("systemAudio");
     if (r.status === "error") show({ tone: "warning", title: t("system.commandFailed", { message: r.error }) });
+  };
+  const retryCapture = async () => {
+    startRetry();
+    const r = await ipc.commands.retryCapture();
+    if (r.status === "error") {
+      stopRetry();
+      show({ tone: "warning", title: t("system.commandFailed", { message: r.error }) });
+    }
   };
   return (
     <>
@@ -100,8 +134,21 @@ export function CoreErrorBanners() {
             {t("system.storageWrite")} {e.message}
           </SystemBanner>
         ) : (
-          <SystemBanner key={e.key} id="capture" assertive icon="mic_off" onDismiss={() => dismiss(e.key)}>
+          <SystemBanner
+            key={e.key}
+            id="capture"
+            assertive
+            icon="mic_off"
+            onDismiss={() => dismiss(e.key)}
+            actions={
+              <Button size="sm" variant="ghost" className={BANNER_ACTION} disabled={retrying} aria-busy={retrying} onClick={() => void retryCapture()}>
+                {retrying && <Icon name="progress_activity" size={15} className="animate-spin" />}
+                {t("common.tryAgain")}
+              </Button>
+            }
+          >
             {isMicTaken(e.message) ? t("system.micTaken") : e.message}
+            {retryFailed && <span className="block font-normal">{retryFailed}</span>}
           </SystemBanner>
         ),
       )}

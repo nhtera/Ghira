@@ -24,6 +24,7 @@ const core = vi.hoisted(() => {
     downloadModels: vi.fn(async () => ({ status: "ok", data: null })),
     cancelModelDownload: vi.fn(async () => undefined),
     openPrivacySettings: vi.fn(async () => ({ status: "ok", data: null })),
+    retryCapture: vi.fn(async () => ({ status: "ok", data: null })),
     diagnosticsStatus: vi.fn(async () => ({ crashedLastRun: state.crashed, reports: 1 })),
     revealDiagnostics: vi.fn(async () => ({ status: "ok", data: null })),
     acknowledgeCrash: vi.fn(async () => undefined),
@@ -167,6 +168,30 @@ describe("core errors", () => {
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     await fire(e);
     expect(screen.queryByText(/Another app is using the microphone/)).toBeNull();
+  });
+
+  it("Try again waits for the core: busy, then cleared on recovery", async () => {
+    renderStates();
+    await waitFor(() => expect(core.state.coreListeners.size).toBe(2));
+    await fire({ type: "error", meeting: null, kind: "capture", message: "device in exclusive mode" });
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Try again" }));
+    expect(core.commands.retryCapture).toHaveBeenCalledOnce();
+    // The command returning is not the answer yet.
+    expect(screen.getByText(/Another app is using the microphone/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" }).hasAttribute("disabled")).toBe(true);
+    await fire({ type: "captureRecovered", meeting: "m1" });
+    await waitFor(() => expect(screen.queryByText(/Another app is using the microphone/)).toBeNull());
+  });
+
+  it("Try again that fails keeps the notice with the reason and can be pressed again", async () => {
+    renderStates();
+    await waitFor(() => expect(core.state.coreListeners.size).toBe(2));
+    await fire({ type: "error", meeting: null, kind: "capture", message: "device in exclusive mode" });
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Try again" }));
+    await fire({ type: "captureRetryFailed", meeting: "m1", message: "still busy" });
+    expect(await screen.findByText("still busy")).toBeTruthy();
+    expect(screen.getByText(/Another app is using the microphone/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" }).hasAttribute("disabled")).toBe(false);
   });
 
   it("an unknown capture error shows the core's message", async () => {

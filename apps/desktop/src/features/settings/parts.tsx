@@ -103,4 +103,7 @@ export function Note({ icon = "info", children, tone }: { icon?: IconName; child
   );
 }
 
+/** Segmented controls at the size the design draws them in Settings. */
+export const bigSegCls = "[&>button]:h-8 [&>button]:px-3.5 [&>button]:text-[13.5px]";
+
 export const inputCls = "h-8 min-w-0 rounded-ctl border border-line2 bg-surface px-2.5 text-[13.5px] text-ink placeholder:text-faint focus-visible:outline-2 focus-visible:outline-accent";

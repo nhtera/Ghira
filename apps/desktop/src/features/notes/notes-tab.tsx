@@ -173,11 +173,11 @@ export function NotesTab({
                         type="button"
                         onClick={() => usePlayer.getState().seek(t0, true)}
                         aria-label={t("detail.playFrom", {
-                          time: formatClock(t0),
+                          time: formatClock(t0, { pad: true }),
                         })}
                         className="text-mono h-6 rounded-seg border border-line2 px-1.5 text-[12px] text-muted hover:text-accent"
                       >
-                        {formatClock(t0)}
+                        {formatClock(t0, { pad: true })}
                       </button>
                     ) : null}
                     <span>{b.text}</span>

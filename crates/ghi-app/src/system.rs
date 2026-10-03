@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::core::Core;
+use crate::detail::NotesLanguage;
 use crate::{CoreState, blocking};
 
 pub const SETTINGS_KEY: &str = "app";
@@ -60,7 +61,43 @@ pub struct AppSettings {
     /// The live transcript's trade-off (doc 02 §B); applies from the next
     /// recording. 8 GB Macs always use Fast.
     pub live_mode: LiveMode,
+    /// Start Ghira when the user logs in (macOS login item, Windows Run key).
+    pub open_at_login: bool,
+    /// Show the menu-bar / tray icon.
+    pub show_in_menu_bar: bool,
+    /// The language notes are written in by default (`meeting`: the
+    /// transcript's own).
+    pub notes_language: NotesLanguage,
+    /// Meeting apps to detect (`zoom`, `teams`, `meet` for browsers, `slack`,
+    /// `zalo`, `webex`, `facetime`); default all. Discord is not on the list:
+    /// it is always detected while `detect_meetings` is on.
+    pub detect_apps: Vec<String>,
+    /// Cancel the Mac's speaker output from the mic in call mode.
+    pub echo_cancellation: bool,
+    /// Capture only the detected meeting app's audio, not the whole system's.
+    pub app_audio_only: bool,
+    /// Cloud AI is offered ("Cloud, only when you ask"): the per-meeting
+    /// cloud actions appear, each still opt-in and previewed. Off: "On this
+    /// device", and the cloud commands refuse ([`CLOUD_OFF`]).
+    pub cloud_offered: bool,
 }
+
+/// The error of a cloud command while `cloud_offered` is off.
+pub const CLOUD_OFF: &str = "cloudOff";
+
+/// Every command that sends content to a cloud provider checks this first.
+pub fn cloud_allowed(s: &AppSettings) -> Result<(), String> {
+    if s.cloud_offered {
+        Ok(())
+    } else {
+        Err(CLOUD_OFF.into())
+    }
+}
+
+/// The apps `detect_apps` can list.
+pub const DETECT_APPS: [&str; 7] = [
+    "zoom", "teams", "meet", "slack", "zalo", "webex", "facetime",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -129,6 +166,13 @@ impl Default for AppSettings {
             app_lock: false,
             lock_after_minutes: 5,
             live_mode: LiveMode::Auto,
+            open_at_login: false,
+            show_in_menu_bar: true,
+            notes_language: NotesLanguage::Meeting,
+            detect_apps: DETECT_APPS.iter().map(|a| a.to_string()).collect(),
+            echo_cancellation: true,
+            app_audio_only: false,
+            cloud_offered: false,
         }
     }
 }
@@ -151,11 +195,27 @@ pub struct SettingsPatch {
     pub consent_message_vi: Option<String>,
     pub update_check: Option<bool>,
     pub live_mode: Option<LiveMode>,
+    pub open_at_login: Option<bool>,
+    pub show_in_menu_bar: Option<bool>,
+    pub notes_language: Option<NotesLanguage>,
+    pub detect_apps: Option<Vec<String>>,
+    pub echo_cancellation: Option<bool>,
+    pub app_audio_only: Option<bool>,
+    pub cloud_offered: Option<bool>,
     /// Only through `set_app_lock` (which asks for Touch ID first).
     #[serde(skip)]
     pub app_lock: Option<bool>,
     #[serde(skip)]
     pub lock_after_minutes: Option<u32>,
+}
+
+/// The known app ids of `apps`, once each, in the list's order.
+fn known_detect_apps(apps: Vec<String>) -> Vec<String> {
+    DETECT_APPS
+        .iter()
+        .filter(|k| apps.iter().any(|a| a == *k))
+        .map(|k| k.to_string())
+        .collect()
 }
 
 /// Short text settings stay short.
@@ -219,8 +279,35 @@ pub fn from_stored(v: Option<serde_json::Value>) -> AppSettings {
     enforce(serde_json::from_value(base).unwrap_or_default(), false)
 }
 
+/// An older settings file (no `cloudOffered`) of someone who already stored a
+/// cloud key keeps cloud on; everyone else starts with it off. Returns
+/// whether `stored` changed.
+fn migrate_cloud_offered(stored: &mut serde_json::Value, has_key: impl FnOnce() -> bool) -> bool {
+    match stored {
+        serde_json::Value::Object(o) if !o.contains_key("cloudOffered") => {
+            o.insert("cloudOffered".into(), has_key().into());
+            true
+        }
+        _ => false,
+    }
+}
+
 /// The settings (cached: the detection poller reads them every 2 s).
 pub fn load_settings(core: &Core) -> Result<AppSettings, String> {
+    load_settings_with(core, Core::store)
+}
+
+/// The settings while the app is locked too: for what the app does outside
+/// its content (the tray icon, the login item). Settings hold no meeting
+/// content.
+pub fn load_settings_even_locked(core: &Core) -> Result<AppSettings, String> {
+    load_settings_with(core, Core::store_even_locked)
+}
+
+fn load_settings_with(
+    core: &Core,
+    open: fn(&Core) -> Result<Arc<ghi_store::store::Store>, String>,
+) -> Result<AppSettings, String> {
     let mut cache = core
         .settings_cache()
         .lock()
@@ -230,11 +317,15 @@ pub fn load_settings(core: &Core) -> Result<AppSettings, String> {
     if let Some(s) = cache.as_ref() {
         return Ok(enforce(s.clone(), voice_model));
     }
-    let s = from_stored(
-        core.store()?
-            .get_setting(SETTINGS_KEY)
-            .map_err(|e| e.to_string())?,
-    );
+    let store = open(core)?;
+    let mut stored = store.get_setting(SETTINGS_KEY).map_err(|e| e.to_string())?;
+    if let Some(v) = stored.as_mut()
+        && migrate_cloud_offered(v, || crate::cloud_cmd::any_key_stored(core))
+    {
+        // Decided once: saved, so a key added later never flips it.
+        let _ = store.set_setting(SETTINGS_KEY, v);
+    }
+    let s = from_stored(stored);
     *cache = Some(s.clone());
     Ok(enforce(s, voice_model))
 }
@@ -272,40 +363,7 @@ pub fn patch_settings(
         let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
         let cur = load_settings(c)?;
         let s = enforce(
-            AppSettings {
-                onboarding_done: patch.onboarding_done.unwrap_or(cur.onboarding_done),
-                detect_meetings: patch.detect_meetings.unwrap_or(cur.detect_meetings),
-                global_mark_shortcut: patch
-                    .global_mark_shortcut
-                    .unwrap_or(cur.global_mark_shortcut),
-                global_record_shortcut: patch
-                    .global_record_shortcut
-                    .unwrap_or(cur.global_record_shortcut),
-                strict_offline: patch.strict_offline.unwrap_or(cur.strict_offline),
-                meeting_language: patch.meeting_language.unwrap_or(cur.meeting_language),
-                cloud_redact: patch.cloud_redact.unwrap_or(cur.cloud_redact),
-                update_check: patch.update_check.unwrap_or(cur.update_check),
-                live_mode: patch.live_mode.unwrap_or(cur.live_mode),
-                app_lock: patch.app_lock.unwrap_or(cur.app_lock),
-                lock_after_minutes: patch.lock_after_minutes.unwrap_or(cur.lock_after_minutes),
-                audio_retention_days: patch
-                    .audio_retention_days
-                    .map(|d| d.min(3650))
-                    .unwrap_or(cur.audio_retention_days),
-                cloud_provider: short(patch.cloud_provider, cur.cloud_provider.clone(), 40),
-                cloud_model: short(patch.cloud_model, cur.cloud_model.clone(), 80),
-                consent_message_en: short(
-                    patch.consent_message_en,
-                    cur.consent_message_en.clone(),
-                    1000,
-                ),
-                consent_message_vi: short(
-                    patch.consent_message_vi,
-                    cur.consent_message_vi.clone(),
-                    1000,
-                ),
-                ..cur.clone()
-            },
+            apply_patch(&cur, patch),
             crate::core::voice_ready(&c.models()),
         );
         let retention_changed = s.audio_retention_days != cur.audio_retention_days;
@@ -323,6 +381,55 @@ pub fn patch_settings(
     // its global shortcuts).
     c.settings_changed(app);
     r
+}
+
+/// `cur` with the fields `patch` sets, each checked or clamped.
+fn apply_patch(cur: &AppSettings, patch: SettingsPatch) -> AppSettings {
+    let cur = cur.clone();
+    AppSettings {
+        onboarding_done: patch.onboarding_done.unwrap_or(cur.onboarding_done),
+        detect_meetings: patch.detect_meetings.unwrap_or(cur.detect_meetings),
+        global_mark_shortcut: patch
+            .global_mark_shortcut
+            .unwrap_or(cur.global_mark_shortcut),
+        global_record_shortcut: patch
+            .global_record_shortcut
+            .unwrap_or(cur.global_record_shortcut),
+        strict_offline: patch.strict_offline.unwrap_or(cur.strict_offline),
+        meeting_language: patch.meeting_language.unwrap_or(cur.meeting_language),
+        cloud_redact: patch.cloud_redact.unwrap_or(cur.cloud_redact),
+        update_check: patch.update_check.unwrap_or(cur.update_check),
+        live_mode: patch.live_mode.unwrap_or(cur.live_mode),
+        open_at_login: patch.open_at_login.unwrap_or(cur.open_at_login),
+        show_in_menu_bar: patch.show_in_menu_bar.unwrap_or(cur.show_in_menu_bar),
+        notes_language: patch.notes_language.unwrap_or(cur.notes_language),
+        echo_cancellation: patch.echo_cancellation.unwrap_or(cur.echo_cancellation),
+        app_audio_only: patch.app_audio_only.unwrap_or(cur.app_audio_only),
+        cloud_offered: patch.cloud_offered.unwrap_or(cur.cloud_offered),
+        detect_apps: patch
+            .detect_apps
+            .map(known_detect_apps)
+            .unwrap_or_else(|| cur.detect_apps.clone()),
+        app_lock: patch.app_lock.unwrap_or(cur.app_lock),
+        lock_after_minutes: patch.lock_after_minutes.unwrap_or(cur.lock_after_minutes),
+        audio_retention_days: patch
+            .audio_retention_days
+            .map(|d| d.min(3650))
+            .unwrap_or(cur.audio_retention_days),
+        cloud_provider: short(patch.cloud_provider, cur.cloud_provider.clone(), 40),
+        cloud_model: short(patch.cloud_model, cur.cloud_model.clone(), 80),
+        consent_message_en: short(
+            patch.consent_message_en,
+            cur.consent_message_en.clone(),
+            1000,
+        ),
+        consent_message_vi: short(
+            patch.consent_message_vi,
+            cur.consent_message_vi.clone(),
+            1000,
+        ),
+        ..cur.clone()
+    }
 }
 
 /// Applies the audio retention setting and deletes the audio past it (the
@@ -381,6 +488,91 @@ mod tests {
         })));
         assert!(s.app_lock && s.strict_offline);
         assert_eq!(s.live_mode, LiveMode::Auto);
+    }
+
+    #[test]
+    fn round_three_settings_default_for_older_stores() {
+        let s = from_stored(Some(serde_json::json!({ "onboardingDone": true })));
+        assert!(!s.open_at_login && s.show_in_menu_bar);
+        assert_eq!(s.notes_language, NotesLanguage::Meeting);
+        assert_eq!(s.detect_apps.len(), DETECT_APPS.len());
+        assert!(s.echo_cancellation && !s.app_audio_only);
+        assert!(!s.cloud_offered, "cloud is off until the user offers it");
+        let s = from_stored(Some(serde_json::json!({
+            "notesLanguage": "vi", "detectApps": ["zoom"], "appAudioOnly": true
+        })));
+        assert_eq!(s.notes_language, NotesLanguage::Vi);
+        assert_eq!(s.detect_apps, vec!["zoom".to_string()]);
+        assert!(s.app_audio_only);
+        assert_eq!(
+            known_detect_apps(vec![
+                "meet".into(),
+                "nope".into(),
+                "zoom".into(),
+                "zoom".into()
+            ]),
+            vec!["zoom".to_string(), "meet".to_string()]
+        );
+    }
+
+    #[test]
+    fn existing_cloud_users_keep_cloud_on_others_start_off() {
+        let old = serde_json::json!({ "onboardingDone": true });
+        let mut with_key = old.clone();
+        assert!(migrate_cloud_offered(&mut with_key, || true));
+        assert!(from_stored(Some(with_key)).cloud_offered);
+        let mut no_key = old;
+        assert!(migrate_cloud_offered(&mut no_key, || false));
+        assert!(!from_stored(Some(no_key)).cloud_offered);
+        // Already decided: the key is not even looked for.
+        let mut set = serde_json::json!({ "cloudOffered": false });
+        assert!(!migrate_cloud_offered(&mut set, || panic!(
+            "no keychain read"
+        )));
+        assert!(!from_stored(Some(set)).cloud_offered);
+    }
+
+    #[test]
+    fn a_patch_sets_only_what_it_names_and_cleans_the_app_list() {
+        let cur = AppSettings::default();
+        let got = apply_patch(
+            &cur,
+            SettingsPatch {
+                detect_apps: Some(vec!["meet".into(), "nope".into(), "zoom".into()]),
+                notes_language: Some(NotesLanguage::Vi),
+                audio_retention_days: Some(99_999),
+                ..SettingsPatch::default()
+            },
+        );
+        assert_eq!(got.detect_apps, ["zoom", "meet"]);
+        assert_eq!(got.notes_language, NotesLanguage::Vi);
+        assert_eq!(got.audio_retention_days, 3650);
+        assert_eq!(
+            AppSettings {
+                detect_apps: cur.detect_apps.clone(),
+                notes_language: cur.notes_language,
+                audio_retention_days: cur.audio_retention_days,
+                ..got
+            },
+            cur,
+            "everything else is as it was"
+        );
+        // Not named: kept.
+        assert_eq!(
+            apply_patch(&cur, SettingsPatch::default()).detect_apps,
+            cur.detect_apps
+        );
+    }
+
+    #[test]
+    fn cloud_commands_refuse_until_cloud_is_offered() {
+        let off = AppSettings::default();
+        assert_eq!(cloud_allowed(&off), Err("cloudOff".to_string()));
+        let on = AppSettings {
+            cloud_offered: true,
+            ..off
+        };
+        assert_eq!(cloud_allowed(&on), Ok(()));
     }
 
     #[test]

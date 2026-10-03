@@ -66,7 +66,7 @@ describe("Ask across meetings", () => {
     expect(await screen.findByText("Beta ships in November.")).toBeTruthy();
     expect(screen.getByText(/qwen3-4b · 2 meetings read/)).toBeTruthy();
     expect(screen.queryByTestId("ask-keyword-only")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Open Product sync at 1:05" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Product sync at 01:05" }));
     expect(navigate).toHaveBeenCalledWith({ to: "/meetings/$id/$tab", params: { id: "m1", tab: "transcript" }, search: { t: 65_000 } });
   });
 
@@ -133,7 +133,7 @@ describe("Ask across meetings", () => {
     ask("Q?");
     await screen.findByText("Beta ships in November.");
     const [missing, noTime] = screen.getAllByTestId("ask-chip");
-    expect(missing!.getAttribute("aria-label")).toMatch(/^Open Product sync at 1:05 · /);
+    expect(missing!.getAttribute("aria-label")).toMatch(/^Open Product sync at 01:05 · /);
     expect(missing!.title).not.toBe("");
     expect(noTime!.getAttribute("aria-label")).toBe("Open Standup");
     fireEvent.click(missing!);

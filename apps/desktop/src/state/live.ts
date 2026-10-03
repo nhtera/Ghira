@@ -190,6 +190,10 @@ export function reduce(s: LiveState, env: CoreEvent): LiveState {
       return { ...s, capture: { ...s.capture, bluetoothHfp: e.bluetoothHfp }, seq };
     case "jobProgress":
     case "notesReady":
+    // Shown by the system banners, not the live state.
+    case "appAudioFallback":
+    case "captureRecovered":
+    case "captureRetryFailed":
       return { ...s, seq };
   }
 }

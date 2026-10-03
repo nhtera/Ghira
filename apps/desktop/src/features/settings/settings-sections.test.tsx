@@ -8,6 +8,7 @@ import { AiSection } from "./ai-section";
 import { LanguagesSection } from "./languages-section";
 import { LicensesList } from "./licenses-list";
 import { PrivacySection } from "./privacy-section";
+import { RecordingSection } from "./recording-section";
 import { renderSettings } from "./test-utils";
 
 afterEach(() => {
@@ -159,5 +160,40 @@ describe("licenses list", () => {
     renderSettings(<LicensesList loader={async () => DATA} />);
     await user.click(await screen.findByRole("button", { name: /nvidia\/model/ }));
     expect(screen.getByText("https://example.org/m")).toBeTruthy();
+  });
+});
+
+describe("detect apps", () => {
+  it("toggles an app chip and saves the list", async () => {
+    const user = userEvent.setup();
+    const update = vi.spyOn(ipc.commands, "updateSettings");
+    renderSettings(<RecordingSection />);
+    const chips = await screen.findAllByRole("button", { pressed: false });
+    await user.click(chips[0]!);
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    expect(update.mock.calls[0]![0]).toHaveProperty("detectApps");
+  });
+});
+
+describe("AI mode", () => {
+  it("is a radio group moved with the arrow keys", async () => {
+    const user = userEvent.setup();
+    renderSettings(<AiSection />);
+    const group = await screen.findByRole("radiogroup", { name: /AI mode/i });
+    const [local, cloud] = within(group).getAllByRole("radio");
+    expect(local!.getAttribute("aria-checked")).toBe("true");
+    local!.focus();
+    await user.keyboard("{ArrowDown}");
+    await waitFor(() => expect(cloud!.getAttribute("aria-checked")).toBe("true"));
+    expect(document.activeElement).toBe(cloud);
+  });
+});
+
+describe("detect apps when detection is off", () => {
+  it("shows every chip off", async () => {
+    vi.spyOn(ipc.commands, "getSettings").mockResolvedValue({ status: "ok", data: { ...(await ipc.commands.getSettings().then((r) => (r.status === "ok" ? r.data : ({} as never)))), detectMeetings: false } });
+    renderSettings(<RecordingSection />);
+    await screen.findAllByRole("button", { pressed: false });
+    expect(screen.queryAllByRole("button", { pressed: true })).toHaveLength(0);
   });
 });

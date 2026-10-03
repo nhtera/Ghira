@@ -36,7 +36,7 @@ export function NoteBlock({ kind, text, citations = [], onCite, className }: Not
       </>
     ) : kind === "edited" ? (
       <>
-        <Icon name="bookmark" size={13} />
+        <Icon name="push_pin" size={13} />
         {t("notes.editedKept")}
       </>
     ) : (

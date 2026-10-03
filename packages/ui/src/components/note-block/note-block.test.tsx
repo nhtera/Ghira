@@ -38,7 +38,7 @@ describe("NoteBlock", () => {
   it("citations are chips that report which one was activated", async () => {
     const onCite = vi.fn();
     render(<NoteBlock kind="ai" text="x" citations={[{ timeMs: 65_000 }, { timeMs: 120_000 }]} onCite={onCite} />);
-    await userEvent.click(screen.getByRole("button", { name: "Show in transcript 2:00" }));
+    await userEvent.click(screen.getByRole("button", { name: "Show in transcript 02:00" }));
     expect(onCite).toHaveBeenCalledWith(1, { timeMs: 120_000 });
   });
 });

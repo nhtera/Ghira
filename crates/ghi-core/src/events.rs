@@ -208,6 +208,21 @@ pub enum Event {
         meeting: String,
         track: u8,
     },
+    /// "Only the meeting app's audio" was on but no meeting app was in a call
+    /// when recording started: all system audio is recorded instead.
+    AppAudioFallback {
+        meeting: String,
+    },
+    /// After `retry_capture`: the devices are back (also when nothing had
+    /// been lost).
+    CaptureRecovered {
+        meeting: String,
+    },
+    /// After `retry_capture`: the devices could not be rebuilt.
+    CaptureRetryFailed {
+        meeting: String,
+        message: String,
+    },
     /// The audio route changed; `bluetooth_hfp`: the input is a Bluetooth
     /// headset, whose mic drops the whole link to call quality.
     RouteChanged {

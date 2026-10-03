@@ -62,6 +62,7 @@ fn a_talked_over_live_line_keeps_its_overlap_mark() {
             title: "overlap".into(),
             queue_jobs: false,
             lossless: true,
+            echo_cancellation: true,
         },
         tx,
         None,

@@ -131,3 +131,11 @@ export const DialogOpen: Story = {
     />
   ),
 };
+
+export const DialogCentered: Story = {
+  overlay: true,
+  note: "placement=\"center\": centered on mac too (the crash-recovery dialog).",
+  render: () => (
+    <Dialog open onOpenChange={() => {}} placement="center" title="Closed unexpectedly" description="Your recording was saved." footer={<Button variant="primary">Recover</Button>} />
+  ),
+};

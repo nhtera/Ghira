@@ -58,7 +58,7 @@ describe("SpeakerLanes", () => {
     expect(document.activeElement).toBe(slider);
     await userEvent.keyboard("{ArrowRight}{ArrowRight}");
     expect(onSeek).toHaveBeenLastCalledWith(10_000);
-    expect(slider.getAttribute("aria-valuetext")).toBe("0:10");
+    expect(slider.getAttribute("aria-valuetext")).toBe("00:10");
     await userEvent.keyboard("{Shift>}{ArrowRight}{/Shift}");
     expect(onSeek).toHaveBeenLastCalledWith(40_000);
     await userEvent.keyboard("{Home}");
@@ -72,7 +72,7 @@ describe("SpeakerLanes", () => {
     const slider = screen.getByRole("slider");
     slider.getBoundingClientRect = () => ({ left: 0, width: 200, top: 0, right: 200, bottom: 10, height: 10, x: 0, y: 0, toJSON: () => ({}) });
     fireEvent.pointerMove(slider, { clientX: 100 });
-    expect(container.textContent).toContain("0:30");
+    expect(container.textContent).toContain("00:30");
     fireEvent.pointerLeave(slider);
     expect(container.querySelector("[data-marker]")).toBeNull();
   });

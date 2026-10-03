@@ -55,6 +55,8 @@ pub struct MeetingRow {
     /// The first TL;DR line of the notes (the row's second line); `None`
     /// while the meeting has no notes.
     pub summary: Option<String>,
+    /// Speakers still without a name (not Me, not "not a person").
+    pub unnamed_voices: u32,
 }
 
 /// A tag on a meeting row.
@@ -72,6 +74,8 @@ pub struct PersonChip {
     pub name: String,
     /// Palette slot 1..8 (0: Others).
     pub color_slot: u32,
+    /// The user ("Me"): shown as "Me" in the app's language, whatever `name`.
+    pub is_me: bool,
 }
 
 const JOB_KINDS: [&str; 3] = [
@@ -151,20 +155,25 @@ fn rows_of(
 ) -> Result<Vec<MeetingRow>, String> {
     let mut active = active_jobs(core, store)?;
     let gids: Vec<String> = meetings.iter().map(|m| m.gid.clone()).collect();
-    let mut people = store.named_speakers(&gids).map_err(|e| e.to_string())?;
+    let mut people = store.speaker_chips(&gids).map_err(|e| e.to_string())?;
     let mut tags = store.meeting_tags(&gids).map_err(|e| e.to_string())?;
     let mut summaries = store.first_tldrs(&gids).map_err(|e| e.to_string())?;
+    let mut unnamed = store
+        .unnamed_voice_counts(&gids)
+        .map_err(|e| e.to_string())?;
     Ok(meetings
         .into_iter()
         .map(|m| MeetingRow {
             summary: summaries.remove(&m.gid).and_then(|b| summary_of(&b)),
+            unnamed_voices: unnamed.remove(&m.gid).unwrap_or(0),
             people: people
                 .remove(&m.gid)
                 .unwrap_or_default()
                 .into_iter()
-                .map(|(name, slot)| PersonChip {
+                .map(|(name, slot, is_me)| PersonChip {
                     name,
                     color_slot: slot.clamp(0, 8) as u32,
+                    is_me,
                 })
                 .collect(),
             template: m.template,

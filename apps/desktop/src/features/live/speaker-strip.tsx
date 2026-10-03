@@ -48,6 +48,8 @@ export function SpeakerStrip({ defaultOpen = false }: { defaultOpen?: boolean })
   const speakers = useLive((s) => s.speakers);
   const lines = useLive((s) => s.lines);
   const recording = useLive((s) => s.state === "recording");
+  // Without speech models nobody is identified: the banner says why, the strip stays bare.
+  const recordOnly = useLive((s) => s.recordOnly);
   const labelOf = useSpeakerLabel();
   const [open, setOpen] = useState(defaultOpen);
   const list = useMemo(() => Object.values(speakers).filter((s) => !s.notPerson).sort((a, b) => a.id - b.id), [speakers]);
@@ -80,7 +82,7 @@ export function SpeakerStrip({ defaultOpen = false }: { defaultOpen?: boolean })
               <OthersChip voices={others} labelOf={labelOf} />
             </li>
           )}
-          {list.length === 0 && <li className="text-[13px] text-faint">{t("speakers.empty")}</li>}
+          {list.length === 0 && !recordOnly && <li className="text-[13px] text-faint">{t("speakers.empty")}</li>}
         </ul>
         <button type="button" aria-expanded={open} aria-controls="live-lanes" onClick={() => setOpen((o) => !o)} className="mb-px inline-flex h-[30px] flex-none items-center gap-1.5 rounded-ctl pr-2 pl-2.5 text-[12.5px] font-medium text-muted hover:bg-sunk">
           <Icon name="view_timeline" size={17} />

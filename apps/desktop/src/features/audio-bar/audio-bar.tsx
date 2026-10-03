@@ -14,8 +14,6 @@ import { RATES, usePlayer } from "../../state/player";
 import { carryOut, readTime } from "./playback";
 import { WaveformSlider } from "./waveform";
 
-const SKIP_MS = 15_000;
-
 /** Space plays/pauses unless it would type, or press the focused control. */
 const spaceIsOurs = (e: KeyboardEvent) => {
   if (e.key !== " " || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return false;
@@ -25,9 +23,7 @@ const spaceIsOurs = (e: KeyboardEvent) => {
   return true;
 };
 
-const iconBtn = "grid size-8 shrink-0 place-items-center rounded-full text-ink hover:bg-sunk disabled:opacity-40 disabled:hover:bg-transparent";
-// Its own hover: `cn` doesn't merge classes, so iconBtn's dark hover would win and hide the icon.
-const playBtn = "grid size-8 shrink-0 place-items-center rounded-full bg-accent text-on-accent hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100";
+const playBtn = "grid size-10 shrink-0 place-items-center rounded-full bg-accent text-on-accent hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100";
 
 export function AudioBar({ meeting, detail }: { meeting: string; detail: MeetingDetail }) {
   const { t } = useTranslation();
@@ -118,7 +114,7 @@ export function AudioBar({ meeting, detail }: { meeting: string; detail: Meeting
   const jump = (ms: number) => usePlayer.getState().seek(ms, usePlayer.getState().playing);
 
   return (
-    <div role="group" data-testid="audio-bar" aria-label={t("audio.label")} className="flex min-h-14 items-center gap-2 border-t border-line bg-surface px-4 py-1.5">
+    <div role="group" data-testid="audio-bar" aria-label={t("audio.label")} className="flex min-h-16 items-center gap-3.5 border-t border-line bg-surface px-6 py-1.5">
       <audio
         ref={audio}
         src={src ?? undefined}
@@ -131,13 +127,7 @@ export function AudioBar({ meeting, detail }: { meeting: string; detail: Meeting
         onError={onError}
       />
       <button type="button" data-testid="audio-play" disabled={!usable} onClick={() => usePlayer.getState().toggle()} aria-label={playing ? t("audio.pause") : t("audio.play")} className={playBtn}>
-        <Icon name={playing ? "pause" : "play_arrow"} size={20} />
-      </button>
-      <button type="button" disabled={!usable} onClick={() => jump(usePlayer.getState().currentMs - SKIP_MS)} aria-label={t("audio.back15")} title={t("audio.back15")} className={cn(iconBtn, "w-9 rounded-seg text-[12px] font-semibold")}>
-        {t("audio.back15Short")}
-      </button>
-      <button type="button" disabled={!usable} onClick={() => jump(usePlayer.getState().currentMs + SKIP_MS)} aria-label={t("audio.fwd15")} title={t("audio.fwd15")} className={cn(iconBtn, "w-9 rounded-seg text-[12px] font-semibold")}>
-        {t("audio.fwd15Short")}
+        <Icon name={playing ? "pause_fill" : "play_arrow_fill"} size={24} />
       </button>
       <Time durationMs={durationMs} />
       {error ? (
@@ -145,14 +135,14 @@ export function AudioBar({ meeting, detail }: { meeting: string; detail: Meeting
           {t("audio.error")}
         </p>
       ) : loading || wave.isPending ? (
-        <div data-testid="waveform-loading" role="status" aria-label={t("audio.computing")} className="h-11 flex-1 animate-pulse rounded-seg bg-sunk motion-reduce:animate-none" />
+        <div data-testid="waveform-loading" role="status" aria-label={t("audio.computing")} className="h-[38px] flex-1 animate-pulse rounded-seg bg-sunk motion-reduce:animate-none" />
       ) : (
         <WaveformSlider data={wave.data} segments={segments} speakers={detail.speakers} durationMs={durationMs} seekTo={jump} />
       )}
       <Menu
         label={t("audio.speed")}
         trigger={
-          <button type="button" disabled={!usable} aria-label={t("audio.speedNow", { rate })} className="h-8 min-w-12 shrink-0 rounded-seg border border-ctl px-2 text-[12.5px] font-semibold hover:bg-sunk disabled:opacity-40">
+          <button type="button" disabled={!usable} aria-label={t("audio.speedNow", { rate })} className="text-mono h-[30px] min-w-11 shrink-0 rounded-ctl border border-ctl bg-surface px-2 text-[12px] hover:bg-sunk disabled:opacity-40">
             {`${rate}×`}
           </button>
         }
@@ -163,7 +153,7 @@ export function AudioBar({ meeting, detail }: { meeting: string; detail: Meeting
         aria-pressed={skipSilence}
         disabled={!usable}
         onClick={() => usePlayer.getState().setSkipSilence(!skipSilence)}
-        className={cn("inline-flex h-8 shrink-0 items-center gap-1 rounded-seg border px-2 text-[12.5px] disabled:opacity-40", skipSilence ? "border-accent bg-accent-soft text-ink" : "border-ctl hover:bg-sunk")}
+        className={cn("inline-flex h-[30px] shrink-0 items-center gap-1 rounded-ctl border border-ctl px-2.5 text-[12px] font-medium disabled:opacity-40", skipSilence ? "bg-accent-soft text-accent" : "text-muted hover:bg-sunk")}
       >
         <Icon name="fast_forward" size={16} />
         <span className="max-[1100px]:sr-only">{t("detail.skipSilence")}</span>
@@ -176,8 +166,8 @@ export function AudioBar({ meeting, detail }: { meeting: string; detail: Meeting
 function Time({ durationMs }: { durationMs: number }) {
   const ms = usePlayer((s) => s.currentMs);
   return (
-    <span className="text-mono shrink-0 text-[12px] text-muted tabular-nums" aria-hidden="true">
-      {`${formatClock(ms)} / ${formatClock(durationMs)}`}
+    <span className="text-mono min-w-[92px] shrink-0 text-[12px] whitespace-nowrap text-muted tabular-nums" aria-hidden="true">
+      {`${formatClock(ms, { pad: true })} / ${formatClock(durationMs, { pad: true })}`}
     </span>
   );
 }

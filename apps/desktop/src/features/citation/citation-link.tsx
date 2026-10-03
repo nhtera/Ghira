@@ -144,7 +144,7 @@ export function CitationLink({
             )}
             {citation.t0Ms != null && (
               <span className="text-mono ml-auto">
-                {formatClock(citation.t0Ms)}
+                {formatClock(citation.t0Ms, { pad: true })}
               </span>
             )}
           </div>
@@ -161,7 +161,7 @@ export function CitationLink({
               onClick={play}
               className="self-start"
             >
-              {t("detail.playFrom", { time: formatClock(citation.t0Ms ?? 0) })}
+              {t("detail.playFrom", { time: formatClock(citation.t0Ms ?? 0, { pad: true }) })}
             </Button>
           )}
         </div>

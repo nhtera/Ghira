@@ -49,6 +49,7 @@ pub enum App {
     Slack,
     Discord,
     Zalo,
+    FaceTime,
     Chrome,
     Edge,
     Safari,
@@ -67,6 +68,7 @@ const TABLE: &[(App, &[&str])] = &[
     (App::Slack, &["com.tinyspeck.slackmacgap"]),
     (App::Discord, &["com.hnc.Discord"]),
     (App::Zalo, &["com.vng.zalo"]),
+    (App::FaceTime, &["com.apple.FaceTime"]),
     (App::Chrome, &["com.google.Chrome"]),
     (App::Edge, &["com.microsoft.edgemac"]),
     (App::Safari, &["com.apple.Safari"]),
@@ -92,12 +94,29 @@ impl App {
             App::Slack => "slack",
             App::Discord => "discord",
             App::Zalo => "zalo",
+            App::FaceTime => "facetime",
             App::Chrome => "chrome",
             App::Edge => "edge",
             App::Safari => "safari",
             App::Arc => "arc",
             App::Firefox => "firefox",
             App::Brave => "brave",
+        }
+    }
+
+    /// The id of this app in the settings' "detect in these apps" list
+    /// (`zoom`, `teams`, `meet` for every browser, …); `None` for apps the
+    /// list does not offer (always detected).
+    pub const fn setting_key(self) -> Option<&'static str> {
+        match self {
+            App::Zoom => Some("zoom"),
+            App::Teams => Some("teams"),
+            App::Webex => Some("webex"),
+            App::Slack => Some("slack"),
+            App::Zalo => Some("zalo"),
+            App::FaceTime => Some("facetime"),
+            App::Discord => None,
+            _ => Some("meet"),
         }
     }
 
@@ -113,6 +132,7 @@ impl App {
             App::Slack => "Slack",
             App::Discord => "Discord",
             App::Zalo => "Zalo",
+            App::FaceTime => "FaceTime",
             App::Chrome => "Google Chrome",
             App::Edge => "Microsoft Edge",
             App::Safari => "Safari",
@@ -131,6 +151,7 @@ impl App {
             App::Slack => "Slack call detected",
             App::Discord => "Discord call detected",
             App::Zalo => "Zalo call detected",
+            App::FaceTime => "FaceTime call detected",
             _ => "Browser call detected",
         }
     }
@@ -151,6 +172,38 @@ fn has_bundle_prefix(id: &str, prefix: &str) -> bool {
     id.len() >= prefix.len()
         && id[..prefix.len()].eq_ignore_ascii_case(prefix)
         && (id.len() == prefix.len() || id[prefix.len()] == b'.')
+}
+
+/// Every process of the meeting app that has the mic running right now (the
+/// first by prompt priority; `only` as in [`Detector::set_only`]), sorted:
+/// the include list for a per-app system-audio tap. Empty when no meeting app
+/// is in a call (the caller then captures the whole system).
+pub fn meeting_app_pids(
+    processes: &[AudioProcess],
+    only: Option<&[String]>,
+    own_pid: i32,
+) -> Vec<i32> {
+    let mut by_app: BTreeMap<App, (bool, Vec<i32>)> = BTreeMap::new();
+    for p in processes.iter().filter(|p| p.pid != own_pid) {
+        let Some(app) = App::from_bundle_id(&p.bundle_id) else {
+            continue;
+        };
+        if let (Some(only), Some(k)) = (only, app.setting_key())
+            && !only.iter().any(|o| o == k)
+        {
+            continue;
+        }
+        let e = by_app.entry(app).or_default();
+        e.0 |= p.input;
+        e.1.push(p.pid);
+    }
+    let mut pids = by_app
+        .into_values()
+        .find(|(mic, _)| *mic)
+        .map(|(_, pids)| pids)
+        .unwrap_or_default();
+    pids.sort_unstable();
+    pids
 }
 
 /// What to show the user.
@@ -203,6 +256,9 @@ pub struct Detector {
     in_call: BTreeSet<App>,
     /// Consecutive polls each app has had the mic running.
     streak: BTreeMap<App, u32>,
+    /// Settings keys of the apps to detect (see [`App::setting_key`]); `None`
+    /// detects every app.
+    only: Option<BTreeSet<String>>,
 }
 
 fn unix(t: SystemTime) -> u64 {
@@ -218,6 +274,19 @@ impl Detector {
             state,
             in_call: BTreeSet::new(),
             streak: BTreeMap::new(),
+            only: None,
+        }
+    }
+
+    /// Detects only the apps whose settings key is listed (`None`: all).
+    pub fn set_only(&mut self, keys: Option<&[String]>) {
+        self.only = keys.map(|k| k.iter().cloned().collect());
+    }
+
+    fn wanted(&self, app: App) -> bool {
+        match (&self.only, app.setting_key()) {
+            (Some(only), Some(k)) => only.contains(k),
+            _ => true,
         }
     }
 
@@ -259,7 +328,9 @@ impl Detector {
             if p.pid == self.cfg.own_pid {
                 continue;
             }
-            if let Some(app) = App::from_bundle_id(&p.bundle_id) {
+            if let Some(app) = App::from_bundle_id(&p.bundle_id)
+                && self.wanted(app)
+            {
                 active.entry(app).or_default().push(p.pid);
                 if p.input {
                     mic_on.insert(app);
@@ -553,6 +624,45 @@ mod tests {
         // Old or partial state files still load.
         let empty: DetectState = serde_json::from_str("{}").unwrap();
         assert_eq!(empty, DetectState::default());
+    }
+
+    #[test]
+    fn only_the_chosen_apps_are_detected() {
+        let mut d = det();
+        d.set_only(Some(&["teams".to_string(), "meet".to_string()]));
+        let zoom = [proc(1, "us.zoom.xos", true)];
+        for i in 0..4 {
+            assert_eq!(d.poll(&zoom, t(i)), None, "zoom is not chosen");
+        }
+        let chrome = [proc(2, "com.google.Chrome", true)];
+        d.poll(&chrome, t(10));
+        assert_eq!(d.poll(&chrome, t(11)).map(|p| p.app), Some(App::Chrome));
+        // Not offered in the list: always detected. FaceTime is offered.
+        assert_eq!(
+            App::from_bundle_id("com.apple.FaceTime"),
+            Some(App::FaceTime)
+        );
+        assert_eq!(App::Discord.setting_key(), None);
+        d.set_only(None);
+        d.poll(&zoom, t(2000));
+        assert_eq!(d.poll(&zoom, t(2001)).map(|p| p.app), Some(App::Zoom));
+    }
+
+    #[test]
+    fn the_tap_targets_the_app_in_a_call() {
+        let ps = [
+            proc(10, "us.zoom.xos", true),
+            proc(11, "us.zoom.xos.helper", false),
+            proc(20, "com.spotify.client", false),
+            proc(30, "com.google.Chrome", false),
+        ];
+        assert_eq!(meeting_app_pids(&ps, None, 999), vec![10, 11]);
+        // A browser that only plays audio is not a call.
+        assert!(meeting_app_pids(&ps[2..], None, 999).is_empty());
+        // Zoom not chosen: nothing to tap.
+        assert!(meeting_app_pids(&ps, Some(&["meet".to_string()]), 999).is_empty());
+        // Our own process is never a target.
+        assert!(meeting_app_pids(&ps, None, 10).is_empty());
     }
 
     #[test]

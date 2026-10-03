@@ -349,6 +349,11 @@ impl FinalPassJob {
                         embedder.as_mut(),
                         &segs,
                         &|| ctx.preempted(),
+                        store
+                            .expected_speakers(&meeting)
+                            .ok()
+                            .flatten()
+                            .map(|n| n as usize),
                     ) {
                         Ok(Some(better)) => segs = better,
                         Ok(None) => {}

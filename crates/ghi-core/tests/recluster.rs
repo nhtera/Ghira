@@ -220,6 +220,25 @@ fn the_threshold_reaches_the_clustering() {
 }
 
 #[test]
+fn the_users_speaker_count_sets_the_cluster_count() {
+    let (pcm, _) = twelve();
+    let d = recluster::analyse(&pcm, &engines(), &mut FakeVoice, &no_stop)
+        .unwrap()
+        .unwrap();
+    let keep_small = Params {
+        min_cluster_s: 0.0,
+        ..P
+    };
+    let n = |t| d.assign_to(keep_small, t, &no_stop).unwrap().1;
+    assert_eq!(n(None), 12);
+    // Told ten people spoke: merged past the threshold down to ten.
+    assert_eq!(n(Some(10)), 10);
+    // A count above what the threshold gives changes nothing (a cap).
+    assert_eq!(n(Some(20)), 12);
+    assert!(n(Some(0)) >= 8, "one window's voices never merge");
+}
+
+#[test]
 fn eight_or_fewer_voices_keep_the_capped_result() {
     let (pcm, _) = talk(&(0..8).cycle().take(24).map(|i| 3 + i).collect::<Vec<_>>());
     let e = engines();
@@ -317,11 +336,11 @@ fn a_finished_analysis_wipes_on_drop() {
 fn run_is_the_gated_run_with() {
     let (pcm, _) = twelve();
     let e = engines();
-    let out = recluster::run(&pcm, &e, &mut FakeVoice, &saturated(8), &no_stop).unwrap();
+    let out = recluster::run(&pcm, &e, &mut FakeVoice, &saturated(8), &no_stop, None).unwrap();
     assert_eq!(out.is_some(), recluster::ENABLED);
     let before = e.windows.load(Ordering::SeqCst);
     assert!(
-        recluster::run(&pcm, &e, &mut FakeVoice, &saturated(3), &no_stop)
+        recluster::run(&pcm, &e, &mut FakeVoice, &saturated(3), &no_stop, None)
             .unwrap()
             .is_none()
     );

@@ -109,7 +109,7 @@ function Line({ line, onUpdate, onRemove }: { line: NoteLine; onUpdate: (text: s
           ))}
         </p>
       )}
-      {line.tMs != null && <span className="pt-1.5 text-mono text-[11px] text-muted opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">{formatClock(line.tMs)}</span>}
+      {line.tMs != null && <span className="pt-1.5 text-mono text-[11px] text-muted opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">{formatClock(line.tMs, { pad: true })}</span>}
       {!editing && (
         <span className="flex pt-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
           <button type="button" onClick={() => setEditing(true)} aria-label={t("speakers.line.edit")} className="grid size-6 place-items-center rounded-seg text-muted hover:bg-sunk hover:text-ink">

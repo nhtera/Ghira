@@ -139,6 +139,25 @@ export function LiveBanners() {
   );
 }
 
+/** True after the core fell back to all system audio (no meeting app found) for the current meeting, until dismissed. */
+function useAppAudioFallback() {
+  const [meeting, setMeeting] = useState<string | null>(null);
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let gone = false;
+    void ipc
+      .onCoreEvent((env) => {
+        if (env.event.type === "appAudioFallback") setMeeting(env.event.meeting);
+      })
+      .then((u) => (gone ? u() : (off = u)));
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, []);
+  return { shown: meeting != null, dismiss: () => setMeeting(null) };
+}
+
 /** Capture conditions as full-width strips under the title bar. */
 export function LiveSystemBanners() {
   const { t, i18n } = useTranslation();
@@ -146,6 +165,10 @@ export function LiveSystemBanners() {
   const navigate = useNavigate();
   const { show } = useToast();
   const s = useLive(useShallow((x) => ({ state: x.state, ...x.capture })));
+  // Dismissed at this much free space: it comes back if the space keeps falling (by another quarter).
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const diskDismissed = dismissedAt != null && s.diskLowBytes != null && s.diskLowBytes >= dismissedAt * 0.75;
+  const fallback = useAppAudioFallback();
   const lost = (track: number) => s.lostTracks.includes(track);
   const openAudioSettings = async () => {
     const r = await ipc.commands.openPrivacySettings("systemAudio");
@@ -161,6 +184,11 @@ export function LiveSystemBanners() {
       {s.asleep && (
         <SystemBanner id="asleep" icon="schedule">
           {t("live.banner.asleep")}
+        </SystemBanner>
+      )}
+      {fallback.shown && (
+        <SystemBanner id="app-audio-fallback" tone="info" icon="info" onDismiss={fallback.dismiss}>
+          {t("live.banner.appAudioFallback")}
         </SystemBanner>
       )}
       {s.systemSilent && (
@@ -182,7 +210,15 @@ export function LiveSystemBanners() {
         </SystemBanner>
       )}
       {lost(1) && (
-        <SystemBanner id="system-lost" icon="volume_off">
+        <SystemBanner
+          id="system-lost"
+          icon="volume_off"
+          actions={
+            <Button size="sm" variant="ghost" className={BANNER_ACTION} onClick={() => void openAudioSettings()}>
+              {t(`common.openSystemSettings_${platform}`)}
+            </Button>
+          }
+        >
           {t("live.banner.systemLost")}
         </SystemBanner>
       )}
@@ -191,8 +227,9 @@ export function LiveSystemBanners() {
           {t("live.banner.diskFull")}
         </SystemBanner>
       ) : (
-        s.diskLowBytes != null && (
-          <SystemBanner id="disk-low" icon="hard_drive" actions={manage}>
+        s.diskLowBytes != null &&
+        !diskDismissed && (
+          <SystemBanner id="disk-low" icon="hard_drive" actions={manage} onDismiss={() => setDismissedAt(s.diskLowBytes)}>
             {t("system.diskLow", { free: formatBytes(s.diskLowBytes, i18n.language), minutes: minutesLeft(s.diskLowBytes) })}
           </SystemBanner>
         )

@@ -124,6 +124,32 @@ pub fn sync_record_shortcut(app: &AppHandle) {
     }
 }
 
+/// Whether the icon should show: the setting, but always while a recording
+/// runs (the icon is the recording indicator). Settings are read even while
+/// the app is locked.
+fn icon_visible(show_setting: bool, recording: bool) -> bool {
+    show_setting || recording
+}
+
+/// What `sync_visibility` last applied (0 hidden, 1 shown, 2 not yet).
+static VISIBLE: AtomicU8 = AtomicU8::new(2);
+
+/// Shows or hides the menu-bar / tray icon as the setting says (and the
+/// recording needs). Cheap enough to run every second.
+pub fn sync_visibility(app: &AppHandle) {
+    let core = app.state::<Arc<Core>>();
+    let Ok(s) = crate::system::load_settings_even_locked(&core) else {
+        return;
+    };
+    let show = icon_visible(s.show_in_menu_bar, core.recording());
+    if VISIBLE.swap(show as u8, Ordering::AcqRel) == show as u8 {
+        return;
+    }
+    if let Some(t) = app.tray_by_id(TRAY) {
+        let _ = t.set_visible(show);
+    }
+}
+
 fn clock(ms: i64) -> String {
     let s = ms.max(0) / 1000;
     if s >= 3600 {
@@ -173,6 +199,11 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .spawn(move || {
             let core = handle.state::<Arc<Core>>().inner().clone();
             // ⌘⇧R once the store (and so the settings) can be read.
+            // The login item and the icon are not content: also when locked.
+            if core.store_even_locked().is_ok() {
+                sync_visibility(&handle);
+                crate::login_item::sync(&handle);
+            }
             if core.store().is_ok() {
                 sync_record_shortcut(&handle);
             }
@@ -180,6 +211,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             loop {
                 std::thread::sleep(Duration::from_secs(1));
                 tick = tick.wrapping_add(1);
+                sync_visibility(&handle);
                 let state = STATE.load(Ordering::Acquire);
                 if state == TrayState::Recording as u8 {
                     if let (Ok(ms), Some(t)) =
@@ -249,5 +281,17 @@ pub fn on_event(app: &AppHandle, event: &Event) {
             ..
         } => set_state(app, TrayState::Attention),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod visibility_tests {
+    use super::icon_visible;
+
+    #[test]
+    fn a_recording_keeps_the_icon_even_when_it_is_turned_off() {
+        assert!(icon_visible(true, false));
+        assert!(!icon_visible(false, false));
+        assert!(icon_visible(false, true));
     }
 }

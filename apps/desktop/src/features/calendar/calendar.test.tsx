@@ -237,7 +237,7 @@ describe("Onboarding Calendar row", () => {
     );
     await userEvent
       .setup()
-      .click(await screen.findByRole("button", { name: "Allow…" }));
+      .click(await screen.findByRole("button", { name: /^Allow / }));
     expect(await screen.findByText("Allowed")).toBeTruthy();
   });
 

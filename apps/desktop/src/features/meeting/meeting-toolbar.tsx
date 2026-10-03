@@ -14,10 +14,12 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { MeetingDetail, NotesLanguage } from "../../bindings";
+import type { MeetingDetail } from "../../bindings";
 import { FollowupEmailDialog } from "../email/followup-email-dialog";
 import { ipc } from "../../ipc";
 import { invalidateMeeting, useTemplates } from "../../state/meeting-queries";
+import { useCloudOffered } from "../cloud-sheet/cloud-offered";
+import { useNotesLanguage, type PickedLanguage } from "./notes-language";
 import { DEFAULT_TEMPLATE, templateName } from "./template-names";
 import { inProgress } from "../library/meeting-status";
 
@@ -48,6 +50,7 @@ export function MeetingToolbar({
   const client = useQueryClient();
   const { show } = useToast();
   const templates = useTemplates();
+  const cloudOffered = useCloudOffered();
   const current = detail.template ?? DEFAULT_TEMPLATE;
   const [template, setTemplate] = useState(current);
   const [seenCurrent, setSeenCurrent] = useState(current);
@@ -56,7 +59,8 @@ export function MeetingToolbar({
     setSeenCurrent(current);
     setTemplate(current);
   }
-  const [language, setLanguage] = useState<NotesLanguage>("meeting");
+  const [picked, setPicked] = useState<PickedLanguage | null>(null);
+  const { shown, request: language } = useNotesLanguage(detail, picked);
   const [asking, setAsking] = useState(false);
   const [emailing, setEmailing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -170,26 +174,27 @@ export function MeetingToolbar({
               {t("notes.onlyMine")}
             </button>
           )}
-          {language === "meeting" && <span className="text-[11.5px] text-muted">{t("meeting.lang.meeting")}</span>}
           <div role="group" aria-label={t("common.language")} className="flex gap-0.5 rounded-ctl border border-ctl p-0.5">
             {LANGS.map((l) => (
               <button
                 key={l}
                 type="button"
-                aria-pressed={language === l}
+                aria-pressed={shown === l}
                 title={l === "en" ? t("import.options.languages.english") : t("import.options.languages.vietnamese")}
-                // Pressing the chosen language again goes back to the meeting's own.
-                onClick={() => choose(() => setLanguage(language === l ? "meeting" : l))}
-                className={cn("h-6 rounded-seg px-[9px] text-[12px] font-semibold", language === l ? "bg-accent-soft text-accent" : "text-muted hover:text-ink")}
+                // Any click sets the language explicitly.
+                onClick={() => picked !== l && choose(() => setPicked(l))}
+                className={cn("h-6 rounded-seg px-[9px] text-[12px] font-semibold", shown === l ? "bg-accent-soft text-accent" : "text-muted hover:text-ink")}
               >
                 {l.toUpperCase()}
               </button>
             ))}
           </div>
-          <button type="button" onClick={onImproveWithCloud} className={cn(ctl, "inline-flex items-center gap-[5px] hover:bg-surface2")}>
-            <Icon name="cloud_upload" size={16} />
-            {t("notes.improveWithCloud")}
-          </button>
+          {cloudOffered && (
+            <button type="button" onClick={onImproveWithCloud} className={cn(ctl, "inline-flex items-center gap-[5px] hover:bg-surface2")}>
+              <Icon name="cloud_upload" size={16} />
+              {t("notes.improveWithCloud")}
+            </button>
+          )}
           <Menu
             label={t("common.export")}
             items={exportItems}

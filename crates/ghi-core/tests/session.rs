@@ -68,6 +68,7 @@ fn start(store: &Arc<Store>, events: ghi_core::events::EventTx) -> Session {
             title: "standup".into(),
             queue_jobs: true,
             lossless: true,
+            echo_cancellation: true,
         },
         events,
         None,
@@ -316,6 +317,7 @@ fn a_failed_start_resumes_jobs_and_leaves_no_meeting() {
             title: "x".into(),
             queue_jobs: true,
             lossless: true,
+            echo_cancellation: true,
         },
         tx,
         Some(runner.clone() as Arc<dyn ghi_core::session::RecordingHooks>),
@@ -364,6 +366,7 @@ fn config(mode: Mode) -> SessionConfig {
         title: "t".into(),
         queue_jobs: false,
         lossless: false,
+        echo_cancellation: true,
     }
 }
 
@@ -650,8 +653,16 @@ fn capture_lifecycle_events_reach_the_bus_and_sleep_stops_the_timeline() {
         inject.send(ev).unwrap();
     }
     std::thread::sleep(Duration::from_millis(300));
+    // A retry answers either way (a replay has no devices to rebuild).
+    s.retry_capture();
+    std::thread::sleep(Duration::from_millis(300));
     s.stop().unwrap();
     let seen: Vec<Event> = rx.try_iter().map(|e| e.event).collect();
+    assert!(
+        seen.iter()
+            .any(|e| matches!(e, Event::CaptureRecovered { .. })),
+        "{seen:?}"
+    );
     let m = |f: fn(&Event) -> bool| seen.iter().filter(|e| f(e)).count();
     assert_eq!(m(|e| matches!(e, Event::Slept { .. })), 1);
     assert_eq!(m(|e| matches!(e, Event::Woke { .. })), 1);

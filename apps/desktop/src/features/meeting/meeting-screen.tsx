@@ -5,7 +5,6 @@
 import {
   Button,
   Icon,
-  ProcessingStepper,
   cn,
   usePlatform,
   useToast,
@@ -28,6 +27,8 @@ import { AudioBar } from "../audio-bar/audio-bar";
 import { ExportSheet } from "../export/export-sheet";
 import { NotesTab } from "../notes/notes-tab";
 import { TranscriptTab } from "../transcript/transcript-tab";
+import { useProcessing } from "../processing/processing-store";
+import { MeetingProcessing } from "../processing/meeting-processing";
 import { MeetingHeader } from "./meeting-header";
 import { MeetingToolbar } from "./meeting-toolbar";
 import { inProgress } from "../library/meeting-status";
@@ -54,42 +55,6 @@ function Notice({
       <b className="text-heading">{title}</b>
       {body && <p className="text-body m-0 text-muted">{body}</p>}
       {children}
-    </div>
-  );
-}
-
-/** Notes being written (or waiting for models): the notes so far stay readable below. */
-function ProcessingBanner({ detail }: { detail: MeetingDetail }) {
-  const { t } = useTranslation();
-  const platform = usePlatform();
-  const waiting = detail.job?.waitingForModels;
-  return (
-    <div
-      role="status"
-      className="mx-7 mt-2 flex flex-col gap-2 rounded-panel border border-line2 bg-surface p-4"
-    >
-      <b className="text-body font-semibold">
-        {waiting
-          ? t("meeting.waitingModels")
-          : t("processing.title", { context: platform })}
-      </b>
-      <p className="text-small m-0 text-muted">
-        {waiting ? t("meeting.waitingModelsBody") : t("processing.subtitle")}
-      </p>
-      {!waiting && (
-        <ProcessingStepper
-          steps={[
-            {
-              id: "writingNotes",
-              status: "running",
-              progress:
-                detail.job?.progress == null
-                  ? undefined
-                  : detail.job.progress * 100,
-            },
-          ]}
-        />
-      )}
     </div>
   );
 }
@@ -166,6 +131,8 @@ export function MeetingScreen({
   const [cloudOpen, setCloudOpen] = useState(false);
   const [asking, setAsking] = useState(false);
   const [onlyMine, setOnlyMine] = useState(false);
+  // Notes finished this session: "Name your speakers" stays after the stepper is gone.
+  const finished = useProcessing((s) => s.finished.includes(id));
   useMeetingEvents(id);
 
   const hasAudio =
@@ -246,8 +213,8 @@ export function MeetingScreen({
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <MeetingHeader detail={detail} />
           {detail.status === "failed" && <FailedBanner detail={detail} />}
-          {busy && detail.status !== "failed" && (
-            <ProcessingBanner detail={detail} />
+          {((busy && detail.status !== "failed") || finished) && (
+            <MeetingProcessing meeting={id} waitingForModels={detail.job?.waitingForModels} job={detail.job} />
           )}
           <MeetingToolbar
             detail={detail}

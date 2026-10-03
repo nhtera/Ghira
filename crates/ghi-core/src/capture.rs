@@ -31,8 +31,10 @@ impl std::fmt::Display for CaptureError {
 }
 
 enum Handle {
+    /// Shared so a rebuild can run off the pump thread (see
+    /// [`Capture::restarter`]).
     #[cfg(target_os = "macos")]
-    Mac(ghi_audio::macos::MacCapture),
+    Mac(Arc<std::sync::Mutex<ghi_audio::macos::MacCapture>>),
     Replay {
         stop: Arc<AtomicBool>,
         thread: Option<JoinHandle<()>>,
@@ -72,6 +74,27 @@ impl Capture {
             let _ = tx.send(ev);
         }
         tx
+    }
+
+    /// A job that rebuilds the devices after a track was lost (the mic taken
+    /// by another app, a device that went away); the same rings keep feeding
+    /// the session. It blocks while the devices come back, so run it off the
+    /// pump thread. `None` when this is not live capture (nothing to rebuild).
+    #[allow(clippy::type_complexity)]
+    pub fn restarter(&self) -> Option<Box<dyn FnOnce() -> Result<(), CaptureError> + Send>> {
+        match &self.handle {
+            #[cfg(target_os = "macos")]
+            Some(Handle::Mac(c)) => {
+                let c = c.clone();
+                Some(Box::new(move || {
+                    c.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .resume()
+                        .map_err(|e| CaptureError::Unavailable(e.to_string()))
+                }))
+            }
+            _ => None,
+        }
     }
 
     /// Stops the source (rings get no more audio).
@@ -223,7 +246,9 @@ pub fn live(system: bool, tap_pids: &[i32]) -> Result<Capture, CaptureError> {
         events: started.events,
         route,
         kind: "capture",
-        handle: Some(Handle::Mac(started.capture)),
+        handle: Some(Handle::Mac(Arc::new(std::sync::Mutex::new(
+            started.capture,
+        )))),
     })
 }
 

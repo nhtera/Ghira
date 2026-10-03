@@ -36,13 +36,18 @@ export const importableFiles = (u: Unit) => u.files.filter(isImportable);
 /** Error codes the core's multi-track import returns (words in `import.errors.*`). */
 export const IMPORT_ERROR_CODES = ["tooManyTracks", "noTracks", "trackMissing", "trackUnreadable", "tooLong"] as const;
 
-export type Language = "auto" | "en" | "vi";
+/** `both`: a mixed English/Vietnamese meeting; the engines detect per phrase, as for `auto`. */
+export type Language = "auto" | "en" | "vi" | "both";
 
-export function importChoice(language: Language, splitChannels: boolean, files: readonly StagedFile[]): ImportChoice {
+/** The expected speaker count: `null` lets the diarizer decide; 5 means "5 or more". */
+export type ExpectedSpeakers = number | null;
+
+export function importChoice(language: Language, splitChannels: boolean, files: readonly StagedFile[], expectedSpeakers: ExpectedSpeakers = null): ImportChoice {
   // "Split channels" only means something when a file has two channels.
   return {
-    language: language === "auto" ? null : language,
+    language: language === "auto" || language === "both" ? null : language,
     splitChannels: splitChannels && files.some((f) => f.channels >= 2),
+    expectedSpeakers,
   };
 }
 

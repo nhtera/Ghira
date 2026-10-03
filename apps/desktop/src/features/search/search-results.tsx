@@ -63,6 +63,7 @@ const rowOfGroup = (g: HitGroup): MeetingRow => ({
   folder: null,
   tags: [],
   sourceApp: null,
+  unnamedVoices: 0,
   summary: null,
 });
 

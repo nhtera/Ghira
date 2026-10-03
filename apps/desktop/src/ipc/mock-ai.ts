@@ -150,10 +150,22 @@ type AiCommands = Pick<
   | "exportEverything"
   | "deleteAllData"
   | "draftFollowupEmail"
+  | "meetingContacts"
+  | "openMailDraft"
 >;
 
 /** Meetings marked "never send to cloud" on the mock. */
 export const lockedMeetings = new Set<string>();
+
+/** A few lines of the transcript before and after redaction, preferring the lines redaction changed. */
+function excerpt(raw: string, redacted: string): { excerptBefore: string | null; excerptAfter: string | null } {
+  const a = raw.split("\n");
+  const b = redacted.split("\n");
+  const changed = a.flatMap((line, i) => (line !== b[i] ? [i] : []));
+  const pick = (changed.length ? changed : a.map((_, i) => i)).slice(0, 4);
+  if (!raw) return { excerptBefore: null, excerptAfter: null };
+  return { excerptBefore: pick.map((i) => a[i]).join("\n"), excerptAfter: pick.map((i) => b[i]).join("\n") };
+}
 
 export function aiCommands(host: AiHost): AiCommands {
   const row = (m: string) => host.rows.find((r) => r.gid === m);
@@ -176,7 +188,8 @@ export function aiCommands(host: AiHost): AiCommands {
       if (lockedMeetings.has(meeting)) return fail("cloud AI is off for this meeting");
       const t = host.transcript(meeting);
       const names = ask.redact ? [...host.names(meeting), ...ask.extraNames] : [];
-      let text = (t?.segments ?? []).map((s) => s.text).join("\n");
+      const raw = (t?.segments ?? []).map((s) => s.text).join("\n");
+      let text = raw;
       names.forEach((n, i) => (text = text.split(n).join(`[PERSON_${i + 1}]`)));
       const question = ask.task.kind === "ask" ? ask.task.question : null;
       if (question != null) {
@@ -199,6 +212,7 @@ export function aiCommands(host: AiHost): AiCommands {
         retentionNote: "The provider may keep requests for up to 30 days for abuse monitoring.",
         warnings: [],
         redactions: names.length ? [{ kind: "person", count: names.length }] : [],
+        ...excerpt(raw, text),
       };
       return ok({ kind: "preview", ...preview });
     },
@@ -251,6 +265,13 @@ export function aiCommands(host: AiHost): AiCommands {
     },
     exportEverything: (password) => (password.length < 8 ? fail("use at least 8 characters") : ok(`Ghira export ${new Date().toISOString().slice(0, 10)}.ghira`)),
     // Built from the design's sample draft, after a short "writing" pause.
+    meetingContacts: () =>
+      ok([
+        { name: "Linh", email: "linh.tran@studio.vn" },
+        { name: "Minh", email: "minh.nguyen@studio.vn" },
+        { name: "Sarah", email: "sarah@studio.vn" },
+      ]),
+    openMailDraft: (_to, _subject, body) => ok({ truncated: body.length > 2000 }),
     draftFollowupEmail: (meeting, language, tone) => {
       if (refusal()) return fail(refusal()!);
       const r = row(meeting);

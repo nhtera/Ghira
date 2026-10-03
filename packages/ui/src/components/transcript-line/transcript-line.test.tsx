@@ -21,7 +21,7 @@ describe("wordsFromText", () => {
 describe("TranscriptLine", () => {
   it("final: time, speaker name and the text as plain text", () => {
     const { container } = render(<TranscriptLine startMs={572_000} speaker={speaker} words={wordsFromText("Rename thì dễ.")} />);
-    expect(screen.getByText("9:32")).toBeTruthy();
+    expect(screen.getByText("09:32")).toBeTruthy();
     expect(screen.getByText("Minh")).toBeTruthy();
     expect(container.querySelector("p")?.textContent).toBe("Rename thì dễ.");
     expect(container.querySelector("p")?.getAttribute("aria-live")).toBe("off");
@@ -78,7 +78,7 @@ describe("TranscriptLine", () => {
 
   it("marked shows a named star; edited shows its label", () => {
     render(<TranscriptLine startMs={26_000} speaker={speaker} words={wordsFromText("x")} marked edited />);
-    expect(screen.getByRole("img", { name: "Marked 0:26" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Marked 00:26" })).toBeTruthy();
     expect(screen.getByText("Edited")).toBeTruthy();
   });
 
@@ -102,7 +102,7 @@ describe("TranscriptLine", () => {
     render(<TranscriptLine startMs={65_000} speaker={speaker} words={wordsFromText("x")} onEdit={onEdit} onChangeSpeaker={onChange} onPlay={onPlay} />);
     await userEvent.click(screen.getByRole("button", { name: "Edit text" }));
     await userEvent.click(screen.getByRole("button", { name: "Change speaker" }));
-    await userEvent.click(screen.getByRole("button", { name: "Play from 1:05" }));
+    await userEvent.click(screen.getByRole("button", { name: "Play from 01:05" }));
     expect([onEdit, onChange, onPlay].map((f) => f.mock.calls.length)).toEqual([1, 1, 1]);
   });
 });

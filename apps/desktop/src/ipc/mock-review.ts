@@ -391,6 +391,8 @@ type ReviewCommands = Pick<
   | "exportObsidian"
   | "meetingAsText"
   | "revealLastExport"
+  | "exportDestination"
+  | "chooseExportFolder"
   | "pickImportFiles"
   | "stagedFiles"
   | "takeDroppedFiles"
@@ -399,6 +401,9 @@ type ReviewCommands = Pick<
   | "startImport"
   | "cancelImport"
 >;
+
+/** The remembered export folder (its name only). */
+let exportFolder: string | null = "Documents";
 
 export function reviewCommands(host: ReviewHost): ReviewCommands {
   const row = (m: string) => host.rows.find((r) => r.gid === m);
@@ -420,7 +425,7 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         durationMs: sample.durationSeconds * 1000,
         source: r.source,
         mode: r.mode,
-        language: "vi",
+        language: "en",
         template: r.template,
         status: r.status,
         cloudLocked: lockedMeetings.has(r.gid),
@@ -432,6 +437,8 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         // Copies: the voice commands edit the stored speakers in place, and an unchanged reference would hide that from the query cache.
         speakers: d.speakers.map((s) => ({ ...s })),
         job: r.job,
+        notesModel: r.cloudUsed ? null : "Qwen3-8B",
+        sourceApp: r.source === "live" && r.mode === "call" ? "zoom" : null,
       };
       return ok(detail);
     },
@@ -573,6 +580,8 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         return [markdown ? `# ${title}` : title, "", ...lines].join("\n");
       }),
     revealLastExport: () => ok(null),
+    exportDestination: () => ok(exportFolder),
+    chooseExportFolder: () => ok((exportFolder = "Meeting notes")),
     pickImportFiles: () => ok(importGroup() ? stageZoomGroup() : stageSamples()),
     stagedFiles: (ids) => Promise.resolve(ids.map((id) => staged.get(id)).filter((f): f is StagedFile => !!f)),
     takeDroppedFiles: () => {
@@ -635,12 +644,13 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
             cloudUsed: false,
             consentConfirmed: false,
             template: null,
-            people: group ? members.flatMap((m, i) => (m.participant ? [{ name: m.participant, colorSlot: [1, 2, 4, 8][i % 4]! }] : [])) : [],
+            people: group ? members.flatMap((m, i) => (m.participant ? [{ name: m.participant, colorSlot: [1, 2, 4, 8][i % 4]!, isMe: false }] : [])) : [],
             job: { kind: "final_pass", progress: 0, waitingForModels: false },
             folder: null,
             tags: [],
             sourceApp: group ? "zoom" : null,
             summary: null,
+            unnamedVoices: 0,
           });
           emitUpdate({ id, state: "done", meeting, progress: 1, error: null });
           host.process(meeting);

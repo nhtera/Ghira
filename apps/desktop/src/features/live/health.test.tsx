@@ -92,10 +92,34 @@ describe("LiveBanners", () => {
     expect(container.querySelector('[data-banner="disk-low"]')).toBeNull();
   });
 
+  it("shows the all-system-audio fallback once the core reports it, and it can be dismissed", async () => {
+    setLive({ state: "recording" });
+    const { container } = renderLive(<LiveSystemBanners />);
+    expect(container.querySelector('[data-banner="app-audio-fallback"]')).toBeNull();
+    await act(async () => {
+      await Promise.resolve();
+      (window as unknown as { __ghiMock: { simulateCoreEvent: (e: unknown) => void } }).__ghiMock.simulateCoreEvent({ type: "appAudioFallback", meeting: "m1" });
+    });
+    expect(screen.getByText("Recording all system audio. No meeting app was found.")).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(container.querySelector('[data-banner="app-audio-fallback"]')).toBeNull();
+  });
+
   it("shows a low disk with the time left", () => {
     setLive({ state: "recording", capture: cap({ diskLowBytes: 240_000 * 45 }) });
     renderLive(<LiveSystemBanners />);
     expect(screen.getByText(/about 45 minutes/)).toBeTruthy();
+  });
+
+  it("a dismissed low-disk notice returns when the space falls by another quarter", async () => {
+    setLive({ state: "recording", capture: cap({ diskLowBytes: 400_000_000 }) });
+    const { container } = renderLive(<LiveSystemBanners />);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(container.querySelector('[data-banner="disk-low"]')).toBeNull();
+    act(() => setLive({ state: "recording", capture: cap({ diskLowBytes: 350_000_000 }) }));
+    expect(container.querySelector('[data-banner="disk-low"]')).toBeNull();
+    act(() => setLive({ state: "recording", capture: cap({ diskLowBytes: 250_000_000 }) }));
+    expect(container.querySelector('[data-banner="disk-low"]')).not.toBeNull();
   });
 
   it("waits 10 s without levels, then clears when audio flows", () => {

@@ -26,7 +26,7 @@ function Labelled({ label, children }: { label: string; children: ReactNode }) {
 
 export function RecordControlThumb({ state, mode, elapsedMs = 0, onStart, onPause, onResume, onStop, onFix, className }: RecordControlProps) {
   const { t } = useTranslation();
-  const clock = formatClock(elapsedMs);
+  const clock = formatClock(elapsedMs, { pad: true });
 
   if (state === "starting" || state === "stopping") {
     const starting = state === "starting";

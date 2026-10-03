@@ -70,9 +70,13 @@ export function AppShell() {
   }, [platform]);
 
   const state = useLive((s) => s.state);
+  const meeting = useLive((s) => s.meeting);
+  // Stopping lands on the new meeting (its processing banner), not the library.
   useEffect(() => {
-    if (state === "processing") void navigate({ to: "/meetings" });
-  }, [state, navigate]);
+    if (state !== "processing") return;
+    if (meeting) void navigate({ to: "/meetings/$id/$tab", params: { id: meeting, tab: "notes" } });
+    else void navigate({ to: "/meetings" });
+  }, [state, meeting, navigate]);
 
   return (
     <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-surface">

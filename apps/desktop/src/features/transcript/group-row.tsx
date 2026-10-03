@@ -98,7 +98,7 @@ export function OverlapTag({ hint = true }: { hint?: boolean }) {
 
 function MarkTag({ mark }: { mark: MarkView }) {
   const { t } = useTranslation();
-  const time = formatClock(mark.tMs ?? 0);
+  const time = formatClock(mark.tMs ?? 0, { pad: true });
   const text = mark.tag === "decision" || mark.tag === "action" || mark.tag === "question" ? t(`notes.tags.${mark.tag}`) : t("live.markedToast", { time });
   return (
     <span data-testid="mark" className="inline-flex items-center gap-0.5 text-[11px] text-muted">
@@ -111,7 +111,7 @@ function MarkTag({ mark }: { mark: MarkView }) {
 export const GroupRow = memo(function GroupRow({ group, stacked, speaker, others, active, ranges, marks, editing, picking, onEdit, onPick, onSave, onSetSpeaker }: GroupProps) {
   const { t } = useTranslation();
   const first = group.segs[0]!;
-  const time = formatClock(first.t0Ms ?? 0);
+  const time = formatClock(first.t0Ms ?? 0, { pad: true });
   const color = speaker && speaker.colorSlot > 0 ? `var(--s${speaker.colorSlot})` : undefined;
   const inGroup = active >= group.first && active < group.first + group.segs.length;
 
@@ -169,7 +169,7 @@ export const GroupRow = memo(function GroupRow({ group, stacked, speaker, others
                       </button>
                     }
                     items={[
-                      { label: t("detail.playFrom", { time: formatClock(seg.t0Ms ?? 0) }), icon: "play_arrow", onSelect: () => usePlayer.getState().seek(seg.t0Ms ?? 0, true) },
+                      { label: t("detail.playFrom", { time: formatClock(seg.t0Ms ?? 0, { pad: true }) }), icon: "play_arrow", onSelect: () => usePlayer.getState().seek(seg.t0Ms ?? 0, true) },
                       { label: t("speakers.line.edit"), icon: "edit", onSelect: () => onEdit(seg.gid) },
                       { label: t("speakers.line.changeSpeaker"), icon: "person", onSelect: () => onPick(seg.gid) },
                     ]}

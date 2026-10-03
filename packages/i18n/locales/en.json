@@ -139,6 +139,7 @@
       "roomHint": "Switch to Room mode to record everyone through the mic.",
       "micLost": "The microphone was disconnected. Reconnect it to keep recording your voice.",
       "systemLost": "System audio stopped. The other people on the call are not being recorded.",
+      "appAudioFallback": "Recording all system audio. No meeting app was found.",
       "diskFull": "The disk is full. Recording has stopped saving. Free up space now."
     },
     "manyVoices": "More than 8 voices. Extra ones share the Others lane for now; {{app}} tells them apart after the meeting."
@@ -434,7 +435,9 @@
       "hours": "{{hours}} h",
       "hoursMinutes": "{{hours}} h {{minutes}} min"
     },
-    "recordGroup": "Start a recording"
+    "recordGroup": "Start a recording",
+    "unnamedVoices_one": "{{count}} voice without a name",
+    "unnamedVoices_other": "{{count}} voices without a name"
   },
   "tray": {
     "detected": {
@@ -604,7 +607,11 @@
       "checkedInTest": "Checked in the test",
       "notNeeded": "Not needed",
       "systemAudioNote": "macOS doesn’t tell {{app}} whether this is on. The test recording shows it.",
-      "askedLater": "Asked when needed"
+      "askedLater": "Asked when needed",
+      "confirmedInTest": "Confirmed in the test recording",
+      "allowFor": "Allow {{name}}",
+      "openSettingsFor_mac": "Open System Settings for {{name}}",
+      "openSettingsFor_win": "Open Settings for {{name}}"
     },
     "osDialog": {
       "microphone": "“{{app}}” would like to access the microphone.",
@@ -754,7 +761,16 @@
         "lightTier_mac": "This Mac uses Fast mode (8 GB memory).",
         "lightTier_win": "This PC uses Fast mode (8 GB memory)."
       },
-      "copyFor": "Copy {{label}}"
+      "copyFor": "Copy {{label}}",
+      "app": {
+        "zoom": "Zoom",
+        "teams": "Microsoft Teams",
+        "meet": "Google Meet",
+        "slack": "Slack huddles",
+        "zalo": "Zalo",
+        "webex": "Webex",
+        "facetime": "FaceTime"
+      }
     },
     "ai": {
       "local": {
@@ -808,7 +824,8 @@
       "redactDefault": "Hide names and personal data by default",
       "redactDefaultHint": "Names, emails and phone numbers are replaced before sending, then restored here.",
       "alwaysPreview": "{{app}} always shows the exact request before anything is sent.",
-      "perMeeting": "Per meeting"
+      "perMeeting": "Per meeting",
+      "mode": "AI mode"
     },
     "models": {
       "presetTitle": "Speed and quality",
@@ -936,7 +953,8 @@
       "voiceProfilesHint": "Lets your phone name speakers too.",
       "localOnly": "Local network only. Nothing goes through the internet.",
       "soonTitle": "Sync between your devices is coming",
-      "soonBody": "Your meetings stay on this computer for now."
+      "soonBody": "Your meetings stay on this computer for now.",
+      "laterNote": "Phone sync isn’t available yet. These controls are off until then."
     },
     "shortcuts": {
       "startStop": "Start or stop recording",
@@ -1150,7 +1168,13 @@
       "tooShort": "That was too short. Read the whole passage, about 20 seconds.",
       "tooQuiet": "We could barely hear you. Move closer to the microphone and try again."
     },
-    "stopSample": "Stop the sample"
+    "stopSample": "Stop the sample",
+    "peopleCount_one": "{{count}} person",
+    "peopleCount_other": "{{count}} people",
+    "profilesCount_one": "{{count}} voice profile",
+    "profilesCount_other": "{{count}} voice profiles",
+    "summary_mac": "{{people}} · {{profiles}} · encrypted on this Mac",
+    "summary_win": "{{people}} · {{profiles}} · encrypted on this PC"
   },
   "consent": {
     "title": "Save {{name}}’s voice?",
@@ -1231,7 +1255,10 @@
     "reveal_win": "Show in File Explorer",
     "copied": "Copied",
     "copyText": "Copy as text",
-    "toObsidian": "Export to Obsidian…"
+    "toObsidian": "Export to Obsidian…",
+    "saveTo": "Save to:",
+    "askWhere": "You choose where to save each time",
+    "changeDestination": "Change…"
   },
   "email": {
     "title": "Draft follow-up email",
@@ -1254,7 +1281,9 @@
     "rewrite": "Rewrite",
     "writing": "Writing… {{seconds}} s",
     "body": "Message",
-    "notSent": "Nothing is sent from {{app}}. Copy the email into your mail app."
+    "notSent": "Nothing is sent from {{app}}. Copy the email into your mail app.",
+    "truncated": "Your mail app got a shortened message.",
+    "copyFull": "Copy the full email"
   },
   "ask": {
     "subtitle": "Answers come from your meetings and link to the moment something was said.",
@@ -1384,7 +1413,8 @@
       "stereo": "Split stereo channels",
       "stereoHint": "Zoom saves you and the others on separate channels. {{app}} uses that to tell speakers apart.",
       "language": "Language",
-      "stereoSides": "You on the left channel, the others on the right."
+      "stereoSides": "You on the left channel, the others on the right.",
+      "stereoOnly": "Applies to stereo files. None of these has two channels."
     },
     "importFiles_one": "Import {{count}} file",
     "importFiles_other": "Import {{count}} files",

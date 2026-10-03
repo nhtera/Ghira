@@ -28,8 +28,11 @@ export function detectedFromHash(hash: string): MeetingDetected | null {
   };
 }
 
+/** Outside Tauri (the browser, the gallery) the panel shows a sample prompt, as the popover shows sample data. */
+const sampleDetection = (): MeetingDetected | null => (ipc.kind === "mock" ? { app: "zoom", appName: "Zoom", browser: false } : null);
+
 export function DetectPanel({
-  initial = detectedFromHash(window.location.hash),
+  initial = detectedFromHash(window.location.hash) ?? sampleDetection(),
 }: {
   initial?: MeetingDetected | null;
 }) {

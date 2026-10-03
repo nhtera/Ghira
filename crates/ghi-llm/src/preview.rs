@@ -134,6 +134,47 @@ pub fn preview(provider: &CloudProvider, prepared: &Prepared, prices: &Prices) -
     }
 }
 
+/// The text of the user-role messages of a request body (OpenAI and
+/// Anthropic `messages`, Gemini `contents`), joined by newlines: the
+/// transcript part, never the system prompt. An unknown shape gives "".
+/// Mirrors `userText` in the desktop's cloud sheet.
+pub fn user_text(payload: &str) -> String {
+    fn text_of(v: Option<&Value>) -> Option<String> {
+        match v? {
+            Value::String(s) => Some(s.clone()),
+            Value::Array(parts) => Some(
+                parts
+                    .iter()
+                    .filter_map(|p| p.get("text").and_then(Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            _ => None,
+        }
+    }
+    let Ok(v) = serde_json::from_str::<Value>(payload) else {
+        return String::new();
+    };
+    let mut out = Vec::new();
+    if let Some(ms) = v.get("messages").and_then(Value::as_array) {
+        for m in ms {
+            if m.get("role").and_then(Value::as_str) == Some("user") {
+                out.extend(text_of(m.get("content")));
+            }
+        }
+    }
+    if let Some(cs) = v.get("contents").and_then(Value::as_array) {
+        for c in cs {
+            if c.get("role").is_some_and(|r| r.as_str() != Some("user")) {
+                continue;
+            }
+            out.extend(text_of(c.get("parts")));
+        }
+    }
+    out.retain(|t| !t.is_empty());
+    out.join("\n")
+}
+
 /// Every message string of a chat request (OpenAI `messages`, Anthropic
 /// `system` and `messages`), joined: the text that carries transcript content.
 fn message_text(v: &Value) -> String {
@@ -159,6 +200,19 @@ fn retention_note(provider: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn user_text_is_the_user_messages_only() {
+        let openai = r#"{"messages":[{"role":"system","content":"RULES"},{"role":"user","content":"hello"}]}"#;
+        assert_eq!(super::user_text(openai), "hello");
+        let anthropic = r#"{"system":"RULES","messages":[{"role":"user","content":[{"type":"text","text":"a"},{"type":"text","text":"b"}]}]}"#;
+        assert_eq!(super::user_text(anthropic), "a\nb");
+        let gemini =
+            r#"{"contents":[{"parts":[{"text":"hi"}]},{"role":"model","parts":[{"text":"no"}]}]}"#;
+        assert_eq!(super::user_text(gemini), "hi");
+        assert_eq!(super::user_text("nope"), "");
+        assert_eq!(super::user_text("{}"), "");
+    }
+
     use super::*;
     use crate::{Message, Request};
 

@@ -14,11 +14,11 @@ export function formatTime(d: Date | number, l: Locale): string {
   return new Intl.DateTimeFormat(tag(l), { hour: "numeric", minute: "2-digit", hour12: l !== "vi" }).format(d);
 }
 
-/** 42:07 or 1:02:07 (meeting time from milliseconds). */
-export function formatClock(ms: number): string {
+/** 42:07 or 1:02:07 (meeting time from milliseconds); `pad` gives 00:04 like the design's live clock. */
+export function formatClock(ms: number, opts?: { pad?: boolean }): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(s / 3600);
-  const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, "0");
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(h || opts?.pad ? 2 : 1, "0");
   const ss = String(s % 60).padStart(2, "0");
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }

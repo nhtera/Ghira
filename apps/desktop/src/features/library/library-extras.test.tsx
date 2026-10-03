@@ -32,6 +32,7 @@ const row = (gid: string, over: Partial<MeetingRow> = {}): MeetingRow => ({
   tags: [],
   sourceApp: null,
   summary: null,
+  unnamedVoices: 0,
   ...over,
 });
 
@@ -43,12 +44,12 @@ afterEach(() => {
 
 describe("filters", () => {
   const rows = [
-    row("a", { people: [{ name: "Linh", colorSlot: 2 }], template: "standup" }),
+    row("a", { people: [{ name: "Linh", colorSlot: 2, isMe: false }], template: "standup" }),
     row("b", { source: "import", startedAt: at(10) }),
     row("c", {
       people: [
-        { name: "Minh", colorSlot: 3 },
-        { name: "Linh", colorSlot: 2 },
+        { name: "Minh", colorSlot: 3, isMe: false },
+        { name: "Linh", colorSlot: 2, isMe: false },
       ],
       startedAt: at(3),
     }),

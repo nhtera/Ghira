@@ -274,6 +274,7 @@ pub fn run(args: &SessionArgs) -> Result<(), ErrorDoc> {
             title: args.title.clone(),
             queue_jobs: true,
             lossless: !args.replay.is_empty() && args.speed <= 0.0,
+            echo_cancellation: true,
         },
         tx.clone(),
         Some(runner.clone()),

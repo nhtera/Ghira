@@ -23,6 +23,8 @@ const core = vi.hoisted(() => {
     micPermission: vi.fn(async () => state.mic),
     requestMicPermission: vi.fn(async () => ({ status: "ok", data: "granted" })),
     openPrivacySettings: vi.fn(async () => ({ status: "ok", data: null })),
+    requestNotifications: vi.fn(async () => ({ status: "ok", data: "granted" })),
+    probeSystemAudio: vi.fn(async () => ({ status: "ok", data: "heard" })),
     hasRecoveryKey: vi.fn(async () => ({ status: "ok", data: false })),
     createRecoveryKey: vi.fn(async () => Array.from({ length: 24 }, (_, i) => `word${i + 1}`)),
     confirmRecoveryKey: vi.fn(async (w: string[]) => ({ status: "ok", data: w.length === 24 })),
@@ -235,36 +237,63 @@ describe("models step", () => {
 });
 
 describe("permissions step", () => {
+  const micRow = () => screen.getByText("Microphone").closest("li")!;
+  const rowOf = (name: string) => screen.getByText(name).closest("li")!;
+
   it("asks only when Allow is pressed (priming), then shows allowed", async () => {
     render(<Harness start="permissions" />);
-    const allow = await screen.findByRole("button", { name: "Allow…" });
+    const allow = await within(await screen.findByText("Microphone").then(micRow)).findByRole("button", { name: "Allow Microphone" });
     await waitFor(() => expect((allow as HTMLButtonElement).disabled).toBe(false));
     expect(core.commands.requestMicPermission).not.toHaveBeenCalled();
     await userEvent.setup().click(allow);
     expect(core.commands.requestMicPermission).toHaveBeenCalledOnce();
-    await screen.findByText("Allowed");
+    await within(micRow()).findByText("Allowed");
   });
 
-  it.each(["denied", "restricted"] as Permission[])("%s explains where to turn it on", async (p) => {
+  it("after Allow, focus moves to the row's status, which is a live status", async () => {
+    render(<Harness start="permissions" />);
+    const row = await screen.findByText("Notifications").then(() => rowOf("Notifications"));
+    await userEvent.setup().click(within(row).getByRole("button", { name: "Allow Notifications" }));
+    const status = await within(row).findByRole("status");
+    await waitFor(() => expect(document.activeElement).toBe(status));
+    expect(status.textContent).toContain("Allowed");
+  });
+
+  it.each(["denied", "restricted"] as Permission[])("%s shows Off with Open System Settings in the row", async (p) => {
     core.state.mic = p;
     render(<Harness start="permissions" />);
-    await screen.findByText(/Turn it on in System Settings/);
-    expect(screen.getByText("Off")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Allow…" })).toBeNull();
-    await userEvent.setup().click(screen.getAllByRole("button", { name: "Open System Settings" })[0]!);
+    await within(await screen.findByText("Microphone").then(micRow)).findByText("Off");
+    expect(within(micRow()).queryByRole("button", { name: /^Allow / })).toBeNull();
+    await userEvent.setup().click(within(micRow()).getByRole("button", { name: /^Open System Settings for / }));
     expect(core.commands.openPrivacySettings).toHaveBeenCalledWith("microphone");
   });
 
-  it("already granted shows allowed with no Allow button", async () => {
+  it("already granted shows allowed with no Allow button in the row", async () => {
     core.state.mic = "granted";
     render(<Harness start="permissions" />);
-    await screen.findByText("Allowed");
-    expect(screen.queryByRole("button", { name: "Allow…" })).toBeNull();
+    await within(await screen.findByText("Microphone").then(micRow)).findByText("Allowed");
+    expect(within(micRow()).queryByRole("button")).toBeNull();
   });
 
-  it("macOS system audio explains that the test reveals it", async () => {
+  it("notifications: Allow asks the system; denied offers System Settings", async () => {
+    core.commands.requestNotifications.mockResolvedValueOnce({ status: "ok", data: "denied" });
     render(<Harness start="permissions" />);
-    expect(await screen.findByText(/macOS doesn’t tell/)).toBeTruthy();
+    const row = await screen.findByText("Notifications").then(() => rowOf("Notifications"));
+    await userEvent.setup().click(within(row).getByRole("button", { name: /^Allow / }));
+    expect(core.commands.requestNotifications).toHaveBeenCalledOnce();
+    await within(row).findByText("Off");
+    await userEvent.setup().click(within(row).getByRole("button", { name: /^Open System Settings for / }));
+    expect(core.commands.openPrivacySettings).toHaveBeenCalledWith("notifications");
+  });
+
+  it("macOS system audio: Allow runs the probe; silence says the test recording confirms it", async () => {
+    core.commands.probeSystemAudio.mockResolvedValueOnce({ status: "ok", data: "silent" });
+    render(<Harness start="permissions" />);
+    const row = await screen.findByText("Screen & System Audio Recording").then(() => rowOf("Screen & System Audio Recording"));
+    await userEvent.setup().click(within(row).getByRole("button", { name: /^Allow / }));
+    expect(core.commands.probeSystemAudio).toHaveBeenCalledOnce();
+    await within(row).findByText("Confirmed in the test recording");
+    expect(within(row).getByRole("button", { name: /^Open System Settings for / })).toBeTruthy();
     expect(screen.getByText(/Room mode only/)).toBeTruthy();
   });
 });

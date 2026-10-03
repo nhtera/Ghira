@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Settings → Recording: detection, the microphone permission, the consent
-// message. Echo cancellation and per-app capture have no setting (call mode
-// handles them), so they are shown as information only.
+// Settings → Recording: which apps prompt to record, echo cancellation and
+// per-app capture, the microphone permission, the consent message.
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -10,7 +9,7 @@ import { APP_NAME } from "@ghi/i18n";
 import type { LiveMode } from "../../bindings";
 import { ipc } from "../../ipc";
 import { CalendarCard } from "../calendar/calendar-card";
-import { Card, Note, Row, SwitchRow, useFail, useSettings } from "./parts";
+import { Card, Note, Row, SwitchRow, bigSegCls, useFail, useSettings } from "./parts";
 
 export function RecordingSection() {
   const { t } = useTranslation();
@@ -23,12 +22,17 @@ export function RecordingSection() {
   return (
     <div className="flex flex-col">
       <Card>
-        {settings && <SwitchRow label={t("settings.recording.detectApps")} hint={t("settings.recording.neverAuto", { app: APP_NAME })} checked={settings.detectMeetings} onChange={(v) => void patch({ detectMeetings: v })} />}
+        {settings && (
+          <>
+            <DetectApps apps={settings.detectMeetings ? settings.detectApps : []} onChange={(detectApps) => void patch({ detectApps, detectMeetings: detectApps.length > 0 })} />
+            <SwitchRow label={t("settings.recording.echoCancel")} hint={t("settings.recording.echoCancelHint")} checked={settings.echoCancellation} onChange={(v) => void patch({ echoCancellation: v })} />
+            <SwitchRow label={t("settings.recording.appAudioOnly")} hint={t("settings.recording.appAudioOnlyHint")} checked={settings.appAudioOnly} onChange={(v) => void patch({ appAudioOnly: v })} />
+          </>
+        )}
         <Row label={t("settings.recording.micTitle")} hint={mic && t(`settings.recording.mic.${mic}`)}>
-          {mic && mic !== "unsupported" && mic !== "granted" && <Button onClick={() => void ipc.commands.openPrivacySettings("microphone")}>{t("settings.recording.openPrivacy", { context })}</Button>}
+          {mic && mic !== "unsupported" && mic !== "granted" && <Button size="lg" onClick={() => void ipc.commands.openPrivacySettings("microphone")}>{t("settings.recording.openPrivacy", { context })}</Button>}
           {mic === "granted" && <Icon name="check_circle" size={20} className="text-accent" />}
         </Row>
-        <Note icon="check_circle">{t("settings.recording.echoOn")}</Note>
       </Card>
       <CalendarCard />
       {settings && <LiveModeCard mode={settings.liveMode} onChange={(liveMode) => void patch({ liveMode })} />}
@@ -40,6 +44,39 @@ export function RecordingSection() {
           </>
         )}
       </Card>
+    </div>
+  );
+}
+
+/** The meeting apps that may prompt "record this call?" (the master switch is `detectMeetings`). */
+const DETECT_APPS = ["zoom", "teams", "meet", "slack", "zalo", "webex", "facetime"] as const;
+
+function DetectApps({ apps, onChange }: { apps: string[]; onChange: (apps: string[]) => void }) {
+  const { t } = useTranslation();
+  return (
+    <div data-row className="flex flex-col gap-2.5 border-b border-line py-3.5">
+      <div>
+        <div className="text-[14px] font-semibold">{t("settings.recording.detectApps")}</div>
+        <div className="text-[12.5px] leading-normal text-muted">{t("settings.recording.neverAuto", { app: APP_NAME })}</div>
+      </div>
+      <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+        {DETECT_APPS.map((id) => {
+          const on = apps.includes(id);
+          return (
+            <li key={id}>
+              <button
+                type="button"
+                aria-pressed={on}
+                onClick={() => onChange(on ? apps.filter((a) => a !== id) : [...apps, id])}
+                className={`inline-flex h-8 items-center gap-1 rounded-full border-[1.5px] px-3 text-[13px] font-medium ${on ? "border-accent bg-accent-soft text-accent" : "border-ctl bg-surface text-muted hover:bg-surface2"}`}
+              >
+                <Icon name={on ? "check" : "add"} size={16} />
+                {t(`settings.recording.app.${id}`)}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -63,6 +100,7 @@ export function LiveModeCard({ mode, onChange }: { mode: LiveMode; onChange: (m:
       <fieldset disabled={locked} className="m-0 min-w-0 border-0 p-0">
         <Segmented<LiveMode>
           label={label}
+          className={bigSegCls}
           value={shown}
           onChange={onChange}
           options={[
@@ -118,7 +156,7 @@ function ConsentEditor({ lang, value, onSave }: { lang: "en" | "vi"; value: stri
             setDraft(null);
           }}
         />
-        <Button onClick={() => void copy()} aria-label={t("settings.recording.copyFor", { label })}>
+        <Button size="lg" onClick={() => void copy()} aria-label={t("settings.recording.copyFor", { label })}>
           {t("common.copy")}
         </Button>
       </div>

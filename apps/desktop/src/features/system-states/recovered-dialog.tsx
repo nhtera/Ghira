@@ -48,11 +48,13 @@ export function RecoveredDialog() {
   return (
     <Dialog
       open
+      placement="center"
+      width={440}
       onOpenChange={(o) => !o && hide(m.gid)}
       title={
-        <span className="flex items-center gap-2.5">
-          <Icon name="update" size={26} className="text-accent" />
-          {t("system.crash.title")}
+        <span className="flex flex-col items-start gap-2.5">
+          <Icon name="update" size={30} className="text-accent" />
+          <span className="text-[17px] font-semibold">{t("system.crash.title")}</span>
         </span>
       }
       description={t("system.crash.body", { title: m.title, time: formatClock(m.durationMs ?? 0) })}
@@ -65,12 +67,11 @@ export function RecoveredDialog() {
             </Button>
           </>
         ) : (
-          <>
-            <Button variant="ghost" className="mr-auto text-rec-ink" onClick={() => setAsking(true)}>
-              {t("system.crash.discard")}
-            </Button>
+          // The way forward first, as in the design; the destructive choice is quiet and apart.
+          <div className="flex w-full items-center justify-between">
             <Button
               variant="primary"
+              size="lg"
               autoFocus
               onClick={() => {
                 hide(m.gid);
@@ -79,7 +80,10 @@ export function RecoveredDialog() {
             >
               {t("system.crash.recover")}
             </Button>
-          </>
+            <Button variant="ghost" size="lg" className="text-rec-ink" onClick={() => setAsking(true)}>
+              {t("system.crash.discard")}
+            </Button>
+          </div>
         )
       }
     >

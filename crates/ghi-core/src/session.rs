@@ -17,7 +17,7 @@
 //! jobs queued at stop wait until the models arrive ("record now, process
 //! later").
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -55,6 +55,9 @@ pub struct SessionConfig {
     /// (fast replays for eval and soak runs; live capture keeps real time and
     /// lets the final pass fill what was skipped).
     pub lossless: bool,
+    /// Cancel the speakers' echo from the mic in call mode (the setting
+    /// `echoCancellation`); off: the mic reaches the transcript as captured.
+    pub echo_cancellation: bool,
 }
 
 /// In lossless mode the pump waits while this many ASR frames (5 s) wait.
@@ -83,6 +86,8 @@ fn kind_of(t: Track) -> TrackKind {
 enum PumpCmd {
     Pause,
     Resume,
+    /// Rebuilds the capture devices (the mic was taken by another app).
+    RetryCapture,
     /// Flushes the page in progress, picks the pages to keep per track (with
     /// each file's nonce prefix), mutes the audio still in the pipeline and
     /// starts holding new pages. Replies with the keep list and the position
@@ -267,7 +272,7 @@ impl Session {
         ));
         let pcfg = PipelineConfig {
             route: capture.route,
-            aec_enabled: cfg.mode == Mode::Call,
+            aec_enabled: cfg.mode == Mode::Call && cfg.echo_cancellation,
             call_detected: cfg.mode == Mode::Call,
             ..PipelineConfig::default()
         };
@@ -283,6 +288,7 @@ impl Session {
         let capture_done = Arc::new(AtomicBool::new(false));
         let position = Arc::new(AtomicU64::new(0));
         let source_ended = Arc::new(AtomicBool::new(false));
+        let lost = Arc::new(AtomicU8::new(0));
         // Until the engines are known, a lossless replay waits for them.
         let lossless = Arc::new(AtomicBool::new(cfg.lossless));
         let mut threads = Vec::new();
@@ -299,6 +305,7 @@ impl Session {
                 position: position.clone(),
                 capture_done: capture_done.clone(),
                 source_ended: source_ended.clone(),
+                lost: lost.clone(),
             };
             threads.push(spawn("ghi-pump", move || {
                 pump(ctx, pipeline, capture, pump_rx)
@@ -444,6 +451,15 @@ impl Session {
             let _ = self.pump.send(PumpCmd::Resume);
             self.set_state(SessionState::Recording);
         }
+    }
+
+    /// Tries the microphone (and system audio) again after "mic taken":
+    /// the recording continues in the same meeting.
+    /// Only a track that was actually lost is rebuilt; the outcome arrives as
+    /// `CaptureRecovered` or `CaptureRetryFailed` (also `CaptureRecovered`
+    /// at once when nothing was lost).
+    pub fn retry_capture(&self) {
+        let _ = self.pump.send(PumpCmd::RetryCapture);
     }
 
     pub fn mark(&self) -> i64 {
@@ -836,6 +852,8 @@ struct PumpCtx {
     position: Arc<AtomicU64>,
     capture_done: Arc<AtomicBool>,
     source_ended: Arc<AtomicBool>,
+    /// Bit per track (`Track::index`) whose device is lost right now.
+    lost: Arc<AtomicU8>,
 }
 
 /// The UI event for a capture event the user should see (the pipeline already
@@ -909,6 +927,44 @@ fn pump(
             match cmd {
                 PumpCmd::Pause => pipeline.pause(),
                 PumpCmd::Resume => pipeline.resume(),
+                PumpCmd::RetryCapture => {
+                    let meeting = ctx.meeting.clone();
+                    let events = ctx.events.clone();
+                    let job = if ctx.lost.load(Ordering::Acquire) == 0 {
+                        None
+                    } else {
+                        capture.restarter()
+                    };
+                    match job {
+                        // The devices come back off this thread: the pump
+                        // keeps draining the rings meanwhile.
+                        Some(job) => {
+                            let spawned = std::thread::Builder::new()
+                                .name("ghi-capture-retry".into())
+                                .spawn({
+                                    let (meeting, events) = (meeting.clone(), events.clone());
+                                    move || match job() {
+                                        Ok(()) => {
+                                            // A device that is back announces itself;
+                                            // until then the mask stays.
+                                            events.emit(Event::CaptureRecovered { meeting })
+                                        }
+                                        Err(e) => events.emit(Event::CaptureRetryFailed {
+                                            meeting,
+                                            message: e.to_string(),
+                                        }),
+                                    }
+                                });
+                            if let Err(e) = spawned {
+                                events.emit(Event::CaptureRetryFailed {
+                                    meeting,
+                                    message: e.to_string(),
+                                });
+                            }
+                        }
+                        None => events.emit(Event::CaptureRecovered { meeting }),
+                    }
+                }
                 PumpCmd::Discard { t_cut_ms, reply } => {
                     let pos = pipeline.position();
                     // The marker makes the encoder end its page now, so the
@@ -944,6 +1000,15 @@ fn pump(
             }
         }
         while let Ok(ev) = capture.events.try_recv() {
+            match &ev {
+                ghi_audio::CaptureEvent::TrackLost { track } => {
+                    ctx.lost.fetch_or(1 << track.index(), Ordering::AcqRel);
+                }
+                ghi_audio::CaptureEvent::TrackStarted { track, .. } => {
+                    ctx.lost.fetch_and(!(1 << track.index()), Ordering::AcqRel);
+                }
+                _ => {}
+            }
             pipeline.handle_event(ev);
         }
         if ctx.lossless.load(Ordering::Acquire)
@@ -1055,6 +1120,7 @@ mod tests {
                 title: "t".into(),
                 queue_jobs: false,
                 lossless: false,
+                echo_cancellation: true,
             },
             tx,
             None,

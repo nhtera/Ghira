@@ -43,6 +43,8 @@ const preview = (over: Partial<CloudPreview> = {}): CloudPreview => ({
   retentionNote: "Kept 30 days.",
   warnings: [],
   redactions: [{ kind: "person", count: 1 }],
+  excerptBefore: null,
+  excerptAfter: null,
   ...over,
 });
 
@@ -130,6 +132,24 @@ describe("CloudSheet", () => {
     expect((await screen.findByTestId("cloud-excerpt")).textContent).toBe("one two three");
     expect(screen.getByText(/3 words/)).toBeTruthy();
     expect(screen.queryByText(/Write careful/, { selector: "[data-testid=cloud-excerpt]" })).toBeNull();
+  });
+
+  it("shows the user's text before and after redaction side by side when the core sends both", async () => {
+    payloadOverride = JSON.stringify({ messages: [{ role: "user", content: "[PERSON_1]: call me\nlater" }] });
+    setup();
+    commands.cloudPreview.mockImplementation(() => ok({ kind: "preview", ...preview({ excerptBefore: "Linh: call me", excerptAfter: "[PERSON_1]: call me" }) }));
+    await settle();
+    expect((await screen.findByTestId("cloud-excerpt-before")).textContent).toBe("Linh: call me");
+    expect(screen.getByTestId("cloud-excerpt").textContent).toBe("[PERSON_1]: call me");
+  });
+
+  it("ignores an excerpt that is not part of the request body", async () => {
+    payloadOverride = JSON.stringify({ messages: [{ role: "user", content: "the real text" }] });
+    setup();
+    commands.cloudPreview.mockImplementation(() => ok({ kind: "preview", ...preview({ excerptBefore: "x", excerptAfter: "something else" }) }));
+    await settle();
+    expect((await screen.findByTestId("cloud-excerpt")).textContent).toBe("the real text");
+    expect(screen.queryByTestId("cloud-excerpt-before")).toBeNull();
   });
 
   it("an unknown request shape claims no word count and opens the exact data", async () => {
