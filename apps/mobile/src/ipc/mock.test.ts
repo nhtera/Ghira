@@ -16,8 +16,10 @@ describe("mock ipc", () => {
   });
 
   it("answers unscripted result commands with an error result", async () => {
-    const r = await mockIpc.commands.inboxList();
-    expect(r).toEqual({ status: "error", error: "not mocked: inboxList" });
+    // A name no slice scripts, so the test doesn't depend on mock-*.ts.
+    const commands = mockIpc.commands as unknown as Record<string, () => Promise<unknown>>;
+    const r = await commands.notARealCommand!();
+    expect(r).toEqual({ status: "error", error: "not mocked: notARealCommand" });
   });
 
   it("rejects unscripted raw commands instead of answering a result", async () => {
