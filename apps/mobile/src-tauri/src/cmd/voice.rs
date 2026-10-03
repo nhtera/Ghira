@@ -108,6 +108,38 @@ pub async fn voice_enroll_stop(core: ghi_app::CoreState<'_>) -> Result<(), Strin
     Ok(())
 }
 
+/// Deletes Me's stored voice profile (a crypto-shred of its key; names in
+/// meetings stay) and takes the consent back. Errors: `noProfile`,
+/// `busyRecording` (a recording or an enrollment is running), `storage`; the
+/// app lock refuses it like any content command.
+pub fn delete_me(store: &ghi_store::store::Store) -> Result<(), String> {
+    let profile = store
+        .me_voice_profile(ghi_core::profiles::VOICE_MODEL)
+        .map_err(ghi_app::speakers_cmd::storage)?
+        .ok_or("noProfile")?;
+    store
+        .delete_voice_profile(&profile.gid)
+        .map_err(ghi_app::speakers_cmd::storage)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn voice_delete_me(
+    core: ghi_app::CoreState<'_>,
+    recorder: tauri::State<'_, std::sync::Arc<crate::session::Recorder>>,
+) -> Result<(), String> {
+    let recording = recorder.latest().is_some();
+    ghi_app::blocking(&core, move |c| {
+        let store = c.store()?;
+        if recording || c.enrolling() {
+            return Err(BUSY_RECORDING.into());
+        }
+        CONSENT.store(false, Ordering::Release);
+        delete_me(&store)
+    })
+    .await
+}
+
 /// Cancels and wipes the buffered audio.
 #[tauri::command]
 #[specta::specta]
@@ -118,4 +150,60 @@ pub async fn voice_enroll_cancel(core: ghi_app::CoreState<'_>) -> Result<(), Str
         Ok(())
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ghi_store::keys::MemoryKeyStore;
+    use ghi_store::store::Store;
+    use ghi_store::voice::{VoiceConsent, VoiceExemplar};
+    use std::sync::Arc;
+
+    #[test]
+    fn deleting_me_shreds_the_profile_and_a_second_delete_says_so() {
+        let t = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            t.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(delete_me(&store), Err("noProfile".into()));
+        let me = store.me_person().unwrap();
+        let consent = VoiceConsent {
+            method: "self_checkbox".into(),
+            at_ms: 1,
+            text_key: CONSENT_KEY.into(),
+            clip: None,
+        };
+        let exemplar = VoiceExemplar {
+            vec: vec![0.1, 0.2, 0.3, 0.4],
+            source: None,
+        };
+        store
+            .put_voice_profile(
+                &me,
+                &consent,
+                None,
+                ghi_core::profiles::VOICE_MODEL,
+                vec![("en".into(), vec![exemplar])],
+                None,
+            )
+            .unwrap();
+        assert!(
+            store
+                .me_voice_profile(ghi_core::profiles::VOICE_MODEL)
+                .unwrap()
+                .is_some()
+        );
+        delete_me(&store).unwrap();
+        assert!(
+            store
+                .me_voice_profile(ghi_core::profiles::VOICE_MODEL)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(delete_me(&store), Err("noProfile".into()));
+    }
 }

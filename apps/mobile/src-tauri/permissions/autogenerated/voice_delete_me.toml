@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-voice-delete-me"
+description = "Enables the voice_delete_me command without any pre-configured scope."
+commands.allow = ["voice_delete_me"]
+
+[[permission]]
+identifier = "deny-voice-delete-me"
+description = "Denies the voice_delete_me command without any pre-configured scope."
+commands.deny = ["voice_delete_me"]

@@ -40,6 +40,7 @@
     "allow-voice-enroll-start",
     "allow-voice-enroll-stop",
     "allow-voice-enroll-cancel",
+    "allow-voice-delete-me",
     "allow-list-meetings",
     "allow-set-meeting-title",
     "allow-delete-meeting",

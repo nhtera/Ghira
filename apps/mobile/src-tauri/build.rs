@@ -37,6 +37,7 @@ fn main() {
             "voice_enroll_start",
             "voice_enroll_stop",
             "voice_enroll_cancel",
+            "voice_delete_me",
             "list_meetings",
             "set_meeting_title",
             "delete_meeting",

@@ -67,6 +67,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             voice::voice_enroll_start,
             voice::voice_enroll_stop,
             voice::voice_enroll_cancel,
+            voice::voice_delete_me,
             // Shared with the desktop (ghi-app).
             ghi_app::library::list_meetings,
             ghi_app::library::set_meeting_title,

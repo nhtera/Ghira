@@ -101,6 +101,7 @@ export const commands = {
 	voiceEnrollStop: () => typedError<null, string>(__TAURI_INVOKE("voice_enroll_stop")),
 	/**  Cancels and wipes the buffered audio. */
 	voiceEnrollCancel: () => typedError<null, string>(__TAURI_INVOKE("voice_enroll_cancel")),
+	voiceDeleteMe: () => typedError<null, string>(__TAURI_INVOKE("voice_delete_me")),
 	/**  Library rows, newest first. */
 	listMeetings: (limit: number, offset: number) => typedError<MeetingRow[], string>(__TAURI_INVOKE("list_meetings", { limit, offset })),
 	setMeetingTitle: (meeting: string, title: string) => typedError<null, string>(__TAURI_INVOKE("set_meeting_title", { meeting, title })),
