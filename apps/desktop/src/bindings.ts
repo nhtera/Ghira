@@ -369,6 +369,71 @@ export const commands = {
 	 *  `invalidConsent`, `storage`.
 	 */
 	saveVoiceProfile: (meeting: string, speaker: string, consent: VoiceConsentInput) => typedError<null, string>(__TAURI_INVOKE("save_voice_profile", { meeting, speaker, consent })),
+	/**  Where calendar access stands. Errors: `storage`. */
+	calendarStatus: () => typedError<CalendarStatus, string>(__TAURI_INVOKE("calendar_status")),
+	/**  Asks macOS for calendar access (the OS prompt). Errors: `notImplemented`. */
+	requestCalendarAccess: () => typedError<CalendarStatus, string>(__TAURI_INVOKE("request_calendar_access")),
+	/**  Changes calendar settings; returns the new status. Errors: `storage`. */
+	setCalendar: (patch: CalendarPatch) => typedError<CalendarStatus, string>(__TAURI_INVOKE("set_calendar", { patch })),
+	/**
+	 *  Lets the user pick an .ics file (a native dialog in Rust); returns its
+	 *  name, or `null` if cancelled. Errors: `icsInvalid`, `notImplemented`.
+	 */
+	pickIcsFile: () => typedError<string | null, string>(__TAURI_INVOKE("pick_ics_file")),
+	/**  Forgets the ICS file. Errors: `storage`. */
+	removeIcsFile: () => typedError<null, string>(__TAURI_INVOKE("remove_ics_file")),
+	/**
+	 *  The next events (at most `limit`, soonest first), meeting-like ones
+	 *  included whether armed or not. Empty without a calendar. Errors: `storage`.
+	 */
+	upcomingEvents: (limit: number) => typedError<EventView[], string>(__TAURI_INVOKE("upcoming_events", { limit })),
+	/**
+	 *  Turns "ask to record when it starts" on or off for one event. Errors:
+	 *  `storage`.
+	 */
+	setEventAsk: (key: string, ask: boolean) => typedError<null, string>(__TAURI_INVOKE("set_event_ask", { key, ask })),
+	/**
+	 *  The attendees of the calendar event a recorded meeting was named after
+	 *  (rename suggestions list them first). Empty if none. Errors: `storage`.
+	 */
+	meetingAttendees: (meeting: string) => typedError<string[], string>(__TAURI_INVOKE("meeting_attendees", { meeting })),
+	/**  All folders, by name. */
+	listFolders: () => typedError<FolderRow[], string>(__TAURI_INVOKE("list_folders")),
+	/**  Makes a folder. Errors: `duplicate`, `tooLong`, `limit`. */
+	createFolder: (name: string) => typedError<FolderRow, string>(__TAURI_INVOKE("create_folder", { name })),
+	/**  Renames a folder. Errors: `duplicate`, `tooLong`, `notFound`. */
+	renameFolder: (folder: string, name: string) => typedError<null, string>(__TAURI_INVOKE("rename_folder", { folder, name })),
+	/**
+	 *  Deletes a folder; its meetings stay (in no folder). Returns how many were
+	 *  in it. Errors: `notFound`.
+	 */
+	deleteFolder: (folder: string) => typedError<number, string>(__TAURI_INVOKE("delete_folder", { folder })),
+	/**
+	 *  Moves meetings into a folder (`null`: out of any folder). Returns how many
+	 *  changed. Errors: `notFound`.
+	 */
+	moveToFolder: (meetings: string[], folder: string | null) => typedError<number, string>(__TAURI_INVOKE("move_to_folder", { meetings, folder })),
+	/**  All tags, by name. */
+	listTags: () => typedError<TagRow[], string>(__TAURI_INVOKE("list_tags")),
+	/**
+	 *  Gets the tag with this name, making it if new (so the same name is never
+	 *  two tags). Errors: `tooLong`, `limit`.
+	 */
+	createTag: (name: string) => typedError<TagRow, string>(__TAURI_INVOKE("create_tag", { name })),
+	/**  Renames a tag. Errors: `duplicate`, `tooLong`, `notFound`. */
+	renameTag: (tag: string, name: string) => typedError<null, string>(__TAURI_INVOKE("rename_tag", { tag, name })),
+	/**
+	 *  Deletes a tag from every meeting. Returns how many had it. Errors:
+	 *  `notFound`.
+	 */
+	deleteTag: (tag: string) => typedError<number, string>(__TAURI_INVOKE("delete_tag", { tag })),
+	/**
+	 *  Adds a tag to meetings. Returns how many gained it. Errors: `limit` (20
+	 *  tags per meeting), `notFound`.
+	 */
+	tagMeetings: (meetings: string[], tag: string) => typedError<number, string>(__TAURI_INVOKE("tag_meetings", { meetings, tag })),
+	/**  Removes a tag from meetings. Returns how many lost it. Errors: `notFound`. */
+	untagMeetings: (meetings: string[], tag: string) => typedError<number, string>(__TAURI_INVOKE("untag_meetings", { meetings, tag })),
 	/**
 	 *  A system notification (notes ready, recovered); clicking it brings the
 	 *  app forward. The text comes localized from the UI.
@@ -513,6 +578,24 @@ export type AskScope = {
 export type AudioPlay = {
 	token: string,
 	durationMs: number | null,
+};
+
+/**  Calendar settings the user can change. */
+export type CalendarPatch = {
+	askOnStart?: boolean | null,
+};
+
+/**  Calendar access and the connected ICS file. */
+export type CalendarStatus = {
+	/**
+	 *  EventKit: `unavailable` (not macOS), `notDetermined`, `denied`,
+	 *  `authorized`.
+	 */
+	eventkit: string,
+	/**  The connected ICS file (its name only; the path stays in Rust). */
+	ics: IcsInfo | null,
+	/**  Ask to record when a calendar meeting starts. */
+	askOnStart: boolean,
 };
 
 /**  A citation resolved against the current transcript. */
@@ -719,6 +802,21 @@ progress: number | null } | { type: "notesReady"; meeting: string;
 /**  1 = from the live transcript, 2 = after the final pass. */
 version: number } | { type: "error"; meeting: string | null; kind: ErrorKind; message: string };
 
+/**  One upcoming event, as the Up next strip and the popover show it. */
+export type EventView = {
+	/**  Stable per occurrence; pass it to `set_event_ask`. */
+	key: string,
+	title: string,
+	startMs: number | null,
+	endMs: number | null,
+	/**  Other attendees (a count; names only inside a recorded meeting). */
+	attendees: number,
+	/**  `zoom`, `teams`, `meet` or `null`. */
+	joinApp: string | null,
+	/**  Ask to record when it starts (armed by default for meeting-like events). */
+	ask: boolean,
+};
+
 /**  What goes into the file; headings in the app's language. */
 export type ExportContent = {
 	notes: boolean,
@@ -728,6 +826,19 @@ export type ExportContent = {
 };
 
 export type ExportFormat = "markdown" | "text" | "srt" | "vtt" | "docx";
+
+export type FolderRow = {
+	gid: string,
+	name: string,
+	/**  Meetings in it. */
+	meetings: number,
+};
+
+export type IcsInfo = {
+	name: string,
+	/**  Events found in the next 14 days. */
+	events: number,
+};
 
 export type ImportChoice = {
 	/**  The transcript language (`en`, `vi`), or detect. */
@@ -838,6 +949,10 @@ export type MeetingDetected = {
 	/**  Shown in the prompt ("Zoom"); browsers prompt generically. */
 	appName: string,
 	browser: boolean,
+	/**  The calendar event this meeting is (its title), when there is one. */
+	title?: string | null,
+	/**  That event's key (for the reply and the dedupe with the calendar ticker). */
+	event?: string | null,
 };
 
 /**  What the library shows about a meeting's processing. */
@@ -886,6 +1001,14 @@ export type MeetingRow = {
 	people: PersonChip[],
 	/**  The active job, if any. */
 	job: MeetingJob | null,
+	/**  The folder's gid (`list_folders` has the names); `None`: no folder. */
+	folder: string | null,
+	tags: TagChip[],
+	/**
+	 *  Where an imported file came from: `zoom`, `teams`, `meet`, `plaud`,
+	 *  `voice_memos`.
+	 */
+	sourceApp: string | null,
 };
 
 export type MeetingSpeaker = {
@@ -1077,7 +1200,9 @@ export type PersonVoice = {
 /**  A pane of the OS privacy settings, for a denied permission. */
 export type PrivacyPane = "microphone" | 
 /**  "Screen & System Audio Recording" on macOS. */
-"systemAudio" | "notifications";
+"systemAudio" | "notifications" | 
+/**  "Calendars" on macOS. */
+"calendars";
 
 export type ProviderKey = {
 	provider: string,
@@ -1147,6 +1272,10 @@ export type SearchRequest = {
 	toMs: number | null,
 	/**  Only this meeting ("Find" inside a meeting uses the transcript instead). */
 	meeting: string | null,
+	/**  Only meetings in this folder (gid); `""` means meetings in no folder. */
+	folder?: string | null,
+	/**  Only meetings with any of these tags (gids; none: no restriction). */
+	tags?: string[] | null,
 	limit: number,
 	offset: number,
 };
@@ -1167,6 +1296,8 @@ export type SegmentView = {
 	confidence: number | null,
 	/**  The user changed the text ("Edited"). */
 	edited: boolean,
+	/**  Another speaker talked over this line: some words may be wrong. */
+	overlap: boolean,
 	/**
 	 *  One per space-separated word of `text`, in order (empty when the
 	 *  counts don't match, e.g. after an edit).
@@ -1257,6 +1388,19 @@ export type StagedFileEvent = {
 export type Stopped = {
 	meeting: string,
 	durationMs: number | null,
+};
+
+/**  A tag on a meeting row. */
+export type TagChip = {
+	gid: string,
+	name: string,
+};
+
+export type TagRow = {
+	gid: string,
+	name: string,
+	/**  Meetings with it. */
+	meetings: number,
 };
 
 export type TemplateInfo = {

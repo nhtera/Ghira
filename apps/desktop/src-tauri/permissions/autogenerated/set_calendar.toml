@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-calendar"
+description = "Enables the set_calendar command without any pre-configured scope."
+commands.allow = ["set_calendar"]
+
+[[permission]]
+identifier = "deny-set-calendar"
+description = "Denies the set_calendar command without any pre-configured scope."
+commands.deny = ["set_calendar"]

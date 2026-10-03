@@ -34,6 +34,9 @@ const row = (gid: string, title: string, source: string): MeetingRow => ({
   template: null,
   people: [],
   job: null,
+  folder: null,
+  tags: [],
+  sourceApp: null,
 });
 const related = (gid: string, title: string): RelatedHit => ({ meeting: { meeting: gid, title, startedAt: null }, t0Ms: 1000, t1Ms: 2000, quote: `quote ${title}` });
 

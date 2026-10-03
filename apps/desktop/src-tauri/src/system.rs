@@ -422,6 +422,8 @@ pub enum PrivacyPane {
     /// "Screen & System Audio Recording" on macOS.
     SystemAudio,
     Notifications,
+    /// "Calendars" on macOS.
+    Calendars,
 }
 
 /// Opens System Settings on the pane where the user can turn access on.
@@ -440,6 +442,9 @@ pub fn open_privacy_settings(pane: PrivacyPane) -> Result<(), String> {
             }
             PrivacyPane::Notifications => {
                 "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+            }
+            PrivacyPane::Calendars => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"
             }
         };
         // Started, not awaited: a command must not block on another process.
@@ -465,6 +470,14 @@ pub struct MeetingDetected {
     /// Shown in the prompt ("Zoom"); browsers prompt generically.
     pub app_name: String,
     pub browser: bool,
+    /// The calendar event this meeting is (its title), when there is one.
+    #[serde(default)]
+    #[specta(optional)]
+    pub title: Option<String>,
+    /// That event's key (for the reply and the dedupe with the calendar ticker).
+    #[serde(default)]
+    #[specta(optional)]
+    pub event: Option<String>,
 }
 
 /// The user's answer to a detection prompt.
@@ -573,6 +586,8 @@ fn detection_loop(app: AppHandle, core: Arc<Core>, detection: Arc<Detection>) {
                 app: p.app.key().into(),
                 app_name: p.app.display_name().into(),
                 browser: p.app.is_browser(),
+                title: None,
+                event: None,
             };
             // In the main window only when the user is looking at it; else
             // (hidden, behind a full-screen call, another Space) the panel.

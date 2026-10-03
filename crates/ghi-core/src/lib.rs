@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Session manager, job queue, aligner and pipeline orchestration.
 
+pub mod activity;
 pub mod aligner;
 pub mod ask_all;
+pub mod calendar;
 pub mod capture;
 pub mod carry;
 pub mod cloud;
@@ -19,7 +21,9 @@ pub mod live;
 pub mod notes_job;
 pub mod pages;
 pub mod persist;
+pub mod presets;
 pub mod profiles;
+pub mod recluster;
 pub mod recover;
 pub mod session;
 pub mod speakers;

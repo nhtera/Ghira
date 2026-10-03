@@ -28,6 +28,9 @@ const row = (gid: string, over: Partial<MeetingRow> = {}): MeetingRow => ({
   template: null,
   people: [],
   job: null,
+  folder: null,
+  tags: [],
+  sourceApp: null,
   ...over,
 });
 

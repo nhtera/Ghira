@@ -26,6 +26,8 @@ import type {
 import type { Commands, Ipc } from "./ipc";
 import { audioUrl, namesOf, onImportStaged, onImportUpdate, reviewCommands, simulateImportDrop, transcriptOf } from "./mock-review";
 import { aiCommands } from "./mock-ai";
+import { calendarCommands } from "./mock-calendar";
+import { organizeCommands } from "./mock-organize";
 import { peopleCommands } from "./mock-people";
 
 const LINE_MS = 1800;
@@ -150,6 +152,9 @@ const rows: MeetingRow[] = library.rows.map((r, i) => ({
   template: null,
   people: r.ppl.filter((p) => p !== "Me").map((name, k) => ({ name, colorSlot: SLOTS[(k + 1) % SLOTS.length]! })),
   job: r.st === "final" ? { kind: "final_pass", progress: (("pct" in r ? r.pct : 0) ?? 0) / 100, waitingForModels: false } : null,
+  folder: null,
+  tags: [],
+  sourceApp: null,
 }));
 const notes = new Map<string, NoteLine[]>();
 // Onboarding is skipped on the mock so the shell opens straight away.
@@ -225,6 +230,8 @@ const commands: Commands = {
   // The mock can't restart itself.
   installUpdate: () => fail("updates are installed by the app, not the mock"),
   ...reviewCommands({ rows, process }),
+  ...calendarCommands(),
+  ...organizeCommands({ rows }),
   ...peopleCommands({ rows, voiceReady: () => voiceInstalled, recording: () => session != null }),
   ...aiCommands({
     rows,
@@ -252,6 +259,9 @@ const commands: Commands = {
       template: null,
       people: [],
       job: null,
+      folder: null,
+      tags: [],
+      sourceApp: null,
     });
     emit({ type: "stateChanged", meeting: id, state: "starting" });
     emit({ type: "sessionStarted", meeting: id, mode, language: null, title: "" });

@@ -132,7 +132,8 @@
       "micLost": "Micro đã bị ngắt. Hãy cắm lại để tiếp tục ghi giọng bạn.",
       "systemLost": "Âm thanh hệ thống đã dừng. Những người khác trong cuộc gọi không được ghi.",
       "diskFull": "Ổ đĩa đã đầy. Bản ghi không thể lưu thêm. Hãy giải phóng dung lượng ngay."
-    }
+    },
+    "manyVoices": "Hơn 8 giọng nói. Các giọng thêm tạm chung làn Khác; {{app}} sẽ tách riêng sau cuộc họp."
   },
   "speakers": {
     "title": "Người nói",
@@ -195,7 +196,8 @@
     "markedMe": "Đã đánh dấu là “Tôi”",
     "unmarkedMe": "Đã bỏ đánh dấu “Tôi”",
     "soundsLikeName": "Giống giọng {{name}}",
-    "dismissSuggestionFor": "Bỏ gợi ý cho {{speaker}}"
+    "dismissSuggestionFor": "Bỏ gợi ý cho {{speaker}}",
+    "inOthers_other": "{{count}} giọng trong Khác"
   },
   "common": {
     "accept": "Đồng ý",
@@ -320,7 +322,8 @@
     "deferred": {
       "title": "Đã lưu bản ghi. Ghi chú sẽ được viết khi tải xong mô hình.",
       "body": "Đã tải {{percent}}% mô hình giọng nói. {{app}} tự tiếp tục khi có mạng."
-    }
+    },
+    "othersCount": "Khác · {{count}}"
   },
   "library": {
     "subtitle_mac_other": "{{count}} cuộc họp · tất cả lưu trên máy này",
@@ -335,7 +338,9 @@
       "people": "Mọi người",
       "source": "Nguồn",
       "template": "Mẫu",
-      "date": "Ngày"
+      "date": "Ngày",
+      "folder": "Thư mục",
+      "tags": "Thẻ"
     },
     "groups": {
       "lastWeek": "Tuần trước"
@@ -399,7 +404,8 @@
       "week": "7 ngày qua",
       "month": "30 ngày qua"
     },
-    "undoTooLate": "Không hoàn tác được nữa: cuộc họp đã bị xóa"
+    "undoTooLate": "Không hoàn tác được nữa: cuộc họp đã bị xóa",
+    "sourceImport": "Nhập từ {{source}}"
   },
   "tray": {
     "detected": {
@@ -415,7 +421,10 @@
     "recent": "Gần đây",
     "next": "Tiếp theo",
     "recording": "Đang ghi",
-    "quit": "Thoát {{app}}"
+    "quit": "Thoát {{app}}",
+    "calendarStart": {
+      "title": "“{{title}}” sắp bắt đầu. Ghi lại không?"
+    }
   },
   "cloud": {
     "title": "Cải thiện ghi chú bằng mô hình cloud?",
@@ -1366,7 +1375,8 @@
       "zoom": "Bản thu Zoom",
       "teams": "Bản thu Teams",
       "voiceMemos": "Voice Memos",
-      "other": "Tệp âm thanh"
+      "other": "Tệp âm thanh",
+      "meet": "Bản ghi âm Google Meet"
     },
     "problems": {
       "unsupported": "{{app}} không đọc được tệp này. Hãy nhập tệp âm thanh hoặc video.",
@@ -1375,7 +1385,12 @@
       "duplicate": "Đã nhập trước đó với tên “{{title}}”"
     },
     "removeFile": "Bỏ {{name}}",
-    "channelsN": "{{count}} kênh"
+    "channelsN": "{{count}} kênh",
+    "group": {
+      "title_other": "Bản thu Zoom · {{count}} người",
+      "body": "Mỗi người có một tệp âm thanh riêng, nên {{app}} biết ai nói gì mà không cần đoán.",
+      "unnamed": "Người tham dự {{number}}"
+    }
   },
   "palette": {
     "placeholder": "Gõ lệnh hoặc tìm cuộc họp",
@@ -1470,6 +1485,54 @@
     "findNext": "Kết quả sau",
     "lineMenu": "Thao tác với dòng",
     "loading": "Đang tải bản ghi…",
-    "empty": "Cuộc họp này chưa có bản ghi."
+    "empty": "Cuộc họp này chưa có bản ghi.",
+    "overlap": "Nói chồng lên nhau",
+    "overlapHint": "Hai người nói cùng lúc nên một số từ có thể chưa đúng."
+  },
+  "calendar": {
+    "title": "Lịch",
+    "body_mac": "Đặt tên cuộc họp theo ứng dụng Lịch và gợi ý ai tham dự. Dữ liệu lịch ở lại trên máy Mac này.",
+    "body_win": "Đặt tên cuộc họp theo tệp lịch (.ics) và gợi ý ai tham dự. Dữ liệu lịch ở lại trên máy tính này.",
+    "connect": "Kết nối Lịch…",
+    "connected": "Đã kết nối",
+    "denied_mac": "Quyền truy cập Lịch đang tắt cho {{app}}. Bật trong Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Lịch.",
+    "importIcs": "Nhập tệp lịch (.ics)…",
+    "icsFrom": "Từ {{name}}",
+    "icsRemove": "Gỡ tệp lịch",
+    "icsHint": "{{app}} đọc lại tệp khi tệp thay đổi. Xuất lại từ Outlook để cập nhật.",
+    "icsInvalid": "{{app}} không đọc được tệp lịch này.",
+    "askOnStart": "Hỏi để ghi khi cuộc họp trong lịch bắt đầu",
+    "inMinutes_other": "sau {{count}} phút",
+    "now": "Đang diễn ra",
+    "at": "lúc {{time}}",
+    "people_other": "{{count}} người",
+    "inInvite": "Trong lời mời họp",
+    "denied_win": "Quyền truy cập Lịch đang tắt cho {{app}}. Bật trong Cài đặt → Quyền riêng tư & bảo mật → Lịch."
+  },
+  "organize": {
+    "folders": "Thư mục",
+    "folder": "Thư mục",
+    "noFolder": "Không có thư mục",
+    "newFolder": "Thư mục mới…",
+    "folderName": "Tên thư mục",
+    "moveTo": "Chuyển vào thư mục…",
+    "moved_other": "Đã chuyển {{count}} cuộc họp vào {{folder}}",
+    "renameFolder": "Đổi tên thư mục",
+    "deleteFolder": "Xoá thư mục",
+    "deleteFolderQuestion_other": "Xoá “{{name}}”? {{count}} cuộc họp trong đó vẫn ở mục Cuộc họp.",
+    "tags": "Thẻ",
+    "addTag": "Thêm thẻ…",
+    "tagName": "Tên thẻ",
+    "createTag": "Tạo “{{name}}”",
+    "removeTag": "Bỏ thẻ {{name}}",
+    "renameTag": "Đổi tên thẻ",
+    "deleteTag": "Xoá thẻ",
+    "deleteTagQuestion_other": "Xoá thẻ “{{name}}”? Thẻ sẽ bị gỡ khỏi {{count}} cuộc họp.",
+    "duplicate": "“{{name}}” đã có.",
+    "tooLong": "Tối đa {{max}} ký tự.",
+    "limit": "Đã đạt giới hạn {{max}}.",
+    "fromTemplate": "Theo mẫu",
+    "manageTitle": "Thư mục và thẻ",
+    "manageEmpty": "Chưa có thư mục hay thẻ nào. Thêm từ một cuộc họp hoặc khi chọn nhiều cuộc họp."
   }
 }

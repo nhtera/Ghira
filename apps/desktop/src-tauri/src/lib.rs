@@ -4,6 +4,9 @@
 
 mod ask_cmd;
 mod audio_protocol;
+mod calendar_cmd;
+#[cfg(target_os = "macos")]
+mod calendar_mac;
 mod cloud_cmd;
 mod core;
 mod detail;
@@ -16,6 +19,7 @@ mod lock_cmd;
 mod menu;
 mod models_cmd;
 mod navigation;
+mod organize_cmd;
 mod panels;
 mod people_cmd;
 mod recovery_cmd;
@@ -101,7 +105,11 @@ async fn start_recording(
                 .ok()
                 .and_then(|s| s.meeting_language.hint())
         });
-        c.start(mode, language, title)
+        let meeting = c.start(mode, language, title)?;
+        // A calendar meeting in progress names the new meeting (D4); inert
+        // until the calendar is connected.
+        calendar_cmd::on_recording_started(c, &meeting);
+        Ok(meeting)
     })
     .await
 }
@@ -399,6 +407,25 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             speakers_cmd::accept_voice_suggestion,
             speakers_cmd::dismiss_voice_suggestion,
             speakers_cmd::save_voice_profile,
+            calendar_cmd::calendar_status,
+            calendar_cmd::request_calendar_access,
+            calendar_cmd::set_calendar,
+            calendar_cmd::pick_ics_file,
+            calendar_cmd::remove_ics_file,
+            calendar_cmd::upcoming_events,
+            calendar_cmd::set_event_ask,
+            calendar_cmd::meeting_attendees,
+            organize_cmd::list_folders,
+            organize_cmd::create_folder,
+            organize_cmd::rename_folder,
+            organize_cmd::delete_folder,
+            organize_cmd::move_to_folder,
+            organize_cmd::list_tags,
+            organize_cmd::create_tag,
+            organize_cmd::rename_tag,
+            organize_cmd::delete_tag,
+            organize_cmd::tag_meetings,
+            organize_cmd::untag_meetings,
             system::show_notification
         ])
         .events(tauri_specta::collect_events![

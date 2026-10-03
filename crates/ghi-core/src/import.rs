@@ -111,6 +111,22 @@ pub fn file_sha256(path: &Path) -> std::io::Result<String> {
     Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
+/// Imports one meeting from several participants' tracks (Zoom "separate
+/// audio file for each participant", phase 14d D9): `files` are `(path,
+/// participant name)` pairs. The tracks are mixed into one stored `file` track;
+/// each participant's speech spans become a named speaker and are stored
+/// (`track_speakers`) for the final pass, which then skips the diarizer.
+///
+/// W0-B stub: the signature is final, the body is inert (slice S2).
+pub fn import_tracks(
+    _store: &Store,
+    _files: &[(std::path::PathBuf, Option<String>)],
+    _opts: &ImportOptions,
+    _events: &EventTx,
+) -> Result<ImportReport, String> {
+    Err("notImplemented".into())
+}
+
 /// Imports `path` into `store`. `progress` gets 0..1 as decoding advances.
 pub fn import_file(
     store: &Store,

@@ -288,12 +288,19 @@ pub fn open_detect(app: &AppHandle, prompt: MeetingDetected) {
                     })
                     .collect()
             };
-            let route = format!(
+            let mut route = format!(
                 "/detect?app={}&name={}&browser={}",
                 enc(&prompt.app),
                 enc(&prompt.app_name),
                 u8::from(prompt.browser)
             );
+            // A calendar meeting: its title and key ride along too.
+            if let Some(t) = &prompt.title {
+                route.push_str(&format!("&title={}", enc(t)));
+            }
+            if let Some(e) = &prompt.event {
+                route.push_str(&format!("&event={}", enc(e)));
+            }
             let pos = monitor_frame(app, (0.0, 0.0))
                 .map(|(x, y, w, _)| (x + w - DETECT_SIZE.0 - 16.0, y + 40.0));
             if build_panel(app, DETECT, &route, DETECT_SIZE, pos).is_err() {

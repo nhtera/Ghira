@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-untag-meetings"
+description = "Enables the untag_meetings command without any pre-configured scope."
+commands.allow = ["untag_meetings"]
+
+[[permission]]
+identifier = "deny-untag-meetings"
+description = "Denies the untag_meetings command without any pre-configured scope."
+commands.deny = ["untag_meetings"]

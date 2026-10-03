@@ -2,6 +2,7 @@
 // Sidebar (brief §5): the ⌘K button, Meetings, Live (only while recording,
 // with a red dot), People, Ask, Import; Settings and the on-device footer at
 // the bottom. Icons only in a compact window.
+import { SidebarFolders } from "../features/folders/sidebar-folders";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Icon, cn, shortcutLabel, usePlatform, type IconName } from "@ghi/ui";
@@ -54,6 +55,7 @@ export function Sidebar({ compact }: { compact: boolean }) {
           {n.dot && <span aria-hidden className={cn("size-2 rounded-full bg-rec", compact && "absolute ml-4 -mt-4")} />}
         </Link>
       ))}
+      {!compact && <SidebarFolders />}
       <div className="flex-1" />
       <Link
         to="/settings/$section"

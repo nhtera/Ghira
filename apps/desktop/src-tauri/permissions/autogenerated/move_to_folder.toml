@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-move-to-folder"
+description = "Enables the move_to_folder command without any pre-configured scope."
+commands.allow = ["move_to_folder"]
+
+[[permission]]
+identifier = "deny-move-to-folder"
+description = "Denies the move_to_folder command without any pre-configured scope."
+commands.deny = ["move_to_folder"]

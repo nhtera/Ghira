@@ -9,6 +9,7 @@ import { Button, Icon, Segmented, usePlatform } from "@ghi/ui";
 import { APP_NAME } from "@ghi/i18n";
 import type { LiveMode } from "../../bindings";
 import { ipc } from "../../ipc";
+import { CalendarCard } from "../calendar/calendar-card";
 import { Card, Note, Row, SwitchRow, inputCls, useSettings } from "./parts";
 
 export function RecordingSection() {
@@ -30,6 +31,7 @@ export function RecordingSection() {
         </Row>
         <Note icon="check_circle">{t("settings.recording.echoOn")}</Note>
       </Card>
+      <CalendarCard />
       {settings && <LiveModeCard mode={settings.liveMode} onChange={(liveMode) => void patch({ liveMode })} />}
       <Card title={t("settings.recording.consentMessage")} hint={t("settings.recording.consentMessageHint")}>
         {settings && (

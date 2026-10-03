@@ -126,6 +126,25 @@
     "allow-clear-speaker-me",
     "allow-accept-voice-suggestion",
     "allow-dismiss-voice-suggestion",
-    "allow-save-voice-profile"
+    "allow-save-voice-profile",
+    "allow-calendar-status",
+    "allow-request-calendar-access",
+    "allow-set-calendar",
+    "allow-pick-ics-file",
+    "allow-remove-ics-file",
+    "allow-upcoming-events",
+    "allow-set-event-ask",
+    "allow-meeting-attendees",
+    "allow-list-folders",
+    "allow-create-folder",
+    "allow-rename-folder",
+    "allow-delete-folder",
+    "allow-move-to-folder",
+    "allow-list-tags",
+    "allow-create-tag",
+    "allow-rename-tag",
+    "allow-delete-tag",
+    "allow-tag-meetings",
+    "allow-untag-meetings"
   ]
 }

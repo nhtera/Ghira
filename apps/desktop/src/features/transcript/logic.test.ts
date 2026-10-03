@@ -13,6 +13,7 @@ const seg = (i: number, speaker: string | null, over: Partial<SegmentView> = {})
   language: "en",
   confidence: 0.9,
   edited: false,
+  overlap: false,
   words: [],
   ...over,
 });

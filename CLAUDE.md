@@ -63,6 +63,12 @@ guards release binaries.
 `meeting_tags` (names unique by folded form, link rows with fresh gids),
 `meetings.source_app`, sealed `calendar_ct` / `track_speakers_ct`, and
 `segments.overlap` via `mark_overlaps`.
+Phase 14d modules (stubbed in W0-B, filled by slices S2-S6): `ghi-core` `calendar`
+(events, ICS, prompt rules), `activity` (per-track speech spans), `presets`
+(import source/title/date, Zoom grouping), `recluster` (>8 speakers),
+`import::import_tracks`, `vocab::meeting_terms`; desktop `calendar_cmd`,
+`calendar_mac` (EventKit), `organize_cmd` (folders/tags); UI mount points under
+`features/{calendar,folders}`; mocks `ipc/mock-{calendar,organize}.ts`.
 
 Notes engine: `crates/ghi-llm` (templates in `templates/*.toml`, generated
 JSON schemas, map-reduce notes with citations, enhance, Ask, redaction, send

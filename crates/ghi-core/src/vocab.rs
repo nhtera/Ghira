@@ -67,6 +67,16 @@ pub fn effective_terms(store: &ghi_store::store::Store) -> Result<Vec<String>, S
     Ok(t)
 }
 
+/// What the final pass corrects towards for one meeting: [`effective_terms`]
+/// and, first, the names of the people in its calendar event (phase 14d).
+/// W0-B: the global terms only; the attendees arrive with slice S4.
+pub fn meeting_terms(
+    store: &ghi_store::store::Store,
+    _meeting: &str,
+) -> Result<Vec<String>, String> {
+    effective_terms(store)
+}
+
 #[derive(Debug, Clone)]
 pub struct Vocabulary {
     /// (term as written, folded words).

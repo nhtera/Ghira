@@ -171,6 +171,8 @@ pub struct SegmentView {
     pub confidence: Option<f64>,
     /// The user changed the text ("Edited").
     pub edited: bool,
+    /// Another speaker talked over this line: some words may be wrong.
+    pub overlap: bool,
     /// One per space-separated word of `text`, in order (empty when the
     /// counts don't match, e.g. after an edit).
     pub words: Vec<WordTiming>,
@@ -377,6 +379,7 @@ pub async fn meeting_transcript(
                 language: s.lang,
                 confidence: s.confidence.map(f64::from),
                 edited: s.edited,
+                overlap: s.overlap,
                 words,
             });
         }
@@ -784,6 +787,14 @@ pub struct SearchRequest {
     pub to_ms: Option<f64>,
     /// Only this meeting ("Find" inside a meeting uses the transcript instead).
     pub meeting: Option<String>,
+    /// Only meetings in this folder (gid); `""` means meetings in no folder.
+    #[serde(default)]
+    #[specta(optional)]
+    pub folder: Option<String>,
+    /// Only meetings with any of these tags (gids; none: no restriction).
+    #[serde(default)]
+    #[specta(optional)]
+    pub tags: Option<Vec<String>>,
     pub limit: u32,
     pub offset: u32,
 }
@@ -860,6 +871,8 @@ pub async fn search_meetings(
                 from_ms: ms(request.from_ms),
                 to_ms: ms(request.to_ms),
                 meeting_gid: request.meeting,
+                folder: request.folder,
+                tags: request.tags.unwrap_or_default(),
                 ..Default::default()
             },
             // Each hit is decrypted: keep pages small.

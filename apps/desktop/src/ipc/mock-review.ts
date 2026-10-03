@@ -64,6 +64,7 @@ function segments(): SegmentView[] {
       language: "vi",
       confidence: 0.92,
       edited: false,
+      overlap: false,
       words: words.map((w, k) => ({
         t0Ms: t0 + k * step,
         t1Ms: t0 + (k + 1) * step,
@@ -539,6 +540,9 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
             template: null,
             people: [],
             job: { kind: "final_pass", progress: 0, waitingForModels: false },
+            folder: null,
+            tags: [],
+            sourceApp: null,
           });
           emitUpdate({ id, state: "done", meeting, progress: 1, error: null });
           host.process(meeting);

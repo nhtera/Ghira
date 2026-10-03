@@ -3,6 +3,7 @@
 // Stop/Pause/Open, the last three meetings, the privacy line, Open {{app}}.
 // It is its own window: recording or navigating happens in the main window
 // (`showMain`), then the popover hides.
+import { NextEvent } from "../calendar/next-event";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -154,6 +155,8 @@ export function Popover() {
           {t("system.commandFailed", { message: error })}
         </p>
       )}
+
+      <NextEvent />
 
       <section
         aria-label={t("tray.recent")}

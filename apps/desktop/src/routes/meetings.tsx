@@ -25,6 +25,7 @@ import { NameSpeakers } from "../features/processing/name-speakers";
 import { ProcessingPanel } from "../features/processing/processing-panel";
 import { useProcessing } from "../features/processing/processing-store";
 import { adapter } from "../features/processing/speakers-adapter";
+import { UpNextStrip } from "../features/calendar/up-next-strip";
 import { Page } from "../shell/page";
 import { useAppActions } from "../shell/actions";
 
@@ -199,6 +200,7 @@ export function MeetingsScreen() {
           <EmptyState kind="library" className="mt-10" onPrimary={() => void startRecording("call")} onSecondary={() => void navigate({ to: "/import" })} />
         ) : (
           <>
+            <UpNextStrip />
             <div className="flex flex-none flex-col gap-2.5 pb-3">
               <label className="flex h-10 items-center gap-2 rounded-panel border border-line2 bg-surface px-3 focus-within:border-accent">
                 <Icon name="search" size={19} className="text-faint" />

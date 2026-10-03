@@ -139,7 +139,8 @@
       "micLost": "The microphone was disconnected. Reconnect it to keep recording your voice.",
       "systemLost": "System audio stopped. The other people on the call are not being recorded.",
       "diskFull": "The disk is full. Recording has stopped saving. Free up space now."
-    }
+    },
+    "manyVoices": "More than 8 voices. Extra ones share the Others lane for now; {{app}} tells them apart after the meeting."
   },
   "speakers": {
     "title": "Speakers",
@@ -206,7 +207,9 @@
     "markedMe": "Marked as Me",
     "unmarkedMe": "No longer marked as Me",
     "soundsLikeName": "Sounds like {{name}}",
-    "dismissSuggestionFor": "Dismiss the suggestion for {{speaker}}"
+    "dismissSuggestionFor": "Dismiss the suggestion for {{speaker}}",
+    "inOthers_one": "{{count}} voice in Others",
+    "inOthers_other": "{{count}} voices in Others"
   },
   "common": {
     "accept": "Accept",
@@ -331,7 +334,8 @@
     "deferred": {
       "title": "Recording saved. Notes are written after the models download.",
       "body": "Speech models {{percent}}% downloaded. {{app}} continues by itself when you’re online."
-    }
+    },
+    "othersCount": "Others · {{count}}"
   },
   "library": {
     "subtitle_mac_one": "{{count}} meeting · all stored on this Mac",
@@ -349,7 +353,9 @@
       "people": "People",
       "source": "Source",
       "template": "Template",
-      "date": "Date"
+      "date": "Date",
+      "folder": "Folder",
+      "tags": "Tags"
     },
     "groups": {
       "lastWeek": "Last week"
@@ -415,7 +421,8 @@
       "week": "Last 7 days",
       "month": "Last 30 days"
     },
-    "undoTooLate": "Too late to undo: the meeting is already deleted"
+    "undoTooLate": "Too late to undo: the meeting is already deleted",
+    "sourceImport": "{{source}} import"
   },
   "tray": {
     "detected": {
@@ -431,7 +438,10 @@
     "recent": "Recent",
     "next": "Next",
     "recording": "Recording",
-    "quit": "Quit {{app}}"
+    "quit": "Quit {{app}}",
+    "calendarStart": {
+      "title": "“{{title}}” is starting. Record it?"
+    }
   },
   "cloud": {
     "title": "Improve these notes with a cloud model?",
@@ -1407,7 +1417,8 @@
       "zoom": "Zoom recording",
       "teams": "Teams recording",
       "voiceMemos": "Voice Memos",
-      "other": "Audio file"
+      "other": "Audio file",
+      "meet": "Google Meet recording"
     },
     "problems": {
       "unsupported": "{{app}} can’t read this file. Import audio or video instead.",
@@ -1416,7 +1427,13 @@
       "duplicate": "Already imported as “{{title}}”"
     },
     "removeFile": "Remove {{name}}",
-    "channelsN": "{{count}} channels"
+    "channelsN": "{{count}} channels",
+    "group": {
+      "title_one": "Zoom recording · {{count}} participant",
+      "title_other": "Zoom recording · {{count}} participants",
+      "body": "Each person has their own track, so {{app}} knows who said what without guessing.",
+      "unnamed": "Participant {{number}}"
+    }
   },
   "palette": {
     "placeholder": "Type a command or search meetings",
@@ -1511,6 +1528,59 @@
     "findNext": "Next match",
     "lineMenu": "Line actions",
     "loading": "Loading the transcript…",
-    "empty": "No transcript for this meeting."
+    "empty": "No transcript for this meeting.",
+    "overlap": "Talking over each other",
+    "overlapHint": "Two people spoke at once here, so some words may be wrong."
+  },
+  "calendar": {
+    "title": "Calendar",
+    "body_mac": "Names meetings from your Calendar app and suggests who is in them. Calendar data stays on this Mac.",
+    "body_win": "Names meetings from a calendar file (.ics) and suggests who is in them. Calendar data stays on this PC.",
+    "connect": "Connect Calendar…",
+    "connected": "Connected",
+    "denied_mac": "Calendar access is off for {{app}}. Turn it on in System Settings → Privacy & Security → Calendars.",
+    "importIcs": "Import a calendar file (.ics)…",
+    "icsFrom": "From {{name}}",
+    "icsRemove": "Remove calendar file",
+    "icsHint": "{{app}} reads the file again when it changes. Export it again from Outlook to update it.",
+    "icsInvalid": "{{app}} can’t read this calendar file.",
+    "askOnStart": "Ask to record when a calendar meeting starts",
+    "inMinutes_one": "in {{count}} min",
+    "inMinutes_other": "in {{count}} min",
+    "now": "Now",
+    "at": "at {{time}}",
+    "people_one": "{{count}} person",
+    "people_other": "{{count}} people",
+    "inInvite": "In the invite",
+    "denied_win": "Calendar access is off for {{app}}. Turn it on in Settings → Privacy & security → Calendar."
+  },
+  "organize": {
+    "folders": "Folders",
+    "folder": "Folder",
+    "noFolder": "No folder",
+    "newFolder": "New folder…",
+    "folderName": "Folder name",
+    "moveTo": "Move to folder…",
+    "moved_one": "Moved {{count}} meeting to {{folder}}",
+    "moved_other": "Moved {{count}} meetings to {{folder}}",
+    "renameFolder": "Rename folder",
+    "deleteFolder": "Delete folder",
+    "deleteFolderQuestion_one": "Delete “{{name}}”? Its {{count}} meeting stays in Meetings.",
+    "deleteFolderQuestion_other": "Delete “{{name}}”? Its {{count}} meetings stay in Meetings.",
+    "tags": "Tags",
+    "addTag": "Add tag…",
+    "tagName": "Tag name",
+    "createTag": "Create “{{name}}”",
+    "removeTag": "Remove tag {{name}}",
+    "renameTag": "Rename tag",
+    "deleteTag": "Delete tag",
+    "deleteTagQuestion_one": "Delete tag “{{name}}”? It is removed from {{count}} meeting.",
+    "deleteTagQuestion_other": "Delete tag “{{name}}”? It is removed from {{count}} meetings.",
+    "duplicate": "“{{name}}” already exists.",
+    "tooLong": "Use at most {{max}} characters.",
+    "limit": "You have reached the limit of {{max}}.",
+    "fromTemplate": "From the template",
+    "manageTitle": "Folders and tags",
+    "manageEmpty": "No folders or tags yet. Add them from a meeting or by selecting meetings."
   }
 }

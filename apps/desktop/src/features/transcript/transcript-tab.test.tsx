@@ -37,6 +37,7 @@ const seg = (i: number, spk: string, text: string, over: Partial<SegmentView> = 
   language: "vi",
   confidence: 0.9,
   edited: false,
+  overlap: false,
   words: text.split(" ").map((_, k) => ({ t0Ms: i * 10_000 + k * 1000, t1Ms: i * 10_000 + k * 1000 + 900, confidence: i === 0 && k === 1 ? 0.3 : 0.95 })),
   ...over,
 });

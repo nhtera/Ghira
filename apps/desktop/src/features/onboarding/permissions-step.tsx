@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // D1 step 4: each permission is explained before its OS prompt (priming): the
 // "Allow…" button is the only thing that triggers the system dialog.
+import { CalendarPermissionRow } from "../calendar/calendar-permission-row";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Icon, cn, useToast, usePlatform, type IconName } from "@ghi/ui";
@@ -138,6 +139,8 @@ export function PermissionsStep({ nav }: { nav: StepNav }) {
             </Status>
           }
         />
+
+        <CalendarPermissionRow />
       </ul>
       <StepActions nav={nav} />
     </StepFrame>

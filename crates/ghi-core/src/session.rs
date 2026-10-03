@@ -560,9 +560,8 @@ impl Session {
                         .copied(),
                     t0_ms: seg.t0_ms,
                     t1_ms: seg.t1_ms,
-                    // Overlap is not stored: it shows again after a reload
-                    // only through the speakers' lanes.
-                    overlap: false,
+                    // Stored per line (`segments.overlap`).
+                    overlap: seg.overlap,
                     words: seg
                         .text
                         .split_whitespace()

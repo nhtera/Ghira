@@ -46,6 +46,20 @@ pub struct MeetingRow {
     pub people: Vec<PersonChip>,
     /// The active job, if any.
     pub job: Option<MeetingJob>,
+    /// The folder's gid (`list_folders` has the names); `None`: no folder.
+    pub folder: Option<String>,
+    pub tags: Vec<TagChip>,
+    /// Where an imported file came from: `zoom`, `teams`, `meet`, `plaud`,
+    /// `voice_memos`.
+    pub source_app: Option<String>,
+}
+
+/// A tag on a meeting row.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TagChip {
+    pub gid: String,
+    pub name: String,
 }
 
 /// A named speaker as a chip: color + initial (never color alone).
@@ -100,6 +114,7 @@ fn rows(core: &Core, limit: u32, offset: u32) -> Result<Vec<MeetingRow>, String>
         .map_err(|e| e.to_string())?;
     let gids: Vec<String> = meetings.iter().map(|m| m.gid.clone()).collect();
     let mut people = store.named_speakers(&gids).map_err(|e| e.to_string())?;
+    let mut tags = store.meeting_tags(&gids).map_err(|e| e.to_string())?;
     Ok(meetings
         .into_iter()
         .map(|m| MeetingRow {
@@ -114,6 +129,17 @@ fn rows(core: &Core, limit: u32, offset: u32) -> Result<Vec<MeetingRow>, String>
                 .collect(),
             template: m.template,
             job: active.remove(&m.gid),
+            folder: m.folder_gid,
+            source_app: m.source_app,
+            tags: tags
+                .remove(&m.gid)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|t| TagChip {
+                    gid: t.gid,
+                    name: t.name,
+                })
+                .collect(),
             gid: m.gid,
             title: m.title,
             started_at: m.started_at as f64,
