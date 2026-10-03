@@ -6,6 +6,8 @@
 #
 #   apps/mobile/scripts/sim.sh [--udid UDID] <command> [args]
 #
+#   create [name]             create an iPhone simulator on the newest iOS runtime and print its UDID
+#                             (CI: echo "GHI_SIM_UDID=$(sim.sh create)" >> "$GITHUB_ENV")
 #   udid                      print the resolved simulator UDID
 #   boot                      boot the simulator (and show the Simulator app)
 #   install [path/to/Ghira.app]   install the built app (default: the newest simulator build)
@@ -16,7 +18,8 @@
 #   container [app|data|group]    print a container path (default: data)
 #   reset                     uninstall the app and reset its privacy grants
 #
-# Default simulator: iPhone 17 Pro on iOS 26.3 (override: --udid or $GHI_SIM_UDID).
+# Simulator: $GHI_SIM_UDID / --udid when given (any simulator, whatever runtime); else the
+# iPhone 17 Pro on iOS 26.3 (override the lookup with $GHI_SIM_NAME / $GHI_SIM_OS).
 # Languages: pass launch args, e.g.  launch -- -AppleLanguages "(vi)" -AppleLocale vi_VN
 # Test hooks: build with `build-ios.sh --sim --test-hooks`, then
 #   launch --env GHI_FAKE_MIC=/path/in.wav   (a path the simulator can read)
@@ -38,7 +41,7 @@ if [[ "${1:-}" == --udid ]]; then
   shift 2
 fi
 cmd="${1:-}"
-[[ -n "$cmd" ]] || { sed -n '3,23p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[[ -n "$cmd" ]] || { sed -n "3,27p" "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 shift
 
 # All simulators simctl knows: "udid<TAB>name<TAB>os<TAB>state".
@@ -63,6 +66,29 @@ resolve_udid() {
   udid="$(awk -F'\t' -v n="$want_name" -v o="$want_os" '$2 == n && $3 == o {print $1; exit}' <<<"$sims")"
   [[ -n "$udid" ]] || die "no '$want_name' simulator on iOS $want_os (set GHI_SIM_UDID, GHI_SIM_NAME, GHI_SIM_OS)"
 }
+
+# `create` runs before the lookup: a runner image may have no matching simulator yet.
+if [[ "$cmd" == create ]]; then
+  name="${1:-Ghira CI}"
+  python3 - "$name" <<'PY' | { read -r rt dt || exit 1; xcrun simctl create "$name" "$dt" "$rt"; }
+import json, subprocess, sys
+def simctl(*a):
+    return json.loads(subprocess.check_output(["xcrun", "simctl", "list", *a, "-j"]))
+def ver(s):
+    return tuple(int(x) for x in s.split("."))
+runtimes = [r for r in simctl("runtimes")["runtimes"] if r.get("isAvailable") and r["identifier"].split(".")[-1].startswith("iOS-")]
+if not runtimes:
+    sys.exit("sim.sh: no iOS simulator runtime installed")
+rt = max(runtimes, key=lambda r: ver(r["version"]))
+types = [t for t in simctl("devicetypes")["devicetypes"] if t["name"].startswith("iPhone")]
+supported = {t["identifier"] for t in rt.get("supportedDeviceTypes", [])}
+types = [t for t in types if t["identifier"] in supported] or types
+pref = [t for t in types if t["name"] in ("iPhone 17 Pro", "iPhone 16 Pro", "iPhone 15 Pro")]
+dt = (pref or types)[-1]
+print(rt["identifier"], dt["identifier"])
+PY
+  exit
+fi
 
 resolve_udid
 
@@ -159,5 +185,5 @@ case "$cmd" in
     xcrun simctl privacy "$udid" reset all "$bundle" >/dev/null 2>&1 || true
     echo "reset $bundle on $udid"
     ;;
-  *) die "unknown command '$cmd' (boot|install|launch|models|grant|ui|container|reset)" ;;
+  *) die "unknown command '$cmd' (create|udid|boot|install|launch|models|grant|ui|container|reset)" ;;
 esac

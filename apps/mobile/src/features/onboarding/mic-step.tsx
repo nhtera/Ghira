@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MicPermission } from "../../bindings";
 import { ipc } from "../../ipc";
-import { PhoneButton } from "../record/phone-button";
+import { PhoneButton } from "@ghi/ui";
 import { StepLayout } from "./step-layout";
 
 export function MicStep({ onNext }: { onNext: () => void }) {

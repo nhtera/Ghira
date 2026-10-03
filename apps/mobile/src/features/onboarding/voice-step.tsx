@@ -2,11 +2,10 @@
 // M1 step 3 (optional): a 20-second voice profile so the user shows up as
 // "Me". The consent checkbox comes first; the passage and the microphone only
 // after it. Anything but a saved profile leaves no consent and no audio behind.
-import { Banner, Icon, cn } from "@ghi/ui";
+import { Banner, cn, Icon, PhoneButton } from "@ghi/ui";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ipc } from "../../ipc";
-import { PhoneButton } from "../record/phone-button";
 import { StepLayout } from "./step-layout";
 
 type Phase = "idle" | "listening" | "saved";

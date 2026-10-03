@@ -143,12 +143,7 @@ final class NativeLifecycleTests: XCTestCase {
         let toggle = app.switches["Require Face ID"]
         if !toggle.waitForExistence(timeout: 10) { try? app.debugDescription.write(toFile: "/private/tmp/ghira-settings-tree.txt", atomically: true, encoding: .utf8) }  // for triage
         try XCTSkipUnless(toggle.exists, "no 'Require Face ID' switch in Settings (accessibility label differs)")
-        if toggle.value as? String != "1" {
-            toggle.tap()
-            Ghira.faceID(match: true)
-        }
-        // Lock as soon as the app is reopened (not after minutes away).
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Only when reopened")).firstMatch.tap()
+        Ghira.enableAppLockImmediately(app)
         XCUIDevice.shared.press(.home)
         sleep(1)
         app.activate()
@@ -163,7 +158,7 @@ final class NativeLifecycleTests: XCTestCase {
         XCTAssertTrue(unlock.isHittable)
         unlock.tap()
         Ghira.faceID(match: true)
-        XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Privacy and security"].waitForExistence(timeout: 10)) // back on the screen we left
         XCTAssertFalse(unlock.exists)
         // Leave the app unlocked for the other tests: turn the lock off (it asks for Face ID).
         let off = NSPredicate(format: "value == %@", "0")

@@ -5,9 +5,13 @@
 // tests/e2e/helpers.ts.
 import { defineConfig, devices } from "@playwright/test";
 
+// PORT lets parallel runs (agents, CI jobs) each have their own server.
+const port = Number(process.env.PORT ?? 4183);
+const origin = `http://127.0.0.1:${port}`;
+
 export default defineConfig({
   testDir: "tests/e2e",
-  use: { baseURL: "http://127.0.0.1:4183" },
+  use: { baseURL: origin },
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
   projects: [
     {
@@ -16,8 +20,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "node tests/e2e/serve-dist.mjs",
-    url: "http://127.0.0.1:4183",
+    command: `PORT=${port} node tests/e2e/serve-dist.mjs`,
+    url: origin,
     reuseExistingServer: !process.env.CI,
   },
 });

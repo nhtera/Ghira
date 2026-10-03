@@ -15,6 +15,12 @@ when the NeMo-Speech.cpp pin or its build options change.
 | protobuf-lite (inside SentencePiece) | same | BSD-3-Clause | `.../sentencepiece-src/third_party/protobuf-lite/LICENSE` |
 | darts-clone (inside SentencePiece) | same | BSD-2-Clause | `.../sentencepiece-src/third_party/darts_clone/LICENSE` |
 
+The texts of SentencePiece and its bundled libraries (also esaxx, MIT), SQLCipher,
+libopus and OpenSSL are vendored in `third_party/licenses/` because their sources
+only exist in the build tree or the cargo registry; `tools/scripts/gen-licenses.mjs`
+reads them (and NeMo-Speech.cpp's `LICENSE` and `NOTICE` from the submodule) into
+the About -> Licenses data of both apps. Update them with the versions above.
+
 C code compiled into Rust crates by their build scripts (statically linked;
 `cargo-about` lists the crate, not the C library inside it):
 

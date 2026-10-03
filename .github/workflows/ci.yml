@@ -127,11 +127,13 @@ jobs:
           ./tools/scripts/fetch-models.sh
           cargo test --locked -p ghi-speech -p ghi-cli --features ghi-cli/nemo
 
-  # iOS spike (phase 7): the app with NeMo-Speech.cpp builds for the simulator.
-  # Device builds need the owner's signing team (apps/mobile/scripts/build-ios.sh).
+  # iOS app (phases 7, 16): the simulator build, the Rust tests on the simulator,
+  # the mobile UI on WebKit, the XCUITest flows with scripted engines (no models),
+  # and the guard that no test hook reaches a release build. Device builds need
+  # the owner's signing team (apps/mobile/scripts/build-ios.sh).
   ios:
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -147,6 +149,15 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Xcode 26 (iOS 26 SDK; the Live Activity and share extension need it)
+        run: |
+          app="$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' | sort -V | tail -1)"
+          [[ -n "$app" ]] || { echo "::error::no Xcode 26.x on this runner image"; exit 1; }
+          sudo xcode-select -s "$app"
+          xcodebuild -version
+      - name: An iPhone simulator on the newest iOS runtime (every script honours GHI_SIM_UDID)
+        run: |
+          echo "GHI_SIM_UDID=$(./apps/mobile/scripts/sim.sh create)" >> "$GITHUB_ENV"
       - run: brew install xcodegen
       - run: pnpm install --frozen-lockfile
       - name: NeMo-Speech.cpp for the iOS simulator
@@ -155,10 +166,50 @@ jobs:
         run: ./tools/scripts/build-nemo-ios.sh ios-sim
       # The app crate embeds the frontend at compile time.
       - run: pnpm --filter @ghi/mobile build
+      - name: Mobile UI (typecheck, lint, unit)
+        run: pnpm --filter @ghi/mobile typecheck && pnpm --filter @ghi/mobile lint && pnpm --filter @ghi/mobile test
+      - name: Mobile UI on WebKit at iPhone size (light/dark, EN/VI, 200%, axe)
+        working-directory: apps/mobile
+        run: |
+          pnpm exec playwright install --with-deps webkit
+          pnpm exec playwright test
       - name: Clippy (iOS, with the engine)
         run: cargo clippy --locked -p ghi-mobile --features ghi-mobile/nemo --target aarch64-apple-ios-sim -- -D warnings
+      - name: Release build has no test hooks or dev key (RT-12)
+        run: |
+          cargo build --release --locked --lib -p ghi-mobile --features ghi-mobile/nemo --target aarch64-apple-ios-sim
+          lib=target/aarch64-apple-ios-sim/release/libghi_mobile_lib.a
+          ./tools/scripts/check-no-test-hooks.sh "$lib"
+          ./tools/scripts/check-no-dev-key.sh "$lib"
       - name: Simulator app build
-        run: ./apps/mobile/scripts/build-ios.sh --sim
+        run: |
+          ./apps/mobile/scripts/build-ios.sh --sim
+          ./tools/scripts/check-no-test-hooks.sh apps/mobile/src-tauri/gen/apple/build/arm64-sim/Ghira.app
+      - name: Simulator app build with the test hooks
+        run: ./apps/mobile/scripts/build-ios.sh --sim --test-hooks
+      # The hooked build must trip the check, or the check is blind.
+      - name: The hook check detects the hooks
+        run: |
+          ./tools/scripts/check-no-test-hooks.sh --expect-hooks \
+            apps/mobile/src-tauri/gen/apple/build/arm64-sim/Ghira.app \
+            target/aarch64-apple-ios-sim/debug/libghi_mobile_lib.a
+      - name: Rust tests on the simulator (store, core, mobile)
+        run: |
+          ./apps/mobile/scripts/sim.sh boot
+          ./apps/mobile/scripts/test-ios-sim.sh -p ghi-store -p ghi-core -p ghi-mobile
+      - name: XCUITest flows (fake microphone, scripted engines)
+        run: ./native/ios/GhiUITests/flows.sh
+      - name: XCUITest lifecycle smoke
+        run: |
+          ./apps/mobile/scripts/sim.sh install
+          ./apps/mobile/scripts/sim.sh grant
+          ./native/ios/GhiUITests/run.sh -only-testing:GhiUITests/SmokeTests/testLaunchShowsTheApp
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: xcuitest-results
+          path: native/ios/GhiUITests/build/Logs/Test
+          retention-days: 7
 
   # Eval harness (phase 2): unit tests, plus one scored run on a text-only
   # fixture. Real and public audio never enters CI.

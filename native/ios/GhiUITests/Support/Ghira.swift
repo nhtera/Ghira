@@ -7,8 +7,17 @@ import XCTest
 enum Ghira {
     static let bundleId = "com.nhtera.ghira"
 
+    /// Scripted engines on a live-tier phone by default (CI has no models); set
+    /// GHI_REAL_ENGINES=1 on the host to run against the models in the app.
     static func app(env: [String: String] = [:], args: [String] = []) -> XCUIApplication {
         let app = XCUIApplication(bundleIdentifier: bundleId)
+        if (ProcessInfo.processInfo.environment["GHI_REAL_ENGINES"] ?? "").isEmpty {
+            app.launchEnvironment["GHI_FAKE_ENGINES"] = "1"
+            app.launchEnvironment["GHI_DEVICE_TIER"] = "live"
+        }
+        if let mic = ProcessInfo.processInfo.environment["GHI_FAKE_MIC_PATH"], !mic.isEmpty {
+            app.launchEnvironment["GHI_FAKE_MIC"] = mic
+        }
         app.launchEnvironment.merge(env) { $1 }
         app.launchArguments += args
         return app
@@ -23,9 +32,9 @@ enum Ghira {
         XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))
     }
 
-    /// "Record room" (or "Record"): the record screen's big button.
+    /// "Record room": the record screen's big button (not the "Record" tab).
     static func recordButton(_ app: XCUIApplication) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Record")).firstMatch
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Record ")).firstMatch
     }
 
     static func stopButton(_ app: XCUIApplication) -> XCUIElement {
@@ -44,15 +53,32 @@ enum Ghira {
         }
     }
 
+    /// On the Privacy screen: Require Face ID on, locking as soon as the app is
+    /// reopened. The delay choice only takes once the Face ID save is done, so it
+    /// is repeated until it shows as selected.
+    static func enableAppLockImmediately(_ app: XCUIApplication) {
+        let toggle = app.switches["Require Face ID"]
+        if toggle.value as? String != "1" {
+            toggle.tap()
+            faceID(match: true)
+        }
+        let immediately = app.buttons["Only when reopened Selected"]
+        for _ in 0..<5 where !immediately.exists {
+            _ = waitUntil(2) { immediately.exists }
+            app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Only when reopened")).firstMatch.tap()
+        }
+        XCTAssertTrue(immediately.waitForExistence(timeout: 5), "lock delay not set\n" + app.debugDescription)
+    }
+
     /// Opens the Record tab when the app launched on another one (it restores the last).
     static func openRecordTab(_ app: XCUIApplication) {
         if recordButton(app).waitForExistence(timeout: 3) || stopButton(app).exists { return }
         tapTab(app, "Record")
     }
 
-    /// A tab-bar item (a link in the web shell, or a button once 16-F's TabBar lands).
+    /// A tab-bar item (the @ghi/ui TabBar: buttons).
     static func tapTab(_ app: XCUIApplication, _ name: String) {
-        for query in [app.links, app.buttons, app.staticTexts] where query[name].waitForExistence(timeout: 3) {
+        for query in [app.buttons, app.links, app.staticTexts] where query[name].waitForExistence(timeout: 3) {
             query[name].tap()
             return
         }
@@ -80,6 +106,14 @@ enum Ghira {
             }
             sleep(1)
         }
+    }
+
+    /// Waits for a condition without a fixed sleep (XCTNSPredicateExpectation polls and returns early).
+    @discardableResult
+    static func waitUntil(_ timeout: TimeInterval, _ condition: @escaping () -> Bool) -> Bool {
+        let predicate = NSPredicate { _, _ in condition() }
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: nil)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
     }
 
     // MARK: - Darwin notifications (simulator-wide; the app's test hooks listen)
@@ -145,11 +179,12 @@ enum Ghira {
         let file = dir.appendingPathComponent("engine-running.txt")
         try? FileManager.default.removeItem(at: file)
         hook("probe-engine")
-        let end = Date().addingTimeInterval(timeout)
-        while Date() < end {
-            if let v = try? String(contentsOf: file, encoding: .utf8) { return v == "1" }
-            usleep(100_000)
+        var running: Bool?
+        waitUntil(timeout) {
+            guard let v = try? String(contentsOf: file, encoding: .utf8) else { return false }
+            running = v == "1"
+            return true
         }
-        return nil
+        return running
     }
 }

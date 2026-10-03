@@ -2,7 +2,7 @@
 // M1: the first-launch steps, full screen. Resumes at the first step not
 // completed; a step completes when the user moves on (skipping counts). The
 // last step ends onboarding and opens Record.
-import { Banner, Icon } from "@ghi/ui";
+import { Banner, Icon, PhoneButton } from "@ghi/ui";
 import { useNavigate } from "@tanstack/react-router";
 import {
   useCallback,
@@ -14,7 +14,6 @@ import {
 import { useTranslation } from "react-i18next";
 import type { OnboardingStep } from "../../bindings";
 import { ipc } from "../../ipc";
-import { PhoneButton } from "../record/phone-button";
 import { ConsentStep } from "./consent-step";
 import { DoneStep } from "./done-step";
 import { LanguagesStep } from "./languages-step";

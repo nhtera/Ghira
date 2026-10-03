@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // M1 last step: nothing records on its own, say so, summarize what was set
 // up, and go.
-import { ListRow, ListSection } from "@ghi/ui";
+import { ListRow, ListSection, PhoneButton } from "@ghi/ui";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingLanguage, ProcessingTarget } from "../../bindings";
 import { ipc } from "../../ipc";
-import { PhoneButton } from "../record/phone-button";
 import { modelsView } from "./models-model";
 import { StepLayout } from "./step-layout";
 

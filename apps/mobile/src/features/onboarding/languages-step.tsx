@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // M1 step 1: the language(s) spoken in meetings. Stored as the default meeting
 // language; "both" is code-switching ("auto").
-import { Icon, cn } from "@ghi/ui";
+import { cn, Icon, PhoneButton } from "@ghi/ui";
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingLanguage } from "../../bindings";
 import { ipc } from "../../ipc";
-import { PhoneButton } from "../record/phone-button";
 import { StepLayout } from "./step-layout";
 
 const OPTIONS: {

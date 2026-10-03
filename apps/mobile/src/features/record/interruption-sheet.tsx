@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // The audio session was taken (a phone call, another app). Recording never
 // resumes by itself: this sheet asks, and stays until the user answers.
+import { PhoneButton, Sheet } from "@ghi/ui";
 import { formatClock } from "@ghi/i18n";
-import { Sheet } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
-import { PhoneButton } from "./phone-button";
 
 export type InterruptionSheetProps = {
   open: boolean;

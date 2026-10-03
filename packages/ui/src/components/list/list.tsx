@@ -50,11 +50,16 @@ export type ListRowProps = RowBase &
         onPress: () => void;
         /** Disclosure chevron: set it on rows that navigate. */
         chevron?: boolean;
+        /** For a row that expands content below it: its state and the id of that content. */
+        expanded?: boolean;
+        controls?: string;
         trailing?: never;
       }
     | {
         onPress?: undefined;
         chevron?: never;
+        expanded?: never;
+        controls?: never;
         /**
          * A control at the trailing edge (a switch). Pass a function to get the
          * id of the title, for the control's `aria-labelledby`.
@@ -63,7 +68,7 @@ export type ListRowProps = RowBase &
       }
   );
 
-export function ListRow({ title, subtitle, icon, value, trailing, chevron, onPress, destructive, disabled, className }: ListRowProps) {
+export function ListRow({ title, subtitle, icon, value, trailing, chevron, expanded, controls, onPress, destructive, disabled, className }: ListRowProps) {
   const titleId = useId();
   const inner = (
     <>
@@ -88,7 +93,7 @@ export function ListRow({ title, subtitle, icon, value, trailing, chevron, onPre
   return (
     <li className={cn("relative after:absolute after:right-0 after:bottom-0 after:left-4 after:h-px after:bg-line last:after:hidden", className)}>
       {onPress ? (
-        <button type="button" onClick={onPress} disabled={disabled} className={cn(row, "active:bg-sunk")}>
+        <button type="button" onClick={onPress} disabled={disabled} aria-expanded={expanded} aria-controls={expanded ? controls : undefined} className={cn(row, "active:bg-sunk")}>
           {inner}
         </button>
       ) : (

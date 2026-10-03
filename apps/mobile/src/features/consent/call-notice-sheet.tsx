@@ -2,9 +2,8 @@
 // M6: a phone call is active. iOS does not let an app record calls, so say so
 // and offer the way that works (speakerphone + Room mode) with the consent
 // reminder. Its confirm is what lifts the call block (`callAcknowledged`).
-import { Icon, Sheet } from "@ghi/ui";
+import { Icon, PhoneButton, Sheet } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
-import { PhoneButton } from "../record/phone-button";
 import type { MeetingLanguage } from "../../bindings";
 import { CopyConsentButton } from "./consent-sheet";
 

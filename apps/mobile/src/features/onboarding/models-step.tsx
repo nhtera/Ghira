@@ -2,13 +2,12 @@
 // M1 step 6: the speech models (about 877 MB) download once, over Wi-Fi unless
 // the user says otherwise this time. Progress, a stopped download and "waiting
 // for Wi-Fi" are states of this screen; "later" leaves a record-only app.
+import { Banner, cn, Icon, PhoneButton } from "@ghi/ui";
 import { formatBytes } from "@ghi/i18n";
-import { Banner, Icon, cn } from "@ghi/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MobileModelItem, MobileModelsStatus } from "../../bindings";
 import { ipc } from "../../ipc";
-import { PhoneButton } from "../record/phone-button";
 import { applyItem, modelsView } from "./models-model";
 import { StepLayout } from "./step-layout";
 

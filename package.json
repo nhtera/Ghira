@@ -10,6 +10,7 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "gen:licenses": "node tools/scripts/gen-licenses.mjs",
+    "gen:licenses:mobile": "node tools/scripts/gen-licenses.mjs --app mobile",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "check:licenses": "node tools/scripts/check-js-licenses.mjs"

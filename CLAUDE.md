@@ -45,9 +45,19 @@ cargo clippy -p ghi-speech --features voice --all-targets -- -D warnings
 cargo test -p ghi-speech --features voice
 cargo clippy -p ghi-core -p ghi-cli --features ghi-cli/voice --all-targets -- -D warnings
 cargo test -p ghi-core -p ghi-cli --features ghi-cli/voice
-# iOS spike (phase 7; needs Xcode + xcodegen):
-cargo clippy -p ghi-mobile --features nemo --target aarch64-apple-ios -- -D warnings
-apps/mobile/scripts/build-ios.sh --sim
+# iOS app (phases 7, 16; needs Xcode + xcodegen; simulator only):
+cargo clippy -p ghi-mobile --features nemo --target aarch64-apple-ios-sim -- -D warnings
+cargo test -p ghi-mobile --lib
+pnpm --filter @ghi/mobile typecheck && pnpm --filter @ghi/mobile lint && pnpm --filter @ghi/mobile test
+pnpm --filter @ghi/mobile test:e2e   # WebKit at iPhone size; PORT=<n> for a private server
+apps/mobile/scripts/build-ios.sh --sim --test-hooks   # (any build without --test-hooks checks itself with check-no-test-hooks.sh)
+apps/mobile/scripts/sim.sh boot && apps/mobile/scripts/sim.sh install && apps/mobile/scripts/sim.sh grant
+apps/mobile/scripts/test-ios-sim.sh -p ghi-store -p ghi-core -p ghi-mobile   # needs the booted simulator
+native/ios/GhiUITests/run.sh         # lifecycle + smoke XCUITests, on the installed app (GHI_REAL_ENGINES=1: real models)
+native/ios/GhiUITests/flows.sh       # resets, installs, grants, then the full flow with scripted engines (no models)
+./tools/scripts/check-no-test-hooks.sh <release libghi_mobile_lib.a | Ghira.app>   # --expect-hooks on a hooked build
+pnpm gen:licenses && pnpm gen:licenses:mobile   # About -> Licenses data; CI fails on a diff (license.yml)
+# CI picks the simulator with GHI_SIM_UDID (sim.sh create); locally the default is iPhone 17 Pro, iOS 26.3.
 # eval kit (phase 2), from tools/eval:
 uv sync --locked && uv run ruff check && uv run ruff format --check && uv run pytest -q
 ```
@@ -155,13 +165,29 @@ per-profile keys, crypto-shred), speaker embeddings in `ghi-speech` feature
 Third-party voice profiles are hard-off (`THIRD_PARTY_APPROVED` in `system.rs`,
 store `ThirdPartyApproved` token) until counsel signs off.
 
-iOS spike (phase 7): `apps/mobile` (Tauri 2, iOS only) + `native/ios` (Swift
-audio/lifecycle and the Live Activity, C ABI in `GhiAudio/include/ghi_ios.h`).
-NeMo-Speech.cpp for iOS: `tools/scripts/build-nemo-ios.sh` (XCFrameworks in
-`target/nemo-ios`). Build/install: `apps/mobile/scripts/build-ios.sh [--release|--sim]`,
-then `push-models.sh` and `selftest-ios.sh <wav>`. The Xcode project is generated
-from the committed `gen/apple/project.yml` (don't re-run `tauri ios init`); the
-signing team comes from `$APPLE_DEVELOPMENT_TEAM` and is never committed.
+iOS app (phase 7 spike, phase 16 app; Simulator-verified, device runs are owner items):
+`crates/ghi-app` is the shared core of both apps; `apps/mobile` (Tauri 2, iOS only)
+mounts it with the phone's own `src-tauri/src/cmd/*` (record, meetings, onboarding,
+privacy, settings, voice, models, import, lifecycle, events), the recording engine
+(`session`, `backlog`, `gate`, `engine`, `tier`, `lifecycle`, `inbox`) and the
+`ghi-core` lifecycle jobs. UI: `apps/mobile/src` (TanStack Router, hash history;
+screens M1-M6 under `features/*`, the `@ghi/ui` iOS primitives TabBar/NavBar/List/
+PhoneButton/Sheet; copy in `packages/i18n/locales/mobile/*.json`, EN + VI; the
+scripted mock `ipc/mock*.ts` outside Tauri). `native/ios`: `GhiAudio` (Swift audio,
+lifecycle, Live Activity, C ABI in `include/ghi_ios.h`), `GhiLiveActivity`,
+`GhiShareExtension` (inbox in the App Group), `GhiUITests` (XCUITest). Data is
+Application Support, encrypted store + bundles; no `UIFileSharingEnabled`.
+Test hooks (`GHI_FAKE_MIC`, `GHI_FAKE_ENGINES`, `com.nhtera.ghira.test.*` Darwin
+notifications) exist only with the cargo feature `test-hooks` + Swift `GHI_TEST_HOOKS`
+(`build-ios.sh --sim --test-hooks`); `tools/scripts/check-no-test-hooks.sh` guards
+release artifacts. Build/install: `apps/mobile/scripts/build-ios.sh [--release|--sim
+[--test-hooks]]` (the Xcode project is generated from the committed
+`gen/apple/project.yml`; don't re-run `tauri ios init`; the signing team comes from
+`$APPLE_DEVELOPMENT_TEAM`, never committed), `sim.sh` (boot/install/grant/models/ui),
+`test-ios-sim.sh` (Rust tests ON the simulator), `push-models.sh` and `selftest-ios.sh`
+(device). NeMo-Speech.cpp for iOS: `tools/scripts/build-nemo-ios.sh` (XCFrameworks in
+`target/nemo-ios`). Never touch a connected iPhone from automation. The About
+licenses are generated: `pnpm gen:licenses:mobile` (`src/generated/licenses.json`).
 
 Speech engines: `crates/ghi-speech` (NeMo-Speech.cpp FFI, feature `nemo`); models
 pinned in `crates/ghi-models/registry.toml`; decision record `Plans/docs/06`.

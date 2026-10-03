@@ -61,4 +61,20 @@ export APPLE_DEVELOPMENT_TEAM="${APPLE_DEVELOPMENT_TEAM:-0000000000}"
 (cd "$mobile/src-tauri/gen/apple" && xcodegen generate --quiet)
 cd "$mobile"
 CI=true pnpm tauri ios build ${profile[@]+"${profile[@]}"} --features "$features" --target "$target"
-find "$mobile/src-tauri/gen/apple/build" -maxdepth 3 \( -name '*.ipa' -o -name '*.app' \) -newer "$mobile/src-tauri/gen/apple/project.yml" -print
+outputs="$(find "$mobile/src-tauri/gen/apple/build" -maxdepth 3 \( -name '*.ipa' -o -name '*.app' \) -newer "$mobile/src-tauri/gen/apple/project.yml" -print)"
+echo "$outputs"
+# Every build without --test-hooks (device, --release included) must be free of them.
+if [[ $hooks == 0 ]]; then
+  while IFS= read -r out; do
+    [[ -n "$out" ]] || continue
+    case "$out" in
+      *.ipa)
+        tmp="$(mktemp -d)"
+        unzip -q "$out" -d "$tmp"
+        "$root/tools/scripts/check-no-test-hooks.sh" "$tmp"
+        rm -rf "$tmp"
+        ;;
+      *) "$root/tools/scripts/check-no-test-hooks.sh" "$out" ;;
+    esac
+  done <<<"$outputs"
+fi

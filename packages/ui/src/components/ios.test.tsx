@@ -7,6 +7,7 @@ import { PlatformProvider } from "../platform/platform";
 import { Banner } from "./banner";
 import { ListRow, ListSection } from "./list";
 import { LargeTitle, NavBar, useLargeTitleCollapse } from "./nav-bar";
+import { PhoneButton } from "./phone-button";
 import { PrivacyIndicator } from "./privacy-indicator";
 import { RecordControl } from "./record-control";
 import { StatusPill, SyncChip, type SyncChipKind } from "./status-pill";
@@ -245,5 +246,50 @@ describe("iOS variants of shared components", () => {
     rerender(<PlatformProvider value="ios"><RecordControl state="error" mode="room" onFix={onFix} /></PlatformProvider>);
     await userEvent.click(screen.getByRole("button", { name: "Fix" }));
     expect(onFix).toHaveBeenCalledOnce();
+  });
+});
+
+describe("PhoneButton", () => {
+  it("is a 44 pt button that fills the row, wraps its label and reports taps", async () => {
+    const onClick = vi.fn();
+    ios(<PhoneButton onClick={onClick}>Start recording a long meeting</PhoneButton>);
+    const b = screen.getByRole("button", { name: "Start recording a long meeting" });
+    expect(b.className).toContain("min-h-ios-target");
+    expect(b.className).toContain("w-full");
+    expect(b.getAttribute("type")).toBe("button");
+    await userEvent.click(b);
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("hugs the label when inline and ignores taps while disabled", async () => {
+    const onClick = vi.fn();
+    ios(<PhoneButton inline disabled onClick={onClick}>Save</PhoneButton>);
+    const b = screen.getByRole("button", { name: "Save" });
+    expect(b.className).not.toContain("w-full");
+    await userEvent.click(b);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+});
+
+describe("ListRow disclosure", () => {
+  it("exposes aria-expanded and aria-controls on a row that expands content", () => {
+    ios(
+      <ListSection>
+        <ListRow title="Row" onPress={() => {}} expanded controls="detail" />
+      </ListSection>,
+    );
+    const b = screen.getByRole("button", { name: "Row" });
+    expect(b.getAttribute("aria-expanded")).toBe("true");
+    expect(b.getAttribute("aria-controls")).toBe("detail");
+  });
+  it("sets neither on a plain row", () => {
+    ios(
+      <ListSection>
+        <ListRow title="Plain" onPress={() => {}} chevron />
+      </ListSection>,
+    );
+    const b = screen.getByRole("button", { name: "Plain" });
+    expect(b.hasAttribute("aria-expanded")).toBe(false);
+    expect(b.hasAttribute("aria-controls")).toBe(false);
   });
 });

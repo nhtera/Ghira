@@ -66,7 +66,7 @@ test.describe("search", () => {
         .first(),
     ).toBeVisible();
     // Back to Search (the tab), the query is a recent search; stored only in the page.
-    await page.getByRole("link", { name: "Search" }).click();
+    await page.getByRole("button", { name: "Search" }).click();
     await expect(
       page.getByRole("heading", { name: "Recent searches" }),
     ).toBeVisible();

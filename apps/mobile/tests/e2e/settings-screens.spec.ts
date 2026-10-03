@@ -186,10 +186,23 @@ test.describe("cloud notes", () => {
 });
 
 test.describe("about", () => {
-  test("shows the version and the licenses", async ({ page }) => {
+  test("shows the version and the way to the licenses", async ({ page }) => {
     await openApp(page, "/settings/about");
     await expect(page.getByText("0.1.0").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open-source licenses" })).toBeVisible();
+    await expectAccessible(page);
+  });
+
+  test("lists what ships, filters, and opens a license text", async ({ page }) => {
+    await openApp(page, "/settings/about");
+    await page.getByRole("button", { name: "Open-source licenses" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Open-source software" })).toBeVisible();
     await expect(page.getByText("OpenMDW-1.1").first()).toBeVisible();
+    await page.getByRole("searchbox", { name: "Search licenses" }).fill("react-dom");
+    const row = page.getByRole("button", { name: /^react-dom / });
+    await expect(row).toBeVisible();
+    await row.click();
+    await expect(page.locator("pre").first()).toContainText("Permission is hereby granted");
     await expectAccessible(page);
   });
 });

@@ -8,7 +8,7 @@
 #
 # Spawned binaries carry no entitlements, so Keychain-backed tests fail there:
 # skip them with  -- --skip keychain  (the default skips tests named *keychain*).
-# Honours CARGO_TARGET_DIR and GHI_SIM_UDID (default: iPhone 17 Pro, iOS 26.3).
+# Honours CARGO_TARGET_DIR and GHI_SIM_UDID (default: iPhone 17 Pro on iOS 26.3, see sim.sh).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -25,21 +25,11 @@ done
 [[ ${#pkgs[@]} -gt 0 ]] || pkgs=(-p ghi-store)
 [[ $# -gt 0 ]] || set -- --skip keychain
 
-# sim.sh resolves and validates the UDID (refuses non-simulators); `container`
-# is not needed, so ask `boot` for the state instead.
-udid="${GHI_SIM_UDID:-}"
-if [[ -z "$udid" ]]; then
-  udid="$(xcrun simctl list devices available -j | python3 -c '
-import json, sys
-for rt, devs in json.load(sys.stdin)["devices"].items():
-    if rt.endswith("iOS-26-3"):
-        for d in devs:
-            if d["name"] == "iPhone 17 Pro":
-                print(d["udid"]); raise SystemExit
-')"
-fi
-[[ -n "$udid" ]] || { echo "no iPhone 17 Pro / iOS 26.3 simulator; set GHI_SIM_UDID" >&2; exit 1; }
-GHI_SIM_UDID="$udid" "$sim" boot >/dev/null
+# sim.sh resolves and validates the simulator ($GHI_SIM_UDID when set, whatever its
+# runtime; refuses non-simulators).
+udid="$("$sim" udid)"
+export GHI_SIM_UDID="$udid"
+"$sim" boot >/dev/null
 
 rustup target add aarch64-apple-ios-sim >/dev/null
 cd "$root"

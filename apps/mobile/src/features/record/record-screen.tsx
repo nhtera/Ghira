@@ -5,7 +5,7 @@
 // Starting goes through the consent reminder (M2) or, while a phone call is
 // active, the call notice (M6). The controls are pinned at the bottom; the
 // transcript is what gives way at big text sizes.
-import { Icon, PrivacyIndicator, RecordControl, type PrivacyState } from "@ghi/ui";
+import { Icon, PhoneButton, PrivacyIndicator, type PrivacyState, RecordControl } from "@ghi/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,7 +17,6 @@ import { InterruptionSheet } from "./interruption-sheet";
 import { LiveTranscript, TurnAnnouncer } from "./live-transcript";
 import { hasSession, isCapturing, type RecordModel } from "./model";
 import { PhaseBanners } from "./phase-banners";
-import { PhoneButton } from "./phone-button";
 import { TargetPicker } from "./target-picker";
 import { bannerError, useRecord, useRecordSetup } from "./use-record";
 import { Waveform } from "./waveform";
@@ -63,7 +62,7 @@ export function RecordScreen() {
   const marksLabel = model.marks > 0 ? `${t("mobile.record.mark")}, ${t("mobile.record.marks", { count: model.marks })}` : t("mobile.record.mark");
 
   return (
-    <section data-screen="record" className="flex h-full flex-col gap-3 overflow-hidden px-4 pt-3 pb-4">
+    <section data-screen="record" className="flex h-full flex-col gap-3 overflow-hidden px-4 pt-[calc(var(--safe-top)+12px)] pb-4">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <h1 className="text-ios-title2 m-0">{t("mobile.record.title")}</h1>
         <PrivacyIndicator state={privacyState(model)} />

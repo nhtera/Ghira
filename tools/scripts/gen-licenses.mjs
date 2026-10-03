@@ -3,6 +3,8 @@
 // Licenses (Rust crates, bundled npm packages, models, bundled assets).
 // Run from the repo root: `node tools/scripts/gen-licenses.mjs` (or `pnpm gen:licenses`).
 // Needs cargo-about and a prior `pnpm build` (apps/desktop/dist/third-party-js.json).
+// `--app mobile` (pnpm gen:licenses:mobile) does the same for the iPhone app: the
+// aarch64-apple-ios crates of apps/mobile/src-tauri and apps/mobile/dist.
 // Output is deterministic: no timestamps, everything sorted.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -12,7 +14,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const out = join(root, "apps/desktop/src/generated/licenses.json");
+const app = process.argv.includes("--app") ? process.argv[process.argv.indexOf("--app") + 1] : "desktop";
+if (app !== "desktop" && app !== "mobile") throw new Error(`unknown --app ${app}`);
+const out = join(root, `apps/${app}/src/generated/licenses.json`);
 const read = (p) => readFileSync(join(root, p), "utf8");
 const byName = (a, b) =>
   a.name < b.name ? -1 : a.name > b.name ? 1 : a.version < b.version ? -1 : a.version > b.version ? 1 : 0;
@@ -40,12 +44,14 @@ const uniqSorted = (xs) => [...new Set(xs)].sort();
 function rustSection() {
   let cfg = read("about.toml");
   if (!cfg.includes("CDLA-Permissive-2.0")) cfg = cfg.replace(/accepted = \[/, 'accepted = [\n  "CDLA-Permissive-2.0",');
+  // The phone ships the iOS build only: scope the crate graph to its target.
+  if (app === "mobile") cfg += '\ntargets = ["aarch64-apple-ios", "aarch64-apple-ios-sim"]\n';
   const tmp = join(mkdtempSync(join(tmpdir(), "ghi-about-")), "about.toml");
   writeFileSync(tmp, cfg);
   const json = JSON.parse(
     execFileSync(
       "cargo",
-      ["about", "generate", "--format", "json", "-c", tmp, "--manifest-path", "apps/desktop/src-tauri/Cargo.toml"],
+      ["about", "generate", "--format", "json", "-c", tmp, "--manifest-path", `apps/${app}/src-tauri/Cargo.toml`],
       { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"] },
     ),
   );
@@ -83,8 +89,8 @@ function rustSection() {
 
 // ---- 2. JavaScript bundled into the desktop frontend ----
 function jsSection() {
-  const list = new URL("apps/desktop/dist/third-party-js.json", `file://${root}`);
-  if (!existsSync(list)) throw new Error("apps/desktop/dist/third-party-js.json is missing: run `pnpm build` first.");
+  const list = new URL(`apps/${app}/dist/third-party-js.json`, `file://${root}`);
+  if (!existsSync(list)) throw new Error(`apps/${app}/dist/third-party-js.json is missing: run \`pnpm build\` first.`);
   const pnpm = join(root, "node_modules/.pnpm");
   const dirs = readdirSync(pnpm);
   return JSON.parse(readFileSync(list, "utf8"))
@@ -107,6 +113,56 @@ function jsSection() {
     .sort(byName);
 }
 
+// ---- 2b. Native components (C/C++ that cargo-about cannot see; third_party/NATIVE_NOTICES.md) ----
+// Texts are read verbatim (copyright lines and NOTICE files are part of the
+// license obligation, so addText's de-duplication is not used). The SentencePiece,
+// SQLCipher, libopus and OpenSSL texts are vendored in third_party/licenses/
+// (their sources only exist inside the build tree / the cargo registry).
+const NEMO = "third_party/NeMo-Speech.cpp";
+const VENDORED = "third_party/licenses";
+
+function addVerbatim(id, name, raw) {
+  const text = raw.replace(/\r\n?/g, "\n").trim();
+  const key = `${id}-${createHash("sha1").update(text).digest("hex").slice(0, 6)}`;
+  licenses[key] ??= { id, name, text };
+  return key;
+}
+
+/** The "## MIT License" section at the end of NeMo-Speech.cpp's THIRD_PARTY_NOTICES.md. */
+const nemoMit = () => read(`${NEMO}/THIRD_PARTY_NOTICES.md`).split(/^## MIT License\s*$/m)[1];
+const parakeetNotice = () => read(`${NEMO}/THIRD_PARTY_NOTICES.md`).match(/^### parakeet\.cpp\n[\s\S]*?(?=^### )/m)[0];
+
+function nativeSection() {
+  const nemoVersion = read(`${NEMO}/VERSION`).match(/(\d+\.\d+\.\d+)/)[1];
+  const sp = "https://github.com/google/sentencepiece";
+  const all = [
+    { name: "NeMo-Speech.cpp (NVIDIA)", version: nemoVersion, license: "Apache-2.0", url: "https://github.com/NVIDIA-NeMo/NeMo-Speech.cpp",
+      texts: [["Apache-2.0", "Apache License 2.0", () => read(`${NEMO}/LICENSE`)], ["NOTICE", "NeMo-Speech.cpp NOTICE", () => read(`${NEMO}/NOTICE`)]] },
+    { name: "ggml (with NVIDIA's patches)", version: "pinned by NeMo-Speech.cpp", license: "MIT", url: "https://github.com/ggml-org/ggml",
+      texts: [["MIT", "MIT License (ggml)", () => read(`${NEMO}/ggml/LICENSE`)]] },
+    { name: "parakeet.cpp (derived code in NeMo-Speech.cpp)", version: "1675ee5b", license: "MIT", url: "https://github.com/jason-ni/parakeet.cpp",
+      texts: [["MIT", "MIT License", () => `${parakeetNotice()}\n${nemoMit()}`]] },
+    { name: "SentencePiece (static)", version: "17d7580d", license: "Apache-2.0", url: sp, texts: [["Apache-2.0", "Apache License 2.0", () => read(`${VENDORED}/sentencepiece.LICENSE.txt`)]] },
+    { name: "Abseil (in SentencePiece)", version: "bundled with SentencePiece", license: "Apache-2.0", url: "https://github.com/abseil/abseil-cpp", texts: [["Apache-2.0", "Apache License 2.0", () => read(`${VENDORED}/abseil.LICENSE.txt`)]] },
+    { name: "protobuf-lite (in SentencePiece)", version: "bundled with SentencePiece", license: "BSD-3-Clause", url: "https://github.com/protocolbuffers/protobuf", texts: [["BSD-3-Clause", "BSD 3-Clause (Google)", () => read(`${VENDORED}/protobuf-lite.LICENSE.txt`)]] },
+    { name: "darts-clone (in SentencePiece)", version: "bundled with SentencePiece", license: "BSD-2-Clause", url: "https://github.com/s-yata/darts-clone", texts: [["BSD-2-Clause", "BSD 2-Clause (Susumu Yata)", () => read(`${VENDORED}/darts-clone.LICENSE.txt`)]] },
+    { name: "esaxx (in SentencePiece)", version: "bundled with SentencePiece", license: "MIT", url: "https://github.com/hillbig/esaxx", texts: [["MIT", "MIT License (esaxx)", () => read(`${VENDORED}/esaxx.LICENSE.txt`)]] },
+    { name: "libopus (via opusic-sys)", version: "1.6.1", license: "BSD-3-Clause", url: "https://opus-codec.org", texts: [["BSD-3-Clause", "BSD 3-Clause (Xiph.Org, Opus)", () => read(`${VENDORED}/opus.COPYING.txt`)]] },
+    { name: "SQLCipher (via libsqlite3-sys; SQLite inside is public domain)", version: "4.14.0", license: "BSD-3-Clause", url: "https://www.zetetic.net/sqlcipher/", texts: [["BSD-3-Clause", "BSD 3-Clause (Zetetic LLC)", () => read(`${VENDORED}/sqlcipher.LICENSE.txt`)]] },
+    // OpenSSL is SQLCipher's crypto provider on non-Apple targets only.
+    { name: "OpenSSL 3 (SQLCipher crypto, Windows)", version: "3.6", license: "Apache-2.0", url: "https://www.openssl.org", desktopOnly: true, texts: [["Apache-2.0", "Apache License 2.0", () => read(`${VENDORED}/openssl.LICENSE.txt`)]] },
+  ];
+  return all
+    .filter((c) => !(c.desktopOnly && app === "mobile"))
+    .map((c) => ({
+      name: c.name,
+      version: c.version,
+      license: c.license,
+      url: c.url,
+      licenseKeys: c.texts.map(([id, name, text]) => addVerbatim(id, name, text())),
+    }));
+}
+
 // ---- 3. Models (registry.toml: [[model]] tables of scalar keys) ----
 function modelsSection() {
   const models = [];
@@ -118,7 +174,9 @@ function modelsSection() {
   // OpenMDW-1.1 has no text in the repo (third_party/NATIVE_NOTICES.md only names it),
   // so the model card url is the reference. Others reuse a stored text.
   const stored = (id) => Object.entries(licenses).filter(([, l]) => l.id === id).map(([k]) => k).sort();
+  // The phone ships the speech models only (asr, diarization, voice).
   return models
+    .filter((m) => app === "desktop" || ["asr", "diarization", "voice"].includes(m.role))
     .map((m) => {
       const url = `https://huggingface.co/${m.repo}`;
       return {
@@ -158,7 +216,9 @@ function assetsSection() {
     }
   }
   const stripped = (s) => s.replace(/\s*\(<[^>]*>\)/g, "").replace(/<(https?:[^>]+)>/g, "$1");
+  // The phone uses Material Symbols (packages/ui/THIRD_PARTY_NOTICES.md): no Fluent icons.
   return assets
+    .filter((a) => app === "desktop" || !/Fluent/i.test(a.name))
     .map((a) => {
       const notice = stripped(a.notice).replace(/\n{2,}/g, "\n").trim();
       const license = /Open Font License/.test(`${a.notice}`) || fontPkg[a.name] || /Fonts/i.test(a.category)
@@ -181,14 +241,21 @@ const rust = rustSection();
 const js = jsSection();
 const models = modelsSection();
 const assets = assetsSection();
+const native = nativeSection();
 
 // Drop unreferenced texts (the JS pass can register variants nothing points to).
-const used = new Set([...rust, ...js, ...models, ...assets].flatMap((e) => e.licenseKeys));
+// The desktop About lists "assets" (no UI change needed): native components join
+// them there. The phone's About has its own "native" group.
+if (app === "desktop") {
+  for (const n of native) assets.push({ name: n.name, license: n.license, notice: `${n.version} · ${n.url}`, licenseKeys: n.licenseKeys });
+  assets.sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+const used = new Set([...rust, ...js, ...models, ...assets, ...(app === "mobile" ? native : [])].flatMap((e) => e.licenseKeys));
 const sorted = Object.fromEntries(
   Object.keys(licenses).filter((k) => used.has(k)).sort().map((k) => [k, licenses[k]]),
 );
 
-writeFileSync(out, `${JSON.stringify({ licenses: sorted, rust, js, models, assets }, null, 1)}\n`);
+writeFileSync(out, `${JSON.stringify({ licenses: sorted, rust, js, models, assets, ...(app === "mobile" ? { native } : {}) }, null, 1)}\n`);
 console.log(
   `licenses.json: ${Object.keys(sorted).length} texts, ${rust.length} crates, ${js.length} js, ` +
     `${models.length} models, ${assets.length} assets`,

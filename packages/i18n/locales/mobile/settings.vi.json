@@ -127,7 +127,18 @@
         "core": "Lõi",
         "licence": "{{app}} là phần mềm mã nguồn mở (Apache-2.0).",
         "licencesHeader": "Giấy phép mã nguồn mở",
-        "licencesFooter": "Toàn văn giấy phép đi kèm ứng dụng."
+        "licencesFooter": "Toàn văn giấy phép đi kèm ứng dụng.",
+        "licencesTitle": "Phần mềm mã nguồn mở",
+        "licencesSearch": "Tìm giấy phép",
+        "licencesCount_other": "{{count}} gói",
+        "licencesLoading": "Đang tải…",
+        "group": {
+          "models": "Mô hình ({{count}})",
+          "assets": "Phông chữ và biểu tượng ({{count}})",
+          "rust": "Thư viện Rust ({{count}})",
+          "js": "Thư viện JavaScript ({{count}})",
+          "native": "Thư viện gốc, C/C++ ({{count}})"
+        }
       }
     },
     "privacy": {

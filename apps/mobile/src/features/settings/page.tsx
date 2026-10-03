@@ -39,7 +39,7 @@ export function Page({
   onRetry,
 }: {
   title: string;
-  back?: "settings" | "privacy";
+  back?: "settings" | "privacy" | "about";
   trailing?: ReactNode;
   children?: ReactNode;
   error?: string;
@@ -49,8 +49,7 @@ export function Page({
   const go = useGo();
   const { collapsed, scrollRef, titleRef } = useLargeTitleCollapse();
   const overflows = useOverflows(scrollRef);
-  const onBack = () =>
-    go(back === "privacy" ? "/settings/privacy" : "/settings");
+  const onBack = () => go(back === "privacy" ? "/settings/privacy" : back === "about" ? "/settings/about" : "/settings");
   return (
     <div className="flex h-full flex-col" data-screen="settings">
       {back ? (
@@ -62,7 +61,9 @@ export function Page({
           backLabel={
             back === "privacy"
               ? t("mobile.settings.rows.privacy")
-              : t("mobile.tabs.settings")
+              : back === "about"
+                ? t("mobile.settings.about.title")
+                : t("mobile.tabs.settings")
           }
         />
       ) : (

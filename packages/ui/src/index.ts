@@ -34,6 +34,7 @@ export * from "./components/empty-state";
 export * from "./components/kbd";
 export * from "./primitives/sheet";
 export * from "./components/tab-bar";
+export * from "./components/phone-button";
 export * from "./components/nav-bar";
 export * from "./components/list";
 export * from "./components/banner";

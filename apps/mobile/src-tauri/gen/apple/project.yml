@@ -99,11 +99,15 @@ targets:
         # Ghira: the C header for Swift (module GhiIOS); GHI_APP enables the
         # intents' calls into Rust (the widget extension has no Rust).
         SWIFT_INCLUDE_PATHS: $(inherited) $(PROJECT_DIR)/../../../../../native/ios/GhiAudio/include
-        # GHI_TEST_HOOKS comes from build-ios.sh --sim --test-hooks (never release).
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) GHI_APP ${GHI_SWIFT_TEST_HOOKS}
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) GHI_APP
         TARGETED_DEVICE_FAMILY: "1"
         DEVELOPMENT_TEAM: ${APPLE_DEVELOPMENT_TEAM}
         SWIFT_VERSION: "5.0"
+      # GHI_TEST_HOOKS comes from build-ios.sh --sim --test-hooks and only ever
+      # reaches the Debug configuration (build-ios.sh refuses it with --release).
+      configs:
+        debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) GHI_APP ${GHI_SWIFT_TEST_HOOKS}
       groups: [app]
     dependencies:
       - framework: libapp.a

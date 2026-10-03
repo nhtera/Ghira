@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MobileSettings, ProcessingTarget } from "../../bindings";
 import { ipc } from "../../ipc";
-import { PhoneButton } from "../record/phone-button";
+import { PhoneButton } from "@ghi/ui";
 import { TargetPicker } from "../record/target-picker";
 import { StepLayout } from "./step-layout";
 

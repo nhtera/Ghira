@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // M1 step 4: recording other people needs their agreement in many places. The
 // app reminds before every recording (M2); this says so once, up front.
-import { Icon, type IconName } from "@ghi/ui";
+import { Icon, type IconName, PhoneButton } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
-import { PhoneButton } from "../record/phone-button";
 import { StepLayout } from "./step-layout";
 
 const ITEMS: { icon: IconName; key: "tell" | "calls" | "local" }[] = [

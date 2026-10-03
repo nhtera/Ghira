@@ -22,14 +22,14 @@ describe("tab shell", () => {
   it("opens on Meetings with the four tabs", async () => {
     await open("/", "en");
     for (const name of ["Meetings", "Record", "Search", "Settings"]) {
-      expect(await screen.findByRole("link", { name })).toBeTruthy();
+      expect(await screen.findByRole("button", { name })).toBeTruthy();
     }
     expect(await screen.findByRole("heading", { level: 1, name: "Meetings" })).toBeTruthy();
   });
 
   it("speaks Vietnamese", async () => {
     await open("/search", "vi");
-    expect(await screen.findByRole("link", { name: "Cài đặt" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Cài đặt" })).toBeTruthy();
   });
 
   it("keeps onboarding outside the shell", async () => {

@@ -3,12 +3,11 @@
 // Offers a short message to copy; starting needs the explicit confirm, so the
 // closing the sheet never starts one. With a phone call
 // active the M6 notice takes its place (CallNoticeSheet).
-import { Sheet } from "@ghi/ui";
+import { PhoneButton, Sheet } from "@ghi/ui";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingLanguage } from "../../bindings";
 import { ipc } from "../../ipc";
-import { PhoneButton } from "../record/phone-button";
 
 /** The clipboard, if the webview lets us (it can refuse); resolves whether it worked. */
 export async function writeClipboard(text: string): Promise<boolean> {

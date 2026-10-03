@@ -127,7 +127,19 @@
         "core": "Core",
         "licence": "{{app}} is open source (Apache-2.0).",
         "licencesHeader": "Open-source licenses",
-        "licencesFooter": "Full license texts ship with the app."
+        "licencesFooter": "Full license texts ship with the app.",
+        "licencesTitle": "Open-source software",
+        "licencesSearch": "Search licenses",
+        "licencesCount_one": "{{count}} package",
+        "licencesCount_other": "{{count}} packages",
+        "licencesLoading": "Loading…",
+        "group": {
+          "models": "Models ({{count}})",
+          "assets": "Fonts and icons ({{count}})",
+          "rust": "Libraries, Rust ({{count}})",
+          "js": "Libraries, JavaScript ({{count}})",
+          "native": "Native libraries ({{count}})"
+        }
       }
     },
     "privacy": {

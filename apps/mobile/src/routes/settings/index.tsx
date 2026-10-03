@@ -8,6 +8,7 @@ import { AboutScreen } from "./about";
 import { CloudScreen } from "./cloud";
 import { ConsentScreen } from "./consent";
 import { SettingsHome } from "./home";
+import { LicensesScreen } from "./licenses";
 import { PrivacyScreen } from "./privacy";
 import { VoiceScreen } from "./voice";
 
@@ -22,5 +23,6 @@ export function settingsRoutes(parent: AnyRoute) {
     at("/cloud", CloudScreen),
     at("/consent", ConsentScreen),
     at("/about", AboutScreen),
+    at("/about/licenses", LicensesScreen),
   ]);
 }
