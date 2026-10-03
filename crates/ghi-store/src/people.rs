@@ -629,8 +629,8 @@ impl Store {
         gc_persons(&tx, &[pid])?;
         tx.commit()?;
         // The FTS5 index keeps the old note tokens (and positions) until
-        // merged away: rewrite it now.
-        crate::store::compact_locked(&conn)?;
+        // merged away: rewrite it now. Best effort: the removal is done.
+        let _ = crate::store::compact_locked(&conn);
         Ok(meetings.into_iter().map(|m| m.1).collect())
     }
 

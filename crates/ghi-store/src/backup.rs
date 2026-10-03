@@ -52,6 +52,7 @@ mod imp {
             value_out: *mut CFTypeRef,
             error: *mut CFErrorRef,
         ) -> Boolean;
+        fn CFURLClearResourcePropertyCacheForKey(url: CFURLRef, key: CFStringRef);
     }
 
     fn fail(what: &str) -> StoreError {
@@ -113,6 +114,10 @@ mod imp {
 
     pub fn get(path: &Path) -> Result<bool> {
         let url = Url::new(path)?;
+        // Resource values may come from a cache shared by URLs of the same
+        // file: read the flag from the file system, not a stale copy.
+        // SAFETY: valid URL and key.
+        unsafe { CFURLClearResourcePropertyCacheForKey(url.0, kCFURLIsExcludedFromBackupKey) };
         let mut value: CFTypeRef = ptr::null();
         // SAFETY: valid URL and key; `value` receives a +1 reference or stays null.
         let ok = unsafe {

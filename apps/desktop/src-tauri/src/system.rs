@@ -11,11 +11,15 @@
 //!   non-activating prompt). Never/snooze choices persist under `detect`.
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+#[cfg(target_os = "macos")]
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 use tauri_specta::Event;
 
 use crate::core::Core;
@@ -361,6 +365,7 @@ pub fn spawn_retention(core: Arc<Core>) {
 }
 
 /// Microphone access as macOS reports it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Permission {

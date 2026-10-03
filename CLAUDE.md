@@ -33,10 +33,12 @@ members get it separately.
 pnpm build && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings
 pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @ghi/desktop test:e2e
 ./tools/scripts/check-spdx.sh && ./tools/scripts/check-net-egress.sh
+./tools/scripts/check-windows.sh   # Windows type-check + clippy from a Mac (mingw-w64 GNU target; not MSVC)
 cargo deny check licenses bans advisories sources
 # speech engines (phase 3; needs tools/scripts/build-nemo.sh and fetch-models.sh first):
 cargo clippy -p ghi-speech -p ghi-cli --all-targets --features ghi-cli/nemo -- -D warnings
 cargo test -p ghi-speech -p ghi-cli --features ghi-cli/nemo
+cargo test -p ghi-desktop --features nemo -- --ignored real_models --nocapture  # real-model Core harness (minutes; needs cargo build -p ghi-llm-worker; skips without models)
 # speaker embedder (phase 14c; parity tests skip without fetch-models.sh campplus-zh-en):
 cargo clippy -p ghi-speech --features voice --all-targets -- -D warnings
 cargo test -p ghi-speech --features voice
@@ -57,6 +59,10 @@ Storage: `crates/ghi-store` (SQLCipher, per-meeting DEKs, encrypted audio
 bundles, VN-folded FTS5 search, crypto-shred delete, key stores) and
 `ghi store ...`. Debug-only file key store; `tools/scripts/check-no-dev-key.sh`
 guards release binaries.
+`ghi-store` `organize.rs` (phase 14d, migration 0007): folders, tags and
+`meeting_tags` (names unique by folded form, link rows with fresh gids),
+`meetings.source_app`, sealed `calendar_ct` / `track_speakers_ct`, and
+`segments.overlap` via `mark_overlaps`.
 
 Notes engine: `crates/ghi-llm` (templates in `templates/*.toml`, generated
 JSON schemas, map-reduce notes with citations, enhance, Ask, redaction, send
@@ -110,6 +116,20 @@ Updater: `crates/ghi-update` (minisign manifest, no downgrade, Team-ID check;
 inert until `FEED_URL` + `PUBLIC_KEYS` are set). Local crash reports + event
 log: `crates/ghi-diag` (no meeting content; tested). Acceptance:
 `tools/eval` `ghi-eval acceptance`. Checklists in `docs/release/`.
+
+P1 features (phase 14): app lock in `src-tauri/src/lock_cmd.rs` (LocalAuthentication;
+while locked `Core::store()` refuses and content events are gated; recording,
+jobs and imports use `store_even_locked`). Semantic search: chunk embeddings
+(`ghi-llm/src/embed.rs`, Qwen3-Embedding via the worker) sealed per meeting
+(`ghi-store` embeddings, `index_gen` re-index on edits), the `embed_index` job
+(`ghi-core/src/index_job.rs`, Balanced/Max only), hybrid FTS + vector RRF and
+Ask across meetings in `ghi-core/src/ask_all.rs` + `src-tauri/src/ask_cmd.rs`.
+People and voice: `ghi-store` `people.rs`/`voice.rs` (persons linked by name,
+per-profile keys, crypto-shred), speaker embeddings in `ghi-speech` feature
+`voice` (CAM++ via tract), matching in `ghi-core` `profiles.rs`/`voice_step.rs`
+(final pass) and `voice_job.rs`; desktop `people_cmd.rs`/`voice_cmd.rs`.
+Third-party voice profiles are hard-off (`THIRD_PARTY_APPROVED` in `system.rs`,
+store `ThirdPartyApproved` token) until counsel signs off.
 
 iOS spike (phase 7): `apps/mobile` (Tauri 2, iOS only) + `native/ios` (Swift
 audio/lifecycle and the Live Activity, C ABI in `GhiAudio/include/ghi_ios.h`).

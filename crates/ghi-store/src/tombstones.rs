@@ -87,6 +87,13 @@ pub(crate) fn write_children(conn: &Connection, meeting_id: i64, lamport: i64) -
     )?;
     write_where(
         conn,
+        "meeting_tag",
+        "SELECT gid FROM meeting_tags WHERE meeting_id = ?1",
+        [meeting_id],
+        lamport,
+    )?;
+    write_where(
+        conn,
         "mark",
         "SELECT gid FROM marks WHERE meeting_id = ?1",
         [meeting_id],

@@ -138,6 +138,11 @@ pub struct Meeting {
     pub cloud_used: bool,
     pub transcript_version: i64,
     pub audio_retained_until: Option<i64>,
+    /// `zoom`, `teams`, `meet`, `plaud` or `voice_memos` for an import
+    /// recognised as coming from there.
+    pub source_app: Option<String>,
+    /// The folder the meeting is in ([`Store::folders`]).
+    pub folder_gid: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -175,6 +180,8 @@ pub struct Segment {
     pub lang: Option<String>,
     pub confidence: Option<f32>,
     pub edited: bool,
+    /// Another speaker talked over this line ([`Store::mark_overlaps`]).
+    pub overlap: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -713,6 +720,8 @@ impl Store {
             cloud_used: m.cloud_used,
             transcript_version: m.transcript_version,
             audio_retained_until: m.audio_retained_until,
+            source_app: m.source_app,
+            folder_gid: m.folder_gid,
         })
     }
 
@@ -1246,7 +1255,8 @@ impl Store {
     ) -> Result<Vec<Segment>> {
         let dek = self.dek(conn, m.id)?;
         let mut stmt = conn.prepare_cached(&format!(
-            "SELECT s.gid, s.version, sp.gid, s.t0_ms, s.t1_ms, s.text_ct, s.lang, s.confidence, s.edited
+            "SELECT s.gid, s.version, sp.gid, s.t0_ms, s.t1_ms, s.text_ct, s.lang, s.confidence, s.edited,
+                    s.overlap
              FROM segments s LEFT JOIN speakers sp ON sp.id = s.speaker_id
              WHERE s.meeting_id = ?1 AND s.version = ?2 {extra_where} ORDER BY s.t0_ms, s.id"
         ))?;
@@ -1262,12 +1272,24 @@ impl Store {
                     r.get::<_, Option<String>>(6)?,
                     r.get::<_, Option<f32>>(7)?,
                     r.get::<_, bool>(8)?,
+                    r.get::<_, bool>(9)?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         rows.into_iter()
             .map(
-                |(gid, version, speaker_gid, t0_ms, t1_ms, ct, lang, confidence, edited)| {
+                |(
+                    gid,
+                    version,
+                    speaker_gid,
+                    t0_ms,
+                    t1_ms,
+                    ct,
+                    lang,
+                    confidence,
+                    edited,
+                    overlap,
+                )| {
                     let text = open_text(&dek, &ct, &row_aad("segments", "text_ct", &gid))?;
                     Ok(Segment {
                         gid,
@@ -1279,6 +1301,7 @@ impl Store {
                         lang,
                         confidence,
                         edited,
+                        overlap,
                     })
                 },
             )
@@ -2330,7 +2353,8 @@ pub(crate) fn snapshots_dir(dir: &Path) -> PathBuf {
 const MEETING_SELECT: &str =
     "SELECT id, gid, title_ct, started_at, duration_ms, source, mode, lang, template, status,
         privacy_state, cloud_locked, sensitive, consent_confirmed, cloud_used, transcript_version,
-        audio_retained_until FROM meetings";
+        audio_retained_until, source_app,
+        (SELECT f.gid FROM folders f WHERE f.id = meetings.folder_id) FROM meetings";
 
 struct RawMeeting {
     gid: String,
@@ -2349,6 +2373,8 @@ struct RawMeeting {
     cloud_used: bool,
     transcript_version: i64,
     audio_retained_until: Option<i64>,
+    source_app: Option<String>,
+    folder_gid: Option<String>,
 }
 
 fn meeting_from_row(r: &rusqlite::Row) -> rusqlite::Result<(i64, RawMeeting)> {
@@ -2371,6 +2397,8 @@ fn meeting_from_row(r: &rusqlite::Row) -> rusqlite::Result<(i64, RawMeeting)> {
             cloud_used: r.get(14)?,
             transcript_version: r.get(15)?,
             audio_retained_until: r.get(16)?,
+            source_app: r.get(17)?,
+            folder_gid: r.get(18)?,
         },
     ))
 }
@@ -2475,6 +2503,7 @@ fn insert_segments(
             lang: s.lang.clone(),
             confidence: s.confidence,
             edited: false,
+            overlap: false,
         });
     }
     Ok(out)

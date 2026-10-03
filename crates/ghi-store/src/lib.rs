@@ -8,6 +8,8 @@
 //! - [`bundle`]: the only audio writer: encrypted ~1 s pages, crash-safe,
 //!   random access for playback.
 //! - [`embeddings`]: sealed transcript-chunk vectors for semantic search.
+//! - [`organize`]: folders, tags, source app, calendar info, track speakers
+//!   and overlap marks of meetings.
 //! - [`people`] / [`voice`]: persons linked from speaker names, Me, and
 //!   voice profiles with their own wrapped keys (crypto-shred delete).
 //! - [`fold`] / [`search`]: Vietnamese accent-insensitive FTS5 search over a
@@ -30,6 +32,7 @@ pub mod fold;
 pub mod jobs;
 pub mod keys;
 pub mod migrate;
+pub mod organize;
 pub mod people;
 pub mod recovery;
 pub mod retention;
@@ -76,6 +79,16 @@ pub enum StoreError {
     /// The meeting changed (a rename, an edit) while its vectors were being
     /// built: nothing was stored; index it again.
     IndexStale,
+    /// A folder or tag with this name already exists (names compare by their
+    /// lowercase NFC form; accents count).
+    Duplicate {
+        kind: &'static str,
+    },
+    /// A size limit was reached: at most `max` of `kind`.
+    Limit {
+        kind: &'static str,
+        max: usize,
+    },
 }
 
 impl fmt::Display for StoreError {
@@ -97,6 +110,8 @@ impl fmt::Display for StoreError {
                 )
             }
             StoreError::Invalid(what) => write!(f, "invalid input: {what}"),
+            StoreError::Limit { kind, max } => write!(f, "limit reached: at most {max} {kind}"),
+            StoreError::Duplicate { kind } => write!(f, "a {kind} with that name already exists"),
             StoreError::IndexStale => f.write_str("the meeting changed while it was indexed"),
         }
     }

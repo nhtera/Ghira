@@ -66,6 +66,7 @@ impl Lock {
 
 /// Error codes the UI turns into words (`system.locked.errors.*`).
 pub const NO_AUTH: &str = "noAuthMethod";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const NO_ANSWER: &str = "noAnswer";
 pub const NOT_CONFIRMED: &str = "notConfirmed";
 

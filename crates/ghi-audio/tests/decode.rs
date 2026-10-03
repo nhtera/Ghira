@@ -80,6 +80,8 @@ fn stereo_wav(path: &Path, rate: u32) {
     );
 }
 
+// The converters (afconvert) only exist on macOS.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn have(tool: &str) -> bool {
     Command::new(tool)
         .arg(if tool == "ffmpeg" { "-version" } else { "-h" })
@@ -88,6 +90,7 @@ fn have(tool: &str) -> bool {
 }
 
 /// Runs a converter; false (with a note) when it is missing or fails.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn convert(tool: &str, args: &[&str]) -> bool {
     if !have(tool) {
         eprintln!("note: {tool} not available, skipping");
@@ -106,6 +109,7 @@ fn convert(tool: &str, args: &[&str]) -> bool {
     }
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn s(p: &Path) -> &str {
     p.to_str().unwrap()
 }

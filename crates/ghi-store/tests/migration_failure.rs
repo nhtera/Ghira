@@ -30,51 +30,55 @@ fn corrupts_the_file_then_fails(tx: &Transaction) -> rusqlite::Result<()> {
     Err(rusqlite::Error::InvalidQuery)
 }
 
-static BAD_FUNC: [Migration; 7] = [
+static BAD_FUNC: [Migration; 8] = [
     MIGRATIONS[0],
     MIGRATIONS[1],
     MIGRATIONS[2],
     MIGRATIONS[3],
     MIGRATIONS[4],
     MIGRATIONS[5],
+    MIGRATIONS[6],
     Migration {
-        version: 7,
+        version: 8,
         step: Step::Func(fails_after_partial_work),
     },
 ];
-static BAD_SQL: [Migration; 7] = [
+static BAD_SQL: [Migration; 8] = [
     MIGRATIONS[0],
     MIGRATIONS[1],
     MIGRATIONS[2],
     MIGRATIONS[3],
     MIGRATIONS[4],
     MIGRATIONS[5],
+    MIGRATIONS[6],
     Migration {
-        version: 7,
+        version: 8,
         step: Step::Sql("CREATE TABLE t (x); THIS IS NOT SQL;"),
     },
 ];
-static CORRUPTING: [Migration; 7] = [
+static CORRUPTING: [Migration; 8] = [
     MIGRATIONS[0],
     MIGRATIONS[1],
     MIGRATIONS[2],
     MIGRATIONS[3],
     MIGRATIONS[4],
     MIGRATIONS[5],
+    MIGRATIONS[6],
     Migration {
-        version: 7,
+        version: 8,
         step: Step::Func(corrupts_the_file_then_fails),
     },
 ];
-static GOOD_V2: [Migration; 7] = [
+static GOOD_V2: [Migration; 8] = [
     MIGRATIONS[0],
     MIGRATIONS[1],
     MIGRATIONS[2],
     MIGRATIONS[3],
     MIGRATIONS[4],
     MIGRATIONS[5],
+    MIGRATIONS[6],
     Migration {
-        version: 7,
+        version: 8,
         step: Step::Sql("CREATE TABLE ok2 (x INTEGER);"),
     },
 ];
@@ -134,7 +138,7 @@ fn assert_intact_and_usable(f: &Fixture) {
     assert_eq!(store.segments(&f.meeting).unwrap().len(), 3);
     drop(store);
     let conn = db::open(&f.tmp.path().join("ghira.db"), &common::db_key(&f.master)).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 6);
+    assert_eq!(db::user_version(&conn).unwrap(), 7);
     for t in ["half_done", "t"] {
         let n: i64 = conn
             .query_row(
@@ -158,7 +162,7 @@ fn a_failing_rust_migration_is_rolled_back() {
         panic!("the migration should fail");
     };
     assert!(
-        matches!(err, StoreError::Migration { version: 7, .. }),
+        matches!(err, StoreError::Migration { version: 8, .. }),
         "{err}"
     );
     assert_intact_and_usable(&f);
@@ -171,7 +175,7 @@ fn a_sql_error_is_rolled_back() {
         panic!("the migration should fail");
     };
     assert!(
-        matches!(err, StoreError::Migration { version: 7, .. }),
+        matches!(err, StoreError::Migration { version: 8, .. }),
         "{err}"
     );
     assert_intact_and_usable(&f);
@@ -184,7 +188,7 @@ fn damage_a_rollback_cannot_undo_is_repaired_from_the_snapshot() {
         panic!("the migration should fail");
     };
     assert!(
-        matches!(err, StoreError::Migration { version: 7, .. }),
+        matches!(err, StoreError::Migration { version: 8, .. }),
         "{err}"
     );
     // The snapshot survives the failure, and the database is back to normal.
@@ -205,7 +209,7 @@ fn after_a_failure_the_migration_can_be_retried() {
     assert_eq!(store.segments(&f.meeting).unwrap().len(), 2);
     drop(store);
     let conn = db::open(&f.tmp.path().join("ghira.db"), &common::db_key(&f.master)).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 7);
+    assert_eq!(db::user_version(&conn).unwrap(), 8);
 }
 
 /// Migration 0002 keeps a v1 action item's one citation in the new list.

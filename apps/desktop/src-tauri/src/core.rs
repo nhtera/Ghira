@@ -312,7 +312,15 @@ impl Core {
                 }
             })
             .map_err(|e| e.to_string())?;
-        Ok(Core {
+        Ok(Core::assemble(data, events, locked))
+    }
+
+    fn assemble(
+        data: PathBuf,
+        events: EventTx,
+        locked: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Core {
+        Core {
             data,
             store: Mutex::new(None),
             session: Mutex::new(None),
@@ -327,7 +335,16 @@ impl Core {
             settings: Mutex::new(None),
             recovered: Mutex::new(Vec::new()),
             events,
-        })
+        }
+    }
+
+    /// A core over a data directory with no window: the events stay in the
+    /// returned receiver. For the real-model harness test only.
+    #[cfg(all(test, unix))]
+    pub(crate) fn for_test(data: PathBuf) -> (Arc<Core>, ghi_core::events::EventRx) {
+        let (events, rx) = bus();
+        let locked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        (Arc::new(Core::assemble(data, events, locked)), rx)
     }
 
     /// Opens the store, runs crash recovery and starts the jobs off the main
@@ -877,3 +894,7 @@ impl Core {
         Ok(r)
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "core_real_tests.rs"]
+mod real_tests;

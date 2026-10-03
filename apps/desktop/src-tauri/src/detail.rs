@@ -910,6 +910,7 @@ mod tests {
             lang: None,
             confidence: None,
             edited: false,
+            overlap: false,
         }
     }
 

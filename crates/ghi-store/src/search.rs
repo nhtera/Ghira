@@ -56,6 +56,12 @@ pub struct SearchFilter {
     pub meeting_gids: Vec<String>,
     /// Transcript lines only (no note blocks).
     pub segments_only: bool,
+    /// Only meetings in this folder (gid); `Some("")` means meetings in no
+    /// folder.
+    pub folder: Option<String>,
+    /// Only meetings with any of these tags (gids; empty: no restriction; at
+    /// most [`crate::organize::MAX_TAGS`] are used).
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -471,6 +477,25 @@ fn push_meeting_filters(sql: &mut String, args: &mut Vec<Value>, f: &SearchFilte
     if let Some(t) = &f.template {
         sql.push_str(" AND m.template = ?");
         args.push(Value::Text(t.clone()));
+    }
+    match f.folder.as_deref() {
+        Some("") => sql.push_str(" AND m.folder_id IS NULL"),
+        Some(g) => {
+            sql.push_str(" AND m.folder_id = (SELECT id FROM folders WHERE gid = ?)");
+            args.push(Value::Text(g.to_string()));
+        }
+        None => {}
+    }
+    if !f.tags.is_empty() {
+        sql.push_str(
+            " AND EXISTS (SELECT 1 FROM meeting_tags mt JOIN tags t ON t.id = mt.tag_id
+                          WHERE mt.meeting_id = m.id AND t.gid IN (",
+        );
+        for (i, g) in f.tags.iter().take(crate::organize::MAX_TAGS).enumerate() {
+            sql.push_str(if i == 0 { "?" } else { ",?" });
+            args.push(Value::Text(g.clone()));
+        }
+        sql.push_str("))");
     }
     if let Some(t) = f.from_ms {
         sql.push_str(" AND m.started_at >= ?");

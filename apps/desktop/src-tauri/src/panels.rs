@@ -33,7 +33,9 @@ pub const DETECT: &str = "detect";
 const POPOVER_SIZE: (f64, f64) = (340.0, 440.0);
 const MINI_FULL: (f64, f64) = (360.0, 120.0);
 const MINI_PILL: (f64, f64) = (180.0, 44.0);
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const DETECT_SIZE: (f64, f64) = (340.0, 150.0);
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const CORNER_RADIUS: f64 = 12.0;
 
 #[cfg(target_os = "macos")]
@@ -269,6 +271,7 @@ fn exclude_from_capture(app: &AppHandle, label: &str) {
 /// The meeting-detection prompt when the main window isn't in front (D2): a
 /// non-activating panel at the top right, so the call keeps the focus. Built
 /// once; later prompts reach it as an event.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn open_detect(app: &AppHandle, prompt: MeetingDetected) {
     on_main(app, move |app| {
         if app.get_webview_window(DETECT).is_some() {

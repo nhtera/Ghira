@@ -69,19 +69,28 @@ fn ready_meeting(store: &Store, title: &str) -> String {
     gid
 }
 
+/// A meeting row as an older schema has it (the store's own calls read
+/// columns that don't exist there yet), with a real wrapped key.
+fn old_meeting(conn: &rusqlite::Connection, keys: &common::Keys) -> (String, i64) {
+    let gid = ghi_store::new_gid();
+    let wrapped = common::ring(keys).wrap_dek(&ghi_store::rowcrypt::Dek::generate(), &gid);
+    conn.execute(
+        "INSERT INTO meetings (gid, started_at, dek_wrapped) VALUES (?1, 1700000000000, ?2)",
+        rusqlite::params![gid, wrapped],
+    )
+    .unwrap();
+    (gid, conn.last_insert_rowid())
+}
+
 #[test]
 fn migration_0006_creates_me_and_links_me_speakers() {
     let tmp = tempfile::tempdir().unwrap();
     let keys = common::keys();
-    let store = common::open_with(tmp.path(), &keys, &MIGRATIONS[..5]).unwrap();
-    let m = common::meeting(&store, "Cũ");
-    drop(store);
+    drop(common::open_with(tmp.path(), &keys, &MIGRATIONS[..5]).unwrap());
     let path = tmp.path().join("ghira.db");
     let conn = db::open(&path, &common::db_key(&keys)).unwrap();
     assert_eq!(db::user_version(&conn).unwrap(), 5);
-    let mid: i64 = conn
-        .query_row("SELECT id FROM meetings WHERE gid = ?1", [&m], |r| r.get(0))
-        .unwrap();
+    let (m, mid) = old_meeting(&conn, &keys);
     for (gid, idx, me) in [("s-me", 0, 1), ("s-other", 1, 0)] {
         conn.execute(
             "INSERT INTO speakers (gid, meeting_id, label_idx, is_me) VALUES (?1, ?2, ?3, ?4)",
@@ -103,7 +112,7 @@ fn migration_0006_creates_me_and_links_me_speakers() {
     assert_eq!((people[0].meetings, people[0].voice.clone()), (1, None));
     drop(store);
     let conn = db::open(&path, &common::db_key(&keys)).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 6);
+    assert_eq!(db::user_version(&conn).unwrap(), 7);
     for t in ["voice_profiles", "voice_embeddings", "speaker_voices"] {
         let n: i64 = conn
             .query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get(0))
@@ -707,13 +716,9 @@ fn raw_conn(dir: &std::path::Path, keys: &common::Keys) -> rusqlite::Connection 
 fn migration_0006_from_a_v5_database_with_people_data() {
     let tmp = tempfile::tempdir().unwrap();
     let keys = common::keys();
-    let store = common::open_with(tmp.path(), &keys, &MIGRATIONS[..5]).unwrap();
-    let m = common::meeting(&store, "Cũ");
-    drop(store);
+    drop(common::open_with(tmp.path(), &keys, &MIGRATIONS[..5]).unwrap());
     let conn = raw_conn(tmp.path(), &keys);
-    let mid: i64 = conn
-        .query_row("SELECT id FROM meetings WHERE gid = ?1", [&m], |r| r.get(0))
-        .unwrap();
+    let (_m, mid) = old_meeting(&conn, &keys);
     // Persons as only a test could have made them in v5, two of which are
     // the same name by key, plus speakers and action items pointing at them.
     for (id, name) in [(1, "Minh"), (2, "minh "), (3, "An")] {

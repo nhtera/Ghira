@@ -1922,6 +1922,8 @@ dependencies = [
  "ghi-store",
  "ghi-text",
  "ghi-update",
+ "hound",
+ "libc",
  "log",
  "objc2",
  "objc2-app-kit",
