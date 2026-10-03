@@ -32,7 +32,16 @@ fn err(e: ghi_store::StoreError) -> String {
     e.to_string()
 }
 
+/// The desktop: notes and final pass for what a crash left.
 pub fn recover(store: &Store) -> Result<Recovered, String> {
+    recover_with_kinds(store, &[NOTES_LIVE_JOB, FINAL_PASS_JOB])
+}
+
+/// Like [`recover`], queueing only `kinds` for closed meetings and for
+/// `processing` ones with no job (the phone: `[FINAL_PASS_JOB]`). A kind set
+/// without a final pass (the device is below the processing tier) queues
+/// nothing: those meetings are set `ready` as recorded.
+pub fn recover_with_kinds(store: &Store, kinds: &[&'static str]) -> Result<Recovered, String> {
     let mut out = Recovered::default();
     for d in store.pending_discards().map_err(err)? {
         for k in &d.keep {
@@ -62,7 +71,9 @@ pub fn recover(store: &Store) -> Result<Recovered, String> {
                     store.active_job(&m.gid, kind).map(|j| busy || j.is_some())
                 })
                 .map_err(err)?;
-            if !busy && !store.tracks(&m.gid).map_err(err)?.is_empty() {
+            if !busy && !kinds.contains(&FINAL_PASS_JOB) {
+                store.set_meeting_status(&m.gid, "ready").map_err(err)?;
+            } else if !busy && !store.tracks(&m.gid).map_err(err)?.is_empty() {
                 store
                     .enqueue_job(
                         Some(&m.gid),
@@ -84,9 +95,16 @@ pub fn recover(store: &Store) -> Result<Recovered, String> {
                 .unwrap_or(0);
             store.finish_meeting(&m.gid, duration).map_err(err)?;
             store
-                .set_meeting_status(&m.gid, "processing")
+                .set_meeting_status(
+                    &m.gid,
+                    if kinds.is_empty() {
+                        "ready"
+                    } else {
+                        "processing"
+                    },
+                )
                 .map_err(err)?;
-            for kind in [NOTES_LIVE_JOB, FINAL_PASS_JOB] {
+            for &kind in kinds {
                 let busy = store.active_job(&m.gid, kind).map_err(err)?.is_some()
                     || (kind == NOTES_LIVE_JOB
                         && store
@@ -175,5 +193,55 @@ mod tests {
         assert_eq!(kinds, [NOTES_LIVE_JOB, FINAL_PASS_JOB]);
         // Idempotent.
         assert_eq!(recover(&store).unwrap(), Recovered::default());
+    }
+
+    fn open_with_crashed_meeting() -> (tempfile::TempDir, Store, String) {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        let gid = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        let mut w = store.open_track(&gid, TrackKind::Mic).unwrap();
+        w.append(&[1]).unwrap();
+        w.sync(true).unwrap();
+        drop(w);
+        (tmp, store, gid)
+    }
+
+    #[test]
+    fn the_phone_queues_only_the_final_pass() {
+        let (_tmp, store, gid) = open_with_crashed_meeting();
+        let r = recover_with_kinds(&store, &[FINAL_PASS_JOB]).unwrap();
+        assert_eq!(r.meetings, std::slice::from_ref(&gid));
+        assert_eq!(store.get_meeting(&gid).unwrap().status, "processing");
+        let kinds: Vec<String> = store
+            .jobs_for_meeting(&gid)
+            .unwrap()
+            .into_iter()
+            .map(|j| j.kind)
+            .collect();
+        assert_eq!(kinds, [FINAL_PASS_JOB]);
+    }
+
+    #[test]
+    fn below_tier_nothing_is_queued_and_meetings_stay_as_recorded() {
+        let (_tmp, store, gid) = open_with_crashed_meeting();
+        recover_with_kinds(&store, &[]).unwrap();
+        assert_eq!(store.get_meeting(&gid).unwrap().status, "ready");
+        assert!(store.jobs_for_meeting(&gid).unwrap().is_empty());
+        // A meeting `processing` with no job is settled the same way.
+        let other = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        let mut w = store.open_track(&other, TrackKind::Mic).unwrap();
+        w.append(&[1]).unwrap();
+        w.sync(true).unwrap();
+        drop(w);
+        store.finish_meeting(&other, 1_000).unwrap();
+        store.set_meeting_status(&other, "processing").unwrap();
+        recover_with_kinds(&store, &[]).unwrap();
+        assert_eq!(store.get_meeting(&other).unwrap().status, "ready");
+        assert!(store.jobs_for_meeting(&other).unwrap().is_empty());
     }
 }

@@ -152,6 +152,8 @@ pub struct Session {
     /// A live transcript is being made (engines were given).
     transcribing: bool,
     cfg: SessionConfig,
+    /// Jobs queued at stop when `cfg.queue_jobs`.
+    job_kinds: Vec<&'static str>,
     hooks: Option<Arc<dyn RecordingHooks>>,
     /// Held by the multi-step operations (discard, split, snapshot) so they
     /// never interleave.
@@ -385,9 +387,17 @@ impl Session {
             threads,
             transcribing: live,
             cfg,
+            job_kinds: vec![NOTES_LIVE_JOB, FINAL_PASS_JOB],
             hooks,
             ops: Mutex::new(()),
         })
+    }
+
+    /// Which jobs `stop` queues (with `queue_jobs`); the default is the
+    /// desktop's notes + final pass. The phone queues the final pass only.
+    /// A session that queues nothing uses `queue_jobs: false`.
+    pub fn set_job_kinds(&mut self, kinds: &[&'static str]) {
+        self.job_kinds = kinds.to_vec();
     }
 
     pub fn meeting(&self) -> &str {
@@ -768,7 +778,8 @@ impl Session {
             self.store
                 .set_meeting_status(&self.meeting, "processing")
                 .map_err(|e| err("closing the meeting", e))?;
-            for kind in [NOTES_LIVE_JOB, FINAL_PASS_JOB] {
+            debug_assert!(!self.job_kinds.is_empty(), "queue_jobs with no job kinds");
+            for kind in &self.job_kinds {
                 jobs.push(
                     self.store
                         .enqueue_job(

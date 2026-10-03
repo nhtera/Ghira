@@ -38,12 +38,15 @@ pub struct JobCtx<'a> {
     pub events: &'a EventTx,
     pub job: &'a Job,
     preempt: &'a AtomicBool,
+    inactive: &'a AtomicBool,
 }
 
 impl JobCtx<'_> {
-    /// A recording started: return [`Outcome::Yield`] at the next safe point.
+    /// A recording started (or the app left the foreground): return
+    /// [`Outcome::Yield`] at the next safe point. Reads the inactive flag too,
+    /// so a clear of `preempt` racing a lifecycle change can't hide it.
     pub fn preempted(&self) -> bool {
-        self.preempt.load(Ordering::Acquire)
+        self.preempt.load(Ordering::SeqCst) || self.inactive.load(Ordering::SeqCst)
     }
 
     /// Saves progress and the resume point (numbers/identifiers only).
@@ -98,6 +101,8 @@ pub struct JobRunner {
     events: EventTx,
     handlers: Vec<Arc<dyn JobHandler>>,
     recording: AtomicUsize,
+    /// The app is not active (mobile lifecycle): no claims, running job yields.
+    inactive: AtomicBool,
     preempt: AtomicBool,
     /// Callers of `run_one` past the recording check (a job claimed or being
     /// looked for). Raised before the check, so a recording that starts
@@ -121,6 +126,7 @@ impl JobRunner {
             events,
             handlers,
             recording: AtomicUsize::new(0),
+            inactive: AtomicBool::new(false),
             preempt: AtomicBool::new(false),
             running: AtomicUsize::new(0),
             current: Mutex::new(None),
@@ -168,6 +174,47 @@ impl JobRunner {
         self.recording.load(Ordering::SeqCst) > 0
     }
 
+    /// The app left the foreground (iOS lifecycle): the running job is asked
+    /// to yield and nothing is claimed until [`JobRunner::app_active`]. Sticky:
+    /// a recording that stops meanwhile does not clear the request.
+    ///
+    /// Contract for the phone: call it on `didEnterBackground` (not
+    /// `willResignActive`: a Control Center pull or an alert does not end
+    /// GPU work) and `app_active` on `willEnterForeground`/`didBecomeActive`;
+    /// a launch in the background calls `app_inactive` before `spawn`.
+    /// Checkpoints are the only yield points, so an uninterruptible engine
+    /// call (diarizer finish, a long ASR block) must run inside the iOS
+    /// engine gate that holds the background task.
+    pub fn app_inactive(&self) {
+        self.inactive.store(true, Ordering::SeqCst);
+        self.preempt.store(true, Ordering::SeqCst);
+    }
+
+    /// The app is active again: jobs may be claimed (unless recording).
+    pub fn app_active(&self) {
+        self.inactive.store(false, Ordering::SeqCst);
+        self.refresh_preempt();
+        self.notify();
+    }
+
+    /// Whether anything still asks running jobs to yield.
+    fn must_yield(&self) -> bool {
+        self.recording()
+            || self.inactive.load(Ordering::SeqCst)
+            || self.shutdown.load(Ordering::SeqCst)
+    }
+
+    /// Clears the preempt flag if nothing asks for it, then looks again: a
+    /// recording, lifecycle change or shutdown that raced the clear raises it
+    /// back (it would otherwise be lost).
+    fn refresh_preempt(&self) {
+        let want = self.must_yield();
+        self.preempt.store(want, Ordering::SeqCst);
+        if !want && self.must_yield() {
+            self.preempt.store(true, Ordering::SeqCst);
+        }
+    }
+
     /// Runs one claimable job. `None`: nothing to do (or recording).
     pub fn run_one(&self) -> Option<(Job, Result<Outcome, String>)> {
         if self.shutdown.load(Ordering::SeqCst) {
@@ -183,7 +230,7 @@ impl JobRunner {
         }
         self.running.fetch_add(1, Ordering::SeqCst);
         let _running = Running(&self.running);
-        if self.recording() {
+        if self.recording() || self.inactive.load(Ordering::SeqCst) {
             return None;
         }
         for h in &self.handlers {
@@ -203,6 +250,7 @@ impl JobRunner {
                 events: &self.events,
                 job: &job,
                 preempt: &self.preempt,
+                inactive: &self.inactive,
             };
             ctx.progress(None, 0.0);
             *self.current.lock().unwrap_or_else(|e| e.into_inner()) = Some(job.id);
@@ -292,7 +340,7 @@ impl JobRunner {
 impl RecordingHooks for JobRunner {
     fn recording_started(&self) {
         self.recording.fetch_add(1, Ordering::SeqCst);
-        self.preempt.store(true, Ordering::Release);
+        self.preempt.store(true, Ordering::SeqCst);
     }
 
     fn wait_idle(&self, max: Duration) -> bool {
@@ -314,7 +362,7 @@ impl RecordingHooks for JobRunner {
             })
             .unwrap_or(0);
         if before <= 1 {
-            self.preempt.store(false, Ordering::Release);
+            self.refresh_preempt();
         }
         self.notify();
     }
@@ -464,5 +512,82 @@ mod tests {
             .filter(|e| matches!(e.event, Event::Error { .. }))
             .count();
         assert_eq!(errors, 1);
+    }
+
+    #[test]
+    fn app_inactive_is_sticky_and_blocks_claims_until_active() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            Store::open(
+                tmp.path(),
+                Arc::new(MemoryKeyStore::default()),
+                Protection::default(),
+            )
+            .unwrap(),
+        );
+        let m = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        let (tx, _rx) = bus();
+        let steps = Arc::new(Steps {
+            runs: AtomicUsize::new(0),
+        });
+        let runner = JobRunner::new(store.clone(), tx, vec![steps]);
+        let a = store.enqueue_job(Some(&m), "steps", 1, &json!({})).unwrap();
+        runner.app_inactive();
+        // A recording that stops while inactive does not clear the request.
+        runner.recording_started();
+        runner.recording_stopped();
+        assert!(runner.preempt.load(Ordering::SeqCst));
+        assert!(runner.run_one().is_none());
+        runner.app_active();
+        assert!(!runner.preempt.load(Ordering::SeqCst));
+        assert_eq!(runner.run_pending(), 1);
+        assert_eq!(store.job(a).unwrap().state, JobState::Done);
+        // Active again but recording: the preempt stays up.
+        runner.recording_started();
+        runner.app_inactive();
+        runner.app_active();
+        assert!(runner.preempt.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn a_stop_racing_an_inactive_change_never_hides_the_yield_request() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            Store::open(
+                tmp.path(),
+                Arc::new(MemoryKeyStore::default()),
+                Protection::default(),
+            )
+            .unwrap(),
+        );
+        let m = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        let (tx, _rx) = bus();
+        let runner = JobRunner::new(store.clone(), tx, vec![]);
+        let id = store.enqueue_job(Some(&m), "steps", 1, &json!({})).unwrap();
+        let job = store.job(id).unwrap();
+        let ctx = || JobCtx {
+            store: &runner.store,
+            events: &runner.events,
+            job: &job,
+            preempt: &runner.preempt,
+            inactive: &runner.inactive,
+        };
+        // Stop, then inactive.
+        runner.recording_started();
+        runner.recording_stopped();
+        runner.app_inactive();
+        assert!(ctx().preempted());
+        // Inactive, then the recording stops after: still asked to yield.
+        runner.app_active();
+        runner.recording_started();
+        runner.app_inactive();
+        runner.recording_stopped();
+        assert!(ctx().preempted() && runner.preempt.load(Ordering::SeqCst));
+        runner.app_active();
+        assert!(!ctx().preempted());
+        // A flag set while the clear ran is put back.
+        runner.inactive.store(true, Ordering::SeqCst);
+        runner.refresh_preempt();
+        assert!(runner.preempt.load(Ordering::SeqCst));
     }
 }

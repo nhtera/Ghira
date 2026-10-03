@@ -206,12 +206,51 @@ impl JobHandler for FinalPassJob {
     }
 
     fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
+        self.run_with(ctx, true)
+    }
+}
+
+/// [`FinalPassJob`] that never queues `notes_final` (the phone: no local
+/// LLM; notes only through the cloud send sheet). With no notes job to settle
+/// the meeting, the pass itself sets it `ready` and sends
+/// `StateChanged { Ready }` (also from `failed`). The phone registers
+/// `VoiceLearnJob` beside it whenever Me is enrolled (the voice step queues
+/// `voice_learn`).
+pub struct FinalPassNoNotes(pub FinalPassJob);
+
+impl JobHandler for FinalPassNoNotes {
+    fn kind(&self) -> &'static str {
+        self.0.kind()
+    }
+
+    fn ready(&self) -> bool {
+        self.0.ready()
+    }
+
+    fn failed(&self, ctx: &JobCtx) {
+        self.0.failed(ctx);
+        if let Ok(m) = ctx.meeting() {
+            announce_ready(ctx, m);
+        }
+    }
+
+    fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
+        self.0.run_with(ctx, false)
+    }
+}
+
+impl FinalPassJob {
+    /// The pass; `notes` queues `notes_final` once the transcript is stored.
+    fn run_with(&self, ctx: &JobCtx, notes: bool) -> Result<Outcome, String> {
         let restart = || Ok(Outcome::Yield(serde_json::json!({})));
         let meeting = ctx.meeting()?.to_string();
         let store: &Arc<Store> = ctx.store;
         let err = |e: ghi_store::StoreError| e.to_string();
         let m = store.get_meeting(&meeting).map_err(err)?;
         let call = m.mode == "call";
+        // Speakers an earlier, yielded run added and never used (unnamed, no
+        // lines) would pile up with every yield.
+        store.remove_orphan_speakers(&meeting).map_err(err)?;
 
         // Decoding.
         ctx.progress(Some(Stage::Decoding), 0.0);
@@ -227,7 +266,11 @@ impl JobHandler for FinalPassJob {
             pcm.insert(track, audio);
         }
         if pcm.is_empty() {
-            queue_notes(store, &meeting)?;
+            if notes {
+                queue_notes(store, &meeting)?;
+            } else {
+                settle_ready(ctx, &meeting).map_err(err)?;
+            }
             return Ok(Outcome::Done);
         }
         let audio_ms =
@@ -573,7 +616,12 @@ impl JobHandler for FinalPassJob {
             .replace_transcript_marked(&meeting, v2, &overlaps)
             .map_err(err)?;
         log::info!("final pass stored lines={lines}");
-        queue_notes(store, &meeting)?;
+        if notes {
+            queue_notes(store, &meeting)?;
+        } else {
+            // No notes job follows to settle the meeting.
+            settle_ready(ctx, &meeting).map_err(err)?;
+        }
         ctx.progress(Some(Stage::MatchingVoices), 1.0);
         Ok(Outcome::Done)
     }
@@ -637,6 +685,20 @@ fn recluster_wanted(segs: &[SpeakerSegment]) -> bool {
     labels.sort_unstable();
     labels.dedup();
     labels.len() >= recluster::SATURATED_AT
+}
+
+/// Marks the meeting `ready` and tells the UI (no notes job follows).
+fn settle_ready(ctx: &JobCtx, meeting: &str) -> Result<(), ghi_store::StoreError> {
+    ctx.store.set_meeting_status(meeting, "ready")?;
+    announce_ready(ctx, meeting);
+    Ok(())
+}
+
+fn announce_ready(ctx: &JobCtx, meeting: &str) {
+    ctx.events.emit(crate::events::Event::StateChanged {
+        meeting: meeting.to_string(),
+        state: crate::events::SessionState::Ready,
+    });
 }
 
 fn queue_notes(store: &Store, meeting: &str) -> Result<(), String> {
