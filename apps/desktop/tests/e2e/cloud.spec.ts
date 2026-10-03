@@ -2,7 +2,7 @@
 // "Improve with cloud…" send sheet on the mocked core (copy matched as English).
 import { expect, test, type Page } from "@playwright/test";
 
-const open = async (page: Page, query = "platform=win") => {
+const open = async (page: Page, query = "platform=win&cloud=1") => {
   await page.goto(`/?${query}#/meetings`);
   await page.getByRole("button", { name: /Client call — Acme onboarding/ }).click();
   await expect(page).toHaveURL(/#\/meetings\/sample-\d+\/notes/);
@@ -53,7 +53,7 @@ test("sending improves the notes: toast, amber cloud chip", async ({ page }) => 
 });
 
 test("a failed send says the notes are written on this device instead", async ({ page }) => {
-  await open(page, "platform=win&cloudfail=1");
+  await open(page, "platform=win&cloud=1&cloudfail=1");
   await addKey(page);
   await page.getByRole("button", { name: "Improve with cloud…" }).click();
   const sheet = page.getByRole("dialog");

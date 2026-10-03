@@ -17,7 +17,7 @@ test("detail → Share → Follow-up email → Write → Copy", async ({ page, c
   await expect(dialog.getByRole("status")).toContainText("Writing");
   const subject = dialog.getByRole("textbox", { name: "Subject" });
   await expect(subject).not.toHaveValue("");
-  await expect(dialog.getByText(/Nothing is sent from Ghira/)).toBeVisible();
+  await expect(dialog.getByText(/nothing is sent/)).toBeVisible();
   await dialog.getByRole("button", { name: "Copy email" }).click();
   await expect(page.getByText("Email copied", { exact: true })).toBeVisible();
   if (readable) {

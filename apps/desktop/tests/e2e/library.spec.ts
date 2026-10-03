@@ -32,7 +32,7 @@ test("recording then stopping shows the stepper, the toast and Name your speaker
   await page.getByRole("button", { name: "Record call", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Meeting title" })).toBeVisible();
   await page.getByRole("button", { name: "Stop" }).click();
-  await expect(page.getByRole("heading", { name: "Meetings" })).toBeVisible();
+  await expect(page).toHaveURL(/#\/meetings\/[^/]+\/notes/);
   const panel = page.getByRole("region", { name: "Writing your notes on this PC" });
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("listitem").first()).toContainText("Reading the recording");

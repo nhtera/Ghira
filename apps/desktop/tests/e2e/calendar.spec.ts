@@ -112,7 +112,7 @@ test("onboarding: Allow… asks for Calendar on macOS, and is not there on Windo
   const row = page
     .getByRole("listitem")
     .filter({ hasText: "Calendar · optional" });
-  await row.getByRole("button", { name: "Allow…" }).click();
+  await row.getByRole("button", { name: /^Allow Calendar/ }).click();
   await expect(row.getByText("Allowed")).toBeVisible();
   await open(page, "/onboarding/permissions", undefined, "win");
   await expect(

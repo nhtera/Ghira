@@ -34,7 +34,8 @@ test("records a meeting on the mocked core", async ({ page }) => {
   await page.keyboard.press("Control+M");
   await expect(page.getByText("1 marked")).toBeVisible();
   await page.getByRole("button", { name: "Stop" }).click();
-  await expect(page.getByRole("heading", { name: "Meetings" })).toBeVisible();
+  // Stop opens the new meeting's notes, not the library.
+  await expect(page).toHaveURL(/#\/meetings\/[^/]+\/notes/);
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Live" })).toHaveCount(0);
 });
 

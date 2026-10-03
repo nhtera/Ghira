@@ -45,7 +45,7 @@ test("a capture error from the core shows once and can be dismissed", async ({ p
   const banner = page.locator("[data-banner=capture]");
   await expect(banner).toHaveCount(1);
   await expect(banner).toContainText("Another app is using the microphone");
-  await banner.locator("button").click();
+  await banner.getByRole("button", { name: "Dismiss" }).click();
   await expect(banner).toHaveCount(0);
 });
 

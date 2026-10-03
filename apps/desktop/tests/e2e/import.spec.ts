@@ -14,7 +14,7 @@ test("choose files → problems shown → import → queue → done with Open no
   await expect(staged.getByText(/Over 4 hours/)).toBeVisible();
   await expect(staged.getByText(/can’t read this file/)).toBeVisible();
   // A stereo file offers split channels.
-  await expect(page.getByRole("checkbox", { name: /Split stereo channels/ })).toBeVisible();
+  await expect(page.getByRole("switch", { name: /Split stereo channels/ })).toBeVisible();
   // Remove the blocked ones, then import the rest.
   await staged.getByRole("button", { name: /^Remove / }).last().click();
   const go = page.getByRole("button", { name: /^Import \d+ files?$/ });
