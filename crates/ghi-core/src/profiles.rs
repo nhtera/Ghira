@@ -18,10 +18,16 @@ pub const VOICE_MODEL: &str = "campplus-zh-en";
 /// The language of a profile set that counts as the same language as any.
 pub const ANY_LANG: &str = "any";
 
+// Thresholds from the AMI cross-meeting eval (EN, 16 meetings, 63
+// speaker-meetings; `tools/eval/reports/ami-speakerid-20261003.md`): EER 0%,
+// highest different-speaker score 0.581, 3-6% of same-speaker pairs below
+// 0.70. Re-check with Vietnamese and speakerphone audio (owner checklist).
+
 /// At or above this, the same language and a clear winner: applied by itself.
 pub const T_HIGH: f32 = 0.70;
-/// From here up a match is only suggested ("sounds like ...").
-pub const T_LOW: f32 = 0.50;
+/// From here up a match is only suggested ("sounds like ..."); also the
+/// speakerphone guard for learning Me.
+pub const T_LOW: f32 = 0.55;
 /// The best match must beat the runner-up by this much to be applied.
 pub const MARGIN: f32 = 0.10;
 

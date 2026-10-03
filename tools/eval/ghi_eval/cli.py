@@ -148,6 +148,21 @@ def cmd_trials(args) -> int:
     return 0
 
 
+def cmd_speakerid_report(args) -> int:
+    import json
+
+    from .speakerid import persons_from_rttm, speakerid_report
+
+    if args.fill_persons:
+        print(f"persons filled from RTTM labels in {persons_from_rttm(args.dataset)} files")
+    report = speakerid_report(args.dataset, args.voices, args.scores_out)
+    text = json.dumps(report, indent=2)
+    if args.out:
+        args.out.write_text(text + "\n", encoding="utf-8")
+    print(text)
+    return 0
+
+
 def _check_id(value: str) -> str:
     from .manifest import ID_RE
 
@@ -298,6 +313,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("trials", cmd_trials, "write speaker-ID trials from manifest persons")
     sp.add_argument("--dataset", type=Path, required=True)
     sp.add_argument("--out", type=Path)
+
+    sp = add(
+        "speakerid-report",
+        cmd_speakerid_report,
+        "EER and thresholds from per-meeting voice vectors (voices.json from the ghi-core "
+        "voice_real ami_dump_voices test)",
+    )
+    sp.add_argument("--dataset", type=Path, required=True)
+    sp.add_argument("--voices", type=Path, required=True)
+    sp.add_argument("--fill-persons", action="store_true", help="persons = RTTM labels (AMI)")
+    sp.add_argument("--scores-out", type=Path, help="write speaker_scores.tsv")
+    sp.add_argument("--out", type=Path, help="write the aggregate report JSON")
 
     conv = sub.add_parser("convert", help="label converters")
     csub = conv.add_subparsers(dest="what", required=True)

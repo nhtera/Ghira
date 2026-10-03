@@ -66,3 +66,29 @@ def test_trials_and_eer(tiny, tmp_path, tiny_hyp):
 
     rep = json.loads(next((out / "s").glob("report-*.json")).read_text(encoding="utf-8"))
     assert rep["speaker_id"] == {"eer": 0.0, "trials": 4}
+
+
+def test_speakerid_scoring_and_thresholds():
+    import numpy as np
+
+    from ghi_eval.speakerid import profile_trials, score_set, threshold_at_far
+
+    rng = np.random.default_rng(0)
+    base = {p: rng.normal(size=16) for p in "ABC"}
+
+    def vec(p):
+        return {"vec": list(base[p] + 0.2 * rng.normal(size=16))}
+
+    voices = {f"m{i}": {p: vec(p) for p in "ABC"} for i in range(3)}
+    persons = {m: {p: p for p in "ABC"} for m in voices}
+    scores, labels = profile_trials(voices, persons)
+    assert len(scores) == 3 * 3 * 3 and sum(labels) == 9
+    res = score_set(scores, labels)
+    assert res["eer"] == 0.0 and res["at_far_1pct"]["frr"] == 0.0
+    assert res["at_0.70"]["far"] == 0.0
+
+    # 100 non-targets at 0.0..0.99; FAR 1% allows exactly one above the threshold.
+    s = [i / 100 for i in range(100)] + [2.0]
+    y = [False] * 100 + [True]
+    op = threshold_at_far(s, y, 0.01)
+    assert op["far"] == 0.01 and op["frr"] == 0.0
