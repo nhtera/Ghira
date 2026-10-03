@@ -26,6 +26,8 @@ const spaceIsOurs = (e: KeyboardEvent) => {
 };
 
 const iconBtn = "grid size-8 shrink-0 place-items-center rounded-full text-ink hover:bg-sunk disabled:opacity-40 disabled:hover:bg-transparent";
+// Its own hover: `cn` doesn't merge classes, so iconBtn's dark hover would win and hide the icon.
+const playBtn = "grid size-8 shrink-0 place-items-center rounded-full bg-accent text-on-accent hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100";
 
 export function AudioBar({ meeting, detail }: { meeting: string; detail: MeetingDetail }) {
   const { t } = useTranslation();
@@ -128,7 +130,7 @@ export function AudioBar({ meeting, detail }: { meeting: string; detail: Meeting
         onEnded={() => usePlayer.getState().reportPlaying(false)}
         onError={onError}
       />
-      <button type="button" data-testid="audio-play" disabled={!usable} onClick={() => usePlayer.getState().toggle()} aria-label={playing ? t("audio.pause") : t("audio.play")} className={cn(iconBtn, "bg-accent text-on-accent hover:bg-accent")}>
+      <button type="button" data-testid="audio-play" disabled={!usable} onClick={() => usePlayer.getState().toggle()} aria-label={playing ? t("audio.pause") : t("audio.play")} className={playBtn}>
         <Icon name={playing ? "pause" : "play_arrow"} size={20} />
       </button>
       <button type="button" disabled={!usable} onClick={() => jump(usePlayer.getState().currentMs - SKIP_MS)} aria-label={t("audio.back15")} title={t("audio.back15")} className={cn(iconBtn, "w-9 rounded-seg text-[12px] font-semibold")}>
