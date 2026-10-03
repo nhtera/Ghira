@@ -4,6 +4,7 @@
 // mobile app starts with `initMobileI18n`.
 //
 // - `_base.*`  extracted from the mobile design (scripts/extract-mobile.mjs)
+// - `record.*`, `meetings.*`, `settings.*`  hand-written by the 16-H/I/J UI slices
 // - `shell.*`, `chips.*`, `ios.*`  hand-written; `mobile.ios.*` also feeds
 //   native/ios/Shared/Localizable.xcstrings (scripts/gen-ios-strings.mjs)
 // A new file in locales/mobile must be added to MOBILE_FILES (a test checks).
@@ -13,13 +14,25 @@ import chipsEn from "../locales/mobile/chips.en.json";
 import chipsVi from "../locales/mobile/chips.vi.json";
 import iosEn from "../locales/mobile/ios.en.json";
 import iosVi from "../locales/mobile/ios.vi.json";
+import meetingsEn from "../locales/mobile/meetings.en.json";
+import meetingsVi from "../locales/mobile/meetings.vi.json";
+import recordEn from "../locales/mobile/record.en.json";
+import recordVi from "../locales/mobile/record.vi.json";
+import settingsEn from "../locales/mobile/settings.en.json";
+import settingsVi from "../locales/mobile/settings.vi.json";
 import shellEn from "../locales/mobile/shell.en.json";
 import shellVi from "../locales/mobile/shell.vi.json";
 
 /** The file stems in locales/mobile (without `.en.json` / `.vi.json`). */
-export const MOBILE_FILES = ["_base", "chips", "ios", "shell"] as const;
+export const MOBILE_FILES = ["_base", "chips", "ios", "meetings", "record", "settings", "shell"] as const;
 
-export type MobileOnly = typeof baseEn & typeof chipsEn & typeof iosEn & typeof shellEn;
+export type MobileOnly = typeof baseEn &
+  typeof chipsEn &
+  typeof iosEn &
+  typeof meetingsEn &
+  typeof recordEn &
+  typeof settingsEn &
+  typeof shellEn;
 
 type Tree = { [key: string]: string | Tree };
 
@@ -39,6 +52,6 @@ export function mergeTrees(trees: Tree[], path = ""): Tree {
 }
 
 export const mobileLocales = {
-  en: mergeTrees([baseEn, chipsEn, iosEn, shellEn]) as unknown as MobileOnly,
-  vi: mergeTrees([baseVi, chipsVi, iosVi, shellVi]) as unknown as MobileOnly,
+  en: mergeTrees([baseEn, chipsEn, iosEn, meetingsEn, recordEn, settingsEn, shellEn]) as unknown as MobileOnly,
+  vi: mergeTrees([baseVi, chipsVi, iosVi, meetingsVi, recordVi, settingsVi, shellVi]) as unknown as MobileOnly,
 };
