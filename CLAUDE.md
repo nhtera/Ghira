@@ -35,6 +35,7 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @ghi/desktop test:e2e
 ./tools/scripts/check-spdx.sh && ./tools/scripts/check-net-egress.sh
 ./tools/scripts/check-windows.sh   # Windows type-check + clippy from a Mac (mingw-w64 GNU target; not MSVC)
 cargo deny check licenses bans advisories sources
+# never `cargo clean` / `rm -rf target` (shared by agents and the dev app; disk is tight): use `cargo clean -p <crate>`
 # speech engines (phase 3; needs tools/scripts/build-nemo.sh and fetch-models.sh first):
 cargo clippy -p ghi-speech -p ghi-cli --all-targets --features ghi-cli/nemo -- -D warnings
 cargo test -p ghi-speech -p ghi-cli --features ghi-cli/nemo

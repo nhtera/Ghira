@@ -27,6 +27,14 @@ strip = "symbols"
 debug = "line-tables-only"
 split-debuginfo = "packed"
 
+# Dev builds keep line numbers for our crates (backtraces) and no debug info
+# for dependencies: `target/debug` was ~10 GB, most of it dependency DWARF.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 # Model files are hashed before every first load (RT-12); unoptimized SHA-256
 # would take ~25 s per 700 MB model in debug builds.
 [profile.dev.package.sha2]
