@@ -7,7 +7,7 @@ import type { CoreEvent, MobileEvent } from "../bindings";
 import type { Commands, Ipc } from "./ipc";
 import { meetingCommands } from "./mock-meetings";
 import { recordCommands } from "./mock-record";
-import { settingsCommands } from "./mock-settings";
+import { gateContent, lockListeners, settingsCommands } from "./mock-settings";
 
 const coreListeners = new Set<(e: CoreEvent) => void>();
 const mobileListeners = new Set<(e: MobileEvent) => void>();
@@ -44,7 +44,8 @@ export function scriptedCommands(script: Partial<Commands>): Commands {
   }) as Commands;
 }
 
-const commands = scriptedCommands(scripted);
+// Locked or starting (driven by mock-settings): content commands refuse like Rust.
+const commands = scriptedCommands(gateContent(scripted));
 
 export const mockIpc: Ipc = {
   kind: "mock",
@@ -56,6 +57,10 @@ export const mockIpc: Ipc = {
   onMobileEvent: async (cb) => {
     mobileListeners.add(cb);
     return () => mobileListeners.delete(cb);
+  },
+  onLockChanged: async (cb) => {
+    lockListeners.add(cb);
+    return () => lockListeners.delete(cb);
   },
   audioUrl: (token) => token,
 };

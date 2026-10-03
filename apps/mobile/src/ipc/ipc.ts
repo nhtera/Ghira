@@ -15,6 +15,8 @@ export interface Ipc {
   onCoreEvent(cb: (e: CoreEvent) => void): Promise<Unlisten>;
   /** What the iOS shell tells the webview (phase, backlog, pocket, interruption, thermal, text scale, inbox). */
   onMobileEvent(cb: (e: MobileEvent) => void): Promise<Unlisten>;
+  /** The app lock engaged (`locked: true`) or was unlocked. Nothing is sent at a launch with the lock off. */
+  onLockChanged(cb: (locked: boolean) => void): Promise<Unlisten>;
   /** The URL an `<audio>` element plays for a ghi-audio token (issueAudioPlay). */
   audioUrl(token: string): string;
 }

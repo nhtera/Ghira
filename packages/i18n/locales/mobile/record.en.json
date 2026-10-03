@@ -1,3 +1,118 @@
 {
-  "mobile": {}
+  "mobile": {
+    "onboarding": {
+      "consent": {
+        "body": "{{app}} records the room through the microphone. In many places everyone present has to agree first, so tell them before you start.",
+        "items": {
+          "calls": "Phones can’t record calls. Use speakerphone and Room mode.",
+          "local": "Audio stays on this phone unless you choose to send it.",
+          "tell": "{{app}} reminds you before every recording and can copy a short message to send."
+        },
+        "title": "Tell people before you record"
+      },
+      "models": {
+        "body": "Speech models (about {{size}}) download once and stay on this phone.",
+        "cellular": "Download over cellular this time",
+        "download": "Download {{size}}",
+        "error": "The download stopped. What was already downloaded is kept.",
+        "later": "Download later",
+        "ready": "Models are ready",
+        "retry": "Try again",
+        "role": {
+          "asr": "Speech recognition",
+          "diarization": "Who is speaking",
+          "voice": "Voice matching"
+        },
+        "state": {
+          "downloading": "Downloading {{percent}}%",
+          "failed": "Failed",
+          "missing": "Not downloaded",
+          "ready": "Ready",
+          "waitingForWifi": "Waiting for Wi-Fi"
+        },
+        "title": "Download the speech models",
+        "wifi": "Downloads over Wi-Fi only.",
+        "wifiWaiting": "Waiting for Wi-Fi. The download continues when you connect.",
+        "optional": "This phone records only, so the speech models are optional."
+      },
+      "mic": {
+        "allow": "Allow microphone"
+      },
+      "processing": {
+        "footer": "You can change this later in Settings."
+      },
+      "step": "Step {{current}} of {{total}}",
+      "loadError": "Couldn’t load your setup. Try again.",
+      "done": {
+        "summary": {
+          "languages": "Languages",
+          "models": "Speech models",
+          "processing": "Processing",
+          "voice": "Your voice",
+          "voiceNone": "Not added"
+        }
+      }
+    },
+    "record": {
+      "catchingUp": {
+        "body": "{{time}} of audio left to transcribe.",
+        "title": "Catching up · {{percent}}%"
+      },
+      "consent": {
+        "body": "{{app}} records the room, so everyone present should know. Copy a short message to send them.",
+        "confirm": "Everyone knows, start recording",
+        "copied": "Copied",
+        "copy": "Copy message",
+        "title": "Tell everyone you’re recording"
+      },
+      "error": {
+        "generic": "Couldn’t start recording. Try again.",
+        "micInUse": "The microphone is in use. Finish your voice recording first.",
+        "action": "That didn’t work. Try again.",
+        "callActive": "A phone call is active. Read the notice first.",
+        "diskLow": "Not enough storage to record. Free up space and try again.",
+        "pairingNotAvailable": "Sending to a computer isn’t available yet. Choose This phone.",
+        "waitingForTranscription": "Finishing the last recording… try again in a moment."
+      },
+      "interrupted": {
+        "body": "Another app took the microphone. Everything up to {{time}} is saved.",
+        "title": "Recording paused"
+      },
+      "jumpLatest": "Latest",
+      "loading": {
+        "body": "Getting transcription ready. This can take a moment.",
+        "title": "Getting ready"
+      },
+      "locked": {
+        "body": "Recording continues. The transcript catches up when you open {{app}}.",
+        "title": "Recording while locked"
+      },
+      "marks_one": "{{count}} mark",
+      "marks_other": "{{count}} marks",
+      "saved": {
+        "action": "Open Meetings",
+        "title": "Recording saved"
+      },
+      "transcript": "Live transcript",
+      "waiting": "Lines appear here as people speak.",
+      "recordOnlyIdle": "Recording only on this phone — processed later",
+      "recordOnlyWhy": {
+        "deviceTier": "This phone is too old to transcribe. The recording is saved and processed later.",
+        "engineFailed": "Transcription stopped working. Recording continues and is processed later.",
+        "modelsMissing": "The speech models aren’t downloaded yet. Recording works; download them to transcribe.",
+        "modelsMissingAction": "Download models",
+        "thermal": "The phone is too hot to transcribe. Recording continues."
+      },
+      "callNotice": {
+        "steps": "Put the call on speakerphone and set the phone down where it can hear everyone. {{app}} records the room."
+      }
+    },
+    "voice": {
+      "done": "Done reading",
+      "error": "Couldn’t save your voice. Try again, or skip.",
+      "needsModels": "Your voice can be added once the speech models are downloaded. You can do it later in Settings.",
+      "passage": "In our weekly sync we review the roadmap, confirm the budget, and agree on who owns each action item before Friday’s release.",
+      "passageLabel": "Read this aloud"
+    }
+  }
 }

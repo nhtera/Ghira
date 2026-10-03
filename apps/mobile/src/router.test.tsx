@@ -24,7 +24,7 @@ describe("tab shell", () => {
     for (const name of ["Meetings", "Record", "Search", "Settings"]) {
       expect(await screen.findByRole("link", { name })).toBeTruthy();
     }
-    expect(await screen.findByText("Your meetings will appear here.")).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 1, name: "Meetings" })).toBeTruthy();
   });
 
   it("speaks Vietnamese", async () => {
@@ -33,8 +33,12 @@ describe("tab shell", () => {
   });
 
   it("keeps onboarding outside the shell", async () => {
+    // The mock is a returning user; start a first launch.
+    await import("./ipc");
+    window.__ghiRecord?.setOnboarding([]);
     await open("/onboarding", "en");
-    expect(await screen.findByText(/Welcome to/)).toBeTruthy();
+    // M1 starts with the languages step.
+    expect(await screen.findByRole("heading", { name: /languages/ })).toBeTruthy();
     expect(screen.queryByRole("navigation")).toBeNull();
   });
 });

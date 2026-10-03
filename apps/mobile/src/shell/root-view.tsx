@@ -4,9 +4,17 @@
 // interruption, ...) get their stores with 16-H.
 import { Outlet } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { refreshLock, useLock } from "../features/app-lock/lock-store";
+import { GlobalOverlays } from "../features/settings/overlays";
 import { ipc } from "../ipc";
 
 export function RootView() {
+  const { phase } = useLock();
+  // No screen exists while the app is locked or still starting: nothing to leak,
+  // and every screen loads fresh after an unlock.
+  useEffect(() => {
+    void refreshLock();
+  }, []);
   useEffect(() => {
     let off: (() => void) | undefined;
     let alive = true;
@@ -27,5 +35,11 @@ export function RootView() {
       off?.();
     };
   }, []);
-  return <Outlet />;
+  return (
+    <>
+      {phase === "unlocked" && <Outlet />}
+      {/* Cloud sheet host, share-inbox prompts, then the app-lock gate over everything (16-J). */}
+      <GlobalOverlays />
+    </>
+  );
 }

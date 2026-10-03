@@ -1,3 +1,94 @@
 {
-  "mobile": {}
+  "mobile": {
+    "audio": {
+      "pause": "Pause",
+      "play": "Play",
+      "position": "Position",
+      "speed": "Playback speed {{speed}}×",
+      "unavailable": "Audio isn’t available for this meeting."
+    },
+    "detail": {
+      "actions": "Actions",
+      "actionsEmpty": "No action items in this meeting.",
+      "cloudNever": "Never send to cloud",
+      "cloudNeverHint": "This meeting stays on this phone. The cloud sheet won’t send it.",
+      "copied": "Copied to clipboard",
+      "edit": "Edit line",
+      "editField": "Transcript text",
+      "improveWithCloud": "Improve with cloud",
+      "listen": "Audio player",
+      "loadFailed": "Couldn’t open this meeting.",
+      "locked": "Unlock to see this meeting.",
+      "notFound": "This meeting isn’t on this phone any more.",
+      "notesEmpty": {
+        "body": "This phone records and transcribes. For notes, you can send the transcript text (never the audio) to a cloud model you choose.",
+        "title": "Notes: not generated on this phone"
+      },
+      "quote": {
+        "missing": "No matching words were found at that moment.",
+        "stale": "Written from an earlier version of the transcript.",
+        "title": "From the transcript"
+      },
+      "save": "Save",
+      "saveFailed": "Couldn’t save this line. Try again.",
+      "section": {
+        "decision": "Decisions",
+        "note": "Your notes",
+        "other": "More",
+        "question": "Open questions",
+        "quote": "Quotes",
+        "tldr": "Summary",
+        "topic": "Topics"
+      },
+      "share": "Share",
+      "shareCopy": "Copy to clipboard",
+      "shareFailed": "Couldn’t share this meeting.",
+      "shareFailedCopy": "Couldn’t open the share sheet. You can copy the text instead.",
+      "shareMarkdown": "Markdown (.md)",
+      "shareText": "Plain text (.txt)",
+      "shareTitle": "Share meeting",
+      "tabs": "Meeting sections",
+      "transcriptEmpty": "No transcript yet.",
+      "transcriptWaiting": "The transcript appears once the speech models are installed."
+    },
+    "meetings": {
+      "delete": {
+        "action": "Delete",
+        "confirm": "Delete",
+        "question": "Delete “{{title}}” and its audio from this phone? This can’t be undone."
+      },
+      "deleteFailed": "Couldn’t delete the meeting. Try again.",
+      "duration": "{{minutes}} min",
+      "durationShort": "< 1 min",
+      "empty": {
+        "body": "Tap Record in a meeting, or share a recording to {{app}}.",
+        "record": "Start recording",
+        "title": "No meetings yet"
+      },
+      "error": "Couldn’t load your meetings.",
+      "loading": "Loading meetings…",
+      "pull": "Pull to refresh",
+      "refreshing": "Refreshing…",
+      "retry": "Try again",
+      "title": "Meetings",
+      "untitled": "Untitled meeting"
+    },
+    "search": {
+      "clear": "Clear search",
+      "clearRecent": "Clear",
+      "error": "Search failed. Try again.",
+      "hint": "Search every transcript on this phone. Accents are optional: “dong” finds “đồng”.",
+      "inNotes": "Notes",
+      "inTranscript": "Transcript",
+      "noResults": {
+        "body": "Accents are optional. Try another word.",
+        "title": "No matches for “{{query}}”"
+      },
+      "recent": "Recent searches",
+      "results_one": "{{count}} result",
+      "results_other": "{{count}} results",
+      "searching": "Searching…",
+      "title": "Search"
+    }
+  }
 }

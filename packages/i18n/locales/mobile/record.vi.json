@@ -1,3 +1,117 @@
 {
-  "mobile": {}
+  "mobile": {
+    "onboarding": {
+      "consent": {
+        "body": "{{app}} ghi âm cả phòng qua micro. Nhiều nơi yêu cầu mọi người có mặt phải đồng ý trước, nên hãy báo cho họ trước khi bắt đầu.",
+        "items": {
+          "calls": "Điện thoại không ghi âm được cuộc gọi. Hãy bật loa ngoài và dùng chế độ phòng họp.",
+          "local": "Âm thanh ở lại điện thoại trừ khi bạn chọn gửi đi.",
+          "tell": "{{app}} nhắc bạn trước mỗi lần ghi âm và có thể sao chép sẵn một tin nhắn ngắn để gửi."
+        },
+        "title": "Hãy báo cho mọi người trước khi ghi âm"
+      },
+      "models": {
+        "body": "Mô hình giọng nói (khoảng {{size}}) chỉ tải một lần và ở lại trên điện thoại này.",
+        "cellular": "Tải qua mạng di động lần này",
+        "download": "Tải {{size}}",
+        "error": "Việc tải bị dừng. Phần đã tải vẫn được giữ lại.",
+        "later": "Tải sau",
+        "ready": "Mô hình đã sẵn sàng",
+        "retry": "Thử lại",
+        "role": {
+          "asr": "Nhận dạng giọng nói",
+          "diarization": "Phân biệt người nói",
+          "voice": "Khớp giọng nói"
+        },
+        "state": {
+          "downloading": "Đang tải {{percent}}%",
+          "failed": "Lỗi",
+          "missing": "Chưa tải",
+          "ready": "Sẵn sàng",
+          "waitingForWifi": "Đang chờ Wi-Fi"
+        },
+        "title": "Tải mô hình giọng nói",
+        "wifi": "Chỉ tải qua Wi-Fi.",
+        "wifiWaiting": "Đang chờ Wi-Fi. Việc tải sẽ tiếp tục khi bạn kết nối.",
+        "optional": "Điện thoại này chỉ ghi âm nên mô hình giọng nói là tuỳ chọn."
+      },
+      "mic": {
+        "allow": "Cho phép micro"
+      },
+      "processing": {
+        "footer": "Bạn có thể đổi lại sau trong Cài đặt."
+      },
+      "step": "Bước {{current}} / {{total}}",
+      "loadError": "Không tải được phần thiết lập của bạn. Hãy thử lại.",
+      "done": {
+        "summary": {
+          "languages": "Ngôn ngữ",
+          "models": "Mô hình giọng nói",
+          "processing": "Xử lý",
+          "voice": "Giọng của bạn",
+          "voiceNone": "Chưa thêm"
+        }
+      }
+    },
+    "record": {
+      "catchingUp": {
+        "body": "Còn {{time}} âm thanh cần chép lời.",
+        "title": "Đang bắt kịp · {{percent}}%"
+      },
+      "consent": {
+        "body": "{{app}} ghi âm cả phòng, nên mọi người có mặt cần biết. Hãy sao chép một tin nhắn ngắn để gửi cho họ.",
+        "confirm": "Mọi người đã biết, bắt đầu ghi âm",
+        "copied": "Đã sao chép",
+        "copy": "Sao chép tin nhắn",
+        "title": "Hãy báo cho mọi người biết bạn đang ghi âm"
+      },
+      "error": {
+        "generic": "Không bắt đầu ghi âm được. Hãy thử lại.",
+        "micInUse": "Micro đang được dùng. Hãy hoàn tất việc ghi giọng trước.",
+        "action": "Không thực hiện được. Hãy thử lại.",
+        "callActive": "Đang có cuộc gọi. Hãy đọc thông báo trước.",
+        "diskLow": "Không đủ dung lượng để ghi âm. Hãy giải phóng bộ nhớ rồi thử lại.",
+        "pairingNotAvailable": "Chưa gửi sang máy tính được. Hãy chọn Điện thoại.",
+        "waitingForTranscription": "Đang hoàn tất bản ghi âm trước… hãy thử lại sau giây lát."
+      },
+      "interrupted": {
+        "body": "Một ứng dụng khác đã chiếm micro. Mọi thứ đến {{time}} đã được lưu.",
+        "title": "Đã tạm dừng ghi âm"
+      },
+      "jumpLatest": "Mới nhất",
+      "loading": {
+        "body": "Đang chuẩn bị chép lời. Có thể mất một lúc.",
+        "title": "Đang chuẩn bị"
+      },
+      "locked": {
+        "body": "Vẫn đang ghi âm. Bản ghi sẽ bắt kịp khi bạn mở {{app}}.",
+        "title": "Đang ghi âm khi khoá máy"
+      },
+      "marks_other": "{{count}} dấu",
+      "saved": {
+        "action": "Mở Cuộc họp",
+        "title": "Đã lưu bản ghi âm"
+      },
+      "transcript": "Bản ghi trực tiếp",
+      "waiting": "Các dòng sẽ hiện ở đây khi mọi người nói.",
+      "recordOnlyIdle": "Chỉ ghi âm trên điện thoại này — xử lý sau",
+      "recordOnlyWhy": {
+        "deviceTier": "Điện thoại này quá cũ để chép lời. Bản ghi âm được lưu và xử lý sau.",
+        "engineFailed": "Chép lời ngừng hoạt động. Ghi âm vẫn tiếp tục và được xử lý sau.",
+        "modelsMissing": "Chưa tải mô hình giọng nói. Vẫn ghi âm được; hãy tải để chép lời.",
+        "modelsMissingAction": "Tải mô hình",
+        "thermal": "Điện thoại quá nóng để chép lời. Ghi âm vẫn tiếp tục."
+      },
+      "callNotice": {
+        "steps": "Hãy bật loa ngoài cho cuộc gọi và đặt điện thoại nơi nghe được mọi người. {{app}} ghi âm cả phòng."
+      }
+    },
+    "voice": {
+      "done": "Đọc xong",
+      "error": "Không lưu được giọng của bạn. Hãy thử lại hoặc bỏ qua.",
+      "needsModels": "Bạn có thể thêm giọng của mình sau khi tải xong mô hình giọng nói. Bạn cũng có thể làm sau trong Cài đặt.",
+      "passage": "Xin chào, tôi đang đọc đoạn này để {{app}} nhận ra giọng của tôi. Tuần này chúng ta sẽ chốt kế hoạch quý bốn, rà lại ngân sách và phân công việc trước ngày phát hành.",
+      "passageLabel": "Hãy đọc to đoạn này"
+    }
+  }
 }

@@ -1,3 +1,233 @@
 {
-  "mobile": {}
+  "mobile": {
+    "settings": {
+      "title": "Cài đặt",
+      "selected": "Đã chọn",
+      "loadFailed": "Không tải được màn hình này.",
+      "retry": "Thử lại",
+      "saveFailed": "Không lưu được thay đổi.",
+      "section": {
+        "device": "Trên điện thoại này",
+        "privacy": "Riêng tư và đám mây"
+      },
+      "rows": {
+        "models": "Mô hình",
+        "voice": "Hồ sơ giọng nói",
+        "privacy": "Riêng tư và bảo mật",
+        "cloud": "Ghi chú qua đám mây",
+        "consent": "Lời thông báo ghi âm",
+        "about": "Giới thiệu"
+      },
+      "status": {
+        "ready": "Sẵn sàng",
+        "needsDownload": "Cần tải",
+        "on": "Bật",
+        "off": "Tắt",
+        "set": "Đã thiết lập",
+        "notSet": "Chưa thiết lập",
+        "keyStored": "Đã lưu khoá",
+        "noKey": "Chưa có khoá"
+      },
+      "desktopLater": "Hãy ghép nối máy tính trước",
+      "language": {
+        "header": "Ngôn ngữ cuộc họp",
+        "footer": "Dùng cho cuộc họp mới. Tự động theo dõi cả hai ngôn ngữ trong một cuộc họp.",
+        "auto": "Tự động (Anh + Việt)",
+        "en": "Tiếng Anh",
+        "vi": "Tiếng Việt"
+      },
+      "error": {
+        "generic": "Có lỗi xảy ra. Hãy thử lại.",
+        "busy": "Đang ghi âm hoặc nhập file. Thử lại khi xong.",
+        "locked": "Hãy mở khoá {{app}} trước.",
+        "offline": "Chế độ ngoại tuyến nghiêm ngặt đang bật nên không thể gửi hay tải gì.",
+        "passwordTooShort": "Dùng ít nhất 8 ký tự.",
+        "notFound": "Mục này không còn nữa.",
+        "noModel": "Hãy tải mô hình giọng nói trước (Cài đặt → Mô hình).",
+        "micPermission": "Quyền micro đang tắt. Hãy bật trong Cài đặt.",
+        "busyRecording": "Đang ghi âm. Hãy kết thúc trước.",
+        "tooShort": "Đoạn đọc quá ngắn. Hãy đọc hết đoạn văn.",
+        "tooQuiet": "Giọng quá nhỏ. Lại gần hơn và thử lại.",
+        "unsupportedType": "Loại file này chưa được hỗ trợ.",
+        "tooLarge": "File này quá lớn.",
+        "unreadable": "Không đọc được file này.",
+        "noAuthMethod": "Hãy bật mật mã trong Cài đặt để dùng khoá ứng dụng."
+      },
+      "models": {
+        "title": "Mô hình",
+        "header": "Mô hình nhận dạng giọng nói",
+        "footer": "Mô hình chạy ngay trên điện thoại. Chỉ tải một lần và không gửi đi đâu.",
+        "wifiOnly": "Chỉ tải qua Wi-Fi",
+        "download": "Tải {{size}}",
+        "downloadNow": "Tải",
+        "cellular": "Dùng dữ liệu di động lần này",
+        "cancel": "Huỷ tải",
+        "allReady": "Mọi mô hình đã sẵn sàng.",
+        "role": {
+          "asr": "Nhận dạng giọng nói",
+          "diarization": "Tách người nói",
+          "voice": "Khớp giọng nói"
+        },
+        "state": {
+          "ready": "Sẵn sàng",
+          "missing": "Chưa tải",
+          "downloading": "Đang tải {{percent}}%",
+          "waitingForWifi": "Đang chờ Wi-Fi",
+          "failed": "Tải không thành công"
+        },
+        "progress": "Tiến độ tải: {{name}}"
+      },
+      "voice": {
+        "title": "Hồ sơ giọng nói",
+        "headerMe": "Tôi",
+        "statusSet": "Đã lưu trên điện thoại · {{count}} mẫu",
+        "statusNone": "Chưa có hồ sơ giọng nói.",
+        "footer": "Hồ sơ được mã hoá và chỉ nằm trên điện thoại này. Bạn có thể xoá bất cứ lúc nào.",
+        "noModel": "Chưa tải mô hình giọng nói. Hãy tải trong mục Mô hình.",
+        "openModels": "Mở Mô hình",
+        "enroll": "Thiết lập giọng của tôi",
+        "redo": "Ghi âm lại",
+        "finish": "Xong",
+        "delete": "Xoá hồ sơ giọng nói của tôi",
+        "deleted": "Đã xoá hồ sơ giọng nói.",
+        "saved": "Đã lưu hồ sơ giọng nói.",
+        "deleteConfirm": "Xoá hồ sơ giọng nói của bạn? Các mẫu giọng sẽ bị xoá vĩnh viễn và không thể khôi phục.",
+        "deleteConfirmAction": "Xoá hồ sơ"
+      },
+      "consent": {
+        "title": "Lời thông báo ghi âm",
+        "footer": "Hiện khi bạn bắt đầu ghi âm để báo cho mọi người. Để trống để dùng nội dung có sẵn.",
+        "english": "Lời thông báo tiếng Anh",
+        "vietnamese": "Lời thông báo tiếng Việt",
+        "save": "Lưu",
+        "reset": "Dùng nội dung có sẵn",
+        "saved": "Đã lưu."
+      },
+      "cloud": {
+        "title": "Ghi chú qua đám mây",
+        "header": "Nhà cung cấp",
+        "footer": "Chỉ văn bản bản ghi được gửi, không bao giờ gửi âm thanh, và chỉ sau khi bạn xem trước và xác nhận cho từng cuộc họp.",
+        "provider": "Nhà cung cấp",
+        "model": "Mô hình",
+        "redactDefault": "Mặc định ẩn tên và thông tin cá nhân",
+        "keyHeader": "Khoá API",
+        "keyFooter": "Lưu trong Keychain của điện thoại. Khoá sẽ không hiện lại.",
+        "keyField": "Khoá API của {{provider}}",
+        "keySave": "Lưu khoá",
+        "keyDelete": "Xoá khoá",
+        "keySaved": "Đã lưu khoá vào Keychain.",
+        "none": "Không",
+        "noProviders": "Chưa có nhà cung cấp đám mây nào."
+      },
+      "about": {
+        "title": "Giới thiệu",
+        "version": "Phiên bản",
+        "core": "Lõi",
+        "licence": "{{app}} là phần mềm mã nguồn mở (Apache-2.0).",
+        "licencesHeader": "Giấy phép mã nguồn mở",
+        "licencesFooter": "Toàn văn giấy phép đi kèm ứng dụng."
+      }
+    },
+    "privacy": {
+      "title": "Riêng tư và bảo mật",
+      "requestsToday_other": "{{count}} yêu cầu hôm nay",
+      "networkHeader": "Mạng",
+      "networkFooter": "{{app}} chỉ lên mạng để tải mô hình và gửi ghi chú đám mây mà bạn xác nhận.",
+      "lockHeader": "Khoá ứng dụng",
+      "lockToggle": "Yêu cầu Face ID",
+      "lockToggleHint": "Khoá {{app}} khi bạn rời khỏi ứng dụng.",
+      "lockReason": "mở khoá {{app}}",
+      "lockAfter": "Khoá sau",
+      "lockAfter0": "Chỉ khi mở lại",
+      "lockAfter1": "1 phút",
+      "lockAfter5": "5 phút",
+      "lockAfter15": "15 phút",
+      "dataHeader": "Dữ liệu của bạn",
+      "retention": "Giữ bản ghi âm trong",
+      "retentionFooter": "Khi hết hạn, bản ghi âm bị xoá. Bản ghi và ghi chú vẫn còn.",
+      "retentionForever": "Đến khi tôi xoá cuộc họp",
+      "retention30": "30 ngày",
+      "retention90": "90 ngày",
+      "retention365": "1 năm",
+      "exportAll": "Xuất toàn bộ",
+      "exportAllHint": "Một tệp nén được mã hoá chứa mọi cuộc họp.",
+      "deleteAll": {
+        "row": "Xoá toàn bộ",
+        "title": "Xoá toàn bộ dữ liệu?",
+        "body": "Mọi cuộc họp, hồ sơ giọng nói, khoá và cài đặt trên điện thoại này sẽ bị xoá vĩnh viễn. Không thể hoàn tác.",
+        "typePrompt": "Gõ {{phrase}} để xác nhận",
+        "phrase": "XOÁ",
+        "field": "Xác nhận",
+        "confirm": "Xoá toàn bộ",
+        "done": "Đã xoá toàn bộ dữ liệu."
+      },
+      "export": {
+        "title": "Xuất toàn bộ",
+        "body": "Chọn mật khẩu. Không có mật khẩu thì không mở được tệp, và ai có cả hai sẽ đọc được mọi cuộc họp.",
+        "password": "Mật khẩu",
+        "passwordHint": "Ít nhất 8 ký tự.",
+        "confirm": "Chọn nơi lưu",
+        "working": "Đang chuẩn bị tệp…",
+        "done": "Sẵn sàng để chia sẻ."
+      },
+      "cloudRow": "Ghi chú đám mây và khoá API"
+    },
+    "lock": {
+      "title": "{{app}} đang khoá",
+      "body": "Các cuộc họp của bạn được giữ riêng tư cho đến khi bạn mở khoá.",
+      "unlock": "Mở khoá bằng Face ID",
+      "unlockReason": "mở khoá {{app}}",
+      "failed": "Chưa được. Hãy thử lại."
+    },
+    "inbox": {
+      "title": "Đang chờ nhập",
+      "waiting_other": "{{count}} file đang chờ nhập",
+      "review": "Xem",
+      "importing": "Đang nhập…",
+      "rejected": "Không nhập được",
+      "dismiss": "Bỏ",
+      "dismissFile": "Bỏ {{name}}",
+      "unknownSize": "Chưa rõ dung lượng",
+      "added": "Đã thêm vào {{app}}",
+      "desktopDisabled": "Hãy ghép nối máy tính trước",
+      "closeToast": "Đóng"
+    },
+    "cloudSheet": {
+      "title": "Cải thiện bằng đám mây",
+      "intro": "Chỉ văn bản bản ghi rời khỏi điện thoại, không bao giờ gửi âm thanh. Bạn thấy đúng nội dung sẽ gửi trước khi gửi.",
+      "provider": "{{provider}} · {{model}}",
+      "redact": "Ẩn tên và thông tin cá nhân",
+      "redactionOffWarn": "Tên và thông tin cá nhân sẽ được gửi nguyên văn.",
+      "tokens": "Khoảng {{tokens}} token",
+      "cost": "Khoảng {{cost}}",
+      "host": "Gửi tới {{host}}",
+      "redactions": "Đã ẩn: {{items}}",
+      "exactHeader": "Đúng nội dung sẽ được gửi",
+      "preparing": "Đang chuẩn bị bản xem trước…",
+      "send": "Gửi",
+      "sending": "Đang gửi…",
+      "keepLocal": "Huỷ",
+      "locked": "Đám mây đang tắt cho cuộc họp này (“Không bao giờ gửi lên đám mây”). Hãy tắt tuỳ chọn đó trong phần tuỳ chọn của cuộc họp để gửi.",
+      "noKey": "Hãy thêm khoá của nhà cung cấp trước.",
+      "addKey": "Thêm khoá",
+      "previewFailed": "Không chuẩn bị được bản xem trước.",
+      "sent": "Ghi chú đã được viết lại bằng đám mây.",
+      "failed": "Đám mây không phản hồi, nên ghi chú vẫn ở trên điện thoại này.",
+      "failedLeft": "Yêu cầu có thể đã tới {{provider}}.",
+      "close": "Đóng",
+      "warningsIntro": "Nội dung này vẫn trông giống thông tin cá nhân:",
+      "retention": "Nhà cung cấp lưu giữ: {{note}}",
+      "kind": {
+        "email": "Email",
+        "url": "Liên kết",
+        "phone": "Số điện thoại",
+        "id": "Số định danh",
+        "card": "Số thẻ",
+        "account": "Số tài khoản",
+        "person": "Người",
+        "org": "Tổ chức",
+        "term": "Thuật ngữ"
+      }
+    }
+  }
 }

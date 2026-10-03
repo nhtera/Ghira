@@ -1,5 +1,616 @@
 // SPDX-License-Identifier: Apache-2.0
-// Scripted library and meeting commands (M3, M4, search): filled by slice 16-I.
+// Scripted library, meeting and search commands (M3, M4, search; slice 16-I).
+// `?meetings=empty|many` picks the dataset (default: six meetings, one of each
+// state, dated so screenshots stay stable; many: 1,200 plain ones). Search mirrors ghi-store's folding (accents and
+// case ignored, đ = d); the real folding is tested in ghi-store.
+import type {
+  ActionItemView,
+  Citation,
+  MeetingChip,
+  MeetingDetail,
+  MeetingNotes,
+  MeetingRow,
+  MeetingSpeaker,
+  MeetingTranscript,
+  NoteBlockView,
+  SearchHitView,
+  SegmentView,
+} from "../bindings";
 import type { Commands } from "./ipc";
 
-export const meetingCommands: Partial<Commands> = {};
+const ok = <T>(data: T) => ({ status: "ok" as const, data });
+const fail = (error: string) => ({ status: "error" as const, error });
+
+/** Accents, case and đ ignored; same length as the input for precomposed text, so highlights index the original. */
+export function fold(s: string): string {
+  return Array.from(s)
+    .map((c) =>
+      c
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .replace(/[đĐ]/g, "d")
+        .toLowerCase(),
+    )
+    .join("");
+}
+
+type MockMeeting = {
+  row: MeetingRow;
+  detail: MeetingDetail;
+  notes: MeetingNotes;
+  transcript: MeetingTranscript;
+  chip: MeetingChip;
+};
+
+const MIN = 60_000;
+const startOfToday = () => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+};
+const DAY = 24 * 60 * MIN;
+
+const speaker = (
+  gid: string,
+  number: number,
+  name: string | null,
+  colorSlot: number,
+  isMe = false,
+  lines = 0,
+): MeetingSpeaker => ({
+  gid,
+  name,
+  number,
+  colorSlot,
+  isMe,
+  notPerson: false,
+  lines,
+  sampleT0Ms: null,
+  sampleT1Ms: null,
+  suggestion: null,
+});
+
+/** One segment; its words are spread evenly over [t0, t1). */
+function segment(
+  gid: string,
+  speakerGid: string | null,
+  t0Ms: number,
+  t1Ms: number,
+  text: string,
+  extra: Partial<SegmentView> = {},
+): SegmentView {
+  const words = text.split(/\s+/).filter(Boolean);
+  const step = (t1Ms - t0Ms) / Math.max(words.length, 1);
+  return {
+    gid,
+    speakerGid,
+    t0Ms,
+    t1Ms,
+    text,
+    language: null,
+    confidence: 0.9,
+    edited: false,
+    overlap: false,
+    words: words.map((_, i) => ({
+      t0Ms: Math.round(t0Ms + i * step),
+      t1Ms: Math.round(t0Ms + (i + 1) * step),
+      confidence: i === 3 && gid === "s-lowconf" ? 0.3 : 0.95,
+    })),
+    ...extra,
+  };
+}
+
+const cite = (
+  t0Ms: number | null,
+  quote: string,
+  extra: Partial<Citation> = {},
+): Citation => ({
+  t0Ms,
+  t1Ms: t0Ms === null ? null : t0Ms + 6_000,
+  quote,
+  speakerGid: null,
+  stale: false,
+  missing: false,
+  ...extra,
+});
+
+function build(
+  id: string,
+  title: string,
+  startedAt: number,
+  durationMin: number,
+  chip: MeetingChip,
+  o: Partial<MockMeeting> & {
+    people?: [string, number][];
+    summary?: string | null;
+    speakers?: MeetingSpeaker[];
+    job?: MeetingRow["job"];
+    status?: string;
+  } = {},
+): MockMeeting {
+  const speakers = o.speakers ?? [];
+  const status = o.status ?? "ready";
+  const row: MeetingRow = {
+    gid: id,
+    title,
+    startedAt,
+    durationMs: durationMin * MIN,
+    source: "live",
+    mode: "room",
+    status,
+    transcriptVersion: 2,
+    cloudUsed: false,
+    consentConfirmed: true,
+    template: null,
+    people: (o.people ?? []).map(([name, colorSlot]) => ({ name, colorSlot })),
+    job: o.job ?? null,
+    folder: null,
+    tags: [],
+    sourceApp: null,
+    summary: o.summary ?? null,
+  };
+  return {
+    row,
+    chip,
+    detail: {
+      gid: id,
+      title,
+      startedAt,
+      durationMs: durationMin * MIN,
+      source: "live",
+      mode: "room",
+      language: "mixed",
+      template: null,
+      status,
+      cloudLocked: false,
+      sensitive: false,
+      cloudUsed: false,
+      consentConfirmed: true,
+      transcriptVersion: 2,
+      audioAvailable: true,
+      speakers,
+      job: o.job ?? null,
+    },
+    notes: o.notes ?? { blocks: [], actionItems: [], sections: [] },
+    transcript: o.transcript ?? {
+      version: 2,
+      segments: [],
+      marks: [],
+      topics: [],
+    },
+  };
+}
+
+function defaults(): MockMeeting[] {
+  const today = startOfToday();
+  const spk = [
+    speaker("sp-linh", 1, "Linh", 1, false, 3),
+    speaker("sp-minh", 2, "Minh", 2, false, 2),
+    speaker("sp-me", 3, "Me", 3, true, 1),
+  ];
+  const planning = build(
+    "m-nonotes",
+    "Họp kế hoạch quý 4 · Đà Nẵng",
+    new Date(2026, 8, 29, 9, 30).getTime(),
+    42,
+    { kind: "processedOnPhone" },
+    {
+      people: [
+        ["Linh", 1],
+        ["Minh", 2],
+      ],
+      speakers: spk,
+      transcript: {
+        version: 2,
+        marks: [],
+        topics: [],
+        segments: [
+          segment(
+            "s1",
+            "sp-linh",
+            4_000,
+            12_000,
+            "Chào mọi người, hôm nay mình chốt kế hoạch cho dự án Đà Nẵng.",
+          ),
+          segment(
+            "s2",
+            "sp-minh",
+            12_500,
+            21_000,
+            "Ngân sách dự kiến khoảng năm trăm triệu đồng, chưa tính chi phí đi lại.",
+          ),
+          segment(
+            "s-lowconf",
+            "sp-me",
+            21_500,
+            28_000,
+            "Mình nghĩ cần thêm một người phụ trách phần vận hành.",
+            { overlap: true },
+          ),
+          segment(
+            "s3",
+            "sp-linh",
+            29_000,
+            36_000,
+            "Ok, vậy tuần sau Minh gửi bản ngân sách chi tiết nhé.",
+          ),
+          segment(
+            "s4",
+            "sp-minh",
+            36_500,
+            44_000,
+            "Được, mình sẽ gửi trước thứ Sáu. Còn vé máy bay đi da nang thì ai đặt?",
+          ),
+        ],
+      },
+    },
+  );
+  const sync = build(
+    "m-notes",
+    "Product sync tuần 39",
+    new Date(2026, 8, 30, 15, 0).getTime(),
+    31,
+    { kind: "synced" },
+    {
+      people: [
+        ["Linh", 1],
+        ["Minh", 2],
+        ["Me", 3],
+      ],
+      summary: "Beta ships 15 Oct; budget approved.",
+      speakers: spk,
+      transcript: {
+        version: 2,
+        marks: [],
+        topics: [],
+        segments: [
+          segment(
+            "t1",
+            "sp-linh",
+            90_000,
+            96_000,
+            "We can ship the beta on the fifteenth if QA signs off by Friday.",
+          ),
+          segment(
+            "t2",
+            "sp-minh",
+            96_500,
+            104_000,
+            "Chốt scope cho bản beta: no sync, no Android, just the iPhone recorder.",
+          ),
+          segment(
+            "t3",
+            "sp-me",
+            105_000,
+            112_000,
+            "I will send the revised budget in đồng and dollars before the review.",
+          ),
+        ],
+      },
+      notes: {
+        sections: [],
+        blocks: [
+          {
+            gid: "n1",
+            kind: "tldr",
+            origin: "ai",
+            text: "The team will ship the beta on 15 October if QA signs off by Friday.",
+            pinned: false,
+            citations: [
+              cite(
+                90_000,
+                "We can ship the beta on the fifteenth if QA signs off by Friday.",
+                { speakerGid: "sp-linh" },
+              ),
+            ],
+          },
+          {
+            gid: "n2",
+            kind: "decision",
+            origin: "aiEdited",
+            text: "Scope for the beta: iPhone recorder only; no sync, no Android.",
+            pinned: false,
+            citations: [
+              cite(
+                96_500,
+                "Chốt scope cho bản beta: no sync, no Android, just the iPhone recorder.",
+                { speakerGid: "sp-minh" },
+              ),
+            ],
+          },
+          {
+            gid: "n3",
+            kind: "question",
+            origin: "ai",
+            text: "Who confirms the QA sign-off date?",
+            pinned: false,
+            citations: [cite(200_000, "", { missing: true, t1Ms: null })],
+          },
+          {
+            gid: "n4",
+            kind: "note",
+            origin: "user",
+            text: "Ping legal about the voice profile wording.",
+            pinned: false,
+            citations: [],
+          },
+          {
+            gid: "n5",
+            kind: "enhanced:n4",
+            origin: "ai",
+            text: "",
+            pinned: false,
+            citations: [],
+          },
+        ] satisfies NoteBlockView[],
+        actionItems: [
+          {
+            gid: "a1",
+            text: "Send the revised budget before the review",
+            ownerSpeakerGid: "sp-me",
+            dueText: "Friday",
+            done: false,
+            origin: "ai",
+            citations: [
+              cite(
+                105_000,
+                "I will send the revised budget in đồng and dollars before the review.",
+                { speakerGid: "sp-me" },
+              ),
+            ],
+          },
+          {
+            gid: "a2",
+            text: "Confirm QA sign-off date",
+            ownerSpeakerGid: null,
+            dueText: null,
+            done: true,
+            origin: "user",
+            citations: [],
+          },
+        ] satisfies ActionItemView[],
+      },
+    },
+  );
+  const processing = build(
+    "m-proc",
+    "Họp khách hàng ACME",
+    today + 11 * 60 * MIN,
+    58,
+    { kind: "processingOnPhone", percent: 42 },
+    {
+      people: [["Linh", 1]],
+      status: "processing",
+      job: { kind: "final_pass", progress: 0.42, waitingForModels: false },
+      speakers: spk,
+    },
+  );
+  const failed = build(
+    "m-fail",
+    "Phỏng vấn ứng viên",
+    today - DAY + 10 * 60 * MIN,
+    25,
+    { kind: "failed" },
+    { status: "failed" },
+  );
+  const old1 = build(
+    "m-old1",
+    "Retro tháng 9",
+    new Date(2026, 8, 12, 16, 0).getTime(),
+    47,
+    { kind: "processedOnPhone" },
+    { people: [["Minh", 2]] },
+  );
+  const old2 = build(
+    "m-old2",
+    "Weekly 1:1",
+    new Date(2026, 8, 12, 9, 15).getTime(),
+    18,
+    { kind: "waitingForModels" },
+    { status: "recorded" },
+  );
+  return [processing, failed, sync, planning, old1, old2];
+}
+
+function many(): MockMeeting[] {
+  const base = new Date(2026, 8, 30, 18, 0).getTime();
+  return Array.from({ length: 1200 }, (_, i) =>
+    build(
+      `g${i}`,
+      `Cuộc họp số ${i + 1}`,
+      base - Math.floor(i / 3) * DAY - (i % 3) * 3 * 60 * MIN,
+      10 + (i % 50),
+      { kind: "processedOnPhone" },
+      {
+        people: [["Linh", 1 + (i % 8)]],
+        summary: i % 2 ? "Tóm tắt ngắn của cuộc họp." : null,
+      },
+    ),
+  );
+}
+
+const scenario = () =>
+  typeof location === "undefined"
+    ? null
+    : new URLSearchParams(location.search).get("meetings");
+const meetings: MockMeeting[] =
+  scenario() === "empty" ? [] : scenario() === "many" ? many() : defaults();
+
+const find = (id: string) => meetings.find((m) => m.row.gid === id);
+const label = (m: MockMeeting, gid: string | null) => {
+  const s = m.detail.speakers.find((x) => x.gid === gid);
+  return s ? (s.name ?? `Speaker ${s.number}`) : "?";
+};
+
+function asText(m: MockMeeting, markdown: boolean): string {
+  const h = (t: string) => (markdown ? `## ${t}` : t.toUpperCase());
+  const out = [markdown ? `# ${m.row.title}` : m.row.title, ""];
+  if (m.notes.blocks.length) {
+    out.push(
+      h("Notes"),
+      ...m.notes.blocks
+        .filter((b) => b.text)
+        .map((b) => (markdown ? `- ${b.text}` : b.text)),
+      "",
+    );
+  }
+  out.push(
+    h("Transcript"),
+    ...m.transcript.segments.map((s) => `${label(m, s.speakerGid)}: ${s.text}`),
+  );
+  return out.join("\n");
+}
+
+function highlights(text: string, query: string): [number, number][] {
+  const f = fold(text);
+  const q = fold(query).trim();
+  const out: [number, number][] = [];
+  if (!q) return out;
+  for (let at = f.indexOf(q); at >= 0; at = f.indexOf(q, at + q.length))
+    out.push([at, at + q.length]);
+  return out;
+}
+
+/** What the native share sheet was asked to present (tests read it). */
+export const shared: { meeting: string; format: string }[] = [];
+if (typeof window !== "undefined")
+  (window as unknown as { __ghiShared: typeof shared }).__ghiShared = shared;
+
+let failDeletes = false;
+let failSaves = false;
+let failShare = false;
+let failAudio = false;
+/** Failure switches for the tests (the app lock itself is mock-settings'). */
+if (typeof window !== "undefined")
+  (window as unknown as { __ghiMeetings: unknown }).__ghiMeetings = {
+    failDeletes: (v: boolean) => (failDeletes = v),
+    failSaves: (v: boolean) => (failSaves = v),
+    failShare: (v: boolean) => (failShare = v),
+    failAudio: (v: boolean) => (failAudio = v),
+  };
+
+export const meetingCommands: Partial<Commands> = {
+  listMeetings: async (limit, offset) =>
+    ok(meetings.slice(offset, offset + limit).map((m) => m.row)),
+  meetingChips: async (ids) =>
+    ok(
+      ids.flatMap((gid) => (find(gid) ? [{ gid, chip: find(gid)!.chip }] : [])),
+    ),
+  meetingDetail: async (id) => {
+    const m = find(id);
+    return m ? ok(m.detail) : fail("not found");
+  },
+  meetingNotes: async (id) => {
+    const m = find(id);
+    return m ? ok(m.notes) : fail("not found");
+  },
+  meetingTranscript: async (id) => {
+    const m = find(id);
+    if (!m) return fail("not found");
+    // Generated meetings get a short transcript on first open.
+    if (!m.transcript.segments.length && id.startsWith("g"))
+      m.transcript.segments = [
+        segment(`${id}-1`, null, 1_000, 6_000, "Nội dung cuộc họp ở đây."),
+      ];
+    return ok(m.transcript);
+  },
+  updateSegmentText: async (id, seg, text) => {
+    if (failSaves) return fail("disk full");
+    const s = find(id)?.transcript.segments.find((x) => x.gid === seg);
+    if (!s) return fail("not found");
+    s.text = text;
+    s.edited = true;
+    s.words = [];
+    return ok(null);
+  },
+  setActionDone: async (id, item, done) => {
+    const a = find(id)?.notes.actionItems.find((x) => x.gid === item);
+    if (!a) return fail("not found");
+    a.done = done;
+    return ok(null);
+  },
+  setMeetingCloudLocked: async (id, value) => {
+    const m = find(id);
+    if (!m) return fail("not found");
+    m.detail.cloudLocked = value;
+    return ok(null);
+  },
+  deleteMeeting: async (id) => {
+    if (failDeletes) return fail("disk full");
+    const at = meetings.findIndex((m) => m.row.gid === id);
+    if (at < 0) return fail("not found");
+    meetings.splice(at, 1);
+    return ok(null);
+  },
+  retryMeeting: async (id) => {
+    const m = find(id);
+    if (!m) return fail("not found");
+    m.chip = { kind: "processingOnPhone", percent: 0 };
+    m.row.status = "processing";
+    return ok(1);
+  },
+  issueAudioPlay: async (id) => {
+    if (failAudio) return fail("the app is starting");
+    const m = find(id);
+    return m
+      ? ok({ token: `mock-audio-${id}`, durationMs: m.row.durationMs })
+      : fail("not found");
+  },
+  shareMeetingExport: async (id, format) => {
+    if (failShare) return fail("share sheet unavailable");
+    const m = find(id);
+    if (!m) return fail("not found");
+    shared.push({ meeting: id, format });
+    return ok(null);
+  },
+  meetingAsText: async (id, markdown) => {
+    const m = find(id);
+    return m ? ok(asText(m, markdown)) : fail("not found");
+  },
+  searchMeetings: async (request) => {
+    const q = request.text.trim();
+    if (!q) return ok({ hits: [], truncated: false });
+    const hits: SearchHitView[] = [];
+    for (const m of meetings) {
+      for (const s of m.transcript.segments) {
+        const h = highlights(s.text, q);
+        if (h.length)
+          hits.push({
+            kind: "segment",
+            meeting: m.row.gid,
+            meetingTitle: m.row.title,
+            meetingStartedAt: m.row.startedAt,
+            item: s.gid,
+            speakerGid: s.speakerGid,
+            t0Ms: s.t0Ms,
+            t1Ms: s.t1Ms,
+            snippet: s.text,
+            highlights: h,
+            exact: s.text.toLowerCase().includes(q.toLowerCase()),
+          });
+      }
+      for (const b of m.notes.blocks) {
+        const h = highlights(b.text, q);
+        if (h.length)
+          hits.push({
+            kind: "note",
+            meeting: m.row.gid,
+            meetingTitle: m.row.title,
+            meetingStartedAt: m.row.startedAt,
+            item: b.gid,
+            speakerGid: null,
+            t0Ms: b.citations[0]?.t0Ms ?? null,
+            t1Ms: null,
+            snippet: b.text,
+            highlights: h,
+            exact: b.text.toLowerCase().includes(q.toLowerCase()),
+          });
+      }
+    }
+    hits.sort((a, b) => Number(b.exact) - Number(a.exact));
+    return ok({
+      hits: hits.slice(request.offset, request.offset + request.limit),
+      truncated: false,
+    });
+  },
+};

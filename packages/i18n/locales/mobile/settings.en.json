@@ -1,3 +1,235 @@
 {
-  "mobile": {}
+  "mobile": {
+    "settings": {
+      "title": "Settings",
+      "selected": "Selected",
+      "loadFailed": "Couldn’t load this screen.",
+      "retry": "Try again",
+      "saveFailed": "Couldn’t save that change.",
+      "section": {
+        "device": "On this phone",
+        "privacy": "Privacy and cloud"
+      },
+      "rows": {
+        "models": "Models",
+        "voice": "Voice profile",
+        "privacy": "Privacy and security",
+        "cloud": "Cloud notes",
+        "consent": "Consent message",
+        "about": "About"
+      },
+      "status": {
+        "ready": "Ready",
+        "needsDownload": "Download needed",
+        "on": "On",
+        "off": "Off",
+        "set": "Set up",
+        "notSet": "Not set up",
+        "keyStored": "Key saved",
+        "noKey": "No key"
+      },
+      "desktopLater": "Pair a computer first",
+      "language": {
+        "header": "Meeting language",
+        "footer": "Used for new meetings. Auto follows both languages in one meeting.",
+        "auto": "Auto (English + Vietnamese)",
+        "en": "English",
+        "vi": "Vietnamese"
+      },
+      "error": {
+        "generic": "Something went wrong. Try again.",
+        "busy": "A recording or import is running. Try again when it finishes.",
+        "locked": "Unlock {{app}} first.",
+        "offline": "Strict offline mode is on, so nothing can be sent or downloaded.",
+        "passwordTooShort": "Use at least 8 characters.",
+        "notFound": "That item is gone.",
+        "noModel": "Download the voice model first (Settings → Models).",
+        "micPermission": "Microphone access is off. Turn it on in Settings.",
+        "busyRecording": "A recording is running. Finish it first.",
+        "tooShort": "That was too short. Read the whole passage.",
+        "tooQuiet": "Too quiet. Move closer and try again.",
+        "unsupportedType": "This file type isn’t supported.",
+        "tooLarge": "This file is too large.",
+        "unreadable": "This file can’t be read.",
+        "noAuthMethod": "Turn on a passcode in Settings to use app lock."
+      },
+      "models": {
+        "title": "Models",
+        "header": "Speech models",
+        "footer": "Models run on this phone. They are downloaded once and never sent anywhere.",
+        "wifiOnly": "Download over Wi-Fi only",
+        "download": "Download {{size}}",
+        "downloadNow": "Download",
+        "cellular": "Use cellular this time",
+        "cancel": "Cancel download",
+        "allReady": "All models are ready.",
+        "role": {
+          "asr": "Speech recognition",
+          "diarization": "Speaker separation",
+          "voice": "Voice matching"
+        },
+        "state": {
+          "ready": "Ready",
+          "missing": "Not downloaded",
+          "downloading": "Downloading {{percent}}%",
+          "waitingForWifi": "Waiting for Wi-Fi",
+          "failed": "Download failed"
+        },
+        "progress": "Download progress: {{name}}"
+      },
+      "voice": {
+        "title": "Voice profile",
+        "headerMe": "Me",
+        "statusSet": "Saved on this phone · {{count}} samples",
+        "statusNone": "No voice profile yet.",
+        "footer": "The profile stays encrypted on this phone. Delete it any time.",
+        "noModel": "The voice model isn’t downloaded yet. Get it in Models.",
+        "openModels": "Open Models",
+        "enroll": "Set up my voice",
+        "redo": "Record again",
+        "finish": "Finish",
+        "delete": "Delete my voice profile",
+        "deleted": "Voice profile deleted.",
+        "saved": "Voice profile saved.",
+        "deleteConfirm": "Delete your voice profile? Your voice samples are erased for good and can’t be recovered.",
+        "deleteConfirmAction": "Delete profile"
+      },
+      "consent": {
+        "title": "Consent message",
+        "footer": "Shown when you start recording so you can tell people. Leave empty to use the built-in text.",
+        "english": "English message",
+        "vietnamese": "Vietnamese message",
+        "save": "Save",
+        "reset": "Use built-in text",
+        "saved": "Saved."
+      },
+      "cloud": {
+        "title": "Cloud notes",
+        "header": "Provider",
+        "footer": "Only transcript text is ever sent, never audio, and only after you preview and confirm it for one meeting.",
+        "provider": "Provider",
+        "model": "Model",
+        "redactDefault": "Hide names and personal data by default",
+        "keyHeader": "API key",
+        "keyFooter": "Stored in this phone’s Keychain. It is never shown again.",
+        "keyField": "API key for {{provider}}",
+        "keySave": "Save key",
+        "keyDelete": "Remove key",
+        "keySaved": "Key saved to the Keychain.",
+        "none": "None",
+        "noProviders": "No cloud providers are available."
+      },
+      "about": {
+        "title": "About",
+        "version": "Version",
+        "core": "Core",
+        "licence": "{{app}} is open source (Apache-2.0).",
+        "licencesHeader": "Open-source licenses",
+        "licencesFooter": "Full license texts ship with the app."
+      }
+    },
+    "privacy": {
+      "title": "Privacy and security",
+      "requestsToday_one": "{{count}} request today",
+      "requestsToday_other": "{{count}} requests today",
+      "networkHeader": "Network",
+      "networkFooter": "{{app}} only goes online for model downloads and cloud notes you confirm.",
+      "lockHeader": "App lock",
+      "lockToggle": "Require Face ID",
+      "lockToggleHint": "Locks {{app}} when you leave it.",
+      "lockReason": "unlock {{app}}",
+      "lockAfter": "Lock after",
+      "lockAfter0": "Only when reopened",
+      "lockAfter1": "1 minute",
+      "lockAfter5": "5 minutes",
+      "lockAfter15": "15 minutes",
+      "dataHeader": "Your data",
+      "retention": "Keep audio for",
+      "retentionFooter": "When audio expires it is deleted. Transcripts and notes stay.",
+      "retentionForever": "Until I delete the meeting",
+      "retention30": "30 days",
+      "retention90": "90 days",
+      "retention365": "1 year",
+      "exportAll": "Export everything",
+      "exportAllHint": "An encrypted archive of every meeting.",
+      "deleteAll": {
+        "row": "Delete everything",
+        "title": "Delete everything?",
+        "body": "Every meeting, voice profile, key and setting on this phone is erased for good. This can’t be undone.",
+        "typePrompt": "Type {{phrase}} to confirm",
+        "phrase": "DELETE",
+        "field": "Confirmation",
+        "confirm": "Delete everything",
+        "done": "Everything was deleted."
+      },
+      "export": {
+        "title": "Export everything",
+        "body": "Pick a password. Without it the file can’t be opened, and anyone with both gets every meeting.",
+        "password": "Password",
+        "passwordHint": "At least 8 characters.",
+        "confirm": "Choose where to save",
+        "working": "Preparing the archive…",
+        "done": "Ready to share."
+      },
+      "cloudRow": "Cloud notes and API key"
+    },
+    "lock": {
+      "title": "{{app}} is locked",
+      "body": "Your meetings stay private until you unlock.",
+      "unlock": "Unlock with Face ID",
+      "unlockReason": "unlock {{app}}",
+      "failed": "That didn’t work. Try again."
+    },
+    "inbox": {
+      "title": "Waiting to import",
+      "waiting_one": "{{count}} file is waiting to import",
+      "waiting_other": "{{count}} files are waiting to import",
+      "review": "Review",
+      "importing": "Importing…",
+      "rejected": "Can’t import",
+      "dismiss": "Remove",
+      "dismissFile": "Remove {{name}}",
+      "unknownSize": "Size unknown",
+      "added": "Added to {{app}}",
+      "desktopDisabled": "Pair a computer first",
+      "closeToast": "Dismiss"
+    },
+    "cloudSheet": {
+      "title": "Improve with cloud",
+      "intro": "Only the transcript text leaves this phone, never audio. You see exactly what is sent before anything goes.",
+      "provider": "{{provider}} · {{model}}",
+      "redact": "Hide names and personal data",
+      "redactionOffWarn": "Names and personal data will be sent as written.",
+      "tokens": "About {{tokens}} tokens",
+      "cost": "About {{cost}}",
+      "host": "Sent to {{host}}",
+      "redactions": "Hidden: {{items}}",
+      "exactHeader": "Exactly what will be sent",
+      "preparing": "Preparing preview…",
+      "send": "Send",
+      "sending": "Sending…",
+      "keepLocal": "Cancel",
+      "locked": "Cloud is off for this meeting (“Never send to cloud”). Turn that option off in the meeting’s options to send.",
+      "noKey": "Add a provider key first.",
+      "addKey": "Add a key",
+      "previewFailed": "Couldn’t prepare the preview.",
+      "sent": "Notes were rewritten with the cloud.",
+      "failed": "The cloud didn’t answer, so your notes stay on this phone.",
+      "failedLeft": "The request may already have reached {{provider}}.",
+      "close": "Close",
+      "warningsIntro": "This still looks like personal data:",
+      "retention": "Provider retention: {{note}}",
+      "kind": {
+        "email": "Emails",
+        "url": "Links",
+        "phone": "Phone numbers",
+        "id": "IDs",
+        "card": "Card numbers",
+        "account": "Account numbers",
+        "person": "People",
+        "org": "Organizations",
+        "term": "Terms"
+      }
+    }
+  }
 }

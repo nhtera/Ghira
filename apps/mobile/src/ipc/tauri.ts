@@ -8,5 +8,6 @@ export const tauriIpc: Ipc = {
   commands,
   onCoreEvent: (cb) => events.coreEvent.listen((e) => cb(e.payload)),
   onMobileEvent: (cb) => events.mobileEvent.listen((e) => cb(e.payload)),
+  onLockChanged: (cb) => events.lockChanged.listen((e) => cb(e.payload.locked)),
   audioUrl: (token) => convertFileSrc(token, "ghi-audio"),
 };

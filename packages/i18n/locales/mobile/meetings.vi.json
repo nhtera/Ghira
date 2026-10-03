@@ -1,3 +1,93 @@
 {
-  "mobile": {}
+  "mobile": {
+    "audio": {
+      "pause": "Tạm dừng",
+      "play": "Phát",
+      "position": "Vị trí",
+      "speed": "Tốc độ phát {{speed}}×",
+      "unavailable": "Không có bản ghi âm cho cuộc họp này."
+    },
+    "detail": {
+      "actions": "Việc cần làm",
+      "actionsEmpty": "Cuộc họp này không có việc cần làm.",
+      "cloudNever": "Không bao giờ gửi lên đám mây",
+      "cloudNeverHint": "Cuộc họp này ở lại trên điện thoại. Bảng đám mây sẽ không gửi nó.",
+      "copied": "Đã chép vào bộ nhớ tạm",
+      "edit": "Sửa dòng",
+      "editField": "Nội dung bản ghi",
+      "improveWithCloud": "Cải thiện bằng đám mây",
+      "listen": "Trình phát âm thanh",
+      "loadFailed": "Không mở được cuộc họp này.",
+      "locked": "Hãy mở khoá để xem cuộc họp này.",
+      "notFound": "Cuộc họp này không còn trên điện thoại.",
+      "notesEmpty": {
+        "body": "Điện thoại ghi âm và chuyển thành văn bản. Để có ghi chú, bạn có thể gửi nội dung bản ghi (không bao giờ gửi âm thanh) đến mô hình đám mây do bạn chọn.",
+        "title": "Chưa có ghi chú trên điện thoại này"
+      },
+      "quote": {
+        "missing": "Không tìm thấy lời nào khớp ở thời điểm đó.",
+        "stale": "Viết từ một phiên bản bản ghi cũ hơn.",
+        "title": "Trích từ bản ghi"
+      },
+      "save": "Lưu",
+      "saveFailed": "Không lưu được dòng này. Hãy thử lại.",
+      "section": {
+        "decision": "Quyết định",
+        "note": "Ghi chú của bạn",
+        "other": "Khác",
+        "question": "Câu hỏi còn mở",
+        "quote": "Trích dẫn",
+        "tldr": "Tóm tắt",
+        "topic": "Chủ đề"
+      },
+      "share": "Chia sẻ",
+      "shareCopy": "Chép vào bộ nhớ tạm",
+      "shareFailed": "Không thể chia sẻ cuộc họp này.",
+      "shareFailedCopy": "Không mở được bảng chia sẻ. Bạn có thể chép văn bản thay thế.",
+      "shareMarkdown": "Markdown (.md)",
+      "shareText": "Văn bản thuần (.txt)",
+      "shareTitle": "Chia sẻ cuộc họp",
+      "tabs": "Các phần của cuộc họp",
+      "transcriptEmpty": "Chưa có bản ghi.",
+      "transcriptWaiting": "Bản ghi sẽ xuất hiện khi các mô hình giọng nói được cài đặt."
+    },
+    "meetings": {
+      "delete": {
+        "action": "Xoá",
+        "confirm": "Xoá",
+        "question": "Xoá “{{title}}” và bản ghi âm của nó khỏi điện thoại này? Không thể hoàn tác."
+      },
+      "deleteFailed": "Không xoá được cuộc họp. Hãy thử lại.",
+      "duration": "{{minutes}} phút",
+      "durationShort": "< 1 phút",
+      "empty": {
+        "body": "Chạm Ghi âm trong cuộc họp, hoặc chia sẻ một bản ghi âm vào {{app}}.",
+        "record": "Bắt đầu ghi âm",
+        "title": "Chưa có cuộc họp nào"
+      },
+      "error": "Không tải được các cuộc họp của bạn.",
+      "loading": "Đang tải cuộc họp…",
+      "pull": "Kéo để làm mới",
+      "refreshing": "Đang làm mới…",
+      "retry": "Thử lại",
+      "title": "Cuộc họp",
+      "untitled": "Cuộc họp chưa đặt tên"
+    },
+    "search": {
+      "clear": "Xoá tìm kiếm",
+      "clearRecent": "Xoá",
+      "error": "Tìm kiếm thất bại. Hãy thử lại.",
+      "hint": "Tìm trong mọi bản ghi trên điện thoại này. Dấu là tuỳ chọn: “dong” tìm ra “đồng”.",
+      "inNotes": "Ghi chú",
+      "inTranscript": "Bản ghi",
+      "noResults": {
+        "body": "Dấu là tuỳ chọn. Hãy thử từ khác.",
+        "title": "Không có kết quả cho “{{query}}”"
+      },
+      "recent": "Tìm kiếm gần đây",
+      "results_other": "{{count}} kết quả",
+      "searching": "Đang tìm…",
+      "title": "Tìm kiếm"
+    }
+  }
 }
