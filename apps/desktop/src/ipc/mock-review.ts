@@ -640,6 +640,7 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
             folder: null,
             tags: [],
             sourceApp: group ? "zoom" : null,
+            summary: null,
           });
           emitUpdate({ id, state: "done", meeting, progress: 1, error: null });
           host.process(meeting);

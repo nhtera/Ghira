@@ -6,11 +6,24 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, EmptyState, Icon, shortcutLabel, useToast, usePlatform } from "@ghi/ui";
+import {
+  Button,
+  EmptyState,
+  Icon,
+  shortcutLabel,
+  useToast,
+  usePlatform,
+} from "@ghi/ui";
 import { ipc } from "../ipc";
 import { LibraryList } from "../features/library/library-list";
 import { FilterBar } from "../features/library/filter-bar";
-import { NO_FILTERS, applyFilters, hasFilters, peopleOf, type LibraryFilters } from "../features/library/filters";
+import {
+  NO_FILTERS,
+  applyFilters,
+  hasFilters,
+  peopleOf,
+  type LibraryFilters,
+} from "../features/library/filters";
 import { BulkOrganize } from "../features/folders/bulk-organize";
 import { useFolders, useTags } from "../features/folders/organize";
 import { SelectionBar } from "../features/library/selection-bar";
@@ -28,6 +41,7 @@ import { NameSpeakers } from "../features/processing/name-speakers";
 import { ProcessingPanel } from "../features/processing/processing-panel";
 import { useProcessing } from "../features/processing/processing-store";
 import { adapter } from "../features/processing/speakers-adapter";
+import { overallProgress } from "../features/processing/stepper-steps";
 import { UpNextStrip } from "../features/calendar/up-next-strip";
 import { Page } from "../shell/page";
 import { useAppActions } from "../shell/actions";
@@ -40,7 +54,10 @@ function useUnnamed(meeting: string | undefined) {
     queryFn: () => adapter.unnamed(meeting!),
   });
   const [named, setNamed] = useState<string[]>([]);
-  const left = useMemo(() => (q.data ?? []).filter((s) => !named.includes(s.gid)), [q.data, named]);
+  const left = useMemo(
+    () => (q.data ?? []).filter((s) => !named.includes(s.gid)),
+    [q.data, named],
+  );
   return {
     left,
     loaded: q.isSuccess,
@@ -49,10 +66,14 @@ function useUnnamed(meeting: string | undefined) {
 }
 
 /** The URL says "none" for meetings in no folder; the filter says "". */
-const folderFromUrl = (v: string | undefined): string | null => (v == null ? null : v === "none" ? "" : v);
-const folderToUrl = (v: string | null): string | undefined => (v == null ? undefined : v === "" ? "none" : v);
+const folderFromUrl = (v: string | undefined): string | null =>
+  v == null ? null : v === "none" ? "" : v;
+const folderToUrl = (v: string | null): string | undefined =>
+  v == null ? undefined : v === "" ? "none" : v;
 
-const isTyping = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+const isTyping = (el: EventTarget | null) =>
+  el instanceof HTMLElement &&
+  (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 
 export function MeetingsScreen() {
   const { t, i18n } = useTranslation();
@@ -68,9 +89,14 @@ export function MeetingsScreen() {
   const clearFinished = useProcessing((s) => s.clearFinished);
   const templates = useTemplates();
 
-  const { q: initialQuery, folder: urlFolder } = useSearch({ from: "/shell/meetings" });
+  const { q: initialQuery, folder: urlFolder } = useSearch({
+    from: "/shell/meetings",
+  });
   const [text, setText] = useState(initialQuery ?? "");
-  const [filters, setFilters] = useState<LibraryFilters>({ ...NO_FILTERS, folder: folderFromUrl(urlFolder) });
+  const [filters, setFilters] = useState<LibraryFilters>({
+    ...NO_FILTERS,
+    folder: folderFromUrl(urlFolder),
+  });
   // The sidebar changes the folder through the URL: follow it.
   const [seenFolder, setSeenFolder] = useState(urlFolder);
   if (seenFolder !== urlFolder) {
@@ -81,43 +107,85 @@ export function MeetingsScreen() {
   const tagList = useTags().data;
   const folders = useMemo(() => folderList ?? [], [folderList]);
   // The folder in the URL was deleted (here or elsewhere): drop it once the folders are known.
-  const staleFolder = folderList != null && urlFolder != null && urlFolder !== "none" && !folderList.some((f) => f.gid === urlFolder);
+  const staleFolder =
+    folderList != null &&
+    urlFolder != null &&
+    urlFolder !== "none" &&
+    !folderList.some((f) => f.gid === urlFolder);
   useEffect(() => {
-    if (staleFolder) void navigate({ to: "/meetings", search: (p) => ({ ...p, folder: undefined }), replace: true });
+    if (staleFolder)
+      void navigate({
+        to: "/meetings",
+        search: (p) => ({ ...p, folder: undefined }),
+        replace: true,
+      });
   }, [staleFolder, navigate]);
   const tags = useMemo(() => tagList ?? [], [tagList]);
-  const folderNames = useMemo(() => Object.fromEntries(folders.map((f) => [f.gid, f.name])), [folders]);
+  const folderNames = useMemo(
+    () => Object.fromEntries(folders.map((f) => [f.gid, f.name])),
+    [folders],
+  );
   // The folder filter lives in the URL too (the sidebar links to it), so Back and reload keep it.
   const changeFilters = (next: LibraryFilters) => {
     // A push, like the sidebar's links: Back undoes the folder choice.
-    if (next.folder !== filters.folder) void navigate({ to: "/meetings", search: (p) => ({ ...p, folder: folderToUrl(next.folder) }) });
+    if (next.folder !== filters.folder)
+      void navigate({
+        to: "/meetings",
+        search: (p) => ({ ...p, folder: folderToUrl(next.folder) }),
+      });
     setFilters(next);
   };
   const [picked, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [exporting, setExporting] = useState<string[] | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const all = useMemo(() => meetings.rows.filter((r) => !hidden.has(r.gid)), [meetings.rows, hidden]);
+  const all = useMemo(
+    () => meetings.rows.filter((r) => !hidden.has(r.gid)),
+    [meetings.rows, hidden],
+  );
   const now = useMemo(() => new Date(), []);
-  const rows = useMemo(() => applyFilters(all, filters, now), [all, filters, now]);
+  const rows = useMemo(
+    () => applyFilters(all, filters, now),
+    [all, filters, now],
+  );
   const search = useLibrarySearch(text, filters);
   const related = useRelated(text, filters);
   const visibleIds = useMemo(() => new Set(rows.map((r) => r.gid)), [rows]);
   // Meetings that went away or are filtered out drop out of the selection.
-  const selected = useMemo(() => new Set([...picked].filter((id) => visibleIds.has(id))), [picked, visibleIds]);
+  const selected = useMemo(
+    () => new Set([...picked].filter((id) => visibleIds.has(id))),
+    [picked, visibleIds],
+  );
   // Hits for loaded meetings must pass every filter (people is client-side); meetings beyond the loaded pages are kept (the store applied the rest).
-  const loadedIds = useMemo(() => new Set(meetings.rows.map((r) => r.gid)), [meetings.rows]);
+  const loadedIds = useMemo(
+    () => new Set(meetings.rows.map((r) => r.gid)),
+    [meetings.rows],
+  );
   const hits = useMemo(
-    () => search.hits.filter((h) => !hidden.has(h.meeting) && (!loadedIds.has(h.meeting) || visibleIds.has(h.meeting))),
+    () =>
+      search.hits.filter(
+        (h) =>
+          !hidden.has(h.meeting) &&
+          (!loadedIds.has(h.meeting) || visibleIds.has(h.meeting)),
+      ),
     [search.hits, loadedIds, visibleIds, hidden],
   );
 
   // Related passages follow the same rules as keyword hits; meetings already in the hits are left out.
   const relatedShown = useMemo(
-    () => related.filter((h) => !hidden.has(h.meeting.meeting) && (!loadedIds.has(h.meeting.meeting) || visibleIds.has(h.meeting.meeting))),
+    () =>
+      related.filter(
+        (h) =>
+          !hidden.has(h.meeting.meeting) &&
+          (!loadedIds.has(h.meeting.meeting) ||
+            visibleIds.has(h.meeting.meeting)),
+      ),
     [related, loadedIds, visibleIds, hidden],
   );
-  const hitMeetings = useMemo(() => new Set(hits.map((h) => h.meeting)), [hits]);
+  const hitMeetings = useMemo(
+    () => new Set(hits.map((h) => h.meeting)),
+    [hits],
+  );
 
   // ⌘F focuses the search; ⌘A selects every shown row; Esc clears the selection.
   useEffect(() => {
@@ -126,10 +194,26 @@ export function MeetingsScreen() {
         e.preventDefault();
         searchRef.current?.focus();
         searchRef.current?.select();
-      } else if (matchChord(e, "Mod+A", platform) && !isTyping(e.target) && !document.querySelector('[role="dialog"]') && !search.active) {
+      } else if (
+        matchChord(e, "Mod+A", platform) &&
+        !isTyping(e.target) &&
+        !document.querySelector('[role="dialog"]') &&
+        !search.active
+      ) {
         e.preventDefault();
-        setSelected(new Set(rows.filter((r) => r.status !== "recording" && !inProgress(r.status)).map((r) => r.gid)));
-      } else if (e.key === "Escape" && !isTyping(e.target) && selected.size > 0 && !document.querySelector('[role="dialog"],[role="alertdialog"]')) {
+        setSelected(
+          new Set(
+            rows
+              .filter((r) => r.status !== "recording" && !inProgress(r.status))
+              .map((r) => r.gid),
+          ),
+        );
+      } else if (
+        e.key === "Escape" &&
+        !isTyping(e.target) &&
+        selected.size > 0 &&
+        !document.querySelector('[role="dialog"],[role="alertdialog"]')
+      ) {
         setSelected(new Set());
       }
     };
@@ -144,9 +228,19 @@ export function MeetingsScreen() {
     if (naming && loaded && left.length === 0) clearFinished(naming);
   }, [naming, loaded, left.length, clearFinished]);
 
-  const progress = Object.fromEntries(Object.entries(processing).map(([id, p]) => [id, p.progress ?? undefined]));
-  const needsNames = useMemo(() => new Set(naming && left.length > 0 ? [naming] : []), [naming, left.length]);
-  const open = useCallback((id: string) => void navigate({ to: "/meetings/$id/$tab", params: { id, tab: "notes" } }), [navigate]);
+  // The row shows how far the whole pipeline is, not the running stage (which hits 100% several times).
+  const progress = Object.fromEntries(
+    Object.entries(processing).map(([id, p]) => [id, overallProgress(p)]),
+  );
+  const needsNames = useMemo(
+    () => new Set(naming && left.length > 0 ? [naming] : []),
+    [naming, left.length],
+  );
+  const open = useCallback(
+    (id: string) =>
+      void navigate({ to: "/meetings/$id/$tab", params: { id, tab: "notes" } }),
+    [navigate],
+  );
   // The detail screen reads `?t=<ms>`.
   const openHit = useCallback(
     (h: OpenHit) =>
@@ -157,7 +251,8 @@ export function MeetingsScreen() {
       }),
     [navigate],
   );
-  const titleOf = (id: string) => meetings.rows.find((r) => r.gid === id)?.title;
+  const titleOf = (id: string) =>
+    meetings.rows.find((r) => r.gid === id)?.title;
   const retry = async (id: string) => {
     const r = await ipc.commands.retryMeeting(id);
     if (r.status === "error")
@@ -200,136 +295,230 @@ export function MeetingsScreen() {
           key={id}
           title={titleOf(id)}
           processing={processing[id]!}
-          waitingForModels={meetings.rows.find((r) => r.gid === id)?.job?.waitingForModels}
+          waitingForModels={
+            meetings.rows.find((r) => r.gid === id)?.job?.waitingForModels
+          }
         />
       ))}
-      {naming && left.length > 0 && <NameSpeakers meeting={naming} speakers={left} onDone={markNamed} onSkipAll={() => clearFinished(naming)} />}
+      {naming && left.length > 0 && (
+        <NameSpeakers
+          meeting={naming}
+          speakers={left}
+          onDone={markNamed}
+          onSkipAll={() => clearFinished(naming)}
+        />
+      )}
     </>
   );
-  const empty = meetings.isSuccess && meetings.rows.length === 0 && processingIds.length === 0;
+  const empty =
+    meetings.isSuccess &&
+    meetings.rows.length === 0 &&
+    processingIds.length === 0;
 
   return (
     <Page
       title={t("nav.meetings")}
-      subtitle={meetings.isSuccess ? t("library.subtitle", { context: platform, count: meetings.rows.length }) : undefined}
+      subtitle={
+        meetings.isSuccess
+          ? t("library.subtitle", {
+              context: platform,
+              count: meetings.rows.length,
+            })
+          : undefined
+      }
       actions={
         <>
-          <Button icon="upload_file" onClick={() => void navigate({ to: "/import" })}>
+          <Button
+            icon="upload_file"
+            className="h-[34px]"
+            onClick={() => void navigate({ to: "/import" })}
+          >
             {t("library.empty.importFile")}
           </Button>
-          <Button variant="primary" icon="mic" onClick={() => void startRecording()}>
-            {t("library.newRecording")}
-          </Button>
+          <div
+            role="group"
+            aria-label={t("library.recordGroup")}
+            className="flex overflow-hidden rounded-ctl"
+          >
+            <Button
+              variant="primary"
+              icon="videocam"
+              className="h-[34px] rounded-none px-3.5"
+              onClick={() => void startRecording("call")}
+            >
+              {t("tray.recordCall")}
+            </Button>
+            <Button
+              variant="primary"
+              icon="groups"
+              className="h-[34px] rounded-none border-l border-accent-soft"
+              aria-label={t("tray.recordRoom")}
+              onClick={() => void startRecording("room")}
+            >
+              {t("record.mode.room")}
+            </Button>
+          </div>
         </>
       }
     >
       {/* The page body scrolls by itself; the library fills it and scrolls inside, under the search and filters. */}
       <div className="flex h-full min-h-0 flex-col">
+        <div className="flex flex-none flex-col gap-2.5 pb-3">
+          <label className="flex h-10 items-center gap-2 rounded-row border border-line2 bg-surface px-3 focus-within:border-accent">
+            <Icon name="search" size={19} className="text-faint" />
+            <input
+              ref={searchRef}
+              type="search"
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                // The `?q=` from Ask was only the starting text: drop it so Back doesn't bring it back.
+                if (initialQuery)
+                  void navigate({
+                    to: "/meetings",
+                    search: (p) => ({ folder: p.folder }),
+                    replace: true,
+                  });
+              }}
+              onKeyDown={(e) =>
+                e.key === "Escape" && text && (e.stopPropagation(), setText(""))
+              }
+              placeholder={t("library.searchPlaceholder")}
+              aria-label={t("library.searchPlaceholder")}
+              className="min-w-0 flex-1 border-0 bg-transparent text-[14px] text-ink outline-none [&::-webkit-search-cancel-button]:appearance-none"
+            />
+            <kbd className="text-mono hidden text-faint sm:inline">
+              {shortcutLabel(SHORTCUTS.find, platform)}
+            </kbd>
+          </label>
+          <FilterBar
+            filters={filters}
+            onChange={changeFilters}
+            people={peopleOf(all)}
+            templates={(templates.data ?? []).map((x) => ({
+              value: x.id,
+              label: x.name,
+            }))}
+            folders={folders.map((f) => ({ value: f.gid, label: f.name }))}
+            tags={tags.map((x) => ({ value: x.gid, label: x.name }))}
+            onClear={clearFilters}
+          />
+          {selected.size > 0 && (
+            <SelectionBar
+              organize={<BulkOrganize meetings={[...selected]} />}
+              count={selected.size}
+              onExport={() => setExporting([...selected])}
+              onDelete={() => (schedule([...selected]), setSelected(new Set()))}
+              onClear={() => setSelected(new Set())}
+            />
+          )}
+        </div>
+        {!empty && <UpNextStrip />}
         {empty ? (
-          <EmptyState kind="library" className="mt-10" onPrimary={() => void startRecording("call")} onSecondary={() => void navigate({ to: "/import" })} />
-        ) : (
-          <>
-            <UpNextStrip />
-            <div className="flex flex-none flex-col gap-2.5 pb-3">
-              <label className="flex h-10 items-center gap-2 rounded-panel border border-line2 bg-surface px-3 focus-within:border-accent">
-                <Icon name="search" size={19} className="text-faint" />
-                <input
-                  ref={searchRef}
-                  type="search"
-                  value={text}
-                  onChange={(e) => {
-                    setText(e.target.value);
-                    // The `?q=` from Ask was only the starting text: drop it so Back doesn't bring it back.
-                    if (initialQuery) void navigate({ to: "/meetings", search: (p) => ({ folder: p.folder }), replace: true });
-                  }}
-                  onKeyDown={(e) => e.key === "Escape" && text && (e.stopPropagation(), setText(""))}
-                  placeholder={t("library.searchPlaceholder")}
-                  aria-label={t("library.searchPlaceholder")}
-                  className="min-w-0 flex-1 border-0 bg-transparent text-[14px] text-ink outline-none"
-                />
-                <kbd className="text-mono hidden text-faint sm:inline">{shortcutLabel(SHORTCUTS.find, platform)}</kbd>
-              </label>
-              <FilterBar
-                filters={filters}
-                onChange={changeFilters}
-                people={peopleOf(all)}
-                templates={(templates.data ?? []).map((x) => ({
-                  value: x.id,
-                  label: x.name,
-                }))}
-                folders={folders.map((f) => ({ value: f.gid, label: f.name }))}
-                tags={tags.map((x) => ({ value: x.gid, label: x.name }))}
-                onClear={clearFilters}
+          <EmptyState
+            kind="library"
+            className="mt-16"
+            hint={shortcutLabel(SHORTCUTS.toggleRecording, platform)}
+            onPrimary={() => void startRecording("call")}
+            onSecondary={() => void navigate({ to: "/import" })}
+          />
+        ) : search.active ? (
+          <div
+            className="min-h-0 flex-1 overflow-auto"
+            aria-busy={search.loading}
+          >
+            {top}
+            {search.error ? (
+              <p className="text-body text-muted">
+                {t("system.commandFailed", { message: search.error })}
+              </p>
+            ) : hits.length > 0 ? (
+              <SearchResults
+                hits={hits}
+                query={search.query}
+                rows={meetings.rows}
+                locale={i18n.language === "vi" ? "vi" : "en"}
+                hasMore={!!search.hasMore}
+                loadingMore={search.loadingMore}
+                onMore={search.more}
+                onOpen={openHit}
               />
-              {selected.size > 0 && (
-                <SelectionBar
-                  organize={<BulkOrganize meetings={[...selected]} />}
-                  count={selected.size}
-                  onExport={() => setExporting([...selected])}
-                  onDelete={() => (schedule([...selected]), setSelected(new Set()))}
-                  onClear={() => setSelected(new Set())}
-                />
-              )}
-            </div>
-            {search.active ? (
-              <div className="min-h-0 flex-1 overflow-auto" aria-busy={search.loading}>
-                {top}
-                {search.error ? (
-                  <p className="text-body text-muted">{t("system.commandFailed", { message: search.error })}</p>
-                ) : hits.length > 0 ? (
-                  <SearchResults hits={hits} hasMore={!!search.hasMore} loadingMore={search.loadingMore} onMore={search.more} onOpen={openHit} />
-                ) : (
-                  !search.loading && (
-                    <NoMatches
-                      icon="search_off"
-                      title={t("library.emptySearch.title", {
-                        query: search.query,
-                      })}
-                      body={t("library.emptySearch.body")}
-                      filtering={filtering}
-                      onClear={clearFilters}
-                    />
-                  )
-                )}
-                <RelatedSection hits={relatedShown} exclude={hitMeetings} onOpen={openHit} />
-              </div>
-            ) : rows.length === 0 && filtering ? (
-              <div className="min-h-0 flex-1 overflow-auto">
-                {top}
-                <NoMatches icon="search_off" title={t("library.noFilterMatches")} filtering onClear={clearFilters} />
-              </div>
             ) : (
-              <LibraryList
-                rows={rows}
-                folderNames={folderNames}
-                header={top}
-                progress={progress}
-                needsNames={needsNames}
-                selected={selected}
-                onSelectionChange={setSelected}
-                onOpen={open}
-                onExport={(id) => setExporting([id])}
-                onCopyNotes={(id) => void copyNotes(id)}
-                onDelete={(id) => schedule([id])}
-                onRetry={(id) => void retry(id)}
-              />
+              !search.loading && (
+                <NoMatches
+                  icon="search_off"
+                  title={t("library.emptySearch.title", {
+                    query: search.query,
+                  })}
+                  body={t("library.emptySearch.body")}
+                  filtering={filtering}
+                  onClear={clearFilters}
+                />
+              )
             )}
-          </>
+            <RelatedSection
+              hits={relatedShown}
+              exclude={hitMeetings}
+              onOpen={openHit}
+            />
+          </div>
+        ) : rows.length === 0 && filtering ? (
+          <div className="min-h-0 flex-1 overflow-auto">
+            {top}
+            <NoMatches
+              icon="search_off"
+              title={t("library.noFilterMatches")}
+              filtering
+              onClear={clearFilters}
+            />
+          </div>
+        ) : (
+          <LibraryList
+            rows={rows}
+            folderNames={folderNames}
+            header={top}
+            progress={progress}
+            needsNames={needsNames}
+            selected={selected}
+            onSelectionChange={setSelected}
+            onOpen={open}
+            onCopyNotes={(id) => void copyNotes(id)}
+            onDelete={(id) => schedule([id])}
+            onRetry={(id) => void retry(id)}
+          />
         )}
       </div>
-      <ExportSheet open={exporting != null} onOpenChange={(o) => !o && setExporting(null)} meetings={exporting ?? []} />
+      <ExportSheet
+        open={exporting != null}
+        onOpenChange={(o) => !o && setExporting(null)}
+        meetings={exporting ?? []}
+      />
     </Page>
   );
 }
 
-function NoMatches({ icon, title, body, filtering, onClear }: { icon: "search_off"; title: string; body?: string; filtering: boolean; onClear: () => void }) {
+function NoMatches({
+  icon,
+  title,
+  body,
+  filtering,
+  onClear,
+}: {
+  icon: "search_off";
+  title: string;
+  body?: string;
+  filtering: boolean;
+  onClear: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center gap-2 py-12 text-center text-muted">
       <Icon name={icon} size={32} className="text-faint" />
       <b className="text-body font-semibold text-ink">{title}</b>
       {body && <span className="text-small">{body}</span>}
-      {filtering && <Button onClick={onClear}>{t("library.clearFilters")}</Button>}
+      {filtering && (
+        <Button onClick={onClear}>{t("library.clearFilters")}</Button>
+      )}
     </div>
   );
 }

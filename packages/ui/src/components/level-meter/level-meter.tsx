@@ -14,6 +14,8 @@ export type LevelMeterProps = {
   /** Peak level in dBFS (<= 0). null: the device is missing. */
   db: number | null;
   source: LevelSource;
+  /** The footer form: icon, name and a short bar; the state note is read, not shown. */
+  compact?: boolean;
   className?: string;
 };
 
@@ -42,7 +44,7 @@ function useReducedMotion(): boolean {
   return reduced;
 }
 
-export function LevelMeter({ db, source, className }: LevelMeterProps) {
+export function LevelMeter({ db, source, compact, className }: LevelMeterProps) {
   const { t } = useTranslation();
   const reduced = useReducedMotion();
   const state = levelState(db);
@@ -56,6 +58,27 @@ export function LevelMeter({ db, source, className }: LevelMeterProps) {
     noDevice: String(source === "mic" ? t("meter.noMic") : t("meter.noSystem")),
   }[state];
   const iconName = state === "noDevice" ? (source === "mic" ? "mic_off" : "volume_off") : source === "mic" ? "mic" : "volume_up";
+
+  if (compact) {
+    return (
+      <div data-state={state} title={note || undefined} className={cn("flex items-center gap-1.5 text-[12px] text-muted", className)}>
+        <Icon name={iconName} size={15} className={state === "clipping" ? "text-warn" : state === "noDevice" ? "text-rec-ink" : undefined} />
+        {name}
+        <div
+          role="meter"
+          aria-label={name}
+          aria-valuemin={FLOOR_DB}
+          aria-valuemax={0}
+          aria-valuenow={db === null ? FLOOR_DB : Math.round(clamped)}
+          aria-valuetext={note || String(t("meter.normal"))}
+          className={cn("h-1.5 w-16 overflow-hidden rounded-[3px] bg-sunk", state === "noDevice" && "border border-dashed border-line2 bg-transparent")}
+        >
+          <i className={cn("block h-full ease-linear", state === "clipping" ? "bg-warn" : "bg-accent", "transition-[width] duration-100 motion-reduce:transition-none")} style={{ width: `${width}%` }} />
+        </div>
+        {note && <span className="sr-only">{note}</span>}
+      </div>
+    );
+  }
 
   return (
     <div data-state={state} className={cn("flex items-center gap-2 text-[12.5px]", className)}>

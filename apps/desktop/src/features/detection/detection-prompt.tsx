@@ -6,7 +6,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Button, Icon, cn, useToast } from "@ghi/ui";
+import { APP_NAME } from "@ghi/i18n";
+import { Button, cn, useToast } from "@ghi/ui";
 import type { DetectReply, MeetingDetected } from "../../bindings";
 import { ipc } from "../../ipc";
 import { useAppActions } from "../../shell/actions";
@@ -52,36 +53,33 @@ export function DetectionCard({
       role="region"
       aria-label={detectionTitle(t, detected, locked)}
       className={cn(
-        "flex flex-col gap-3 rounded-panel border border-line2 bg-surface p-4",
+        "flex flex-col gap-2.5 rounded-panel border border-line2 bg-surface px-3.5 py-3",
         className,
       )}
     >
       <div className="flex items-start gap-2.5">
-        <Icon
-          name="videocam"
-          size={20}
-          className="mt-px flex-none text-accent"
-        />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="m-0 text-[13.5px] leading-snug font-semibold text-ink">
-            {detectionTitle(t, detected, locked)}
-          </p>
-          {!isCalendarPrompt(detected) && detected.title && !locked && (
-            <p className="text-small m-0 text-muted">
-              {t("tray.detected.subtitle", { title: detected.title })}
-            </p>
-          )}
+        <span aria-hidden className="grid size-9 flex-none place-items-center rounded-[9px] bg-accent font-serif text-[22px] font-semibold text-on-accent">
+          {APP_NAME.charAt(0).toLowerCase()}
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex justify-between text-[12px] text-faint">
+            <b className="text-[13px] text-ink">{APP_NAME}</b>
+            <span>{t("common.now")}</span>
+          </div>
+          <p className="m-0 text-[13.5px] leading-snug font-semibold text-ink">{detectionTitle(t, detected, locked)}</p>
+          {!isCalendarPrompt(detected) && detected.title && !locked && <p className="m-0 text-[12.5px] text-muted">{t("tray.detected.subtitle", { title: detected.title })}</p>}
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="primary" onClick={() => onReply("start")}>
+      <div className="flex gap-1.5">
+        <Button variant="primary" className="flex-1" onClick={() => onReply("start")}>
+          <span aria-hidden className="size-2 rounded-full bg-current" />
           {t("tray.detected.start")}
         </Button>
-        <Button size="sm" onClick={() => onReply("notNow")}>
+        <Button className="flex-1 font-medium" onClick={() => onReply("notNow")}>
           {t("tray.detected.notNow")}
         </Button>
         {!isCalendarPrompt(detected) && (
-          <Button size="sm" variant="ghost" onClick={() => onReply("never")}>
+          <Button variant="ghost" className="px-2.5 text-[12.5px] font-normal text-muted" onClick={() => onReply("never")}>
             {t("tray.detected.never", { meetingApp })}
           </Button>
         )}

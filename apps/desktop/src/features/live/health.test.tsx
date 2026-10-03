@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ipc } from "../../ipc";
 
 import { Health } from "./health";
-import { LiveBanners } from "./banners";
+import { LiveBanners, LiveSystemBanners } from "./banners";
+import { PausedOverlay } from "./paused-overlay";
 import { renderLive, setLive } from "./test-utils";
 import { initialLive, useLive } from "../../state/live";
 import type { CoreEvent } from "../../bindings";
@@ -29,7 +30,7 @@ describe("Health", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     await userEvent.click(toggle);
     expect(screen.getByRole("button", { name: "Switch to Fast mode" })).toBeTruthy();
-    expect(screen.getByTestId("health").querySelector('[data-row="asr"]')?.getAttribute("data-warn")).toBe("true");
+    expect(document.querySelector('[data-row="asr"]')?.getAttribute("data-warn")).toBe("true");
   });
 
   it("turns the hint into a button that sets Fast mode", async () => {
@@ -41,6 +42,15 @@ describe("Health", () => {
     expect(update).toHaveBeenCalledWith({ liveMode: "fast" });
     expect(await screen.findByText("Fast mode is on from the next recording")).toBeTruthy();
     update.mockRestore();
+  });
+
+  it("closes on Escape", async () => {
+    setLive({ state: "recording", asrLagS: 4.2 });
+    renderLive(<Health />);
+    await userEvent.click(screen.getByRole("button", { name: /4\.2 s behind/ }));
+    expect(document.querySelector('[data-row="asr"]')).not.toBeNull();
+    await userEvent.keyboard("{Escape}");
+    expect(document.querySelector('[data-row="asr"]')).toBeNull();
   });
 
   it("does not warn at 3 s", async () => {
@@ -62,23 +72,29 @@ describe("Health", () => {
 describe("LiveBanners", () => {
   const cap = (over: Partial<ReturnType<typeof useLive.getState>["capture"]>) => ({ ...initialLive.capture, ...over });
 
-  it("shows the record-only and paused states", () => {
-    setLive({ state: "paused", recordOnly: true });
+  it("shows the record-only state", () => {
+    setLive({ state: "recording", recordOnly: true });
     renderLive(<LiveBanners />);
     expect(screen.getByText(/Live transcript starts when speech models/)).toBeTruthy();
+  });
+
+  it("says nothing is recorded over a paused meeting, with Resume", () => {
+    setLive({ state: "paused" });
+    renderLive(<PausedOverlay />);
     expect(screen.getByText("Paused. Nothing is being recorded.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
   });
 
   it("shows asleep, silent system, lost tracks, disk full", () => {
     setLive({ state: "recording", capture: cap({ asleep: true, systemSilent: true, lostTracks: [0, 1], diskFull: true }) });
-    const { container } = renderLive(<LiveBanners />);
+    const { container } = renderLive(<LiveSystemBanners />);
     for (const id of ["asleep", "system-silent", "mic-lost", "system-lost", "disk-full"]) expect(container.querySelector(`[data-banner="${id}"]`), id).not.toBeNull();
     expect(container.querySelector('[data-banner="disk-low"]')).toBeNull();
   });
 
   it("shows a low disk with the time left", () => {
     setLive({ state: "recording", capture: cap({ diskLowBytes: 240_000 * 45 }) });
-    renderLive(<LiveBanners />);
+    renderLive(<LiveSystemBanners />);
     expect(screen.getByText(/about 45 minutes/)).toBeTruthy();
   });
 

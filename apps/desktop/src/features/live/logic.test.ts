@@ -43,7 +43,7 @@ describe("laneModel", () => {
     const speakers = Array.from({ length: 10 }, (_, i) => sp(i + 1));
     const { lanes, segments } = laneModel(speakers, [line(9, 0, 1000), line(10, 5000, 6000), line(1, 7000, 8000)], label, "Others");
     expect(lanes).toHaveLength(9);
-    expect(lanes.at(-1)).toEqual({ id: 0, label: "Others", colorSlot: 0 });
+    expect(lanes.at(-1)).toEqual({ id: 0, label: "Others", colorSlot: 0, count: 2 });
     expect(segments.filter((s) => s.speaker === 0)).toHaveLength(2);
   });
   it("has no Others lane up to eight", () => {

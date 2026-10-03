@@ -83,7 +83,7 @@ describe("Up next strip and the popover row", () => {
     renderLive(<UpNextStrip />);
     expect(await screen.findByText("Sprint planning")).toBeTruthy();
     expect(screen.queryByText("Lunch")).toBeNull();
-    expect(screen.getByText("in 12 min · 5 people · Zoom")).toBeTruthy();
+    expect(screen.getByText("Up next · in 12 min · Zoom")).toBeTruthy();
     const sw = screen.getByRole("switch", {
       name: "Ask to record when it starts",
     });

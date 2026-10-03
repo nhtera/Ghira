@@ -32,10 +32,10 @@ function SpeakerCard({ meeting, speaker, invited, onDone }: { meeting: string; s
 
   return (
     <li className="flex flex-wrap items-center gap-2.5 border-t border-line pt-2.5">
-      <Avatar name={label} initial={number} colorSlot={speaker.colorSlot} label={label} size="xl" />
-      <span className="w-24 text-[13px] font-semibold">{label}</span>
+      <Avatar name={label} initial={number} colorSlot={speaker.colorSlot} label={label} size="lg" className="size-[30px]" />
+      <span className="w-[84px] text-[13px] font-semibold">{label}</span>
       {speaker.t0Ms != null && speaker.t1Ms != null && (
-        <Button size="sm" icon="play_arrow" onClick={() => void play()}>
+        <Button size="sm" className="h-[30px]" icon="play_arrow" onClick={() => void play()}>
           {t("speakers.play3")}
         </Button>
       )}
@@ -46,9 +46,9 @@ function SpeakerCard({ meeting, speaker, invited, onDone }: { meeting: string; s
         onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && void save()}
         placeholder={t("speakers.typeName")}
         aria-label={t("speakers.whoIs")}
-        className="h-8 min-w-32 flex-1 rounded-ctl border border-ctl bg-surface px-2.5 text-[13px] text-ink"
+        className="h-[30px] min-w-32 flex-1 rounded-ctl border border-ctl bg-surface px-2.5 text-[13px] text-ink"
       />
-      <Button size="sm" variant="primary" disabled={!name.trim()} onClick={() => void save()}>
+      <Button size="sm" variant="primary" className="h-[30px] px-3" disabled={!name.trim()} onClick={() => void save()}>
         {t("common.save")}
       </Button>
       {invited.length > 0 && (
@@ -73,14 +73,14 @@ export function NameSpeakers({ meeting, speakers, onDone, onSkipAll }: { meeting
   // By label number, so voices past the 8th (the Others lane) come after the first eight.
   const ordered = [...speakers].sort((a, b) => a.number - b.number);
   return (
-    <section aria-label={t("speakers.nameTitle")} className="mb-5 flex flex-col gap-3 rounded-panel border border-line2 px-[18px] py-4">
+    <section aria-label={t("speakers.nameTitle")} className="mb-[22px] flex max-w-[740px] flex-col gap-3 rounded-panel border border-line2 px-[18px] py-4">
       <div className="flex items-start gap-2.5">
         <Icon name="record_voice_over" size={20} className="text-warn" />
         <div className="flex-1">
           <h2 className="text-heading m-0 text-[14px]">{t("speakers.nameTitle")}</h2>
-          <p className="text-small m-0 text-muted">{t("speakers.nameSubtitle", { count: speakers.length })}</p>
+          <p className="m-0 text-[12.5px] text-muted">{t("speakers.nameSubtitle", { count: speakers.length })}</p>
         </div>
-        <Button size="sm" variant="ghost" onClick={onSkipAll}>
+        <Button size="sm" variant="ghost" className="font-medium text-muted" onClick={onSkipAll}>
           {t("common.skip")}
         </Button>
       </div>

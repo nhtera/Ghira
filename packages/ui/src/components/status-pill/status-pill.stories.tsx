@@ -6,6 +6,7 @@ export default { title: "Status pill", width: 300 } satisfies StoryMeta;
 
 export const Ready: Story = { render: () => <StatusPill status="ready" /> };
 export const Processing: Story = { render: () => <StatusPill status="processing" percent={62} /> };
+export const FinalPass: Story = { render: () => <StatusPill status="finalPass" percent={62} />, note: "The second pass re-reads the recording on this device." };
 export const NeedsNames: Story = { render: () => <StatusPill status="needsNames" /> };
 export const CloudEnhanced: Story = { render: () => <StatusPill status="cloudEnhanced" /> };
 export const Failed: Story = { render: () => <StatusPill status="failed" onRetry={() => {}} />, note: "A button when a retry is possible." };

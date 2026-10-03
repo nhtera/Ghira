@@ -25,7 +25,7 @@ export function SelectionBar({ count, onExport, onDelete, onClear, organize }: {
     <div
       role="toolbar"
       aria-label={t("library.selected", { count })}
-      className="flex h-11 items-center gap-2 rounded-row border border-line2 bg-accent-soft pr-2 pl-3.5 text-[13px]"
+      className="flex h-[46px] items-center gap-2 rounded-row border border-line bg-surface2 pr-2 pl-3.5 text-[13px]"
     >
       <Icon name="check_box" size={19} className="text-accent" />
       <b className="flex-1 font-semibold">{t("library.selected", { count })}</b>

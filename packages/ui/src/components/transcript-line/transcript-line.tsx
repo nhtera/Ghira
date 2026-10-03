@@ -43,6 +43,8 @@ export type TranscriptLineProps = {
   /** Karaoke: only this word is highlighted (index into `words`). */
   activeWordIndex?: number;
   selected?: boolean;
+  /** Narrow column (the live Focus layout): smaller text. */
+  small?: boolean;
   /** Click on the time: play from here. */
   onPlay?: () => void;
   onEdit?: () => void;
@@ -52,7 +54,7 @@ export type TranscriptLineProps = {
 
 const TAIL = 2;
 
-export function TranscriptLine({ startMs, speaker, words, partial, marked, edited, overlap, overlapHint = true, playing, activeWordIndex, selected, onPlay, onEdit, onChangeSpeaker, className }: TranscriptLineProps) {
+export function TranscriptLine({ startMs, speaker, words, partial, marked, edited, overlap, overlapHint = true, playing, activeWordIndex, selected, small, onPlay, onEdit, onChangeSpeaker, className }: TranscriptLineProps) {
   const { t } = useTranslation();
   const time = formatClock(startMs);
   const color = speaker && speaker.colorSlot > 0 ? `var(--s${speaker.colorSlot})` : undefined;
@@ -98,7 +100,7 @@ export function TranscriptLine({ startMs, speaker, words, partial, marked, edite
             </span>
           )}
         </div>
-        <p aria-live="off" className={cn("m-0 mt-0.5 font-serif text-transcript", partial || overlap ? "text-muted" : "text-ink")}>
+        <p aria-live="off" className={cn("m-0 mt-0.5 font-serif", small ? "text-[14.5px] leading-[1.6]" : "text-transcript", partial || overlap ? "text-muted" : "text-ink")}>
           {words.map((w, i) => (
             <Fragment key={i}>
               {i > 0 && " "}

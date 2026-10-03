@@ -5,7 +5,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
-import { Icon, cn, usePlatform, type IconName } from "@ghi/ui";
+import { Icon, cn, useToast, usePlatform, type IconName } from "@ghi/ui";
+import { useNavigate } from "@tanstack/react-router";
+import { Button } from "@ghi/ui";
+import { ipc } from "../../ipc";
+import { BANNER_ACTION, SystemBanner } from "../system-states/system-banner";
 import { useLive } from "../../state/live";
 import { NO_AUDIO_MS, formatBytes, minutesLeft, splitOthers, waitingForAudio } from "./logic";
 import type { ReactNode } from "react";
@@ -13,12 +17,14 @@ import type { ReactNode } from "react";
 type Tone = "warn" | "rec" | "info";
 const TONE: Record<Tone, string> = { warn: "bg-warn-soft text-warn", rec: "bg-rec-soft text-rec-ink", info: "bg-surface2 text-ink" };
 
-function Banner({ id, tone = "warn", icon, children }: { id: string; tone?: Tone; icon: IconName; children: ReactNode }) {
+function Banner({ id, tone = "warn", icon, action, children }: { id: string; tone?: Tone; icon: IconName; action?: ReactNode; children: ReactNode }) {
+  const info = tone === "info";
   return (
-    <p role={tone === "rec" ? "alert" : "status"} data-banner={id} className={cn("text-body m-0 flex items-start gap-2 rounded-row px-3.5 py-2.5", TONE[tone])}>
-      <Icon name={icon} size={18} className="mt-px flex-none" />
-      <span className="min-w-0">{children}</span>
-    </p>
+    <div role={tone === "rec" ? "alert" : "status"} data-banner={id} className={cn("flex flex-none items-center gap-2.5 rounded-ctl text-[13px]", info ? "px-3.5 py-3 font-normal" : "px-3 py-2.5 font-medium", TONE[tone])}>
+      <Icon name={icon} size={info ? 19 : 18} className="flex-none" />
+      <span className="min-w-0 flex-1 leading-normal">{children}</span>
+      {action}
+    </div>
   );
 }
 
@@ -89,55 +95,27 @@ function useManyVoices(): boolean {
   return visible;
 }
 
+/** Inline notes above the transcript: waiting for models, no sound, many voices. */
 export function LiveBanners() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const platform = usePlatform();
   const s = useLive(useShallow((x) => ({ state: x.state, recordOnly: x.recordOnly, ...x.capture })));
+  const { show } = useToast();
   const noAudio = useNoAudio();
+  const checkSource = async () => {
+    // Room mode has no system track; a missing mic level points at the mic.
+    const { session, levels } = useLive.getState();
+    const pane = session?.mode === "room" || levels.mic == null ? "microphone" : "systemAudio";
+    const r = await ipc.commands.openPrivacySettings(pane);
+    if (r.status === "error") show({ tone: "warning", title: t("system.commandFailed", { message: r.error }) });
+  };
   const manyVoices = useManyVoices();
-  const lost = (track: number) => s.lostTracks.includes(track);
   return (
-    <div data-testid="live-banners" className="flex flex-col gap-2 empty:hidden">
+    <div data-testid="live-banners" className="flex flex-none flex-col gap-2 empty:hidden">
       {s.recordOnly && (
-        <Banner id="record-only" icon="info">
+        <Banner id="record-only" tone="info" icon="hourglass_top">
           {t("live.deferredBanner")}
         </Banner>
-      )}
-      {s.state === "paused" && (
-        <Banner id="paused" tone="info" icon="pause_circle">
-          <b>{t("live.paused.title")}</b> <span className="text-muted">{t("live.paused.subtitle")}</span>
-        </Banner>
-      )}
-      {s.asleep && (
-        <Banner id="asleep" icon="schedule">
-          {t("live.banner.asleep")}
-        </Banner>
-      )}
-      {s.systemSilent && (
-        <Banner id="system-silent" icon="volume_off">
-          {t("system.audioAccessOff")} {t("live.banner.roomHint")}
-        </Banner>
-      )}
-      {lost(0) && (
-        <Banner id="mic-lost" icon="mic_off">
-          {t("live.banner.micLost")}
-        </Banner>
-      )}
-      {lost(1) && (
-        <Banner id="system-lost" icon="volume_off">
-          {t("live.banner.systemLost")}
-        </Banner>
-      )}
-      {s.diskFull ? (
-        <Banner id="disk-full" tone="rec" icon="hard_drive">
-          {t("live.banner.diskFull")}
-        </Banner>
-      ) : (
-        s.diskLowBytes != null && (
-          <Banner id="disk-low" icon="hard_drive">
-            {t("system.diskLow", { free: formatBytes(s.diskLowBytes, i18n.language), minutes: minutesLeft(s.diskLowBytes) })}
-          </Banner>
-        )
       )}
       {manyVoices && (
         <Banner id="many-voices" tone="info" icon="groups">
@@ -145,9 +123,79 @@ export function LiveBanners() {
         </Banner>
       )}
       {noAudio && (
-        <Banner id="no-audio" icon="volume_off">
+        <Banner
+          id="no-audio"
+          icon="volume_off"
+          action={
+            <button type="button" onClick={() => void checkSource()} className="h-7 flex-none rounded-seg border border-current px-2.5 text-[12px] font-semibold">
+              {t("live.checkSource")}
+            </button>
+          }
+        >
           {t("live.noAudio", { context: platform, meetingApp: t("live.meetingAppFallback"), seconds: NO_AUDIO_MS / 1000 })}
         </Banner>
+      )}
+    </div>
+  );
+}
+
+/** Capture conditions as full-width strips under the title bar. */
+export function LiveSystemBanners() {
+  const { t, i18n } = useTranslation();
+  const platform = usePlatform();
+  const navigate = useNavigate();
+  const { show } = useToast();
+  const s = useLive(useShallow((x) => ({ state: x.state, ...x.capture })));
+  const lost = (track: number) => s.lostTracks.includes(track);
+  const openAudioSettings = async () => {
+    const r = await ipc.commands.openPrivacySettings("systemAudio");
+    if (r.status === "error") show({ tone: "warning", title: t("system.commandFailed", { message: r.error }) });
+  };
+  const manage = (
+    <Button size="sm" variant="ghost" className={BANNER_ACTION} onClick={() => void navigate({ to: "/settings/$section", params: { section: "privacy" } })}>
+      {t("system.manageStorage")}
+    </Button>
+  );
+  return (
+    <div data-testid="live-system-banners" className="flex flex-none flex-col empty:hidden">
+      {s.asleep && (
+        <SystemBanner id="asleep" icon="schedule">
+          {t("live.banner.asleep")}
+        </SystemBanner>
+      )}
+      {s.systemSilent && (
+        <SystemBanner
+          id="system-silent"
+          icon="volume_off"
+          actions={
+            <Button size="sm" variant="ghost" className={BANNER_ACTION} onClick={() => void openAudioSettings()}>
+              {t(`common.openSystemSettings_${platform}`)}
+            </Button>
+          }
+        >
+          {t("system.audioAccessOff")} {t("live.banner.roomHint")}
+        </SystemBanner>
+      )}
+      {lost(0) && (
+        <SystemBanner id="mic-lost" icon="mic_off">
+          {t("live.banner.micLost")}
+        </SystemBanner>
+      )}
+      {lost(1) && (
+        <SystemBanner id="system-lost" icon="volume_off">
+          {t("live.banner.systemLost")}
+        </SystemBanner>
+      )}
+      {s.diskFull ? (
+        <SystemBanner id="disk-full" tone="rec" icon="hard_drive" actions={manage}>
+          {t("live.banner.diskFull")}
+        </SystemBanner>
+      ) : (
+        s.diskLowBytes != null && (
+          <SystemBanner id="disk-low" icon="hard_drive" actions={manage}>
+            {t("system.diskLow", { free: formatBytes(s.diskLowBytes, i18n.language), minutes: minutesLeft(s.diskLowBytes) })}
+          </SystemBanner>
+        )
       )}
     </div>
   );

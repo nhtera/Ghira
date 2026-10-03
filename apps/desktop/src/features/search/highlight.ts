@@ -25,3 +25,35 @@ export function splitHighlights(text: string, ranges: readonly (readonly [number
   if (at < text.length) parts.push({ text: text.slice(at), mark: false });
   return parts;
 }
+
+/** Lowercase, accents and đ folded away: what the store matches on. */
+const fold = (c: string) => c.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/gi, "d").toLowerCase();
+
+/**
+ * Ranges of `text` that match any word of `query`, accents ignored (the same
+ * folding the search uses), for text the store sent no highlights for (titles).
+ */
+export function queryRanges(text: string, query: string): [number, number][] {
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  // Fold per UTF-16 unit so folded[i] lines up with text[i] (a folded unit may vanish: keep it empty).
+  const units = Array.from(text, (c) => fold(c));
+  let folded = "";
+  const at: number[] = []; // folded index -> text index
+  let i = 0;
+  for (const u of units) {
+    for (let k = 0; k < u.length; k++) at.push(i);
+    folded += u;
+    i += text.codePointAt(i)! > 0xffff ? 2 : 1;
+  }
+  const out: [number, number][] = [];
+  for (const w of words) {
+    for (let from = folded.indexOf(w); from >= 0; from = folded.indexOf(w, from + w.length)) {
+      const start = at[from]!;
+      const lastFolded = at[from + w.length - 1]!;
+      const end = lastFolded + (text.codePointAt(lastFolded)! > 0xffff ? 2 : 1);
+      out.push([start, end]);
+    }
+  }
+  return out;
+}

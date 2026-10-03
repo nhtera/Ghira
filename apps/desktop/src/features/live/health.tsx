@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, Icon, cn, useToast, usePlatform, type IconName } from "@ghi/ui";
+import { Button, Icon, Popover, cn, useToast, usePlatform, type IconName } from "@ghi/ui";
 import { ipc } from "../../ipc";
 import { settingsQuery } from "../../shell/root-view";
 import { useLive } from "../../state/live";
@@ -32,7 +32,7 @@ export function Health() {
     } else show({ tone: "warning", title: t("system.commandFailed", { message: r.error }) });
   };
   const rows: Row[] = [
-    { id: "asr", icon: "subtitles", title: t("live.health.transcription.title"), detail: h.recordOnly ? t("live.health.recordOnly") : t("live.health.transcription.detail", { context: platform, seconds }), warn: lagging, hint: lagging ? <Button size="sm" variant="ghost" onClick={() => void switchToFast()}>{t("live.health.switchToFast")}</Button> : undefined },
+    { id: "asr", icon: "subtitles", title: t("live.health.transcription.title"), detail: h.recordOnly ? t("live.health.recordOnly") : t("live.health.transcription.detail", { context: platform, seconds }), warn: lagging },
     { id: "speakers", icon: "groups", title: t("live.health.speakers.title"), detail: t("live.health.speakers.detail", { seconds }), warn: lagging },
     { id: "audio", icon: "headphones", title: t("live.health.audio.title"), detail: h.aec ? t("live.audio.speakersAecOn") : t("live.audio.headphonesAecOff"), warn: h.hfp, hint: h.hfp ? t("live.health.bluetoothHfp") : undefined },
     {
@@ -46,31 +46,42 @@ export function Health() {
   const issues = rows.filter((r) => r.warn).length;
   return (
     <div data-testid="health">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls="live-health-rows"
-        onClick={() => setOpen((o) => !o)}
-        className={cn("text-small inline-flex h-7 items-center gap-1.5 rounded-seg px-2 hover:bg-sunk", issues ? "font-medium text-warn" : "text-muted")}
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        side="top"
+        align="start"
+        label={t("live.health.title")}
+        className="flex w-[360px] flex-col rounded-panel p-2"
+        trigger={
+          <button
+            type="button"
+            className={cn("inline-flex h-7 items-center gap-1.5 rounded-full border border-line pr-2 pl-2 text-[12px] font-semibold", issues ? "bg-warn-soft text-warn" : "bg-surface text-muted hover:bg-sunk")}
+          >
+            <Icon name={issues ? "warning" : "check_circle"} size={15} />
+            {issues ? (lagging ? t("live.health.lagShort", { seconds }) : t("live.health.title")) : t("live.health.allGood")}
+            <Icon name={open ? "expand_more" : "expand_less"} size={15} />
+          </button>
+        }
       >
-        <Icon name={issues ? "warning" : "check_circle"} size={15} />
-        {issues ? (lagging ? t("live.health.lagShort", { seconds }) : t("live.health.title")) : t("live.health.allGood")}
-        <Icon name={open ? "expand_less" : "expand_more"} size={15} />
-      </button>
-      {open && (
-        <ul id="live-health-rows" className="m-0 mt-1.5 grid list-none gap-1 rounded-row border border-line bg-surface p-1.5 sm:grid-cols-2">
+        <ul className="m-0 flex list-none flex-col p-0">
           {rows.map((r) => (
-            <li key={r.id} data-row={r.id} data-warn={r.warn ? "true" : undefined} className="flex items-start gap-2 rounded-seg px-2 py-1.5">
-              <Icon name={r.icon} size={16} className={cn("mt-0.5", r.warn ? "text-warn" : "text-muted")} />
-              <div className="text-small min-w-0">
-                <b className="block font-semibold">{r.title}</b>
-                <span className={r.warn ? "text-warn" : "text-muted"}>{r.detail}</span>
-                {r.hint && <span className="block text-muted">{r.hint}</span>}
+            <li key={r.id} data-row={r.id} data-warn={r.warn ? "true" : undefined} className="flex items-center gap-2.5 p-2">
+              <Icon name={r.icon} size={18} className="flex-none text-muted" />
+              <div className="min-w-0 flex-1 text-[13px]">
+                <b className="block font-medium">{r.title}</b>
+                {r.hint && <span className="block text-[12px] text-muted">{r.hint}</span>}
               </div>
+              <span className={cn("max-w-[55%] text-right text-[12px]", r.warn ? "text-warn" : "text-muted")}>{r.detail}</span>
             </li>
           ))}
         </ul>
-      )}
+        {lagging && (
+          <Button variant="primary" onClick={() => void switchToFast()} className="mx-2 mt-1 mb-1.5">
+            {t("live.health.switchToFast")}
+          </Button>
+        )}
+      </Popover>
     </div>
   );
 }

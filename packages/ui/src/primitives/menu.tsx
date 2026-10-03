@@ -6,6 +6,7 @@ import { Icon, type IconName } from "../icons/icon";
 import { cn } from "../utils/cn";
 
 export type MenuItem =
+  | { kind: "checkbox"; label: string; checked: boolean; onSelect: () => void }
   | { kind?: "item"; label: string; icon?: IconName; onSelect: () => void; danger?: boolean; disabled?: boolean; hint?: string }
   | { kind: "separator" };
 
@@ -24,6 +25,20 @@ export function Menu({ trigger, items, align = "end", label }: { trigger: ReactN
           {items.map((it, i) =>
             it.kind === "separator" ? (
               <RM.Separator key={i} className="my-1 h-px bg-line" />
+            ) : it.kind === "checkbox" ? (
+              <RM.CheckboxItem
+                key={i}
+                checked={it.checked}
+                onSelect={it.onSelect}
+                className="flex h-8 cursor-default items-center gap-2 rounded-seg px-2 text-[13px] outline-none select-none data-[highlighted]:bg-sunk"
+              >
+                <span className="grid w-4 place-items-center">
+                  <RM.ItemIndicator>
+                    <Icon name="check" size={16} />
+                  </RM.ItemIndicator>
+                </span>
+                <span className="flex-1">{it.label}</span>
+              </RM.CheckboxItem>
             ) : (
               <RM.Item
                 key={i}

@@ -30,7 +30,6 @@ test("Up next shows the next meeting-like event; its switch is kept", async ({
   await open(page, "/meetings", "1");
   const strip = page.getByRole("region", { name: "Up next" });
   await expect(strip).toContainText("Sprint planning");
-  await expect(strip).toContainText("5 people");
   await expect(strip).toContainText("Zoom");
   // Lunch has nobody else and no call link: never the next meeting.
   await expect(strip).not.toContainText("Lunch");

@@ -7,6 +7,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Icon, cn, usePlatform, useToast, type IconName } from "@ghi/ui";
+import { useAppActions } from "../../shell/actions";
+import { useLive } from "../../state/live";
 import type { NoteKind, NoteLine } from "../../bindings";
 import { ipc } from "../../ipc";
 import { meetingMsNow } from "./clock";
@@ -17,6 +19,8 @@ const TAGS: Array<{ kind: Exclude<NoteKind, "note">; icon: IconName; key: "decis
   { kind: "action", icon: "task_alt", key: "action", digit: "2" },
   { kind: "question", icon: "help", key: "question", digit: "3" },
 ];
+
+const MARK_KEYS = { mac: "\u2318M", win: "Ctrl+M" } as const;
 
 /** Exported so a discard can refresh the lines it removed. */
 export const noteLinesKey = (meeting: string) => ["noteLines", meeting] as const;
@@ -86,8 +90,8 @@ function Line({ line, onUpdate, onRemove }: { line: NoteLine; onUpdate: (text: s
     }
   };
   return (
-    <li data-kind={line.kind} className="group flex items-start gap-2 rounded-ctl px-1.5 py-1 hover:bg-surface2 focus-within:bg-surface2">
-      {tag ? <Icon name={tag.icon} size={16} label={t(`notes.tags.${tag.key}`)} className="mt-[3px] text-accent" /> : <span aria-hidden="true" className="mt-[3px] w-4 text-center text-muted">{view.bullet ? "•" : ""}</span>}
+    <li data-kind={line.kind} className="group flex items-start gap-2 rounded-ctl px-2 hover:bg-sunk focus-within:bg-sunk">
+      {tag ? <Icon name={tag.icon} size={16} label={t(`notes.tags.${tag.key}`)} className="mt-[7px] text-accent" /> : view.bullet ? <span aria-hidden="true" className="mt-px w-4 text-center text-muted">•</span> : null}
       {editing ? (
         <input
           autoFocus
@@ -96,18 +100,18 @@ function Line({ line, onUpdate, onRemove }: { line: NoteLine; onUpdate: (text: s
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKey}
           onBlur={commit}
-          className="text-body h-7 min-w-0 flex-1 rounded-seg border border-ctl bg-surface px-2"
+          className="h-8 min-w-0 flex-1 rounded-seg border border-ctl bg-surface px-2 font-serif text-[16px]"
         />
       ) : (
-        <p className="text-body m-0 min-w-0 flex-1 py-px break-words">
+        <p className="m-0 min-w-0 flex-1 font-serif text-[16px] leading-[1.65] break-words">
           {view.parts.map((p, i) => (
             <Fragment key={i}>{p.bold ? <strong>{p.text}</strong> : p.italic ? <em>{p.text}</em> : p.text}</Fragment>
           ))}
         </p>
       )}
-      {line.tMs != null && <span className="pt-0.5 text-mono text-[11px] text-muted opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">{formatClock(line.tMs)}</span>}
+      {line.tMs != null && <span className="pt-1.5 text-mono text-[11px] text-muted opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">{formatClock(line.tMs)}</span>}
       {!editing && (
-        <span className="flex opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+        <span className="flex pt-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
           <button type="button" onClick={() => setEditing(true)} aria-label={t("speakers.line.edit")} className="grid size-6 place-items-center rounded-seg text-muted hover:bg-sunk hover:text-ink">
             <Icon name="edit" size={14} />
           </button>
@@ -120,7 +124,7 @@ function Line({ line, onUpdate, onRemove }: { line: NoteLine; onUpdate: (text: s
   );
 }
 
-export function Notepad({ meeting, large, className }: { meeting: string; large?: boolean; className?: string }) {
+export function Notepad({ meeting, className, inert }: { meeting: string; className?: string; inert?: boolean }) {
   const { t } = useTranslation();
   const notes = useNoteLines(meeting);
   const [text, setText] = useState("");
@@ -128,6 +132,8 @@ export function Notepad({ meeting, large, className }: { meeting: string; large?
   const [pending, setPending] = useState<NoteKind>("note");
   const inputRef = useRef<HTMLInputElement>(null);
   const platform = usePlatform();
+  const { run } = useAppActions();
+  const marks = useLive((s) => s.marks.length);
   // The note belongs to the moment its first character was typed, not to Enter.
   const anchor = useRef<number | null>(null);
 
@@ -159,17 +165,17 @@ export function Notepad({ meeting, large, className }: { meeting: string; large?
   };
 
   return (
-    <section aria-label={t("live.yourNotes")} className={cn("flex min-h-0 flex-col rounded-row border border-line bg-surface", large && "mx-auto w-full max-w-3xl", className)}>
-      <header className="flex-none px-3.5 pt-3 pb-1">
-        <h2 className="text-body m-0 font-semibold">{t("live.yourNotes")}</h2>
-        <p className="text-small m-0 text-muted">{t("live.padHint")}</p>
+    <section aria-label={t("live.yourNotes")} inert={inert} className={cn("group/pad flex min-h-0 flex-col rounded-panel border border-line bg-surface2", className)}>
+      <header className="flex flex-none items-baseline gap-2.5 px-4 pt-3">
+        <h2 className="m-0 text-[13px] font-bold">{t("live.yourNotes")}</h2>
+        <p className="m-0 min-w-0 truncate text-[12px] text-faint">{t("live.padHint")}</p>
       </header>
-      <ul aria-label={t("live.yourNotes")} className="m-0 min-h-0 flex-1 list-none overflow-auto px-2 py-1">
-        {notes.lines.map((l) => (
-          <Line key={l.gid} line={l} onUpdate={(x) => void notes.update(l.gid, x)} onRemove={() => void notes.remove(l)} />
-        ))}
-      </ul>
-      <div className="flex-none border-t border-line p-2.5">
+      <div className="min-h-0 flex-1 overflow-auto px-2 py-2.5">
+        <ul aria-label={t("live.yourNotes")} className="m-0 list-none p-0 empty:hidden">
+          {notes.lines.map((l) => (
+            <Line key={l.gid} line={l} onUpdate={(x) => void notes.update(l.gid, x)} onRemove={() => void notes.remove(l)} />
+          ))}
+        </ul>
         <input
           ref={inputRef}
           value={text}
@@ -181,11 +187,20 @@ export function Notepad({ meeting, large, className }: { meeting: string; large?
           onKeyDown={onKeyDown}
           aria-label={t("live.notepad.label")}
           placeholder={t("live.notepad.placeholder")}
-          className="text-body mb-2 h-9 w-full rounded-ctl border border-ctl bg-surface px-3"
+          className="h-9 w-full rounded-ctl bg-transparent px-2 font-serif text-[16px] placeholder:text-faint"
         />
-        <div role="group" aria-label={t("live.notepad.tags")} className="flex flex-wrap gap-1.5">
+      </div>
+      <div className="flex flex-none flex-wrap items-center gap-2.5 border-t border-line px-2.5 py-2">
+        <Button onClick={() => void run("mark")}>
+          <Icon name="star" size={17} className="text-warn" />
+          {t("live.mark")}
+          <span className="text-mono text-[11px] font-normal text-faint">{MARK_KEYS[platform]}</span>
+        </Button>
+        {marks > 0 && <span className="text-[12px] text-muted">{t("live.markedCount", { count: marks })}</span>}
+        {/* The tags (Alt+1/2/3) come up while the note field is in use. */}
+        <div role="group" aria-label={t("live.notepad.tags")} className="ml-auto hidden gap-1.5 focus-within:flex group-has-[input:focus]/pad:flex">
           {TAGS.map((x) => (
-            <Button key={x.kind} size="sm" icon={x.icon} aria-pressed={pending === x.kind} data-tag={x.kind} onClick={() => tag(x.kind)} className={cn(pending === x.kind && "border-accent bg-accent-soft text-accent")} title={platform === "mac" ? `⌥${x.digit}` : `Alt+${x.digit}`}>
+            <Button key={x.kind} size="sm" icon={x.icon} aria-pressed={pending === x.kind} data-tag={x.kind} onMouseDown={(e) => e.preventDefault()} onClick={() => tag(x.kind)} className={cn(pending === x.kind && "border-accent bg-accent-soft text-accent")} title={platform === "mac" ? `⌥${x.digit}` : `Alt+${x.digit}`}>
               {t(`notes.tags.${x.key}`)}
             </Button>
           ))}

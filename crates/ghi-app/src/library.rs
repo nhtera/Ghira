@@ -52,6 +52,9 @@ pub struct MeetingRow {
     /// Where an imported file came from: `zoom`, `teams`, `meet`, `plaud`,
     /// `voice_memos`.
     pub source_app: Option<String>,
+    /// The first TL;DR line of the notes (the row's second line); `None`
+    /// while the meeting has no notes.
+    pub summary: Option<String>,
 }
 
 /// A tag on a meeting row.
@@ -106,6 +109,21 @@ pub fn active_jobs(
     Ok(active)
 }
 
+/// Longest summary a row carries (characters); the row truncates further.
+const SUMMARY_MAX: usize = 200;
+
+/// A TL;DR line trimmed to [`SUMMARY_MAX`]; `None` when it is blank.
+fn summary_of(body: &str) -> Option<String> {
+    let text = body.trim();
+    if text.is_empty() {
+        return None;
+    }
+    Some(match text.char_indices().nth(SUMMARY_MAX) {
+        Some((i, _)) => format!("{}…", text[..i].trim_end()),
+        None => text.to_string(),
+    })
+}
+
 fn rows(core: &Core, limit: u32, offset: u32) -> Result<Vec<MeetingRow>, String> {
     let store = core.store()?;
     let mut active = active_jobs(core, &store)?;
@@ -115,9 +133,11 @@ fn rows(core: &Core, limit: u32, offset: u32) -> Result<Vec<MeetingRow>, String>
     let gids: Vec<String> = meetings.iter().map(|m| m.gid.clone()).collect();
     let mut people = store.named_speakers(&gids).map_err(|e| e.to_string())?;
     let mut tags = store.meeting_tags(&gids).map_err(|e| e.to_string())?;
+    let mut summaries = store.first_tldrs(&gids).map_err(|e| e.to_string())?;
     Ok(meetings
         .into_iter()
         .map(|m| MeetingRow {
+            summary: summaries.remove(&m.gid).and_then(|b| summary_of(&b)),
             people: people
                 .remove(&m.gid)
                 .unwrap_or_default()
@@ -547,4 +567,26 @@ pub async fn known_speaker_names(core: CoreState<'_>) -> Result<Vec<String>, Str
         Ok(people.into_iter().map(|p| p.name).take(100).collect())
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summary_is_trimmed_and_blank_is_none() {
+        assert_eq!(
+            summary_of("  Acme needs SSO.  ").as_deref(),
+            Some("Acme needs SSO.")
+        );
+        assert_eq!(summary_of("   "), None);
+    }
+
+    #[test]
+    fn long_summary_is_cut_on_a_char_boundary() {
+        let long = "ố".repeat(SUMMARY_MAX + 20);
+        let s = summary_of(&long).unwrap();
+        assert_eq!(s.chars().count(), SUMMARY_MAX + 1);
+        assert!(s.ends_with('…'));
+    }
 }

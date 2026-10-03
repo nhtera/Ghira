@@ -165,6 +165,7 @@ export function MeetingScreen({
   const [exporting, setExporting] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [onlyMine, setOnlyMine] = useState(false);
   useMeetingEvents(id);
 
   const hasAudio =
@@ -244,61 +245,65 @@ export function MeetingScreen({
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <MeetingHeader detail={detail} />
+          {detail.status === "failed" && <FailedBanner detail={detail} />}
+          {busy && detail.status !== "failed" && (
+            <ProcessingBanner detail={detail} />
+          )}
           <MeetingToolbar
             detail={detail}
             onExport={() => setExporting(true)}
             onImproveWithCloud={() => setCloudOpen(true)}
             onAsk={() => setAsking((a) => !a)}
-          />
-          {detail.status === "failed" && <FailedBanner detail={detail} />}
-          {busy && detail.status !== "failed" && (
-            <ProcessingBanner detail={detail} />
-          )}
-          <div
-            role="tablist"
-            aria-label={t("meeting.tabs")}
-            className="mx-7 mt-3 flex gap-1 border-b border-line"
-          >
-            {tabs.map((x) => (
-              <button
-                key={x.id}
-                type="button"
-                role="tab"
-                id={`tab-${x.id}`}
-                aria-selected={tab === x.id}
-                aria-controls="detail-panel"
-                tabIndex={tab === x.id ? 0 : -1}
-                onClick={() => goTab(x.id)}
-                onKeyDown={(e) => {
-                  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-                  const next =
-                    tabs[
-                      (tabs.findIndex((y) => y.id === x.id) + 1) % tabs.length
-                    ]!;
-                  e.preventDefault();
-                  goTab(next.id);
-                  document.getElementById(`tab-${next.id}`)?.focus();
-                }}
-                className={cn(
-                  "-mb-px h-9 border-b-2 px-3 text-[13px] font-semibold",
-                  tab === x.id
-                    ? "border-accent text-accent"
-                    : "border-transparent text-muted hover:text-ink",
-                )}
+            onlyMine={tab === "notes" ? onlyMine : undefined}
+            onOnlyMine={tab === "notes" ? setOnlyMine : undefined}
+            tabs={
+              <div
+                role="tablist"
+                aria-label={t("meeting.tabs")}
+                className="flex gap-2.5"
               >
-                {x.label}
-              </button>
-            ))}
-          </div>
+                {tabs.map((x) => (
+                  <button
+                    key={x.id}
+                    type="button"
+                    role="tab"
+                    id={`tab-${x.id}`}
+                    aria-selected={tab === x.id}
+                    aria-controls="detail-panel"
+                    tabIndex={tab === x.id ? 0 : -1}
+                    onClick={() => goTab(x.id)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                      const next =
+                        tabs[
+                          (tabs.findIndex((y) => y.id === x.id) + 1) % tabs.length
+                        ]!;
+                      e.preventDefault();
+                      goTab(next.id);
+                      document.getElementById(`tab-${next.id}`)?.focus();
+                    }}
+                    className={cn(
+                      "-mb-px h-[38px] border-b-2 px-3 text-[13.5px] font-semibold",
+                      tab === x.id
+                        ? "border-accent text-accent"
+                        : "border-transparent text-muted hover:text-ink",
+                    )}
+                  >
+                    {x.label}
+                  </button>
+                ))}
+              </div>
+            }
+          />
           <div
             role="tabpanel"
             id="detail-panel"
             aria-labelledby={`tab-${tab}`}
-            className="px-7 pt-4"
+            className="px-7 pt-5"
           >
             <div className="max-w-[760px]">
               {tab === "notes" ? (
-                <NotesTab meeting={id} detail={detail} />
+                <NotesTab meeting={id} detail={detail} onlyMine={onlyMine} />
               ) : (
                 <TranscriptTab
                   meeting={id}

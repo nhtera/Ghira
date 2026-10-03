@@ -3,14 +3,11 @@
 import { useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { AskScreenBody } from "../features/ask/ask-screen";
-import { Page } from "../shell/page";
 
 export function AskScreen() {
   const { t } = useTranslation();
   const { meeting } = useSearch({ from: "/shell/ask" });
   return (
-    <Page title={t("nav.ask")} subtitle={t("ask.subtitle")}>
-      <AskScreenBody key={meeting ?? ""} meeting={meeting} />
-    </Page>
+    <AskScreenBody key={meeting ?? ""} meeting={meeting} title={t("nav.ask")} subtitle={t("ask.subtitle")} />
   );
 }

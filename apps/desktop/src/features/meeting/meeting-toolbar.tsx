@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-// Detail toolbar (D6): template, notes language, Regenerate (after asking:
-// what you wrote, edited, pinned or ticked stays) and Share / Export.
+// The detail's tab row (D6): the tabs, then My notes only, the notes language,
+// Improve with cloud and one Export menu that also holds Regenerate (after
+// asking: what you wrote, edited, pinned or ticked stays), the template, Ask,
+// the follow-up email and the never-cloud switch.
 import {
-  Button,
   Icon,
   InlineConfirm,
   Menu,
-  Segmented,
+  cn,
   useToast,
   type MenuItem,
 } from "@ghi/ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingDetail, NotesLanguage } from "../../bindings";
 import { FollowupEmailDialog } from "../email/followup-email-dialog";
@@ -20,8 +21,15 @@ import { invalidateMeeting, useTemplates } from "../../state/meeting-queries";
 import { DEFAULT_TEMPLATE, templateName } from "./template-names";
 import { inProgress } from "../library/meeting-status";
 
+const LANGS = ["en", "vi"] as const;
+
 export type MeetingToolbarProps = {
   detail: MeetingDetail;
+  /** The tab buttons, at the left of the row. */
+  tabs: ReactNode;
+  /** My notes only belongs to the Notes tab: `undefined` hides the switch. */
+  onlyMine?: boolean;
+  onOnlyMine?: (on: boolean) => void;
   onExport: () => void;
   onImproveWithCloud?: () => void;
   onAsk?: () => void;
@@ -29,6 +37,9 @@ export type MeetingToolbarProps = {
 
 export function MeetingToolbar({
   detail,
+  tabs,
+  onlyMine,
+  onOnlyMine,
   onExport,
   onImproveWithCloud,
   onAsk,
@@ -49,6 +60,12 @@ export function MeetingToolbar({
   const [asking, setAsking] = useState(false);
   const [emailing, setEmailing] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Choosing a language or template only stages it: ask right away what Regenerate will do.
+  const choose = (apply: () => void) => {
+    apply();
+    if (!busy && !inProgress(detail.status) && detail.job == null) setAsking(true);
+  };
+  const languageName = language === "en" ? t("import.options.languages.english") : language === "vi" ? t("import.options.languages.vietnamese") : t("meeting.lang.meeting");
   const busyJob = busy || inProgress(detail.status) || detail.job != null;
   const failed = (message: string) =>
     show({ tone: "warning", title: t("system.commandFailed", { message }) });
@@ -89,7 +106,7 @@ export function MeetingToolbar({
   const templateItems: MenuItem[] = (templates.data ?? []).map((tpl) => ({
     label: templateName(tpl.id, t, tpl.name),
     icon: tpl.id === template ? "check" : undefined,
-    onSelect: () => setTemplate(tpl.id),
+    onSelect: () => choose(() => setTemplate(tpl.id)),
   }));
   const toggleCloudLock = async () => {
     const r = await ipc.commands.setMeetingCloudLocked(
@@ -99,98 +116,103 @@ export function MeetingToolbar({
     if (r.status === "error") return failed(r.error);
     void invalidateMeeting(client, detail.gid);
   };
-  const shareItems: MenuItem[] = [
-    {
-      label: t("detail.more.copyMarkdown"),
-      icon: "content_copy",
-      onSelect: () => void copyMarkdown(),
-    },
+  const exportItems: MenuItem[] = [
     {
       label: t("meeting.exportEllipsis"),
       icon: "ios_share",
       onSelect: onExport,
     },
     {
+      label: t("detail.more.copyMarkdown"),
+      icon: "content_copy",
+      onSelect: () => void copyMarkdown(),
+    },
+    {
       label: t("detail.more.draftEmail"),
       icon: "inbox",
       onSelect: () => setEmailing(true),
     },
+    ...(onAsk ? [{ label: t("ask.meeting.open"), icon: "forum", onSelect: onAsk } satisfies MenuItem] : []),
+    { kind: "separator" },
+    {
+      label: t("detail.more.regenerate"),
+      icon: "refresh",
+      disabled: busyJob || asking,
+      onSelect: () => setAsking(true),
+    },
+    ...templateItems,
+    { kind: "separator" },
     {
       label: t("cloud.sheet.never"),
       icon: detail.cloudLocked ? "check" : "cloud_off",
       onSelect: () => void toggleCloudLock(),
     },
   ];
+  const ctl = "h-[30px] rounded-ctl border border-ctl bg-surface px-[11px] text-[12.5px] font-medium";
 
   return (
-    <div className="flex flex-col gap-2 px-7 py-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <Menu
-          align="start"
-          label={t("library.filters.template")}
-          items={templateItems}
-          trigger={
-            <Button
-              size="sm"
-              icon="description"
-              end={<Icon name="expand_more" size={16} />}
-              aria-label={t("meeting.templateButton", {
-                name: templateName(template, t),
-              })}
-            >
-              {templateName(
-                template,
-                t,
-                templates.data?.find((x) => x.id === template)?.name,
-              )}
-            </Button>
-          }
-        />
-        <Segmented<NotesLanguage>
-          label={t("common.language")}
-          value={language}
-          onChange={setLanguage}
-          options={[
-            { value: "meeting", label: t("meeting.lang.meeting") },
-            { value: "en", label: t("import.options.languages.english") },
-            { value: "vi", label: t("import.options.languages.vietnamese") },
-          ]}
-        />
-        <Button
-          size="sm"
-          icon="refresh"
-          disabled={busyJob || asking}
-          onClick={() => setAsking(true)}
-        >
-          {t("detail.more.regenerate")}
-        </Button>
-        <Button size="sm" icon="cloud" onClick={onImproveWithCloud}>
-          {t("notes.improveWithCloud")}
-        </Button>
-        {onAsk && (
-          <Button size="sm" icon="forum" onClick={onAsk}>
-            {t("ask.meeting.open")}
-          </Button>
-        )}
+    <div className="border-b border-line px-7 pt-2.5">
+      <div className="relative flex flex-wrap items-end gap-x-2.5">
+        {tabs}
         <span className="flex-1" />
-        <Menu
-          label={t("meeting.share")}
-          items={shareItems}
-          trigger={
-            <Button size="sm" icon="ios_share">
-              {t("meeting.share")}
-            </Button>
-          }
-        />
+        <div className="flex flex-wrap items-center gap-2 pb-1.5">
+          {onOnlyMine && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!onlyMine}
+              onClick={() => onOnlyMine(!onlyMine)}
+              className="flex h-[30px] items-center gap-2 text-[12.5px] text-muted"
+            >
+              <span className={cn("relative h-[18px] w-8 rounded-[9px] transition-colors", onlyMine ? "bg-accent" : "bg-line2")}>
+                <i className={cn("absolute top-0.5 size-3.5 rounded-full bg-white transition-[left]", onlyMine ? "left-4" : "left-0.5")} />
+              </span>
+              {t("notes.onlyMine")}
+            </button>
+          )}
+          {language === "meeting" && <span className="text-[11.5px] text-muted">{t("meeting.lang.meeting")}</span>}
+          <div role="group" aria-label={t("common.language")} className="flex gap-0.5 rounded-ctl border border-ctl p-0.5">
+            {LANGS.map((l) => (
+              <button
+                key={l}
+                type="button"
+                aria-pressed={language === l}
+                title={l === "en" ? t("import.options.languages.english") : t("import.options.languages.vietnamese")}
+                // Pressing the chosen language again goes back to the meeting's own.
+                onClick={() => choose(() => setLanguage(language === l ? "meeting" : l))}
+                className={cn("h-6 rounded-seg px-[9px] text-[12px] font-semibold", language === l ? "bg-accent-soft text-accent" : "text-muted hover:text-ink")}
+              >
+                {l.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <button type="button" onClick={onImproveWithCloud} className={cn(ctl, "inline-flex items-center gap-[5px] hover:bg-surface2")}>
+            <Icon name="cloud_upload" size={16} />
+            {t("notes.improveWithCloud")}
+          </button>
+          <Menu
+            label={t("common.export")}
+            items={exportItems}
+            trigger={
+              <button type="button" className={cn(ctl, "inline-flex items-center gap-[5px] hover:bg-surface2")}>
+                <Icon name="ios_share" size={16} />
+                {t("common.export")}
+                <Icon name="expand_more" size={16} />
+              </button>
+            }
+          />
+        </div>
       </div>
       {asking && (
-        <InlineConfirm
-          icon="refresh"
-          question={t("meeting.regenerateQuestion")}
-          confirmLabel={t("detail.more.regenerate")}
-          onConfirm={() => void regenerate()}
-          onCancel={() => setAsking(false)}
-        />
+        <div className="pb-2">
+          <InlineConfirm
+            icon="refresh"
+            question={`${t("meeting.regenerateWith", { template: templateName(template, t, templates.data?.find((x) => x.id === template)?.name), language: languageName })} ${t("meeting.regenerateQuestion")}`}
+            confirmLabel={t("detail.more.regenerate")}
+            onConfirm={() => void regenerate()}
+            onCancel={() => setAsking(false)}
+          />
+        </div>
       )}
       <FollowupEmailDialog
         open={emailing}

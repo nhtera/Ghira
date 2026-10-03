@@ -16,3 +16,12 @@ export const System: Story = {
     </div>
   ),
 };
+export const Footer: Story = {
+  render: () => (
+    <div className="flex items-center gap-4">
+      <LevelMeter source="mic" db={-22} compact />
+      <LevelMeter source="system" db={-58} compact />
+    </div>
+  ),
+  note: "The live footer form: icon, name and a short bar.",
+};

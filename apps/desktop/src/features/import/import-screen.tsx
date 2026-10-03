@@ -119,31 +119,40 @@ export function ImportScreen() {
   const openMeeting = (id: string) => void navigate({ to: "/meetings/$id/$tab", params: { id, tab: "notes" } });
 
   return (
-    <Page
-      title={t("nav.import")}
-      subtitle={t("import.subtitle", { context: platform })}
-      className="flex flex-col gap-5"
-      actions={
-        <Button variant="primary" icon="upload_file" onClick={() => void choose()}>
+    <Page title={t("nav.import")} subtitle={t("import.subtitle", { context: platform })} className="flex max-w-[912px] flex-col gap-5">
+      {/* The whole zone opens the chooser; the button is the keyboard way in. */}
+      <div
+        onClick={() => void choose()}
+        className="flex cursor-pointer flex-col items-center gap-2 rounded-dialog border-2 border-dashed border-line2 bg-surface2 px-5 py-[30px] text-center hover:border-accent"
+      >
+        <Icon name="upload_file" size={36} className="text-accent" />
+        <b className="text-[16px] font-semibold">{t("import.drop.title")}</b>
+        <span className="text-[12.5px] text-muted">{t("import.formats")}</span>
+        <Button
+          variant="primary"
+          size="lg"
+          className="mt-1.5"
+          onClick={(e) => {
+            e.stopPropagation();
+            void choose();
+          }}
+        >
           {t("import.chooseFiles")}
         </Button>
-      }
-    >
-      {staged.length === 0 && items.length === 0 && (
-        <div className="flex flex-col items-center gap-2 rounded-panel border-[1.5px] border-dashed border-line2 px-6 py-12 text-center">
-          <Icon name="upload_file" size={36} className="text-accent" />
-          <b className="text-heading font-semibold">{t("import.drop.title")}</b>
-          <span className="text-small text-muted">{t("import.formats")}</span>
-          <span className="text-small text-faint">{t("import.dropHint", { context: platform })}</span>
-        </div>
-      )}
+        <span className="text-[12px] text-faint">{t("import.dropHint", { context: platform })}</span>
+      </div>
 
       {staged.length > 0 && (
         <section aria-labelledby="import-staged" className="flex flex-col gap-2">
-          <h2 id="import-staged" className="text-small m-0 font-semibold text-muted">
-            {t("import.staged.title")}
-          </h2>
-          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+          <div className="flex items-baseline gap-2">
+            <h2 id="import-staged" className="m-0 text-[14px] font-semibold">
+              {t("import.staged.title")}
+            </h2>
+            <span className="text-[12.5px] text-muted">
+              {importable.length} / {staged.length}
+            </span>
+          </div>
+          <ul className="m-0 flex list-none flex-col overflow-hidden rounded-panel border border-line p-0">
             {units.map((u) =>
               u.group ? (
                 <GroupRow key={u.id} unit={u} locale={(i18n.language === "vi" ? "vi" : "en") as Locale} onRemove={remove} onSeparate={() => void separate(u.id)} onOpen={openMeeting} />
@@ -152,7 +161,7 @@ export function ImportScreen() {
               ),
             )}
           </ul>
-          <div className="mt-1 flex flex-col gap-3 rounded-panel border border-line bg-surface p-3.5" role="group" aria-label={t("import.options.title")}>
+          <div className="mt-1 flex flex-col gap-3 rounded-panel bg-surface2 px-4 py-3.5" role="group" aria-label={t("import.options.title")}>
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-small font-semibold text-muted">{t("import.options.language")}</span>
               <Segmented
@@ -185,53 +194,57 @@ export function ImportScreen() {
                 </span>
               </button>
             )}
-            <div className="flex justify-end">
-              <Button variant="primary" disabled={busy || importable.length === 0} onClick={() => void start()}>
-                {t("import.importFiles", { count: importable.length })}
-              </Button>
-            </div>
+          </div>
+          <div className="mt-1 flex items-center gap-3">
+            <Button variant="primary" size="lg" className="h-[38px] px-[18px] text-[13.5px]" disabled={busy || importable.length === 0} onClick={() => void start()}>
+              {t("import.importFiles", { count: importable.length })}
+            </Button>
           </div>
         </section>
       )}
 
-      {items.length > 0 && (
-        <section aria-labelledby="import-queue" className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <h2 id="import-queue" className="text-small m-0 font-semibold text-muted">
-              {t("import.queue.title")}
-            </h2>
-            {active > 0 && (
-              <span role="status" className="text-small rounded-full bg-accent-soft px-2 py-0.5 font-semibold text-accent">
-                {t("import.queue.importing", { count: active })}
-              </span>
-            )}
-            {active === 0 && (
-              <button
-                type="button"
-                onClick={() => useImportStore.getState().dispatch({ type: "clear" })}
-                className="text-small ml-auto rounded-seg px-2 font-semibold text-accent hover:bg-sunk"
-              >
-                {t("import.queue.clear")}
-              </button>
-            )}
-          </div>
-          {active > 0 && <p className="text-small m-0 text-muted">{t("import.keepWorking")}</p>}
-          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-            {items.map((i) => (
-              <QueueRow key={i.id} item={i} onOpen={openMeeting} />
-            ))}
-          </ul>
-        </section>
-      )}
+      <section aria-labelledby="import-queue" className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <h2 id="import-queue" className="m-0 text-[14px] font-semibold">
+            {t("import.queue.title")}
+          </h2>
+          {active > 0 && (
+            <span role="status" className="text-small rounded-full bg-accent-soft px-2 py-0.5 font-semibold text-accent">
+              {t("import.queue.importing", { count: active })}
+            </span>
+          )}
+          {items.length > 0 && active === 0 && (
+            <button
+              type="button"
+              onClick={() => useImportStore.getState().dispatch({ type: "clear" })}
+              className="text-small ml-auto rounded-seg px-2 font-semibold text-accent hover:bg-sunk"
+            >
+              {t("import.queue.clear")}
+            </button>
+          )}
+        </div>
+        {items.length === 0 ? (
+          <p className="m-0 flex items-center gap-2 rounded-panel bg-surface2 p-4 text-[13px] text-muted">
+            <Icon name="inbox" size={20} className="flex-none" />
+            {t("import.queue.empty")}
+          </p>
+        ) : (
+          <>
+            {active > 0 && <p className="text-small m-0 text-muted">{t("import.keepWorking")}</p>}
+            <ul className="m-0 flex list-none flex-col gap-2 p-0">
+              {items.map((i) => (
+                <QueueRow key={i.id} item={i} onOpen={openMeeting} />
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
       {over && (
-        <div
-          role="presentation"
-          className="pointer-events-none fixed inset-3 z-40 grid place-items-center rounded-dialog border-2 border-dashed border-accent bg-accent-soft/80"
-        >
-          <div className="flex flex-col items-center gap-1 text-center">
-            <Icon name="upload_file" size={40} className="text-accent" />
-            <b className="text-heading font-semibold text-accent">{t("import.dropOverlay.title")}</b>
-            <span className="text-body text-muted">{t("import.dropOverlay.body")}</span>
+        <div role="presentation" className="pointer-events-none fixed inset-x-0 top-9 bottom-0 z-40 flex bg-[var(--scrim)] p-5">
+          <div className="flex flex-1 flex-col items-center justify-center gap-2.5 rounded-[16px] border-[2.5px] border-dashed border-accent bg-surface text-center">
+            <Icon name="download" size={48} className="text-accent" />
+            <b className="text-[20px] font-semibold">{t("import.dropOverlay.title")}</b>
+            <span className="text-[13.5px] text-muted">{t("import.dropOverlay.body")}</span>
           </div>
         </div>
       )}
@@ -252,18 +265,22 @@ function unitName(u: Unit, t: TFunction): string {
 }
 
 function Tag({ tone, children }: { tone: "bad" | "warn"; children: ReactNode }) {
-  return <span className={cn("text-small", tone === "bad" ? "font-semibold text-rec-ink" : "text-warn")}>{children}</span>;
+  return (
+    <span className={cn("flex items-start gap-1.5 text-[12.5px] leading-[1.45]", tone === "bad" ? "text-rec-ink" : "text-warn")}>
+      <Icon name={tone === "bad" ? "error" : "warning"} size={16} className="mt-px flex-none" />
+      <span>{children}</span>
+    </span>
+  );
 }
 
 function StagedRow({ file: f, locale, onRemove, onOpen }: { file: StagedFile; locale: Locale; onRemove: () => void; onOpen: (meeting: string) => void }) {
   const { t } = useTranslation();
   const blocked = !isImportable(f);
   const meta = [
-    t(`import.sources.${f.source}`),
     f.title,
     f.startedAt != null ? formatDate(f.startedAt, locale) : null,
-    f.durationMs != null ? formatClock(f.durationMs) : null,
     f.sizeBytes != null ? formatBytes(f.sizeBytes, locale) : null,
+    f.durationMs != null ? formatClock(f.durationMs) : null,
     f.channels >= 2 ? t("import.stereo") : null,
   ]
     .filter(Boolean)
@@ -271,27 +288,32 @@ function StagedRow({ file: f, locale, onRemove, onOpen }: { file: StagedFile; lo
   return (
     <li
       data-blocked={blocked ? "true" : undefined}
-      className={cn("flex flex-wrap items-center gap-3 rounded-row border border-line bg-surface px-3 py-2.5", blocked && "bg-surface2")}
+      className={cn("flex flex-wrap items-start gap-x-3 gap-y-1 border-t border-line px-3.5 py-3 first:border-t-0", blocked && "bg-surface2")}
     >
-      <Icon name={SOURCE_ICON[f.source]} size={22} className="flex-none text-muted" />
-      <div className="min-w-0 flex-1">
+      <Icon name={SOURCE_ICON[f.source]} size={22} className="mt-px flex-none text-muted" />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className={cn("block truncate text-[13.5px] font-semibold", blocked && "text-muted")}>{f.name}</span>
-        <span className="text-small block text-muted">{meta}</span>
+        <span className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
+          <span className="inline-flex h-[22px] items-center rounded-full bg-sunk px-2 font-semibold text-ink">{t(`import.sources.${f.source}`)}</span>
+          {meta}
+        </span>
         {f.problems.includes("unsupported") && <Tag tone="bad">{t("import.problems.unsupported")}</Tag>}
         {f.problems.includes("empty") && <Tag tone="bad">{t("import.problems.empty")}</Tag>}
         {f.problems.includes("veryLong") && <Tag tone="warn">{t("import.problems.veryLong")}</Tag>}
         {f.problems.includes("superseded") && <Tag tone="warn">{word(t, KEYS.superseded)}</Tag>}
         {f.problems.includes("duplicate") && f.duplicateOf && (
-          <span className="text-small flex flex-wrap items-center gap-1.5">
+          <span className="flex flex-wrap items-center gap-1.5">
             <Tag tone="warn">{t("import.problems.duplicate", { title: f.duplicateOf.title })}</Tag>
-            <button type="button" onClick={() => onOpen(f.duplicateOf!.meeting)} className="font-semibold text-accent hover:underline">
+            <button type="button" onClick={() => onOpen(f.duplicateOf!.meeting)} className="text-[12.5px] font-semibold text-accent hover:underline">
               {t("common.open")}
             </button>
           </span>
         )}
       </div>
-      {blocked && !f.problems.includes("duplicate") && <span className="text-small text-muted">{t("import.wontImport")}</span>}
-      <Button variant="ghost" size="sm" icon="close" aria-label={t("import.removeFile", { name: f.name })} title={t("common.remove")} onClick={onRemove} />
+      {blocked && !f.problems.includes("duplicate") && <span className="text-small self-center text-muted">{t("import.wontImport")}</span>}
+      <Button size="sm" className="h-[30px] self-center" aria-label={t("import.removeFile", { name: f.name })} onClick={onRemove}>
+        {t("common.remove")}
+      </Button>
     </li>
   );
 }
@@ -307,7 +329,7 @@ function GroupRow({ unit, locale, onRemove, onSeparate, onOpen }: { unit: Unit; 
     .filter(Boolean)
     .join(t("common.metaSep"));
   return (
-    <li data-group={unit.id} data-blocked={blocked ? "true" : undefined} className={cn("flex flex-col gap-2 rounded-row border border-line bg-surface px-3 py-2.5", blocked && "bg-surface2")}>
+    <li data-group={unit.id} data-blocked={blocked ? "true" : undefined} className={cn("flex flex-col gap-2 border-t border-line px-3.5 py-3 first:border-t-0", blocked && "bg-surface2")}>
       <div className="flex items-start gap-3">
         <Icon name={SOURCE_ICON.zoom} size={22} className="mt-0.5 flex-none text-muted" />
         <div className="min-w-0 flex-1">
@@ -365,7 +387,7 @@ function QueueRow({ item, onOpen }: { item: QueueItem; onOpen: (meeting: string)
             ? t("import.queue.cancelled")
             : t("import.queue.failed", { message: errorWords(item.error, t) });
   return (
-    <li data-state={item.state} className="flex flex-wrap items-center gap-3 rounded-row border border-line bg-surface px-3 py-2.5">
+    <li data-state={item.state} className="flex flex-wrap items-center gap-3 rounded-panel border border-line px-3.5 py-3">
       <Icon
         name={item.state === "done" ? "check_circle" : item.state === "failed" ? "error" : item.state === "cancelled" ? "block" : "progress_activity"}
         size={20}

@@ -5,19 +5,11 @@ import { useTranslation } from "react-i18next";
 import { usePlatform } from "@ghi/ui";
 import { PeopleBody } from "../features/people/people-screen";
 import { usePeople } from "../features/people/queries";
-import { Page } from "../shell/page";
 
 export function PeopleScreen() {
   const { t } = useTranslation();
   const platform = usePlatform();
   const q = usePeople();
   const people = q.data?.people ?? [];
-  return (
-    <Page
-      title={t("nav.people")}
-      subtitle={q.data ? t("people.subtitle", { context: platform, people: people.length, profiles: people.filter((p) => p.voice.kind !== "none").length }) : undefined}
-    >
-      <PeopleBody />
-    </Page>
-  );
+  return <PeopleBody title={t("nav.people")} subtitle={q.data ? t("people.subtitle", { context: platform, people: people.length, profiles: people.filter((p) => p.voice.kind !== "none").length }) : undefined} />;
 }

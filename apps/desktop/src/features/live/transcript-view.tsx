@@ -17,7 +17,7 @@ const toSpeaker = (label: string, s: SpeakerInfo) => ({ label, colorSlot: s.colo
 
 /** One final line; unchanged lines don't re-render as new ones arrive. */
 const Row = memo(
-  function Row({ line, speaker, marked, stacked }: { line: LineInfo; speaker: Speaker | null; marked: boolean; stacked?: boolean }) {
+  function Row({ line, speaker, marked, stacked, small }: { line: LineInfo; speaker: Speaker | null; marked: boolean; stacked?: boolean; small?: boolean }) {
     const { t } = useTranslation();
     const [picking, setPicking] = useState(false);
     const box = useRef<HTMLDivElement>(null);
@@ -37,18 +37,20 @@ const Row = memo(
           marked={marked}
           overlap={line.overlap}
           overlapHint={!stacked}
+          small={small}
           onChangeSpeaker={movable ? () => setPicking(true) : undefined}
         />
         {picking && line.speaker != null && <LineSpeakerPicker gid={line.gid} from={line.speaker} onClose={closePicker} />}
       </div>
     );
   },
-  (a, b) => a.line === b.line && a.stacked === b.stacked && a.marked === b.marked && a.speaker?.label === b.speaker?.label && a.speaker?.colorSlot === b.speaker?.colorSlot && a.speaker?.initial === b.speaker?.initial,
+  (a, b) => a.line === b.line && a.stacked === b.stacked && a.small === b.small && a.marked === b.marked && a.speaker?.label === b.speaker?.label && a.speaker?.colorSlot === b.speaker?.colorSlot && a.speaker?.initial === b.speaker?.initial,
 );
 
 const ESTIMATE_PX = 68;
 
-export function TranscriptView() {
+/** `small`: the narrow column of the Focus layout. */
+export function TranscriptView({ small }: { small?: boolean }) {
   const { t } = useTranslation();
   const lines = useLive((s) => s.lines);
   const partial = useLive((s) => s.partial);
@@ -88,7 +90,7 @@ export function TranscriptView() {
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={scrollRef} onScroll={(e) => setFollowing(isFollowing(e.currentTarget))} data-testid="transcript-scroll" className="h-full overflow-auto">
+      <div ref={scrollRef} onScroll={(e) => setFollowing(isFollowing(e.currentTarget))} data-testid="transcript-scroll" className="h-full overflow-auto pr-1">
         {/* Announcing every line is too noisy: the shell announces new speaker turns. */}
         <ol aria-live="off" style={{ height: virtual.getTotalSize() }} className="relative m-0 w-full list-none p-0">
           {virtual.getVirtualItems().map((v) => {
@@ -103,14 +105,14 @@ export function TranscriptView() {
                         <OverlapTag />
                       </div>
                       {lines.slice(block.from, block.to).map((l, k) => (
-                        <Row key={l.gid || l.t0Ms || k} line={l} speaker={speakerOf(l.speaker)} marked={markedAt(l)} stacked />
+                        <Row key={l.gid || l.t0Ms || k} line={l} speaker={speakerOf(l.speaker)} marked={markedAt(l)} stacked small={small} />
                       ))}
                     </div>
                   ) : (
-                    <Row line={line} speaker={speakerOf(line.speaker)} marked={markedAt(line)} />
+                    <Row line={line} speaker={speakerOf(line.speaker)} marked={markedAt(line)} small={small} />
                   )
                 ) : (
-                  <TranscriptLine startMs={lines.at(-1)?.t1Ms ?? 0} speaker={null} words={wordsFromText(words)} partial />
+                  <TranscriptLine startMs={lines.at(-1)?.t1Ms ?? 0} speaker={null} words={wordsFromText(words)} partial small={small} />
                 )}
               </li>
             );

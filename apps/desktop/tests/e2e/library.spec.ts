@@ -9,7 +9,7 @@ test("lists the sample meetings grouped by day with statuses", async ({ page }) 
   await expect(page.getByRole("heading", { name: "Yesterday" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Client call — Acme onboarding/ })).toBeVisible();
   // The sample "final pass" row shows its percentage.
-  await expect(page.getByText("Processing 62%")).toBeVisible();
+  await expect(page.getByText("Final pass on this PC · 62%")).toBeVisible();
   // Opening a row goes to the meeting (detail is phase 11).
   await page.getByRole("button", { name: /Client call — Acme onboarding/ }).click();
   await expect(page).toHaveURL(/#\/meetings\/sample-\d+\/notes/);
@@ -29,8 +29,8 @@ test("quick actions show on keyboard focus and Delete asks first", async ({ page
 
 test("recording then stopping shows the stepper, the toast and Name your speakers", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: "New recording" }).click();
-  await expect(page.getByRole("heading", { name: "Live" })).toBeVisible();
+  await page.getByRole("button", { name: "Record call", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Meeting title" })).toBeVisible();
   await page.getByRole("button", { name: "Stop" }).click();
   await expect(page.getByRole("heading", { name: "Meetings" })).toBeVisible();
   const panel = page.getByRole("region", { name: "Writing your notes on this PC" });
@@ -63,5 +63,5 @@ test("the detection prompt offers Start without taking focus", async ({ page }) 
 
   await page.evaluate(() => (window as unknown as { __ghiMock: { simulateMeetingDetected: () => void } }).__ghiMock.simulateMeetingDetected());
   await page.getByRole("region", { name: "Zoom call detected. Record it?" }).getByRole("button", { name: "Start" }).click();
-  await expect(page.getByRole("heading", { name: "Live" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Meeting title" })).toBeVisible();
 });

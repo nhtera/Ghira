@@ -10,7 +10,7 @@ import { Card } from "./parts";
 export function AboutSection() {
   const { t } = useTranslation();
   return (
-    <div className="flex max-w-2xl flex-col gap-4">
+    <div className="flex flex-col">
       <Card title={APP_NAME} hint={t("settings.about.promise")} />
       <UpdatesCard />
       <Card title={t("settings.about.diagnostics")} hint={t("settings.about.diagnosticsHint")}>

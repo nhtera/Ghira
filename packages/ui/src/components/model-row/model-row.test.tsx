@@ -20,8 +20,10 @@ describe("ModelRow", () => {
   it("shows purpose, name, size, memory, languages and license", () => {
     render(<ModelRow {...base} />);
     expect(screen.getByText("Live English transcript")).toBeTruthy();
-    expect(screen.getByText(/Parakeet TDT 0.6B v3 · Memory ~1 GB · EN \+ 24 · License CC-BY-4.0/)).toBeTruthy();
+    expect(screen.getByText(/Parakeet TDT 0.6B v3 · License CC-BY-4.0/)).toBeTruthy();
     expect(screen.getByText("0.7 GB")).toBeTruthy();
+    expect(screen.getByText("~1 GB")).toBeTruthy();
+    expect(screen.getByText("EN + 24")).toBeTruthy();
     expect(screen.getByText("Installed")).toBeTruthy();
   });
 

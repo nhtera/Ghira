@@ -71,6 +71,7 @@ export function CommandPalette() {
     id: "ask",
     group: "actions",
     label: t("palette.ask", { query: q }),
+    hint: "↵",
   }));
   const byId = new Map(entries.map((e) => [e.id, e]));
   const heading: Record<PaletteGroup, string> = {
@@ -98,24 +99,27 @@ export function CommandPalette() {
       shouldFilter={false}
       loop
       overlayClassName="fixed inset-0 z-40 bg-[var(--scrim)]"
-      contentClassName="fixed top-[14vh] left-1/2 z-50 w-[min(620px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-panel border border-line2 bg-surface text-ink shadow-float"
+      contentClassName="fixed top-[84px] left-1/2 z-50 w-[min(600px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-panel border border-line2 bg-surface text-ink shadow-float"
     >
-      <div className="flex items-center gap-2 border-b border-line px-4">
-        <Icon name="search" size={18} className="text-muted" />
+      <div className="flex h-[54px] items-center gap-2.5 border-b border-line px-4">
+        <Icon name="search" size={20} className="text-faint" />
         <Command.Input
           value={query}
           onValueChange={setQuery}
           placeholder={t("palette.placeholder")}
-          className="h-12 flex-1 border-0 bg-transparent text-[15px] text-ink outline-none placeholder:text-muted"
+          className="h-12 flex-1 border-0 bg-transparent text-[15px] text-ink outline-none placeholder:text-faint"
         />
+        <kbd aria-hidden className="rounded-[5px] border border-line2 px-1.5 py-0.5 font-mono text-[11px] text-faint">
+          {t("palette.esc")}
+        </kbd>
       </div>
-      <Command.List className="max-h-[50vh] overflow-auto p-1.5">
+      <Command.List className="max-h-[420px] overflow-auto px-1.5 pt-1 pb-2">
         <Command.Empty className="text-small px-3 py-6 text-center text-muted">{t("palette.noMatches")}</Command.Empty>
         {groups.map((g) => (
           <Command.Group
             key={g.group}
             heading={heading[g.group]}
-            className="[&_[cmdk-group-heading]]:text-label [&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:text-muted"
+            className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:pt-2.5 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:tracking-[.06em] [&_[cmdk-group-heading]]:text-faint [&_[cmdk-group-heading]]:uppercase"
           >
             {g.items.map((it) => {
               const e = byId.get(it.id);
@@ -124,18 +128,22 @@ export function CommandPalette() {
                   key={it.id}
                   value={it.id}
                   onSelect={select}
-                  className="flex h-9 cursor-default items-center gap-2.5 rounded-ctl px-2.5 text-[13.5px] data-[selected=true]:bg-accent-soft data-[selected=true]:text-accent"
+                  className="group flex h-10 cursor-default items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] data-[selected=true]:bg-accent-soft"
                 >
-                  <Icon name={e?.icon ?? "forum"} size={18} />
+                  <Icon name={e?.icon ?? "forum"} size={19} className="text-muted" />
                   <span className="flex-1 truncate">{it.label}</span>
-                  {it.hint && <span className="font-mono text-[11.5px] text-muted">{it.hint}</span>}
+                  {it.hint && <span className="font-mono text-[11.5px] text-faint">{it.hint}</span>}
                 </Command.Item>
               );
             })}
           </Command.Group>
         ))}
       </Command.List>
-      <p className="text-small m-0 border-t border-line px-4 py-2 text-muted">{t("palette.hint")}</p>
+      <p className="m-0 flex h-9 items-center gap-2 border-t border-line px-3.5 text-[11.5px] text-faint">
+        <Icon name="lock" size={14} className="text-accent" />
+        <span className="flex-1">{t("privacy.local")}</span>
+        {t("palette.hint")}
+      </p>
     </Command.Dialog>
   );
 }

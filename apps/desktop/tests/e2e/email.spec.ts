@@ -8,7 +8,7 @@ test("detail → Share → Follow-up email → Write → Copy", async ({ page, c
   if (readable) await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/?platform=win#/meetings");
   await page.getByRole("button", { name: /Client call — Acme onboarding/ }).click();
-  await page.getByRole("button", { name: "Share" }).click();
+  await page.getByRole("button", { name: "Export", exact: true }).click();
   await page.getByRole("menuitem", { name: "Draft follow-up email" }).click();
   const dialog = page.getByRole("dialog", { name: "Draft follow-up email" });
   await expect(dialog).toBeVisible();

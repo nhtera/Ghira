@@ -105,7 +105,8 @@ function answerAll(host: AiHost, question: string, scope: AskScope): AskAllAnswe
   if (picks.length === 0) return { answered: false, text: "", citations: [], searched: words, sources, semantic };
   return {
     answered: true,
-    text: picks.map((p) => p.seg.text).join("\n"),
+    // The sample meetings share a transcript: say a repeated passage once.
+    text: [...new Set(picks.map((p) => p.seg.text))].join("\n"),
     citations: picks.map((p) => ({
       meeting: refOf(p.row),
       citation: { t0Ms: p.seg.t0Ms, t1Ms: p.seg.t1Ms, quote: p.seg.text, speakerGid: p.seg.speakerGid, stale: false, missing: false },

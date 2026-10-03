@@ -30,12 +30,13 @@ const L = (key: string, en: string) =>
   new RegExp(`^(${key.replace(/\./g, "\\.")}|${en})`);
 
 let n = 0;
+let payloadOverride: string | undefined;
 const preview = (over: Partial<CloudPreview> = {}): CloudPreview => ({
   id: `plan-${++n}`,
   provider: "openai",
   model: "gpt-4.1-mini",
   host: "api.openai.com",
-  payload: '{"messages":[{"content":"hello [PERSON_1]"}]}',
+  payload: payloadOverride ?? '{"messages":[{"content":"hello [PERSON_1]"}]}',
   sha256: "ab".repeat(32),
   tokensEst: 1200,
   costEstUsd: 0.04,
@@ -91,6 +92,7 @@ const sendButton = () =>
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   Object.values(commands).forEach((c) => c.mockReset());
+  payloadOverride = undefined;
 });
 afterEach(() => {
   cleanup();
@@ -106,9 +108,8 @@ describe("CloudSheet", () => {
       '{"messages":[{"content":"hello [PERSON_1]"}]}',
     );
     expect(pre.querySelector("*")).toBeNull();
-    expect(
-      screen.getByText(/api\.openai\.com|cloud\.sheet\.host/),
-    ).toBeTruthy();
+    // The destination is a visible row, and also named by the exact-data disclosure.
+    expect(screen.getAllByText(/api\.openai\.com|cloud\.sheet\.host/).length).toBeGreaterThan(1);
     expect(screen.getByText("Kept 30 days.")).toBeTruthy();
     expect(commands.cloudPreview).toHaveBeenCalledWith(
       "m1",
@@ -119,6 +120,26 @@ describe("CloudSheet", () => {
         task: { kind: "notes", template: null, language: "meeting" },
       }),
     );
+  });
+
+  it("counts and excerpts only the user message, never a longer system prompt", async () => {
+    const system = "Write careful meeting notes. ".repeat(60);
+    payloadOverride = JSON.stringify({ messages: [{ role: "system", content: system }, { role: "user", content: "one two three" }] });
+    setup();
+    await settle();
+    expect((await screen.findByTestId("cloud-excerpt")).textContent).toBe("one two three");
+    expect(screen.getByText(/3 words/)).toBeTruthy();
+    expect(screen.queryByText(/Write careful/, { selector: "[data-testid=cloud-excerpt]" })).toBeNull();
+  });
+
+  it("an unknown request shape claims no word count and opens the exact data", async () => {
+    payloadOverride = JSON.stringify({ prompt: "mystery body" });
+    setup();
+    await settle();
+    await screen.findByTestId("cloud-payload");
+    expect(screen.queryByTestId("cloud-excerpt")).toBeNull();
+    expect(screen.queryByText(/words/)).toBeNull();
+    expect((screen.getByTestId("cloud-payload").closest("details") as HTMLDetailsElement).open).toBe(true);
   });
 
   it("re-previews when redact or the model changes, and Send uses the latest id", async () => {

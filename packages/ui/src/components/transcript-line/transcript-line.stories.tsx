@@ -34,3 +34,7 @@ export const HoverActions: Story = {
   render: () => <Line i={5} onEdit={() => {}} onChangeSpeaker={() => {}} onPlay={() => {}} className="[&>div:last-child]:opacity-100" />,
   note: "Edit text and Change speaker appear on hover or focus-within (forced here).",
 };
+export const Small: Story = {
+  render: () => <Line i={5} small />,
+  note: "Narrow column of the live Focus layout.",
+};

@@ -3,7 +3,7 @@
 // match, Enter. A name that isn't known yet is offered as a new person.
 import { useId, useMemo, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { cn } from "@ghi/ui";
+import { Avatar, cn } from "@ghi/ui";
 
 /** Known names containing what was typed (case- and accent-insensitive is the library's job; this is a quick local filter). */
 export function matchNames(names: string[], query: string, limit = 5): string[] {
@@ -12,10 +12,9 @@ export function matchNames(names: string[], query: string, limit = 5): string[] 
   return hits.slice(0, limit);
 }
 
-export function NameField({ names, onSubmit, label, placeholder }: { names: string[]; onSubmit: (name: string, known: boolean) => void; label: string; placeholder: string }) {
+export function NameField({ names, text, onTextChange, onSubmit, label, placeholder }: { names: string[]; text: string; onTextChange: (text: string) => void; onSubmit: (name: string, known: boolean) => void; label: string; placeholder: string }) {
   const { t } = useTranslation();
   const id = useId();
-  const [text, setText] = useState("");
   const [active, setActive] = useState(-1);
   const options = useMemo(() => matchNames(names, text), [names, text]);
   const typed = text.trim();
@@ -55,22 +54,25 @@ export function NameField({ names, onSubmit, label, placeholder }: { names: stri
         placeholder={placeholder}
         value={text}
         onChange={(e) => {
-          setText(e.target.value);
+          onTextChange(e.target.value);
           setActive(-1);
         }}
         onKeyDown={onKeyDown}
-        className="text-body h-9 w-full rounded-ctl border border-ctl bg-surface px-3"
+        className="h-[38px] w-full rounded-seg border border-ctl bg-surface px-3 text-[14px] focus:border-accent"
       />
-      <ul id={listId} role="listbox" aria-label={t("speakers.inPeople")} className="m-0 flex list-none flex-col p-0 empty:hidden">
+      <ul id={listId} role="listbox" aria-label={t("speakers.inPeople")} className="m-0 -mt-1.5 flex list-none flex-col gap-0.5 p-0 empty:hidden">
         {options.map((n, i) => (
-          <li key={n} id={`${id}-o${i}`} role="option" aria-selected={i === active} onMouseDown={(e) => e.preventDefault()} onClick={() => submit(n)} className={cn("text-body flex h-8 cursor-default items-center rounded-seg px-2", i === active ? "bg-accent-soft text-accent" : "hover:bg-sunk")}>
-            {n}
+          <li key={n} id={`${id}-o${i}`} role="option" aria-selected={i === active} onMouseDown={(e) => e.preventDefault()} onClick={() => submit(n)} className={cn("flex h-9 cursor-default items-center gap-2.5 rounded-seg px-2 text-[13px] font-medium", i === active ? "bg-accent-soft text-accent" : "hover:bg-surface2")}>
+            <Avatar kind="person" name={n} colorSlot={0} size="md" />
+            <span className="flex-1">{n}</span>
+            <span aria-hidden="true" className="text-[11.5px] font-normal text-faint">{t("speakers.inPeople")}</span>
           </li>
         ))}
         {isNew && (
-          <li role="option" aria-selected={false} onMouseDown={(e) => e.preventDefault()} onClick={() => submit(typed)} className="text-body flex h-8 cursor-default items-center gap-1.5 rounded-seg px-2 hover:bg-sunk">
-            <b className="font-semibold">{typed}</b>
-            <span className="text-small text-muted">{t("speakers.newPerson")}</span>
+          <li role="option" aria-selected={false} onMouseDown={(e) => e.preventDefault()} onClick={() => submit(typed)} className="flex h-9 cursor-default items-center gap-2.5 rounded-seg px-2 text-[13px] hover:bg-surface2">
+            <Avatar kind="person" name={typed} colorSlot={0} size="md" />
+            <b className="flex-1 font-medium">{typed}</b>
+            <span className="text-[11.5px] text-faint">{t("speakers.newPerson")}</span>
           </li>
         )}
       </ul>

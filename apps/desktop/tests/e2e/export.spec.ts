@@ -18,13 +18,16 @@ test("bulk export to Markdown ends in a Saved toast", async ({ page }) => {
 
 test("a single meeting: copy as Markdown, subtitles lock the parts", async ({ page }) => {
   await page.goto("/?platform=win#/meetings");
-  const row = page.getByRole("listitem").filter({ hasText: "Client call — Acme onboarding" });
-  await row.getByRole("button", { name: "Export", exact: true }).click({ force: true });
+  await page.getByRole("button", { name: /Client call — Acme onboarding/ }).click();
+  await expect(page).toHaveURL(/#\/meetings\/sample-\d+\/notes/);
+  // The meeting's Export menu (a row no longer has an Export quick action).
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Export…" }).click();
   const sheet = page.getByRole("dialog", { name: "Export notes" });
   await expect(sheet).toBeVisible();
   await sheet.getByRole("radio", { name: "Subtitles (.srt)" }).click();
   await expect(sheet.getByRole("checkbox", { name: "Notes" })).toBeDisabled();
-  await expect(sheet.getByText("Subtitles contain speaker names and transcript only.")).toBeVisible();
+  await expect(sheet.locator("p", { hasText: "Subtitles contain speaker names and transcript only." })).toBeVisible();
   await sheet.getByRole("radio", { name: "Word document (.docx)" }).click();
   await sheet.getByRole("button", { name: "Export…" }).click();
   await expect(page.getByText(/^Saved .*\.docx$/)).toBeVisible();

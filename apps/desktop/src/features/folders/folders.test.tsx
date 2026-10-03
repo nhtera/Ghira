@@ -53,6 +53,7 @@ const row = (gid: string, over: Partial<MeetingRow> = {}): MeetingRow => ({
   folder: null,
   tags: [],
   sourceApp: null,
+  summary: null,
   ...over,
 });
 

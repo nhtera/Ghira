@@ -1035,3 +1035,39 @@ fn a_retention_policy_applies_to_every_meeting() {
         None
     );
 }
+
+#[test]
+fn first_tldrs_returns_only_the_first_tldr_of_each_meeting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let block = |kind: &str, body: &str| NewNoteBlock {
+        kind: kind.into(),
+        provenance: Provenance::Ai,
+        body: body.into(),
+        anchors: vec![],
+        pinned: false,
+    };
+    let a = store.create_meeting(NewMeeting::default()).unwrap();
+    let b = store.create_meeting(NewMeeting::default()).unwrap();
+    let c = store.create_meeting(NewMeeting::default()).unwrap();
+    store
+        .replace_ai_notes(
+            &a.gid,
+            vec![
+                block("decision", "ship"),
+                block("tldr", "first"),
+                block("tldr", "second"),
+            ],
+            vec![],
+        )
+        .unwrap();
+    store
+        .replace_ai_notes(&b.gid, vec![block("decision", "only a decision")], vec![])
+        .unwrap();
+    let got = store
+        .first_tldrs(&[a.gid.clone(), b.gid.clone(), c.gid.clone()])
+        .unwrap();
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[&a.gid], "first");
+    assert!(store.first_tldrs(&[]).unwrap().is_empty());
+}

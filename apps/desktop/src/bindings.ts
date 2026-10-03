@@ -1036,6 +1036,11 @@ export type MeetingRow = {
 	 *  `voice_memos`.
 	 */
 	sourceApp: string | null,
+	/**
+	 *  The first TL;DR line of the notes (the row's second line); `None`
+	 *  while the meeting has no notes.
+	 */
+	summary: string | null,
 };
 
 export type MeetingSpeaker = {

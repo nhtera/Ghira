@@ -8,7 +8,8 @@ test("typing without accents finds accented hits, marked, and a segment hit open
   await open(page);
   const box = page.getByRole("searchbox");
   await box.fill("nhan dien");
-  const hit = page.getByRole("region", { name: /Client call — Acme onboarding/ }).getByRole("listitem").first();
+  // Hits are grouped per meeting (a named group); each hit is one button.
+  const hit = page.getByRole("group", { name: /Client call — Acme onboarding/ }).getByRole("button").first();
   await expect(hit).toBeVisible();
   // Marks are real <mark> text nodes covering the accented words.
   const marks = hit.locator("mark");
@@ -16,7 +17,7 @@ test("typing without accents finds accented hits, marked, and a segment hit open
   expect(((await marks.first().textContent()) ?? "").toLowerCase()).toMatch(/nh(ậ|a)n|di(ệ|e)n/);
   await expect(page.getByText(/results/)).toBeVisible();
   // A segment hit shows its time and opens the transcript there.
-  await hit.getByRole("button").click();
+  await hit.click();
   await expect(page).toHaveURL(/#\/meetings\/[^/]+\/(transcript|notes)/);
 });
 

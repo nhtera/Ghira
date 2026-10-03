@@ -38,7 +38,7 @@ test("editing an AI sentence makes it yours; My notes only hides the rest", asyn
   await first.pressSequentially(" (checked)");
   await page.getByRole("heading", { name: "Summary" }).click();
   await expect(page.getByText("Edited by you · kept on regenerate").first()).toBeVisible();
-  await page.getByRole("button", { name: "My notes only" }).click();
+  await page.getByRole("switch", { name: "My notes only" }).click();
   await expect.poll(() => notes.count()).toBeLessThan(all);
   await expect(page.getByText("Edited by you · kept on regenerate").first()).toBeVisible();
 });

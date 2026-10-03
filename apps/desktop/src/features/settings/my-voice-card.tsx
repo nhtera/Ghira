@@ -40,7 +40,17 @@ export function MyVoiceCard() {
   };
 
   return (
-    <Card title={t("settings.privacy.myVoice.title")} hint={meProfile ? t("settings.privacy.myVoice.saved", { count: meProfile.samples, date: meProfile.atMs != null ? formatDate(meProfile.atMs, locale) : "" }) : t("settings.privacy.myVoice.none", { app: APP_NAME })}>
+    <Card
+      title={t("settings.privacy.myVoice.title")}
+      hint={
+        meProfile
+          ? t("settings.privacy.myVoice.saved", {
+              count: meProfile.samples,
+              date: meProfile.atMs != null ? formatDate(meProfile.atMs, locale) : "",
+            })
+          : t("settings.privacy.myVoice.none", { app: APP_NAME })
+      }
+    >
       {!modelReady && <p className="text-small m-0 text-muted">{t("settings.privacy.myVoice.modelMissing")}</p>}
       <div className="flex flex-wrap gap-2">
         <Button icon="mic" disabled={!modelReady} onClick={() => setEnrolling(true)}>
@@ -49,7 +59,10 @@ export function MyVoiceCard() {
         {meProfile && me && (
           <ConfirmArea
             icon="delete_forever"
-            question={t("settings.privacy.myVoice.question", { count: meProfile.samples, app: APP_NAME })}
+            question={t("settings.privacy.myVoice.question", {
+              count: meProfile.samples,
+              app: APP_NAME,
+            })}
             confirmLabel={t("people.deleteVoice.confirm")}
             onConfirm={() => void remove()}
             trigger={({ onClick, ref }) => (

@@ -102,7 +102,8 @@
       "headphonesAecOff": "Tai nghe · tắt khử vọng",
       "speakersAecOn": "Loa ngoài · đang khử vọng",
       "aecOnToast": "Âm thanh đang ra loa. Đã bật khử vọng để không ai bị đếm hai lần.",
-      "aecOffToast": "Đã kết nối tai nghe. Đã tắt khử vọng."
+      "aecOffToast": "Đã kết nối tai nghe. Đã tắt khử vọng.",
+      "speakers": "Loa"
     },
     "layout": "Bố cục",
     "more": "Thêm thao tác",
@@ -197,7 +198,8 @@
     "unmarkedMe": "Đã bỏ đánh dấu “Tôi”",
     "soundsLikeName": "Giống giọng {{name}}",
     "dismissSuggestionFor": "Bỏ gợi ý cho {{speaker}}",
-    "inOthers_other": "{{count}} giọng trong Khác"
+    "inOthers_other": "{{count}} giọng trong Khác",
+    "close": "Đóng"
   },
   "common": {
     "accept": "Đồng ý",
@@ -354,7 +356,11 @@
       "recording": "Đang ghi",
       "failedRetry": "Lỗi · Thử lại",
       "processingPercent": "Đang xử lý {{percent}}%",
-      "waitingSync": "Chờ đồng bộ"
+      "waitingSync": "Chờ đồng bộ",
+      "finalPassLocal_mac": "Xử lý cuối trên máy này",
+      "finalPassLocal_win": "Xử lý cuối trên máy này",
+      "finalPassLocalPercent_mac": "Xử lý cuối trên máy này · {{percent}}%",
+      "finalPassLocalPercent_win": "Xử lý cuối trên máy này · {{percent}}%"
     },
     "empty": {
       "title": "Ghi cuộc họp đầu tiên",
@@ -405,7 +411,13 @@
       "month": "30 ngày qua"
     },
     "undoTooLate": "Không hoàn tác được nữa: cuộc họp đã bị xóa",
-    "sourceImport": "Nhập từ {{source}}"
+    "sourceImport": "Nhập từ {{source}}",
+    "duration": {
+      "minutes": "{{minutes}} phút",
+      "hours": "{{hours}} giờ",
+      "hoursMinutes": "{{hours}} giờ {{minutes}} phút"
+    },
+    "recordGroup": "Bắt đầu ghi"
   },
   "tray": {
     "detected": {
@@ -482,7 +494,10 @@
         "card": "Số thẻ",
         "account": "Số tài khoản",
         "term": "Thuật ngữ"
-      }
+      },
+      "showExact": "Hiện dữ liệu chính xác",
+      "destination": "Gửi tới",
+      "redactionOff": "Tên và dữ liệu cá nhân sẽ được gửi nguyên văn."
     }
   },
   "onboarding": {
@@ -612,7 +627,7 @@
     "done": {
       "title": "Sẵn sàng cho cuộc gọi tiếp theo",
       "body": "Khi Zoom, Meet hoặc Teams bắt đầu, {{app}} sẽ hỏi bạn có muốn ghi không. Bạn cũng có thể bắt đầu bất cứ lúc nào:",
-      "openLibrary": "Mở danh sách cuộc họp"
+      "openLibrary": "Mở {{app}}"
     },
     "progress": "Các bước thiết lập",
     "stepOf": "Bước {{step}}/{{total}}",
@@ -721,7 +736,8 @@
         "applies": "Áp dụng từ lần ghi tiếp theo.",
         "lightTier_mac": "Máy này dùng chế độ Nhanh (bộ nhớ 8 GB).",
         "lightTier_win": "Máy này dùng chế độ Nhanh (bộ nhớ 8 GB)."
-      }
+      },
+      "copyFor": "Sao chép {{label}}"
     },
     "ai": {
       "local": {
@@ -774,7 +790,8 @@
       },
       "redactDefault": "Mặc định ẩn tên và dữ liệu cá nhân",
       "redactDefaultHint": "Tên, email và số điện thoại được thay thế trước khi gửi, rồi khôi phục tại máy này.",
-      "alwaysPreview": "{{app}} luôn cho xem đúng nội dung yêu cầu trước khi gửi."
+      "alwaysPreview": "{{app}} luôn cho xem đúng nội dung yêu cầu trước khi gửi.",
+      "perMeeting": "Theo từng cuộc họp"
     },
     "models": {
       "presetTitle": "Tốc độ và chất lượng",
@@ -816,7 +833,8 @@
       "damaged": "Mô hình này không qua kiểm tra. Hãy tải lại.",
       "redownload": "Tải lại",
       "redownloadFor": "Tải lại {{name}}",
-      "licenseUrl": "Giấy phép {{license}}: {{url}}"
+      "licenseUrl": "Giấy phép {{license}}: {{url}}",
+      "presetRam": "RAM {{ram}}"
     },
     "privacy": {
       "encrypt": "Mã hoá cuộc họp trên máy này",
@@ -1241,7 +1259,8 @@
     "notDiscussed": {
       "title": "Không được nhắc đến trong các cuộc họp này",
       "body_other": "{{app}} không tìm thấy nội dung này trong {{count}} cuộc họp. Ghi chú “{{note}}” của bạn trong {{meeting}} cũng không khớp với bản ghi.",
-      "search": "Tìm “{{query}}” trong bản ghi"
+      "search": "Tìm “{{query}}” trong bản ghi",
+      "found_other": "{{app}} không tìm thấy gì về điều này trong {{count}} cuộc họp."
     },
     "newQuestion": "Câu hỏi mới",
     "audioDeleted_other": "Âm thanh đã xoá sau {{count}} ngày. Dòng bản ghi vẫn giữ.",
@@ -1387,7 +1406,7 @@
       "superseded": "Các tệp âm thanh của từng người tham dự Zoom sẽ được nhập thay thế.",
       "tooManyTracks": "Hơn 49 tệp âm thanh của người tham dự. Hãy nhập từng tệp riêng."
     },
-    "removeFile": "Bỏ {{name}}",
+    "removeFile": "Gỡ {{name}}",
     "channelsN": "{{count}} kênh",
     "group": {
       "title_other": "Bản thu Zoom · {{count}} người",
@@ -1412,7 +1431,8 @@
     "hint": "↑↓ chọn · ↵ mở · esc đóng",
     "darkTheme": "Chuyển sang giao diện tối",
     "lightTheme": "Chuyển sang giao diện sáng",
-    "stopRecording": "Dừng ghi"
+    "stopRecording": "Dừng ghi",
+    "esc": "esc"
   },
   "app": {
     "tagline": "Ghi chú cuộc họp riêng tư, ngay trên máy bạn."
@@ -1471,7 +1491,8 @@
       "body": "Ghi chú và bản ghi sẽ hiện ở đây khi bạn dừng.",
       "open": "Mở Trực tiếp"
     },
-    "templateButton": "Mẫu: {{name}}"
+    "templateButton": "Mẫu: {{name}}",
+    "regenerateWith": "Mẫu: {{template}}. Ngôn ngữ ghi chú: {{language}}."
   },
   "audio": {
     "label": "Trình phát âm thanh",

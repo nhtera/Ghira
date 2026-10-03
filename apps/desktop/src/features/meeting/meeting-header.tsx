@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Detail header (D6): editable title, when and how long, source chips,
 // participants, status and where the notes were written.
-import { formatClock, formatDate, formatTime, type Locale } from "@ghi/i18n";
+import { formatClock } from "@ghi/i18n";
 import {
   Icon,
   StatusPill,
@@ -10,15 +10,18 @@ import {
   usePlatform,
 } from "@ghi/ui";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingDetail } from "../../bindings";
 import { ipc } from "../../ipc";
-import { meetingKeys } from "../../state/meeting-queries";
+import { meetingKeys, useMeetingNotes } from "../../state/meeting-queries";
 import { MEETINGS_KEY } from "../library/use-meetings";
 import { detailStatus } from "./detail-status";
 import { FolderTags } from "../folders/folder-tags";
 import { StoredSpeaker } from "../speakers/stored-speaker";
+import { useLlmName } from "./llm-name";
+import { useWhen } from "./use-when";
 
 function Chip({
   icon,
@@ -96,10 +99,34 @@ function TitleField({ detail }: { detail: MeetingDetail }) {
   );
 }
 
-export function MeetingHeader({ detail }: { detail: MeetingDetail }) {
-  const { t, i18n } = useTranslation();
+/** Where the notes came from: the local model, or the cloud when it was used. */
+function EnginePill({ detail }: { detail: MeetingDetail }) {
+  const { t } = useTranslation();
   const platform = usePlatform();
-  const locale: Locale = i18n.language === "vi" ? "vi" : "en";
+  const model = useLlmName();
+  const cloud = detail.cloudUsed;
+  const notes = useMeetingNotes(detail.gid);
+  // Nothing was written yet (still processing, or failed): no engine to name.
+  if (!notes.data?.blocks.length) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex h-[26px] flex-none items-center gap-1.5 rounded-full px-2.5 text-[12px] font-semibold",
+        cloud ? "bg-warn-soft text-warn" : "bg-accent-soft text-accent",
+      )}
+    >
+      <Icon name={cloud ? "cloud" : "lock"} size={15} />
+      {cloud ? t("library.status.cloudEnhanced") : [t("ask.onDevice", { context: platform }), model].filter(Boolean).join(" · ")}
+    </span>
+  );
+}
+
+const SOURCE_ICON = { call: "videocam", room: "groups", import: "upload_file" } as const;
+
+export function MeetingHeader({ detail }: { detail: MeetingDetail }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const when = useWhen();
   const { status, percent } = detailStatus(detail);
   const people = detail.speakers.filter((s) => !s.notPerson);
   const sourceKey = detail.source === "live" ? detail.mode : detail.source;
@@ -108,50 +135,42 @@ export function MeetingHeader({ detail }: { detail: MeetingDetail }) {
     : sourceKey;
 
   return (
-    <header
-      data-tauri-drag-region
-      className="flex flex-col gap-2 px-7 pt-6 pb-2"
-    >
-      <TitleField detail={detail} />
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[12.5px] text-muted">
-        {detail.startedAt != null && (
-          <span>
-            {formatDate(detail.startedAt, locale)} ·{" "}
-            {formatTime(detail.startedAt, locale)}
-          </span>
-        )}
-        {detail.durationMs != null && (
-          <span className="text-mono">{formatClock(detail.durationMs)}</span>
-        )}
-        <Chip
-          icon={sourceKey === "room" ? "groups" : "headphones"}
-          dashed={!detail.audioAvailable}
-        >
-          {sourceLabel}
-        </Chip>
+    <header data-tauri-drag-region className="flex flex-col gap-1.5 px-7 pt-4 pb-2">
+      <button
+        type="button"
+        onClick={() => void navigate({ to: "/meetings" })}
+        className="flex items-center gap-0.5 self-start text-[12.5px] text-muted hover:text-ink"
+      >
+        <Icon name="chevron_left" size={16} />
+        {t("detail.back")}
+      </button>
+      <div className="flex items-center gap-3.5">
+        <div className="min-w-0 flex-1">
+          <TitleField detail={detail} />
+        </div>
+        <EnginePill detail={detail} />
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] text-muted">
+        <span className="flex items-center gap-1.5">
+          <Icon name={SOURCE_ICON[sourceKey as keyof typeof SOURCE_ICON] ?? "headphones"} size={16} />
+          {[
+            detail.startedAt != null ? when(detail.startedAt) : null,
+            detail.durationMs != null ? formatClock(detail.durationMs) : null,
+            sourceLabel,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
         {!detail.audioAvailable && (
           <Chip icon="link_off" dashed>
             {t("meeting.noAudio")}
           </Chip>
         )}
-        <StatusPill status={status} percent={percent} />
-        {detail.cloudUsed ? (
-          // The pill already says it when nothing else outranks it.
-          status !== "cloudEnhanced" && (
-            <Chip icon="cloud_done" tone="warn">
-              {t("library.status.cloudEnhanced")}
-            </Chip>
-          )
-        ) : (
-          <Chip icon="lock">{t("cloud.before", { context: platform })}</Chip>
-        )}
+        {status !== "ready" && status !== "cloudEnhanced" && <StatusPill status={status} percent={percent} />}
       </div>
       <FolderTags meeting={detail.gid} />
       {people.length > 0 && (
-        <ul
-          aria-label={t("speakers.title")}
-          className="m-0 flex list-none flex-wrap gap-1.5 p-0"
-        >
+        <ul aria-label={t("speakers.title")} className="m-0 flex list-none flex-wrap gap-1.5 p-0">
           {people.map((s) => (
             <li key={s.gid} className="flex h-7 items-center gap-1.5">
               <StoredSpeaker meeting={detail.gid} mode={detail.mode} speaker={s} />

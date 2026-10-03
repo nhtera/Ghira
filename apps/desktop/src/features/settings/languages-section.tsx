@@ -6,35 +6,40 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Icon, Segmented } from "@ghi/ui";
 import type { MeetingLanguage, Vocabulary } from "../../bindings";
+import { APP_NAME, formatDate, formatTime, type Locale } from "@ghi/i18n";
 import { ipc } from "../../ipc";
 import { addTerm, editTerm, type TermResult } from "./logic";
-import { Card, Note, Row, inputCls, useFail, useSettings } from "./parts";
+import { Card, Row, Switch, inputCls, useFail, useSettings } from "./parts";
 
 const vocabKey = ["vocabulary"] as const;
+/** The sample shown under "Dates and times". */
+const SAMPLE = new Date(2026, 8, 28, 14, 30);
 
 export function LanguagesSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lang: Locale = i18n.language === "vi" ? "vi" : "en";
   const { settings, patch } = useSettings();
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col">
       <Card>
-        <Row label={t("settings.languages.meetingLanguages")}>
+        <Row label={t("settings.languages.meetingLanguages")} hint={t("onboarding.languages.body", { app: APP_NAME })}>
           {settings && (
             <Segmented<MeetingLanguage>
               label={t("settings.languages.meetingLanguages")}
               value={settings.meetingLanguage}
               onChange={(v) => void patch({ meetingLanguage: v })}
               options={[
-                { value: "auto", label: t("onboarding.languages.both") },
-                { value: "vi", label: t("onboarding.languages.vietnamese") },
                 { value: "en", label: t("onboarding.languages.english") },
+                { value: "vi", label: t("onboarding.languages.vietnamese") },
+                { value: "auto", label: t("onboarding.languages.both") },
               ]}
             />
           )}
         </Row>
-        <Note>
-          {t("settings.languages.accentSearch")}. {t("settings.languages.accentSearchHint")}
-        </Note>
+        <Row label={t("settings.languages.dateFormat")} hint={`${formatDate(SAMPLE, lang)} · ${formatTime(SAMPLE, lang)}`} />
+        <Row label={t("settings.languages.accentSearch")} hint={t("settings.languages.accentSearchHint")}>
+          <Switch checked onChange={() => {}} label={t("settings.languages.accentSearch")} disabled />
+        </Row>
       </Card>
       <VocabularyCard />
     </div>
@@ -140,7 +145,9 @@ export function VocabularyCard() {
                       autoFocus
                       className={`${inputCls} h-6 w-40`}
                       value={editText}
-                      aria-label={t("settings.languages.vocab.editTerm", { term })}
+                      aria-label={t("settings.languages.vocab.editTerm", {
+                        term,
+                      })}
                       onChange={(e) => setEditText(e.target.value)}
                       onBlur={() => void commitEdit()}
                       onKeyDown={(e) => {
@@ -154,7 +161,9 @@ export function VocabularyCard() {
                       <button
                         type="button"
                         className="grid size-6 place-items-center rounded-full text-muted hover:bg-sunk"
-                        aria-label={t("settings.languages.vocab.editTerm", { term })}
+                        aria-label={t("settings.languages.vocab.editTerm", {
+                          term,
+                        })}
                         onClick={() => {
                           setEditing(i);
                           setEditText(term);
@@ -164,7 +173,15 @@ export function VocabularyCard() {
                       </button>
                     </>
                   )}
-                  <button type="button" className="grid size-6 place-items-center rounded-full text-muted hover:bg-sunk" aria-label={t("settings.languages.vocab.removeTerm", { term })} disabled={saving} onClick={() => void save((latest()?.terms ?? data.terms).filter((x) => x !== term))}>
+                  <button
+                    type="button"
+                    className="grid size-6 place-items-center rounded-full text-muted hover:bg-sunk"
+                    aria-label={t("settings.languages.vocab.removeTerm", {
+                      term,
+                    })}
+                    disabled={saving}
+                    onClick={() => void save((latest()?.terms ?? data.terms).filter((x) => x !== term))}
+                  >
                     <Icon name="close" size={14} />
                   </button>
                 </li>
@@ -180,7 +197,15 @@ export function VocabularyCard() {
               {data.learned.map((term) => (
                 <li key={term} className="flex items-center gap-0.5 rounded-full border border-line bg-surface py-0.5 pr-0.5 pl-3 text-[13px]">
                   <span>{term}</span>
-                  <button type="button" className="grid size-6 place-items-center rounded-full text-muted hover:bg-sunk" aria-label={t("settings.languages.vocab.removeTerm", { term })} disabled={saving} onClick={() => void forget(term)}>
+                  <button
+                    type="button"
+                    className="grid size-6 place-items-center rounded-full text-muted hover:bg-sunk"
+                    aria-label={t("settings.languages.vocab.removeTerm", {
+                      term,
+                    })}
+                    disabled={saving}
+                    onClick={() => void forget(term)}
+                  >
                     <Icon name="close" size={14} />
                   </button>
                 </li>

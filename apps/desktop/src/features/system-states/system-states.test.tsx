@@ -73,7 +73,7 @@ describe("recovered meetings", () => {
     renderStates();
     expect(await screen.findByText(/Weekly sync/)).toBeTruthy();
     expect(screen.getByText(/25:20/)).toBeTruthy();
-    await userEvent.setup().click(screen.getByRole("button", { name: "Open meeting" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "Recover and write notes" }));
     expect(navigate).toHaveBeenCalledWith({ to: "/meetings/$id/$tab", params: { id: "m1", tab: "notes" } });
   });
 
@@ -82,14 +82,15 @@ describe("recovered meetings", () => {
     renderStates();
     await user.click(await screen.findByRole("button", { name: "Discard recording" }));
     expect(core.commands.deleteMeeting).not.toHaveBeenCalled();
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Discard recording" }));
+    await user.click(screen.getByRole("button", { name: "Discard recording" }));
     expect(core.commands.deleteMeeting).toHaveBeenCalledWith("m1");
     await waitFor(() => expect(screen.queryByText(/Weekly sync/)).toBeNull());
   });
 
-  it("can be dismissed", async () => {
+  it("can be dismissed with Escape", async () => {
     renderStates();
-    await userEvent.setup().click(await screen.findByRole("button", { name: "Dismiss" }));
+    await screen.findByText(/Weekly sync/);
+    await userEvent.setup().keyboard("{Escape}");
     expect(screen.queryByText(/Weekly sync/)).toBeNull();
   });
 });
@@ -162,6 +163,7 @@ describe("core errors", () => {
     await fire(e);
     await fire(e);
     expect(await screen.findAllByText(/Another app is using the microphone/)).toHaveLength(1);
+    expect(document.querySelector("[data-banner=capture]")?.getAttribute("role")).toBe("alert");
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     await fire(e);
     expect(screen.queryByText(/Another app is using the microphone/)).toBeNull();
@@ -211,8 +213,11 @@ describe("storage errors during a recording", () => {
 describe("update banner", () => {
   it("installs on Restart", async () => {
     const onInstall = vi.fn();
-    render(<UpdateBanner version="1.2.0" onInstall={onInstall} />);
+    const onDismiss = vi.fn();
+    render(<UpdateBanner version="1.2.0" onInstall={onInstall} onDismiss={onDismiss} />);
     expect(screen.getByText(/1\.2\.0/)).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Later" }));
+    expect(onDismiss).toHaveBeenCalled();
     await userEvent.setup().click(screen.getByRole("button", { name: "Restart" }));
     expect(onInstall).toHaveBeenCalled();
   });

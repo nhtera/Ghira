@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PlatformProvider } from "@ghi/ui";
 import { ProcessingPanel } from "./processing-panel";
 import { useProcessing } from "./processing-store";
-import { stepsFor } from "./stepper-steps";
+import { overallProgress, stepsFor } from "./stepper-steps";
 
 beforeEach(() => useProcessing.setState({ meetings: {}, finished: [] }));
 afterEach(cleanup);
@@ -83,7 +83,23 @@ describe("ProcessingPanel", () => {
     );
     expect(screen.getByText("Writing your notes on this Mac", { selector: "h2" })).toBeTruthy();
     expect(screen.getByText(/You can leave this page/)).toBeTruthy();
-    expect(screen.getByRole("progressbar", { name: "Refining speakers" })).toBeTruthy();
+    expect(screen.getByText("Refining speakers").closest("li")?.getAttribute("aria-current")).toBe("step");
+    expect(screen.getByRole("progressbar", { name: "Refining speakers" }).getAttribute("aria-valuenow")).toBe("20");
     act(() => {});
+  });
+});
+
+describe("overallProgress", () => {
+  it("counts finished stages, so a stage at 100% is not the whole pipeline", () => {
+    expect(overallProgress({ stage: "decoding", kind: "final_pass", progress: 1 })).toBeCloseTo(0.2);
+    expect(overallProgress({ stage: "matchingVoices", kind: "final_pass", progress: 0.5 })).toBeCloseTo(0.5);
+    expect(overallProgress({ stage: null, kind: "notes_final", progress: null })).toBeCloseTo(0.8);
+    expect(overallProgress({ stage: null, kind: "final_pass", progress: null })).toBe(0);
+  });
+  it("never goes back when the next job starts at an earlier step", () => {
+    const { apply } = useProcessing.getState();
+    apply({ type: "jobProgress", meeting: "m", job: 1, kind: "notes_live", stage: null, progress: 0.5 });
+    apply({ type: "jobProgress", meeting: "m", job: 2, kind: "final_pass", stage: "decoding", progress: 0 });
+    expect(overallProgress(useProcessing.getState().meetings.m!)).toBeCloseTo(0.9);
   });
 });

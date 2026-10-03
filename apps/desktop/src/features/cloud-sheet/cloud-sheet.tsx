@@ -24,6 +24,7 @@ import type {
 } from "../../bindings";
 import { ipc } from "../../ipc";
 import { invalidateMeeting } from "../../state/meeting-queries";
+import { userText } from "./user-text";
 import { providerName } from "./provider-names";
 import {
   initialSelection,
@@ -58,30 +59,13 @@ const toTask = (t: CloudSheetTask): CloudTask =>
       }
     : { kind: "ask", question: t.question, language: t.language ?? "meeting" };
 
-function Row({
-  icon,
-  children,
-  tone,
-}: {
-  icon: "description" | "lock" | "info" | "cloud" | "schedule";
-  children: React.ReactNode;
-  tone?: "muted";
-}) {
+/** A label and its value, like the rows of a receipt. */
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <p
-      className={`m-0 flex items-start gap-2 ${tone === "muted" ? "text-muted" : "text-ink"}`}
-    >
-      <Icon
-        name={icon}
-        size={17}
-        className={
-          icon === "lock"
-            ? "mt-px shrink-0 text-accent"
-            : "mt-px shrink-0 text-muted"
-        }
-      />
-      <span>{children}</span>
-    </p>
+    <div className="grid grid-cols-[150px_minmax(0,1fr)] items-baseline gap-x-3 text-[14px]">
+      <span className="text-muted">{label}</span>
+      <span className="min-w-0">{children}</span>
+    </div>
   );
 }
 
@@ -110,6 +94,7 @@ function CloudSheetBody({
   const [picked, setPicked] = useState<Selection | null>(null);
   const sel = picked ?? (choices.loaded ? initialSelection(choices) : null);
   const [sending, setSending] = useState(false);
+  const [showExact, setShowExact] = useState(false);
   const [failure, setFailure] = useState<{
     reason: string;
     leftDevice: boolean;
@@ -187,6 +172,8 @@ function CloudSheetBody({
   };
 
   const fmt = new Intl.NumberFormat(i18n.language);
+  const excerpt = preview ? userText(preview.payload) : "";
+  const excerptWords = excerpt.split(/\s+/).filter(Boolean).length;
   const cost =
     preview?.costEstUsd == null
       ? null
@@ -245,41 +232,39 @@ function CloudSheetBody({
 
         {!blocked && !failure && sel && (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-label text-muted">
-                {t("cloud.provider")}
+            <Fact label={t("cloud.provider")}>
+              <span className="flex flex-wrap items-center gap-2">
+                {/* A disabled fieldset disables every button inside it. */}
+                <fieldset disabled={sending} className="m-0 min-w-0 border-0 p-0">
+                  <Segmented
+                    label={t("cloud.provider")}
+                    value={sel.provider}
+                    onChange={pickProvider}
+                    options={choices.providers.map((p) => ({
+                      value: p,
+                      label: providerName(p),
+                    }))}
+                  />
+                </fieldset>
+                <label htmlFor={modelId} className="sr-only">
+                  {t("cloud.sheet.model")}
+                </label>
+                <select
+                  id={modelId}
+                  value={sel.model}
+                  onChange={(e) => setPicked({ ...sel, model: e.target.value })}
+                  disabled={sending || models.length === 0}
+                  className="text-body h-7 rounded-ctl border border-ctl bg-surface px-2 text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  {models.map((m) => (
+                    <option key={m.model} value={m.model}>
+                      {m.model}
+                    </option>
+                  ))}
+                </select>
               </span>
-              {/* A disabled fieldset disables every button inside it. */}
-              <fieldset disabled={sending} className="m-0 min-w-0 border-0 p-0">
-                <Segmented
-                  label={t("cloud.provider")}
-                  value={sel.provider}
-                  onChange={pickProvider}
-                  options={choices.providers.map((p) => ({
-                    value: p,
-                    label: providerName(p),
-                  }))}
-                />
-              </fieldset>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <label htmlFor={modelId} className="text-label text-muted">
-                {t("cloud.sheet.model")}
-              </label>
-              <select
-                id={modelId}
-                value={sel.model}
-                onChange={(e) => setPicked({ ...sel, model: e.target.value })}
-                disabled={sending || models.length === 0}
-                className="text-body h-8 min-w-48 rounded-ctl border border-ctl bg-surface px-2 text-ink focus-visible:outline-2 focus-visible:outline-accent"
-              >
-                {models.map((m) => (
-                  <option key={m.model} value={m.model}>
-                    {m.model}
-                  </option>
-                ))}
-              </select>
-            </div>
+            </Fact>
+            {preview && <Fact label={t("cloud.sheet.destination")}>{preview.host}</Fact>}
 
             {!hasKey ? (
               <p
@@ -303,7 +288,27 @@ function CloudSheetBody({
               </p>
             ) : (
               <>
-                <div className="flex items-center gap-2.5">
+                {preview && (
+                  <>
+                    <Fact label={t("cloud.whatLeaves", { context: platform })}>
+                      {excerpt
+                        ? t("cloud.textOnly", {
+                            words: fmt.format(excerptWords),
+                            tokens: fmt.format(preview.tokensEst),
+                          })
+                        : t("cloud.sheet.tokens", { tokens: fmt.format(preview.tokensEst) })}
+                    </Fact>
+                    <Fact label={t("cloud.audio")}>
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-accent">
+                        <Icon name="lock" size={16} />
+                        {t("cloud.audioNever")}
+                      </span>
+                    </Fact>
+                    {cost && <Fact label={t("cloud.cost")}>{`≈ ${cost}`}</Fact>}
+                  </>
+                )}
+
+                <label htmlFor={redactId} className="flex cursor-pointer items-center gap-2.5 text-[14px] font-medium">
                   <input
                     id={redactId}
                     type="checkbox"
@@ -313,42 +318,16 @@ function CloudSheetBody({
                     onChange={(e) =>
                       setPicked({ ...sel, redact: e.target.checked })
                     }
-                    className="size-4 accent-[var(--accent)]"
+                    className="peer sr-only"
                   />
-                  <label htmlFor={redactId} className="text-body">
-                    {t("cloud.sheet.redact")}
-                  </label>
-                </div>
-
-                <section
-                  aria-label={t("cloud.whatLeaves", { context: platform })}
-                  className="flex flex-col gap-1.5 rounded-row bg-surface2 p-3 text-[13px]"
-                >
-                  <h3 className="text-label m-0 text-muted">
-                    {t("cloud.whatLeaves", { context: platform })}
-                  </h3>
-                  <Row icon="lock">{t("cloud.sheet.textOnly")}</Row>
-                  {preview && (
-                    <>
-                      <Row icon="cloud">
-                        {t("cloud.sheet.host", { host: preview.host })}
-                      </Row>
-                      <Row icon="description" tone="muted">
-                        {t("cloud.sheet.tokens", {
-                          tokens: fmt.format(preview.tokensEst),
-                        })}
-                      </Row>
-                      {cost && (
-                        <Row icon="info" tone="muted">
-                          {t("cloud.sheet.cost", { cost })}
-                        </Row>
-                      )}
-                      <Row icon="schedule" tone="muted">
-                        {preview.retentionNote}
-                      </Row>
-                    </>
-                  )}
-                </section>
+                  <span
+                    aria-hidden
+                    className="relative h-5 w-9 shrink-0 rounded-full bg-ctl transition-colors peer-checked:bg-accent peer-checked:[&>i]:translate-x-[18px] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent peer-disabled:opacity-50"
+                  >
+                    <i className="absolute top-0.5 left-0 block size-4 translate-x-0.5 rounded-full bg-surface transition-transform" />
+                  </span>
+                  {t("cloud.sheet.redact")}
+                </label>
 
                 {state.status === "loading" && (
                   <p
@@ -392,45 +371,63 @@ function CloudSheetBody({
                       </ul>
                     )}
                     <div className="flex min-w-0 flex-col gap-1">
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <span
-                          id={`${redactId}-p`}
-                          className="text-label text-muted"
-                        >
-                          {t("cloud.sheet.payload")}
-                        </span>
-                        <span className="text-small text-faint">
-                          {preview.redactions.length > 0
-                            ? new Intl.ListFormat(i18n.language).format(
-                                preview.redactions.map((r) =>
-                                  t("cloud.sheet.redacted", {
-                                    count: r.count,
-                                    kind: kindLabel(t, r.kind),
-                                  }),
-                                ),
-                              )
-                            : sel.redact
-                              ? t("cloud.sheet.noRedactions")
-                              : t("cloud.redactionOff")}
-                        </span>
-                      </div>
-                      {/* Text node only: the transcript inside is never parsed (RT-6). */}
-                      <pre
-                        tabIndex={0}
-                        aria-labelledby={`${redactId}-p`}
-                        data-testid="cloud-payload"
-                        data-sha={preview.sha256}
-                        className="text-mono m-0 max-h-52 overflow-auto rounded-ctl border border-line bg-sunk p-2.5 whitespace-pre-wrap break-words text-ink focus-visible:outline-2 focus-visible:outline-accent"
-                      >
-                        {preview.payload}
-                      </pre>
+                      {excerpt && (
+                        <>
+                      <span className="text-[12.5px] font-semibold text-warn">{t("cloud.after")}</span>
+                          {/* Text node only: the transcript inside is never parsed as markup (RT-6). */}
+                          <p
+                            data-testid="cloud-excerpt"
+                            className="text-mono m-0 max-h-28 overflow-hidden rounded-row bg-warn-soft p-3 text-[12.5px] leading-normal whitespace-pre-wrap break-words text-ink"
+                          >
+                            {excerpt.split("\n").slice(0, 4).join("\n")}
+                          </p>
+                        </>
+                      )}
                       <span className="text-small text-faint">
-                        {t("cloud.sheet.sha")}{" "}
-                        <span className="text-mono">
-                          {preview.sha256.slice(0, 12)}
-                        </span>
+                        {preview.redactions.length > 0
+                          ? new Intl.ListFormat(i18n.language).format(
+                              preview.redactions.map((r) =>
+                                t("cloud.sheet.redacted", {
+                                  count: r.count,
+                                  kind: kindLabel(t, r.kind),
+                                }),
+                              ),
+                            )
+                          : sel.redact
+                            ? t("cloud.sheet.noRedactions")
+                            : t("cloud.sheet.redactionOff")}
                       </span>
                     </div>
+                    {/* The whole request, byte for byte: what Send sends. Closed until asked for. */}
+                    <details
+                      open={showExact || !excerpt}
+                      onToggle={(e) => setShowExact(e.currentTarget.open)}
+                      className="min-w-0 text-[13px]"
+                    >
+                      <summary className="flex cursor-pointer items-center gap-1 text-muted select-none hover:text-ink">
+                        <Icon name={showExact || !excerpt ? "expand_less" : "expand_more"} size={16} />
+                        {t("cloud.sheet.showExact")}
+                      </summary>
+                      <div className="mt-1.5 flex min-w-0 flex-col gap-1">
+                        <span id={`${redactId}-p`} className="text-label text-muted">
+                          {t("cloud.sheet.payload")} · {t("cloud.sheet.host", { host: preview.host })}
+                        </span>
+                        <pre
+                          tabIndex={0}
+                          aria-labelledby={`${redactId}-p`}
+                          data-testid="cloud-payload"
+                          data-sha={preview.sha256}
+                          className="text-mono m-0 max-h-52 overflow-auto rounded-ctl border border-line bg-sunk p-2.5 whitespace-pre-wrap break-words text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                        >
+                          {preview.payload}
+                        </pre>
+                        <span className="text-small text-faint">
+                          {t("cloud.sheet.sha")}{" "}
+                          <span className="text-mono">{preview.sha256.slice(0, 12)}</span>
+                        </span>
+                      </div>
+                    </details>
+                    <p className="text-small m-0 text-muted">{preview.retentionNote}</p>
                   </>
                 )}
               </>

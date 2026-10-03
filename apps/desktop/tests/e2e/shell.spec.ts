@@ -25,8 +25,8 @@ test("navigates with the sidebar and the command palette", async ({ page }) => {
 
 test("records a meeting on the mocked core", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: "New recording" }).click();
-  await expect(page.getByRole("heading", { name: "Live" })).toBeVisible();
+  await page.getByRole("button", { name: "Record call", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Meeting title" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Live" })).toBeVisible();
   await expect(page.getByRole("main").locator("ol > li").first()).toContainText("Okay, bắt đầu nhé.", { timeout: 5000 });
   // A new speaker turn is announced once ("Me: …"), not every line.

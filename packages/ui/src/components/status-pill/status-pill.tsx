@@ -3,11 +3,13 @@
 // tint only reinforces. "Failed" becomes a button when a retry is possible.
 import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "../../icons/icon";
+import { usePlatform } from "../../platform/platform";
 import { cn } from "../../utils/cn";
 
 export type StatusKind =
   | "ready"
   | "processing"
+  | "finalPass"
   | "needsNames"
   | "cloudEnhanced"
   | "failed"
@@ -17,7 +19,7 @@ export type StatusKind =
 
 export type StatusPillProps = {
   status: StatusKind;
-  /** 0..100, shown for "processing" when known. */
+  /** 0..100, shown for "processing" and "finalPass" when known. */
   percent?: number;
   /** Makes "failed" an actionable "Failed · Retry" button. */
   onRetry?: () => void;
@@ -27,21 +29,27 @@ export type StatusPillProps = {
 const TONE: Record<StatusKind, { icon: IconName; cls: string }> = {
   ready: { icon: "check_circle", cls: "bg-transparent text-muted" },
   processing: { icon: "progress_activity", cls: "bg-accent-soft text-accent" },
+  finalPass: { icon: "sync", cls: "bg-accent-soft text-accent" },
   needsNames: { icon: "record_voice_over", cls: "bg-warn-soft text-warn" },
-  cloudEnhanced: { icon: "cloud_done", cls: "bg-warn-soft text-warn" },
+  cloudEnhanced: { icon: "cloud", cls: "bg-warn-soft text-warn" },
   failed: { icon: "error", cls: "bg-sunk text-ink" },
   waitingSync: { icon: "sync", cls: "bg-sunk text-muted" },
-  waitingModels: { icon: "download", cls: "bg-sunk text-muted" },
+  waitingModels: { icon: "hourglass_top", cls: "bg-sunk text-muted" },
   recording: { icon: "radio_button_checked", cls: "bg-rec-soft text-rec-ink" },
 };
 
 export function StatusPill({ status, percent, onRetry, className }: StatusPillProps) {
   const { t } = useTranslation();
+  const platform = usePlatform();
   const { icon, cls } = TONE[status];
   const label = {
     ready: () => t("library.status.ready"),
     processing: () =>
       percent === undefined ? t("library.status.processing") : t("library.status.processingPercent", { percent: Math.round(percent) }),
+    finalPass: () =>
+      percent === undefined
+        ? t("library.status.finalPassLocal", { context: platform })
+        : t("library.status.finalPassLocalPercent", { context: platform, percent: Math.round(percent) }),
     needsNames: () => t("library.status.needsSpeakerNames"),
     cloudEnhanced: () => t("library.status.cloudEnhanced"),
     failed: () => t("library.status.failedRetry"),

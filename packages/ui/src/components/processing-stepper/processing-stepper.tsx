@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// The four final-pass stages as an ordered list. The running step carries a
-// progressbar; a failed step offers retry. Status is icon + text, not color.
+// The final-pass stages as an ordered list. A running step with known progress
+// carries a progressbar; a failed step offers retry. Status is icon + text, not
+// color (the state word is read aloud; sighted users get the icon shape).
 import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "../../icons/icon";
 import { Button } from "../../primitives/button";
@@ -14,7 +15,7 @@ export type ProcessingStep = {
   status: StepStatus;
   /** 0..100 for the running step; omitted = indeterminate. */
   progress?: number;
-  /** Seconds left for the running step. */
+  /** Seconds left (shown while running or pending). */
   estimateSeconds?: number;
 };
 
@@ -24,12 +25,12 @@ export type ProcessingStepperProps = {
   className?: string;
 };
 
-const LOOK: Record<StepStatus, { icon: IconName; icon_cls: string; text: string }> = {
-  done: { icon: "check_circle", icon_cls: "text-accent", text: "text-accent" },
-  skipped: { icon: "do_not_disturb_on", icon_cls: "text-muted", text: "text-muted" },
-  running: { icon: "progress_activity", icon_cls: "text-ink", text: "text-muted" },
-  pending: { icon: "radio_button_unchecked", icon_cls: "text-muted", text: "text-muted" },
-  failed: { icon: "error", icon_cls: "text-rec-ink", text: "text-rec-ink" },
+const LOOK: Record<StepStatus, { icon: IconName; icon_cls: string; label: string }> = {
+  done: { icon: "check_circle", icon_cls: "text-accent", label: "text-ink" },
+  skipped: { icon: "do_not_disturb_on", icon_cls: "text-faint", label: "text-faint" },
+  running: { icon: "progress_activity", icon_cls: "text-ink", label: "text-ink" },
+  pending: { icon: "radio_button_unchecked", icon_cls: "text-faint", label: "text-faint" },
+  failed: { icon: "error", icon_cls: "text-rec-ink", label: "text-rec-ink" },
 };
 
 export function ProcessingStepper({ steps, onRetry, className }: ProcessingStepperProps) {
@@ -45,30 +46,27 @@ export function ProcessingStepper({ steps, onRetry, className }: ProcessingStepp
           <li key={s.id} data-status={s.status} aria-current={running ? "step" : undefined} className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2.5 text-[13px]">
               <Icon name={look.icon} size={18} className={cn(look.icon_cls, running && "animate-spin motion-reduce:animate-none")} />
-              <span className={cn("flex-1", s.status === "pending" || s.status === "skipped" ? "text-muted" : "text-ink")}>{label}</span>
-              <span className={cn("text-[11.5px] font-semibold", look.text)}>
-                {t(`processing.state.${s.status}`)}
-                {running && s.estimateSeconds !== undefined && ` · ${estimate(s.estimateSeconds)}`}
-              </span>
+              <span className={cn("flex-1", look.label)}>{label}</span>
+              <span className="sr-only">{t(`processing.state.${s.status}`)}</span>
+              {(s.status === "running" || s.status === "pending") && s.estimateSeconds !== undefined && (
+                <span className="text-mono text-[11.5px] text-faint">{estimate(s.estimateSeconds)}</span>
+              )}
               {s.status === "failed" && onRetry && (
                 <Button size="sm" onClick={() => onRetry(s.id)} aria-label={`${t("common.tryAgain")}: ${label}`}>
                   {t("common.tryAgain")}
                 </Button>
               )}
             </div>
-            {running && (
+            {running && s.progress !== undefined && (
               <div
                 role="progressbar"
                 aria-label={label}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-valuenow={s.progress === undefined ? undefined : Math.round(s.progress)}
-                className="ml-[28px] h-1.5 overflow-hidden rounded-[3px] bg-sunk"
+                aria-valuenow={Math.round(s.progress)}
+                className="ml-[28px] h-1 overflow-hidden rounded-[2px] bg-sunk"
               >
-                <i
-                  className={cn("block h-full bg-accent", s.progress === undefined && "w-1/3 animate-pulse motion-reduce:animate-none")}
-                  style={s.progress === undefined ? undefined : { width: `${s.progress}%` }}
-                />
+                <i className="block h-full bg-accent transition-[width] motion-reduce:transition-none" style={{ width: `${s.progress}%` }} />
               </div>
             )}
           </li>

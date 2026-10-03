@@ -9,11 +9,11 @@ export function ProcessingPanel({ title, processing, waitingForModels }: { title
   const { t } = useTranslation();
   const platform = usePlatform();
   return (
-    <section aria-label={t("processing.title", { context: platform })} className="mb-5 flex flex-col gap-2.5 rounded-panel bg-surface2 px-[18px] py-4">
+    <section aria-label={t("processing.title", { context: platform })} className="mb-[18px] flex max-w-[740px] flex-col gap-2.5 rounded-panel bg-surface2 px-[18px] py-4">
       <div>
         <h2 className="text-heading m-0 text-[14px]">{t("processing.title", { context: platform })}</h2>
         {title && <p className="text-small m-0 mt-0.5 truncate text-ink">{title}</p>}
-        <p className="text-small m-0 mt-0.5 text-muted">{t("processing.subtitle")}</p>
+        <p className="m-0 text-[12.5px] text-muted">{t("processing.subtitle")}</p>
       </div>
       {waitingForModels ? <StatusPill status="waitingModels" className="self-start" /> : <ProcessingStepper steps={stepsFor(processing)} />}
     </section>

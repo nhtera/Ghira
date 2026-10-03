@@ -34,7 +34,7 @@ export function SettingsScreen() {
   return (
     <div className="grid h-full min-h-0 grid-cols-[208px_minmax(0,1fr)]">
       <nav aria-label={t("settings.title")} className="flex flex-col gap-0.5 border-r border-line px-2.5 py-5">
-        <h1 data-tauri-drag-region className="text-title m-0 mb-3 ml-2.5">
+        <h1 data-tauri-drag-region className="m-0 mb-3 ml-2.5 text-[22px] font-semibold">
           {t("settings.title")}
         </h1>
         {SETTINGS_SECTIONS.map((s) => (
@@ -42,27 +42,26 @@ export function SettingsScreen() {
             key={s}
             to="/settings/$section"
             params={{ section: s }}
-            className={cn(
-              "flex h-[34px] items-center gap-2.5 rounded-ctl px-2.5 text-[13.5px] text-muted no-underline",
-              "hover:bg-sunk data-[status=active]:bg-surface2 data-[status=active]:font-semibold data-[status=active]:text-ink",
-            )}
+            className={cn("flex h-[34px] items-center gap-2.5 rounded-ctl px-2.5 text-[13.5px] text-muted no-underline", "hover:bg-sunk data-[status=active]:bg-surface2 data-[status=active]:font-semibold data-[status=active]:text-ink")}
           >
             <Icon name={ICONS[s]} size={18} />
             {t(`settings.sections.${s}`)}
           </Link>
         ))}
       </nav>
-      <div className="min-h-0 overflow-auto px-8 py-6">
-        <h2 className="text-heading m-0 mb-4">{t(`settings.sections.${section}`)}</h2>
-        {section === "general" && <GeneralSection />}
-        {section === "languages" && <LanguagesSection />}
-        {section === "recording" && <RecordingSection />}
-        {section === "ai" && <AiSection />}
-        {section === "models" && <ModelsSection />}
-        {section === "privacy" && <PrivacySection />}
-        {section === "sync" && <SyncSection />}
-        {section === "shortcuts" && <ShortcutsSection />}
-        {section === "about" && <AboutSection />}
+      <div className="min-h-0 overflow-auto px-9 pt-6 pb-12">
+        <div className="max-w-[700px]">
+          <h2 className="m-0 mb-1 text-[18px] font-semibold">{t(`settings.sections.${section}`)}</h2>
+          {section === "general" && <GeneralSection />}
+          {section === "languages" && <LanguagesSection />}
+          {section === "recording" && <RecordingSection />}
+          {section === "ai" && <AiSection />}
+          {section === "models" && <ModelsSection />}
+          {section === "privacy" && <PrivacySection />}
+          {section === "sync" && <SyncSection />}
+          {section === "shortcuts" && <ShortcutsSection />}
+          {section === "about" && <AboutSection />}
+        </div>
       </div>
     </div>
   );

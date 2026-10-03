@@ -104,7 +104,8 @@
       "headphonesAecOff": "Headphones · echo cancellation off",
       "speakersAecOn": "Speakers · echo cancel on",
       "aecOnToast": "Sound is on the speakers. Echo cancellation is on, so nobody is counted twice.",
-      "aecOffToast": "Headphones connected. Echo cancellation is off."
+      "aecOffToast": "Headphones connected. Echo cancellation is off.",
+      "speakers": "Speakers"
     },
     "layout": "Layout",
     "more": "More actions",
@@ -209,7 +210,8 @@
     "soundsLikeName": "Sounds like {{name}}",
     "dismissSuggestionFor": "Dismiss the suggestion for {{speaker}}",
     "inOthers_one": "{{count}} voice in Others",
-    "inOthers_other": "{{count}} voices in Others"
+    "inOthers_other": "{{count}} voices in Others",
+    "close": "Close"
   },
   "common": {
     "accept": "Accept",
@@ -369,7 +371,11 @@
       "recording": "Recording",
       "failedRetry": "Failed · Retry",
       "processingPercent": "Processing {{percent}}%",
-      "waitingSync": "Waiting for sync"
+      "waitingSync": "Waiting for sync",
+      "finalPassLocal_mac": "Final pass on this Mac",
+      "finalPassLocal_win": "Final pass on this PC",
+      "finalPassLocalPercent_mac": "Final pass on this Mac · {{percent}}%",
+      "finalPassLocalPercent_win": "Final pass on this PC · {{percent}}%"
     },
     "empty": {
       "title": "Record your first meeting",
@@ -422,7 +428,13 @@
       "month": "Last 30 days"
     },
     "undoTooLate": "Too late to undo: the meeting is already deleted",
-    "sourceImport": "{{source}} import"
+    "sourceImport": "{{source}} import",
+    "duration": {
+      "minutes": "{{minutes}} min",
+      "hours": "{{hours}} h",
+      "hoursMinutes": "{{hours}} h {{minutes}} min"
+    },
+    "recordGroup": "Start a recording"
   },
   "tray": {
     "detected": {
@@ -499,7 +511,10 @@
         "card": "Card numbers",
         "account": "Account numbers",
         "term": "Terms"
-      }
+      },
+      "showExact": "Show exact data",
+      "destination": "Sent to",
+      "redactionOff": "Names and personal data will be sent as written."
     }
   },
   "onboarding": {
@@ -629,7 +644,7 @@
     "done": {
       "title": "You’re ready for your next call",
       "body": "When Zoom, Meet or Teams starts, {{app}} asks if you want to record. You can also start any time:",
-      "openLibrary": "Open my meetings"
+      "openLibrary": "Open {{app}}"
     },
     "progress": "Setup steps",
     "stepOf": "Step {{step}} of {{total}}",
@@ -738,7 +753,8 @@
         "applies": "Applies from the next recording.",
         "lightTier_mac": "This Mac uses Fast mode (8 GB memory).",
         "lightTier_win": "This PC uses Fast mode (8 GB memory)."
-      }
+      },
+      "copyFor": "Copy {{label}}"
     },
     "ai": {
       "local": {
@@ -791,7 +807,8 @@
       },
       "redactDefault": "Hide names and personal data by default",
       "redactDefaultHint": "Names, emails and phone numbers are replaced before sending, then restored here.",
-      "alwaysPreview": "{{app}} always shows the exact request before anything is sent."
+      "alwaysPreview": "{{app}} always shows the exact request before anything is sent.",
+      "perMeeting": "Per meeting"
     },
     "models": {
       "presetTitle": "Speed and quality",
@@ -833,7 +850,8 @@
       "damaged": "This model failed its check. Download it again.",
       "redownload": "Download again",
       "redownloadFor": "Download {{name}} again",
-      "licenseUrl": "License {{license}}: {{url}}"
+      "licenseUrl": "License {{license}}: {{url}}",
+      "presetRam": "{{ram}} RAM"
     },
     "privacy": {
       "encrypt": "Encrypt meetings on this computer",
@@ -1279,7 +1297,9 @@
       "title": "Not discussed in these meetings",
       "body_one": "{{app}} found nothing about this in {{count}} meeting. Your note “{{note}}” in {{meeting}} has no match in the transcript either.",
       "body_other": "{{app}} found nothing about this in {{count}} meetings. Your note “{{note}}” in {{meeting}} has no match in the transcript either.",
-      "search": "Search transcripts for “{{query}}”"
+      "search": "Search transcripts for “{{query}}”",
+      "found_one": "{{app}} found nothing about this in {{count}} meeting.",
+      "found_other": "{{app}} found nothing about this in {{count}} meetings."
     },
     "newQuestion": "New question",
     "audioDeleted_one": "Audio deleted after {{count}} day. The transcript line is kept.",
@@ -1455,7 +1475,8 @@
     "hint": "↑↓ move · ↵ open · esc close",
     "darkTheme": "Switch to dark theme",
     "lightTheme": "Switch to light theme",
-    "stopRecording": "Stop recording"
+    "stopRecording": "Stop recording",
+    "esc": "esc"
   },
   "app": {
     "tagline": "Private meeting notes, on your device."
@@ -1514,7 +1535,8 @@
       "body": "Notes and transcript appear here when you stop.",
       "open": "Open Live"
     },
-    "templateButton": "Template: {{name}}"
+    "templateButton": "Template: {{name}}",
+    "regenerateWith": "Template: {{template}}. Notes language: {{language}}."
   },
   "audio": {
     "label": "Audio player",

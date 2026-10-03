@@ -81,11 +81,11 @@ describe("onboarding voice step", () => {
 
   it("releases the mic when the step is left mid-read, and Skip is always there", async () => {
     const { unmount } = show();
-    expect(screen.getByRole("button", { name: "Skip" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Skip for now" })).toBeTruthy();
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(start());
     await screen.findByRole("button", { name: "Stop and save" });
-    expect(screen.getByRole("button", { name: "Skip" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Skip for now" })).toBeTruthy();
     unmount();
     expect(commands.enrollVoiceCancel).toHaveBeenCalledOnce();
     expect(commands.enrollVoiceFinish).not.toHaveBeenCalled();
@@ -119,7 +119,7 @@ describe("onboarding voice step", () => {
     if (!props.voiceDownloading) expect(screen.queryByText(/still downloading/)).toBeNull();
     fireEvent.click(screen.getByRole("checkbox"));
     expect(start().disabled).toBe(true);
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Skip" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Skip for now" })));
     expect(nav.next).toHaveBeenCalled();
     expect(commands.enrollVoiceStart).not.toHaveBeenCalled();
   });

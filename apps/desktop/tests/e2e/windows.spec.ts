@@ -28,7 +28,7 @@ test("popover: Record starts a call; the card then shows the recording", async (
   await expect(page.getByRole("button", { name: "Record call" })).toBeVisible();
 });
 
-test("popover: the first Tab stop is Record, then the mode menu, then the meetings", async ({ page }) => {
+test("popover: the first Tab stop is Record call, then Record room, then the meetings", async ({ page }) => {
   await open(page, "/popover");
   const record = page.getByRole("button", { name: "Record call" });
   await expect(record).toBeVisible();
@@ -37,7 +37,7 @@ test("popover: the first Tab stop is Record, then the mode menu, then the meetin
   await page.keyboard.press("Tab");
   await expect(record).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("button", { name: "Choose recording mode" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Record room" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("region", { name: "Recent" }).getByRole("button").first()).toBeFocused();
 });

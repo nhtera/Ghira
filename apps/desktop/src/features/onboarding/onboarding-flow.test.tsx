@@ -120,11 +120,11 @@ describe("flow", () => {
     await waitFor(() => expect(screen.getByRole("progressbar", { name: "Download speech models" })).toBeTruthy());
     await go("Continue"); // models
     await go("Continue"); // permissions
-    await go("Skip"); // test
+    await go("Skip for now"); // test
     await go("Set up later"); // recovery
     seen.push(current());
     expect(seen.map((x) => x?.replace(/^\d/, ""))).toEqual(["Welcome", "Languages", "Speech models", "Permissions", "Test recording", "Recovery key", "Done"]);
-    await user.click(screen.getByRole("button", { name: "Open my meetings" }));
+    await user.click(screen.getByRole("button", { name: "Open Ghira" }));
     expect(onFinish).toHaveBeenCalledOnce();
   });
 

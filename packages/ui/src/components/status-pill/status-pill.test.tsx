@@ -7,6 +7,7 @@ import { StatusPill, type StatusKind } from "./status-pill";
 const LABELS: Record<StatusKind, string> = {
   ready: "Ready",
   processing: "Processing 62%",
+  finalPass: "Final pass on this Mac · 62%",
   needsNames: "Needs speaker names",
   cloudEnhanced: "Cloud-enhanced",
   failed: "Failed · Retry",

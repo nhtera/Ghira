@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { Button, Icon, usePlatform, useToast } from "@ghi/ui";
 import type { ErrorKind } from "../../bindings";
 import { ipc } from "../../ipc";
-import { SystemBanner } from "./system-banner";
+import { BANNER_ACTION, SystemBanner } from "./system-banner";
 
 export type CoreError = { key: string; kind: ErrorKind; message: string; meeting: string | null };
 const SHOWN: ErrorKind[] = ["capture", "storage", "permission"];
@@ -88,7 +88,7 @@ export function CoreErrorBanners() {
             icon="warning"
             onDismiss={() => dismiss(e.key)}
             actions={
-              <Button size="sm" variant="primary" onClick={() => void openAudioSettings()}>
+              <Button size="sm" variant="ghost" className={BANNER_ACTION} onClick={() => void openAudioSettings()}>
                 {t(`common.openSystemSettings_${context}`)}
               </Button>
             }
@@ -100,7 +100,7 @@ export function CoreErrorBanners() {
             {t("system.storageWrite")} {e.message}
           </SystemBanner>
         ) : (
-          <SystemBanner key={e.key} id="capture" tone="rec" icon="mic_off" onDismiss={() => dismiss(e.key)}>
+          <SystemBanner key={e.key} id="capture" assertive icon="mic_off" onDismiss={() => dismiss(e.key)}>
             {isMicTaken(e.message) ? t("system.micTaken") : e.message}
           </SystemBanner>
         ),

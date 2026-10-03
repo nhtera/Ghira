@@ -96,8 +96,8 @@ describe("Ask across meetings", () => {
     expect(card.textContent).toContain("pricing");
     fireEvent.click(within(card).getByRole("button"));
     expect(navigate).toHaveBeenCalledWith({ to: "/meetings", search: { q: "pricing" } });
-    // Nothing was read, so no "answered on this Mac" footer.
-    expect(screen.queryByText(/Answered on this/)).toBeNull();
+    // The design keeps the footer: what was searched, and where.
+    expect(screen.getByText(/Answered on this/)).toBeTruthy();
   });
 
   it("a refusal code is a neutral note, other errors an alert", async () => {
@@ -191,6 +191,20 @@ describe("Ask across meetings", () => {
     commands.listMeetings.mockImplementation(() => ok([]));
     renderLive(<AskScreenBody />);
     expect(await screen.findByText("Ask works once you have a few meetings")).toBeTruthy();
+  });
+
+  it("scope pills are radios: arrow keys move the choice, the menu button names the chosen range", async () => {
+    renderLive(<AskScreenBody />);
+    await screen.findByText(/Searching 3 meetings/);
+    const all = screen.getByRole("radio", { name: "All meetings" });
+    expect(all.getAttribute("aria-checked")).toBe("true");
+    fireEvent.keyDown(all.parentElement!, { key: "ArrowRight" });
+    const person = await screen.findByRole("radio", { name: "A person" });
+    expect(person.getAttribute("aria-checked")).toBe("true");
+    fireEvent.keyDown(person.parentElement!, { key: "ArrowRight" });
+    expect(screen.getByRole("radio", { name: "Date range" }).getAttribute("aria-checked")).toBe("true");
+    // The menu button shows the chosen value as its name.
+    expect(screen.getByRole("button", { name: /Last 30 days/ })).toBeTruthy();
   });
 
   it("A person: the picker offers people from meetings and sends their gid in the scope", async () => {

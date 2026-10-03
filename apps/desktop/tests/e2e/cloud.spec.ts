@@ -25,12 +25,18 @@ test("the preview shows the exact payload and re-previews when redaction changes
   await addKey(page);
   await page.getByRole("button", { name: "Improve with cloud…" }).click();
   const sheet = page.getByRole("dialog");
+  // The exact request is one click away, closed until asked for.
+  await sheet.getByText("Show exact data").click();
   const payload = sheet.getByTestId("cloud-payload");
   await expect(payload).toContainText("messages");
   await expect(sheet.getByText("Sent to api.openai.com")).toBeVisible();
-  await expect(sheet.getByText("Text only. Audio never leaves this device.")).toBeVisible();
+  await expect(sheet.getByText("Audio never leaves this device")).toBeVisible();
   const sha = await payload.getAttribute("data-sha");
-  await sheet.getByRole("switch", { name: "Hide names and personal data" }).click();
+  // The switch is a visually hidden checkbox; people click its label.
+  const hide = sheet.getByRole("switch", { name: "Hide names and personal data" });
+  await expect(hide).toBeChecked();
+  await sheet.getByText("Hide names and personal data", { exact: true }).click();
+  await expect(hide).not.toBeChecked();
   await expect(payload).not.toHaveAttribute("data-sha", sha!);
 });
 
@@ -39,7 +45,7 @@ test("sending improves the notes: toast, amber cloud chip", async ({ page }) => 
   await addKey(page);
   await page.getByRole("button", { name: "Improve with cloud…" }).click();
   const sheet = page.getByRole("dialog");
-  await expect(sheet.getByTestId("cloud-payload")).toBeVisible();
+  await expect(sheet.getByTestId("cloud-excerpt")).toBeVisible();
   await sheet.getByRole("button", { name: "Send and improve" }).click();
   await expect(sheet).toHaveCount(0);
   await expect(page.getByText(/Notes improved/).first()).toBeVisible();
@@ -51,7 +57,7 @@ test("a failed send says the notes are written on this device instead", async ({
   await addKey(page);
   await page.getByRole("button", { name: "Improve with cloud…" }).click();
   const sheet = page.getByRole("dialog");
-  await expect(sheet.getByTestId("cloud-payload")).toBeVisible();
+  await expect(sheet.getByTestId("cloud-excerpt")).toBeVisible();
   await sheet.getByRole("button", { name: "Send and improve" }).click();
   await expect(sheet.getByText("Writing them on this device instead.")).toBeVisible();
   await expect(sheet.getByRole("button", { name: "Send and improve" })).toHaveCount(0);
@@ -60,7 +66,7 @@ test("a failed send says the notes are written on this device instead", async ({
 test("Never send to cloud turns the sheet into an explanation", async ({ page }) => {
   await open(page);
   await addKey(page);
-  await page.getByRole("button", { name: "Share" }).click();
+  await page.getByRole("button", { name: "Export", exact: true }).click();
   await page.getByRole("menuitem", { name: "Never send to cloud" }).click();
   await page.getByRole("button", { name: "Improve with cloud…" }).click();
   const sheet = page.getByRole("dialog");

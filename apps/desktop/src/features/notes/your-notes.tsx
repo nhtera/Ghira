@@ -32,7 +32,7 @@ export function YourNotes({ notes }: { notes: UserNote[] }) {
         const tag =
           block.kind in TAG_ICON ? (block.kind as keyof typeof TAG_ICON) : null;
         return (
-          <div key={block.gid} className="flex flex-col gap-2">
+          <div key={block.gid} className="grid gap-[3px] border-b border-line pt-2 pb-2.5">
             {tag && (
               <span className="inline-flex items-center gap-1 self-start rounded-full bg-sunk px-2 py-0.5 text-[11.5px] font-semibold text-muted">
                 <Icon name={TAG_ICON[tag]} size={13} />
@@ -50,7 +50,7 @@ export function YourNotes({ notes }: { notes: UserNote[] }) {
               }}
             />
             {enhanced && (
-              <div className="ml-4 border-l-2 border-line2 pl-3">
+              <div>
                 {enhanced.text ? (
                   <BlockRow block={enhanced} label={t("notes.enhancedLabel")} />
                 ) : (

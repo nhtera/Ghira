@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { APP_NAME } from "@ghi/i18n";
-import { Icon, cn, usePlatform } from "@ghi/ui";
+import { Icon, cn } from "@ghi/ui";
 import { DoneStep } from "./done-step";
 import type { MeetingLanguage } from "../../bindings";
 import { LanguagesStep } from "./languages-step";
@@ -38,7 +38,6 @@ const INTERACTIVE = "button, a, input, textarea, select, [role=radio], [role=che
 
 export function OnboardingFlow({ step, onStep, onFinish, voiceEnabled, strictOffline, language, onLanguage, testSeconds }: OnboardingFlowProps) {
   const { t } = useTranslation();
-  const context = usePlatform();
   const dl = useModelDownload();
   // "Your voice" runs only when the voice model is installed or being downloaded right now;
   // otherwise it is skipped silently and the user records later from People or Settings.
@@ -96,8 +95,8 @@ export function OnboardingFlow({ step, onStep, onFinish, voiceEnabled, strictOff
   }, [step]);
 
   return (
-    <div className="grid h-screen print:hidden min-h-0 grid-cols-[232px_minmax(0,1fr)] bg-surface">
-      <aside className="flex min-h-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface2 px-5 py-7">
+    <div className="grid h-screen print:hidden min-h-0 grid-cols-[264px_minmax(0,1fr)] bg-surface">
+      <aside className="flex min-h-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface2 px-[22px] py-7">
         <div data-tauri-drag-region className="mb-5 flex items-center gap-2.5">
           <span aria-hidden className="grid size-8 place-items-center rounded-lg bg-accent font-serif text-[20px] font-semibold text-on-accent">
             {APP_NAME.charAt(0).toLowerCase()}
@@ -115,7 +114,7 @@ export function OnboardingFlow({ step, onStep, onFinish, voiceEnabled, strictOff
                     aria-hidden
                     className={cn(
                       "grid size-[22px] flex-none place-items-center rounded-full border-[1.5px] text-[11px] font-bold",
-                      current ? "border-accent bg-accent text-on-accent" : done ? "border-accent bg-accent-soft text-accent" : "border-line2",
+                      current ? "border-accent text-accent" : done ? "border-accent bg-accent text-on-accent" : "border-line2 text-accent",
                     )}
                   >
                     {done ? <Icon name="check" size={14} /> : i + 1}
@@ -129,13 +128,13 @@ export function OnboardingFlow({ step, onStep, onFinish, voiceEnabled, strictOff
         <div className="flex-1" />
         <div className="flex gap-2 text-[12px] text-muted">
           <Icon name="lock" size={16} className="flex-none text-accent" />
-          {t(`live.localLine_${context}`)}
+          {t("privacy.local")}
         </div>
       </aside>
 
       <main ref={content} className="min-h-0 overflow-y-auto">
         <div data-tauri-drag-region className="h-7" />
-        <div key={step} className="px-12 pt-8 pb-16 xl:px-[72px] xl:pt-12">
+        <div key={step} className="px-12 pt-9 pb-24 xl:px-[72px]">
           <p className="sr-only">{t("onboarding.stepOf", { step: index + 1, total: steps.length })}</p>
           {step === "welcome" && <WelcomeStep nav={nav} />}
           {step === "languages" && <LanguagesStep nav={nav} initial={language} onSave={onLanguage} />}

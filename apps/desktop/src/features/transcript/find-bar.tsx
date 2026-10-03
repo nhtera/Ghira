@@ -21,7 +21,7 @@ export const FindBar = forwardRef<HTMLInputElement, Props>(function FindBar({ qu
   const { t } = useTranslation();
   const has = query.trim().length > 0;
   return (
-    <div role="search" className="flex h-9 items-center gap-1 rounded-ctl border border-ctl bg-surface px-2 focus-within:border-accent">
+    <div role="search" className="flex h-9 max-w-[360px] items-center gap-1 rounded-ctl border border-ctl bg-surface px-3 focus-within:border-accent">
       <Icon name="search" size={16} className="shrink-0 text-muted" />
       <input
         ref={ref}
@@ -42,17 +42,20 @@ export const FindBar = forwardRef<HTMLInputElement, Props>(function FindBar({ qu
         }}
         className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-muted"
       />
+      {/* The steppers appear with the first search: an empty box is just a box. */}
       {has && (
-        <span role="status" className="shrink-0 text-[12px] text-muted tabular-nums">
-          {count ? t("transcript.findCount", { current: current + 1, total: count }) : t("transcript.noMatches")}
-        </span>
+        <>
+          <span role="status" className="shrink-0 text-[12px] text-muted tabular-nums">
+            {count ? t("transcript.findCount", { current: current + 1, total: count }) : t("transcript.noMatches")}
+          </span>
+          <button type="button" disabled={!count} onClick={() => onStep(-1)} aria-label={t("transcript.findPrev")} className={stepBtn}>
+            <Icon name="expand_less" size={18} />
+          </button>
+          <button type="button" disabled={!count} onClick={() => onStep(1)} aria-label={t("transcript.findNext")} className={stepBtn}>
+            <Icon name="expand_more" size={18} />
+          </button>
+        </>
       )}
-      <button type="button" disabled={!count} onClick={() => onStep(-1)} aria-label={t("transcript.findPrev")} className={stepBtn}>
-        <Icon name="expand_less" size={18} />
-      </button>
-      <button type="button" disabled={!count} onClick={() => onStep(1)} aria-label={t("transcript.findNext")} className={stepBtn}>
-        <Icon name="expand_more" size={18} />
-      </button>
     </div>
   );
 });

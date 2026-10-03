@@ -5,9 +5,15 @@
 import { formatDate, APP_NAME, type Locale } from "@ghi/i18n";
 import { useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Dialog } from "@ghi/ui";
+import { Avatar, Button, Dialog, Icon, cn, type IconName } from "@ghi/ui";
 
 type Answer = "yes" | "notYet";
+
+const POINTS: Array<{ key: "biometric" | "local" | "deletable"; icon: IconName }> = [
+  { key: "biometric", icon: "fingerprint" },
+  { key: "local", icon: "lock" },
+  { key: "deletable", icon: "delete" },
+];
 
 export type ConsentDialogProps = {
   open: boolean;
@@ -44,7 +50,13 @@ function Body({ name, locale, onConfirm, onCancel }: { name: string; locale: Loc
       open
       onOpenChange={() => {}}
       dismissible={false}
-      title={t("consent.title", { name })}
+      width={540}
+      title={
+        <span className="flex items-center gap-3">
+          <Avatar kind="person" name={name} colorSlot={4} size="xl" />
+          {t("consent.title", { name })}
+        </span>
+      }
       description={t("consent.lead", { app: APP_NAME, name })}
       footer={
         <>
@@ -56,21 +68,31 @@ function Body({ name, locale, onConfirm, onCancel }: { name: string; locale: Loc
       }
     >
       <div onKeyDown={onKeyDown} className="flex flex-col gap-3">
-        <ul className="text-body m-0 flex list-disc flex-col gap-1.5 pl-5">
-          <li>{t("consent.points.biometric")}</li>
-          <li>{t("consent.points.local")}</li>
-          <li>{t("consent.points.deletable", { name })}</li>
+        <ul className="m-0 flex list-none flex-col gap-2.5 rounded-row bg-surface2 px-4 py-3.5 text-[13.5px] leading-normal">
+          {POINTS.map((p) => (
+            <li key={p.key} className="flex gap-2.5">
+              <Icon name={p.icon} size={19} className="flex-none text-accent" />
+              {t(`consent.points.${p.key}`, { name })}
+            </li>
+          ))}
         </ul>
         <fieldset className="m-0 flex flex-col gap-1.5 border-0 p-0">
-          <legend className="text-body mb-1 p-0 font-semibold">{t("consent.ask", { name })}</legend>
+          <legend className="mb-1 p-0 text-[13.5px] font-semibold">{t("consent.ask", { name })}</legend>
           {options.map((o) => (
-            <label key={o.value} className="text-body flex cursor-pointer items-start gap-2 rounded-ctl border border-line px-3 py-2 has-[:checked]:border-accent has-[:checked]:bg-accent-soft">
-              <input type="radio" name="consent-answer" value={o.value} checked={answer === o.value} onChange={() => setAnswer(o.value)} className="mt-1" />
+            <label
+              key={o.value}
+              className={cn(
+                "flex min-h-11 cursor-pointer items-center gap-2.5 rounded-row border-[1.5px] px-3 py-2 text-[13.5px] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent",
+                answer === o.value ? "border-accent bg-accent-soft" : "border-ctl bg-surface hover:bg-surface2",
+              )}
+            >
+              <input type="radio" name="consent-answer" value={o.value} checked={answer === o.value} onChange={() => setAnswer(o.value)} className="sr-only" />
+              <Icon name={answer === o.value ? "radio_button_checked" : "radio_button_unchecked"} size={20} className={answer === o.value ? "text-accent" : "text-muted"} />
               <span>{o.label}</span>
             </label>
           ))}
         </fieldset>
-        <p role="status" className="text-small m-0 text-muted">
+        <p role="status" className="m-0 min-h-4 text-[12px] text-muted">
           {answer === null ? t("consent.pick") : answer === "yes" ? t("consent.record", { app: APP_NAME, name, date: formatDate(openedAt, locale) }) : ""}
         </p>
       </div>

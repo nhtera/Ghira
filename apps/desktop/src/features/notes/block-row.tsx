@@ -100,7 +100,10 @@ export function BlockRow({
           ))}
         </span>
       )}
-      <Provenance kind={kind} />
+      {/* The legend above the notes says what the two colors mean; edited and unmatched blocks still say it themselves. */}
+      <span className={cn((kind === "ai" || kind === "user") && "sr-only")}>
+        <Provenance kind={kind} />
+      </span>
     </div>
   );
 }

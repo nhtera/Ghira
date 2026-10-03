@@ -5,11 +5,12 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { APP_NAME, formatClock, formatDate, type Locale } from "@ghi/i18n";
+import { APP_NAME, formatClock } from "@ghi/i18n";
 import { useQueryClient } from "@tanstack/react-query";
 import { Avatar, Button, ConfirmArea, Icon, InlineConfirm, Menu, useToast } from "@ghi/ui";
 import type { PersonRow, VoiceSample } from "../../bindings";
 import { ipc } from "../../ipc";
+import { useWhen } from "../meeting/use-when";
 import { EnrollDialog } from "./enroll-dialog";
 import { errorText } from "./error-text";
 import { personName } from "./person-label";
@@ -38,14 +39,16 @@ function Samples({ samples, name }: { samples: VoiceSample[]; name: string }) {
           const on = playing?.key === key;
           return (
             <li key={key} className="flex items-center gap-2.5 border-t border-line px-2.5 py-2 first:border-t-0">
-              <Button
-                size="sm"
-                icon={on ? "stop" : "play_arrow"}
+              <button
+                type="button"
                 aria-label={on ? t("people.stopSample") : t("speakers.playSample")}
                 onClick={() => (on ? setPlaying(null) : void play(s, key))}
-              />
+                className="grid size-[30px] flex-none place-items-center rounded-full bg-accent-soft text-accent hover:bg-accent hover:text-on-accent"
+              >
+                <Icon name={on ? "stop" : "play_arrow"} size={18} />
+              </button>
               <span className="min-w-0 flex-1 truncate text-[13px]">{s.meetingTitle}</span>
-              {s.t0Ms != null && <span className="text-mono text-muted">{formatClock(s.t0Ms)}</span>}
+              {s.t0Ms != null && <span className="text-mono text-faint">{formatClock(s.t0Ms)}</span>}
             </li>
           );
         })}
@@ -56,10 +59,10 @@ function Samples({ samples, name }: { samples: VoiceSample[]; name: string }) {
 }
 
 export function PersonDetailView({ gid, people, thirdParty, onSelect }: { gid: string; people: PersonRow[]; thirdParty: boolean; onSelect: (gid: string | null) => void }) {
-  const { t, i18n } = useTranslation();
-  const locale: Locale = i18n.language === "vi" ? "vi" : "en";
+  const { t } = useTranslation();
   const { show } = useToast();
   const navigate = useNavigate();
+  const when = useWhen();
   const client = useQueryClient();
   const invalidate = useInvalidatePeople();
   const detail = usePersonDetail(gid);
@@ -109,15 +112,12 @@ export function PersonDetailView({ gid, people, thirdParty, onSelect }: { gid: s
   const mergeBlocked = hasProfile(person) || mergeTargets.some(hasProfile);
 
   return (
-    <div className="flex max-w-[680px] flex-col gap-6">
+    <div className="flex max-w-[680px] flex-col gap-[26px]">
       <div className="flex items-center gap-3.5">
         <Avatar kind={person.isMe ? "me" : "person"} name={name} colorSlot={person.colorSlot} size="xl" className="size-14 text-[20px]" />
         <div className="min-w-0 flex-1">
           <h2 className="text-title m-0 truncate">{name}</h2>
-          <p className="text-small m-0 text-muted">
-            {t("people.meetingsCount", { count: person.meetings })}
-            {person.lastMetMs != null && ` · ${t("people.lastMet", { date: formatDate(person.lastMetMs, locale) })}`}
-          </p>
+          <p className="m-0 text-[13px] text-muted">{t("people.meetingsCount", { count: person.meetings })}</p>
         </div>
         {!person.isMe && mergeTargets.length > 0 && (
           <Menu
@@ -132,7 +132,7 @@ export function PersonDetailView({ gid, people, thirdParty, onSelect }: { gid: s
         )}
       </div>
       {!person.isMe && (
-        <div className="-mt-4 flex flex-col gap-1.5">
+        <div className="-mt-5 flex flex-col gap-1.5">
           <p className="text-small m-0 text-muted">{t("people.merge.hint")}</p>
           {mergeBlocked && <p className="text-small m-0 text-muted">{t("people.merge.blocked")}</p>}
           {mergeInto && (
@@ -199,7 +199,7 @@ export function PersonDetailView({ gid, people, thirdParty, onSelect }: { gid: s
           <button key={m.gid} type="button" onClick={() => openMeeting(m.gid)} className="grid h-10 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-seg px-2 text-left hover:bg-surface2">
             <Icon name="graphic_eq" size={18} className="text-muted" />
             <span className="truncate text-[13.5px] font-medium">{m.title}</span>
-            {m.startedAt != null && <span className="text-small text-faint">{formatDate(m.startedAt, locale)}</span>}
+            {m.startedAt != null && <span className="text-small text-faint">{when(m.startedAt)}</span>}
           </button>
         ))}
       </section>

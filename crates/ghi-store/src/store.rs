@@ -1028,6 +1028,40 @@ impl Store {
         Ok(out)
     }
 
+    /// The first TL;DR note body of each of `meeting_gids` that has one, in
+    /// one query: only those blocks are decrypted (the library's summary line).
+    pub fn first_tldrs(&self, meeting_gids: &[String]) -> Result<HashMap<String, String>> {
+        let conn = self.conn();
+        let want =
+            serde_json::to_string(meeting_gids).map_err(|e| StoreError::Invalid(e.to_string()))?;
+        let mut stmt = conn.prepare_cached(
+            "SELECT m.id, m.gid, b.gid, b.body_ct
+             FROM notes_blocks b JOIN meetings m ON m.id = b.meeting_id
+             WHERE b.kind = 'tldr' AND m.gid IN (SELECT value FROM json_each(?1))
+               AND b.id = (SELECT MIN(id) FROM notes_blocks
+                           WHERE meeting_id = b.meeting_id AND kind = 'tldr')",
+        )?;
+        let rows = stmt
+            .query_map([want], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Vec<u8>>(3)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut out = HashMap::new();
+        for (id, meeting, gid, ct) in rows {
+            let dek = self.dek(&conn, id)?;
+            out.insert(
+                meeting,
+                open_text(&dek, &ct, &row_aad("notes_blocks", "body_ct", &gid))?,
+            );
+        }
+        Ok(out)
+    }
+
     // ------------------------------------------------------------ tracks
 
     /// Registers a track and creates its audio bundle at

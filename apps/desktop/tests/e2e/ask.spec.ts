@@ -6,7 +6,9 @@ const open = async (page: Page) => {
   await page.goto("/?platform=win#/meetings");
   await page.getByRole("button", { name: /Client call — Acme onboarding/ }).click();
   await expect(page).toHaveURL(/#\/meetings\/sample-\d+\/notes/);
-  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  // Ask lives in the Export menu of the meeting toolbar.
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Ask", exact: true }).click();
   return page.getByRole("complementary", { name: "Ask this meeting" });
 };
 

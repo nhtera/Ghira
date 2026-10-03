@@ -8,6 +8,7 @@ import { AskToggle } from "./toggle";
 import {
   eventTitle,
   isMeetingLike,
+  joinAppName,
   useUpcoming,
   whenLabel,
 } from "./use-calendar";
@@ -19,27 +20,21 @@ export function NextEvent() {
   const now = useNow(true);
   const event = data?.find(isMeetingLike);
   if (!event) return null;
+  const app = joinAppName(event.joinApp);
   return (
-    <section aria-label={t("tray.next")} className="flex flex-col gap-1.5">
-      <h2 className="text-small m-0 px-1.5 font-semibold text-muted">
-        {t("tray.next")}
-      </h2>
-      <div className="flex flex-col gap-1.5 rounded-seg bg-accent-soft px-2.5 py-2">
-        <p className="m-0 flex min-w-0 items-center gap-2 text-[13px]">
-          <Icon
-            name="event_upcoming"
-            size={16}
-            className="flex-none text-accent"
-          />
-          <b className="min-w-0 flex-1 truncate font-semibold">
-            {eventTitle(t, event.title)}
-          </b>
-          <span className="text-small flex-none text-muted">
-            {whenLabel(event, now, t, locale)}
-          </span>
-        </p>
-        <AskToggle event={event} />
+    <section aria-label={t("tray.next")} className="flex items-center gap-2.5 border-b border-line px-1.5 py-2">
+      <h2 className="sr-only">{t("tray.next")}</h2>
+      <Icon name="event_upcoming" size={18} className="flex-none text-muted" />
+      <div className="min-w-0 flex-1">
+        <div className="text-[11.5px] text-faint">
+          {t("tray.next")}
+          {t("common.metaSep")}
+          <span>{whenLabel(event, now, t, locale)}</span>
+          {app && `${t("common.metaSep")}${app}`}
+        </div>
+        <div className="truncate text-[13px] font-medium">{eventTitle(t, event.title)}</div>
       </div>
+      <AskToggle event={event} compact />
     </section>
   );
 }

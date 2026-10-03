@@ -26,6 +26,7 @@ const row = (gid: string, over: Partial<MeetingRow> = {}): MeetingRow => ({
   folder: null,
   tags: [],
   sourceApp: null,
+  summary: null,
   ...over,
 });
 
@@ -57,8 +58,10 @@ describe("rowStatus", () => {
     expect(rowStatus(row("a", { status: "failed" }), undefined, false).status).toBe("failed");
     expect(rowStatus(row("a", { status: "recording" }), undefined, false).status).toBe("recording");
     const job = { kind: "final_pass", progress: 0.4, waitingForModels: false };
-    expect(rowStatus(row("a", { status: "processing", job }), undefined, false)).toEqual({ status: "processing", percent: 40 });
-    expect(rowStatus(row("a", { status: "processing", job }), 0.75, false).percent).toBe(75);
+    expect(rowStatus(row("a", { status: "processing", job }), undefined, false)).toEqual({ status: "finalPass", percent: 40 });
+    // The in-place stepper drives it: plain processing, its progress wins.
+    expect(rowStatus(row("a", { status: "processing", job }), 0.75, false)).toEqual({ status: "processing", percent: 75 });
+    expect(rowStatus(row("a", { status: "processing", job: { ...job, kind: "notes_final" } }), undefined, false).status).toBe("processing");
   });
   it("an import being converted is in progress, not ready", () => {
     expect(rowStatus(row("a", { status: "importing", durationMs: 0 }), undefined, false).status).toBe("processing");
@@ -98,9 +101,10 @@ describe("LibraryList", () => {
     );
     expect(screen.getByRole("heading", { name: "Today" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Yesterday" })).toBeTruthy();
-    expect(screen.getByText("Processing 62%")).toBeTruthy();
+    expect(screen.getByText("Final pass on this Mac · 62%")).toBeTruthy();
     expect(screen.getByText("Waiting for models")).toBeTruthy();
-    expect(screen.getAllByText(/2:05/).length).toBe(3);
+    // Only the finished meeting shows its length.
+    expect(screen.getAllByText("2 min").length).toBe(1);
   });
 
   it("asks before deleting", () => {

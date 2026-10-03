@@ -29,6 +29,23 @@ export type ModelRowProps = {
   className?: string;
 };
 
+/** Purpose, size, memory, languages, status: the header row uses the same columns. */
+const MODEL_GRID = "sm:grid-cols-[minmax(0,1fr)_64px_72px_96px_minmax(150px,auto)]";
+
+/** The column titles above a list of rows. */
+export function ModelRowHeader({ className }: { className?: string }) {
+  const { t } = useTranslation();
+  return (
+    <div className={cn("hidden grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2.5 bg-surface2 px-3 py-2 text-[11.5px] font-semibold text-faint sm:grid", MODEL_GRID, className)}>
+      <span>{t("settings.models.columns.purpose")}</span>
+      <span>{t("settings.models.columns.size")}</span>
+      <span>{t("settings.models.columns.memory")}</span>
+      <span>{t("settings.models.columns.languages")}</span>
+      <span>{t("settings.models.columns.status")}</span>
+    </div>
+  );
+}
+
 type ModelAction = "download" | "pause" | "resume" | "update" | "remove";
 
 const LOOK: Record<ModelStatus, { icon: IconName; cls: string }> = {
@@ -62,36 +79,23 @@ export function ModelRow(p: ModelRowProps) {
     incompatible: () => String(t("settings.models.status.incompatible", { ram: p.needsMemory ?? "" })),
   }[p.status]();
   const look = LOOK[p.status];
-  const meta = [
-    p.memory && `${t("settings.models.columns.memory")} ${p.memory}`,
-    p.languages,
-    p.license && t("settings.models.license", { license: p.license }),
-  ].filter(Boolean);
+  const meta = [p.name, p.license && t("settings.models.license", { license: p.license })].filter(Boolean);
 
   return (
-    <div
-      data-status={p.status}
-      className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 bg-surface px-3 py-2.5 text-[12.5px]", "sm:grid-cols-[minmax(0,1fr)_64px_150px_auto]", p.className)}
-    >
+    <div data-status={p.status} className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1.5 bg-surface px-3 py-[9px] text-[12.5px]", MODEL_GRID, p.className)}>
       <span className="min-w-0">
         <span className="block font-medium text-ink">{p.purpose}</span>
-        <span className="block text-[11.5px] text-faint">{[p.name, ...meta].join(" · ")}</span>
-      </span>
-      <span className="text-mono text-right text-[11.5px] text-ink sm:text-left">{p.size}</span>
-      <span className="col-span-2 sm:col-span-1">
+        <span className="block text-[11.5px] text-faint">{meta.join(" · ")}</span>
+        {(p.memory || p.languages) && <span className="block text-[11.5px] text-faint sm:hidden">{[p.memory && `${t("settings.models.columns.memory")} ${p.memory}`, p.languages].filter(Boolean).join(" · ")}</span>}
         {(p.status === "downloading" || p.status === "paused") && (
-          <span
-            role="progressbar"
-            aria-label={p.name}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={percent}
-            className="block h-1.5 overflow-hidden rounded-[3px] bg-sunk"
-          >
+          <span role="progressbar" aria-label={p.name} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="mt-1.5 block h-1.5 overflow-hidden rounded-[3px] bg-sunk">
             <i className={cn("block h-full", p.status === "paused" ? "bg-faint" : "bg-accent")} style={{ width: `${percent}%` }} />
           </span>
         )}
       </span>
+      <span className="text-mono text-right text-[11.5px] text-ink sm:text-left">{p.size}</span>
+      <span className="hidden text-mono text-[11.5px] sm:block">{p.memory}</span>
+      <span className="hidden text-[12px] text-muted sm:block">{p.languages}</span>
       <span className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1">
         <span className={cn("inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11.5px] font-semibold whitespace-nowrap", look.cls)}>
           <Icon name={look.icon} size={14} />

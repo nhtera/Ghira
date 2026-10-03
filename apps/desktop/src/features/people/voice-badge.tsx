@@ -13,6 +13,9 @@ export function voiceText(v: PersonVoice, t: TFunction, locale: Locale): string 
   return t("people.voiceProfile.none");
 }
 
+/** Day and month only, the list has no room for the year. */
+const shortDate = (ms: number, l: Locale) => new Date(ms).toLocaleDateString(l === "vi" ? "vi-VN" : "en-GB", { day: "2-digit", month: "2-digit" });
+
 export function VoiceBadge({ voice, compact }: { voice: PersonVoice; compact?: boolean }) {
   const { t, i18n } = useTranslation();
   const locale: Locale = i18n.language === "vi" ? "vi" : "en";
@@ -29,7 +32,14 @@ export function VoiceBadge({ voice, compact }: { voice: PersonVoice; compact?: b
       )}
     >
       <Icon name={has ? "verified_user" : "remove_moderator"} size={compact ? 15 : 14} />
-      <span className={compact ? "sr-only" : undefined}>{text}</span>
+      {compact ? (
+        <>
+          <span className="sr-only">{text}</span>
+          {voice.kind === "agreed" && voice.atMs != null && <span aria-hidden className="text-[11.5px] font-normal">{shortDate(voice.atMs, locale)}</span>}
+        </>
+      ) : (
+        <span>{text}</span>
+      )}
     </span>
   );
 }

@@ -41,7 +41,7 @@ export function VoiceStep({ nav, voiceDownloading = false, strictOffline = false
             )
           )
         }
-        primary={phase === "done" ? t("common.continue") : t("common.skip")}
+        primary={phase === "done" ? t("common.continue") : t("onboarding.skipForNow")}
         primaryProps={{ variant: phase === "done" ? "primary" : "ghost", className: phase === "done" ? undefined : "text-muted", disabled: phase === "saving" }}
         enter={phase === "done"}
       />

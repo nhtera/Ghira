@@ -137,7 +137,8 @@ describe("NotesTab", () => {
     expect(
       screen.getAllByText("Written by Ghira from the transcript").length,
     ).toBeGreaterThan(0);
-    expect(screen.getAllByText("You wrote")).toHaveLength(1);
+    // The legend, and the one block of yours (its own label is for screen readers).
+    expect(screen.getAllByText("You wrote")).toHaveLength(2);
     expect(
       screen.getByText("Not found in the transcript. Kept as your note."),
     ).toBeTruthy();
@@ -178,17 +179,16 @@ describe("NotesTab", () => {
   });
 
   it("My notes only hides what the app wrote and keeps edited text", async () => {
-    const user = userEvent.setup();
-    await open();
-    await user.click(screen.getByRole("button", { name: "My notes only" }));
+    renderLive(<NotesTab meeting="m1" detail={detail} onlyMine />);
+    await screen.findByDisplayValue("pricing tiers?");
     expect(
       screen.queryByDisplayValue("The beta ships on the 12th."),
     ).toBeNull();
     expect(screen.queryByText("Send the invoice")).toBeNull();
-    expect(screen.getByDisplayValue("pricing tiers?")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "My notes only" }));
+    cleanup();
+    renderLive(<NotesTab meeting="m1" detail={detail} />);
     expect(
-      screen.getByDisplayValue("The beta ships on the 12th."),
+      await screen.findByDisplayValue("The beta ships on the 12th."),
     ).toBeTruthy();
   });
 

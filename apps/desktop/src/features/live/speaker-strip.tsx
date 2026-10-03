@@ -3,7 +3,7 @@
 // (a row per speaker over the meeting time, growing live).
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon, Popover, SpeakerChip, SpeakerLanes } from "@ghi/ui";
+import { Avatar, Icon, Popover, SpeakerChip, SpeakerLanes } from "@ghi/ui";
 import type { SpeakerInfo } from "../../bindings";
 import { useShallow } from "zustand/react/shallow";
 import { elapsedMs, useLive } from "../../state/live";
@@ -25,9 +25,9 @@ function OthersChip({ voices, labelOf }: { voices: SpeakerInfo[]; labelOf: (s: S
     <Popover
       label={summary}
       trigger={
-        <button type="button" data-testid="others-chip" aria-label={summary} className="inline-flex h-8 items-center gap-1 rounded-full border-[1.5px] border-line bg-surface px-2.5 text-[13px] font-medium text-ink">
-          <Icon name="groups" size={16} className="text-muted" />
-          {t("common.plusCount", { count: voices.length })}
+        <button type="button" data-testid="others-chip" aria-label={summary} className="inline-flex h-8 items-center gap-1.5 rounded-full border-[1.5px] border-line bg-surface pr-3 pl-[3px] text-[13px] font-medium text-ink">
+          <Avatar kind="group" count={voices.length} size="md" />
+          {t("detail.others")}
         </button>
       }
     >
@@ -43,7 +43,7 @@ function OthersChip({ voices, labelOf }: { voices: SpeakerInfo[]; labelOf: (s: S
   );
 }
 
-export function SpeakerStrip({ defaultOpen = true }: { defaultOpen?: boolean }) {
+export function SpeakerStrip({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const { t } = useTranslation();
   const speakers = useLive((s) => s.speakers);
   const lines = useLive((s) => s.lines);
@@ -57,12 +57,14 @@ export function SpeakerStrip({ defaultOpen = true }: { defaultOpen?: boolean }) 
   // Re-render each second so the lanes grow while recording.
   const now = useNow(recording && open);
   const clock = useLive(useShallow((s) => ({ startedAtMs: s.startedAtMs, pausedAtMs: s.pausedAtMs, pausedTotalMs: s.pausedTotalMs })));
-  if (list.length === 0) return <p className="text-small m-0 text-muted">{t("speakers.empty")}</p>;
   const duration = Math.max(elapsedMs(clock, now), lines.at(-1)?.t1Ms ?? 0);
   return (
-    <div data-testid="speaker-strip" className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <ul aria-label={t("speakers.title")} className="m-0 flex min-w-0 flex-1 list-none flex-wrap gap-1.5 p-0">
+    <div data-testid="speaker-strip" className="flex-none">
+      <div className="flex min-h-[54px] items-end gap-2 px-5 py-2.5">
+        <ul aria-label={t("speakers.title")} className="m-0 flex min-h-8 min-w-0 flex-1 list-none flex-wrap items-center gap-2 p-0">
+          <li aria-hidden="true" className="mr-0.5 text-[12px] font-medium text-faint">
+            {t("speakers.title")}
+          </li>
           {own.map((s) => (
             <li key={s.id}>
               {/* Me and the shared Others lane have nothing to name or merge. */}
@@ -78,15 +80,16 @@ export function SpeakerStrip({ defaultOpen = true }: { defaultOpen?: boolean }) 
               <OthersChip voices={others} labelOf={labelOf} />
             </li>
           )}
+          {list.length === 0 && <li className="text-[13px] text-faint">{t("speakers.empty")}</li>}
         </ul>
-        <button type="button" aria-expanded={open} aria-controls="live-lanes" onClick={() => setOpen((o) => !o)} className="text-small inline-flex h-7 flex-none items-center gap-1 rounded-seg px-2 text-muted hover:bg-sunk">
-          <Icon name="view_timeline" size={15} />
+        <button type="button" aria-expanded={open} aria-controls="live-lanes" onClick={() => setOpen((o) => !o)} className="mb-px inline-flex h-[30px] flex-none items-center gap-1.5 rounded-ctl pr-2 pl-2.5 text-[12.5px] font-medium text-muted hover:bg-sunk">
+          <Icon name="view_timeline" size={17} />
           {t("live.timeline")}
-          <Icon name={open ? "expand_less" : "expand_more"} size={15} />
+          <Icon name={open ? "expand_less" : "expand_more"} size={17} />
         </button>
       </div>
       {open && (
-        <div id="live-lanes">
+        <div id="live-lanes" className="mx-5 mb-2">
           <SpeakerLanes speakers={lanes} segments={segments} durationMs={duration} live={recording} />
         </div>
       )}

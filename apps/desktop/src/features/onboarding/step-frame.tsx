@@ -19,7 +19,7 @@ export function StepFrame({ title, body, serif, children }: { title: ReactNode; 
       <h1 data-onboarding-title tabIndex={-1} className={serif ? "text-display m-0 outline-none" : "text-title m-0 outline-none"}>
         {title}
       </h1>
-      {body && <p className="m-0 text-[14px] leading-relaxed text-muted">{body}</p>}
+      {body && <p className={`m-0 leading-relaxed text-muted ${serif ? "text-[15px]" : "text-[14px]"}`}>{body}</p>}
       {children}
     </div>
   );
@@ -50,22 +50,26 @@ export function StepActions({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2">
-      {start}
-      <Button variant="primary" size="lg" data-onboarding-primary={enter ? "" : undefined} onClick={onPrimary ?? nav.next} {...primaryProps}>
-        {primary ?? t("common.continue")}
-      </Button>
-      {skip && (
-        <Button variant="ghost" size="lg" className="text-muted" onClick={onSkip ?? nav.next}>
-          {skip}
+    <>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {start}
+        <Button variant="primary" size="lg" data-onboarding-primary={enter ? "" : undefined} onClick={onPrimary ?? nav.next} {...primaryProps}>
+          {primary ?? t("common.continue")}
         </Button>
-      )}
+        {skip && (
+          <Button variant="ghost" size="lg" className="text-muted" onClick={onSkip ?? nav.next}>
+            {skip}
+          </Button>
+        )}
+      </div>
       {nav.canGoBack && (
-        <Button variant="ghost" size="lg" className="ml-auto text-muted" icon="chevron_left" onClick={nav.back}>
-          {t("common.back")}
-        </Button>
+        <div>
+          <Button variant="ghost" size="sm" className="-ml-2 text-muted" icon="chevron_left" onClick={nav.back}>
+            {t("common.back")}
+          </Button>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 

@@ -13,12 +13,13 @@ import { Card, Note, Row, Switch, SwitchRow, inputCls, useFail, useSettings } fr
 
 export function PrivacySection() {
   const { t } = useTranslation();
-  const context = usePlatform();
   const { settings, patch } = useSettings();
   return (
-    <div className="flex flex-col gap-4">
-      <Card title={t("settings.privacy.encrypt")}>
-        <Note icon="lock">{t("settings.privacy.encryptBody", { context })}</Note>
+    <div className="flex flex-col">
+      <Card>
+        <Row label={t("settings.privacy.encrypt")} hint={t("settings.privacy.encryptHint")}>
+          <Switch checked onChange={() => {}} label={t("settings.privacy.encrypt")} disabled />
+        </Row>
       </Card>
       <AppLockCard />
       {settings && <Retention days={settings.audioRetentionDays} onApply={(d) => patch({ audioRetentionDays: d })} />}
@@ -27,9 +28,7 @@ export function PrivacySection() {
         <Row label={t("settings.privacy.learnVoices")} hint={t("settings.privacy.thirdPartyOff")}>
           <Switch checked={false} onChange={() => {}} label={t("settings.privacy.learnVoices")} disabled />
         </Row>
-        {settings && (
-          <SwitchRow label={t("settings.privacy.strictOffline")} hint={t("settings.privacy.strictOfflineHint")} checked={settings.strictOffline} onChange={(v) => void patch({ strictOffline: v })} testId="strict-offline" />
-        )}
+        {settings && <SwitchRow label={t("settings.privacy.strictOffline")} hint={t("settings.privacy.strictOfflineHint")} checked={settings.strictOffline} onChange={(v) => void patch({ strictOffline: v })} testId="strict-offline" />}
       </Card>
       <ExportCard />
       <DeleteCard />
@@ -40,10 +39,10 @@ export function PrivacySection() {
 function Retention({ days, onApply }: { days: number; onApply: (d: number) => Promise<unknown> }) {
   const { t } = useTranslation();
   const [asked, setAsked] = useState<number | null>(null);
-  const label = (d: number) => (d === 0 ? t("settings.privacy.keepForever") : t("settings.privacy.days", { count: d }));
+  const label = (d: number) => (d === 0 ? t("settings.privacy.keepOptions.forever") : t("settings.privacy.days", { count: d }));
   return (
-    <Card title={t("settings.privacy.keepAudio")} hint={t("settings.privacy.keepAudioHint")}>
-      <div>
+    <>
+      <Row label={t("settings.privacy.keepAudio")} hint={t("settings.privacy.keepAudioHint")}>
         <Segmented<string>
           label={t("settings.privacy.keepAudio")}
           value={String(days)}
@@ -55,11 +54,14 @@ function Retention({ days, onApply }: { days: number; onApply: (d: number) => Pr
               void onApply(next);
             }
           }}
-          options={RETENTION_DAYS.map((d) => ({ value: String(d), label: label(d) }))}
+          options={[...RETENTION_DAYS.filter((d) => d), 0].map((d) => ({
+            value: String(d),
+            label: label(d),
+          }))}
         />
-      </div>
+      </Row>
       {asked != null && (
-        <div role="region" aria-label={t("settings.privacy.keepAudio")}>
+        <div role="region" aria-label={t("settings.privacy.keepAudio")} className="py-3">
           <RetentionConfirm
             days={asked}
             onConfirm={() => {
@@ -70,7 +72,7 @@ function Retention({ days, onApply }: { days: number; onApply: (d: number) => Pr
           />
         </div>
       )}
-    </Card>
+    </>
   );
 }
 
@@ -102,13 +104,19 @@ function ExportCard() {
     show({
       tone: "success",
       title: t("settings.privacy.exported", { name: r.data }),
-      action: { label: t("export.reveal", { context }), altText: t("export.reveal", { context }), onAction: () => void ipc.commands.revealLastExport() },
+      action: {
+        label: t("export.reveal", { context }),
+        altText: t("export.reveal", { context }),
+        onAction: () => void ipc.commands.revealLastExport(),
+      },
     });
   };
   return (
-    <Card title={t("settings.privacy.exportAll")} hint={t("settings.privacy.exportAllHint")}>
+    <div className="border-b border-line py-3.5">
+      <div className="text-[14px] font-medium">{t("settings.privacy.exportAll")}</div>
+      <div className="text-[12.5px] leading-normal text-muted">{t("settings.privacy.exportAllHint")}</div>
       <form
-        className="flex max-w-sm flex-col gap-2.5"
+        className="mt-3 flex max-w-sm flex-col gap-2.5"
         onSubmit={(e) => {
           e.preventDefault();
           if (!issue) void run();
@@ -140,7 +148,7 @@ function ExportCard() {
           </Button>
         </div>
       </form>
-    </Card>
+    </div>
   );
 }
 
@@ -163,13 +171,11 @@ function DeleteCard() {
     }
   };
   return (
-    <Card danger title={t("settings.privacy.dangerTitle")} hint={t("settings.privacy.dangerBody")}>
+    <Card title={t("settings.privacy.dangerTitle")} hint={t("settings.privacy.dangerBody")}>
       {!open ? (
-        <div>
-          <Button variant="danger" icon="delete_forever" onClick={() => setOpen(true)}>
-            {t("settings.privacy.deleteAll")}
-          </Button>
-        </div>
+        <Button className="border-rec text-rec" onClick={() => setOpen(true)}>
+          {t("settings.privacy.deleteAll")}
+        </Button>
       ) : (
         <form
           className="flex max-w-sm flex-col gap-2"

@@ -10,7 +10,7 @@ import { APP_NAME } from "@ghi/i18n";
 import { lockErrorText } from "../../shell/lock-gate";
 import { ipc } from "../../ipc";
 import { settingsQuery } from "../../shell/root-view";
-import { Card, Note, Row, Switch, inputCls, useFail, useSettings } from "./parts";
+import { Card, Row, Switch, inputCls, useFail, useSettings } from "./parts";
 
 export const LOCK_MINUTES = [1, 5, 15, 60, 0] as const;
 const DEFAULT_MINUTES = 5;
@@ -33,12 +33,12 @@ export function AppLockCard() {
   const lockMinutes = settings.lockAfterMinutes;
 
   return (
-    <Card title={t("settings.privacy.lock", { context, app: APP_NAME })}>
-      <Row label={t("settings.privacy.lock", { context, app: APP_NAME })} id={id}>
+    <Card>
+      <Row label={t("settings.privacy.lock", { context, app: APP_NAME })} hint={`${t("settings.privacy.lockNote")} ${t("settings.privacy.lockEncrypted")}`} id={id}>
         <Switch checked={settings.appLock} onChange={(on) => void apply(on, on && !lockMinutes && !settings.appLock ? DEFAULT_MINUTES : lockMinutes)} labelledBy={id} />
       </Row>
       {settings.appLock && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div data-row className="flex flex-wrap items-center justify-between gap-3 border-b border-line py-3.5">
           <label className="text-body flex items-center gap-3">
             {t("settings.privacy.lockAfter")}
             <select className={inputCls} value={lockMinutes} onChange={(e) => void apply(true, Number(e.target.value))}>
@@ -54,9 +54,6 @@ export function AppLockCard() {
           </Button>
         </div>
       )}
-      <Note icon="lock">
-        {t("settings.privacy.lockNote")} {t("settings.privacy.lockEncrypted")}
-      </Note>
     </Card>
   );
 }

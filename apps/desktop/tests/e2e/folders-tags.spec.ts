@@ -68,7 +68,7 @@ test("tag a meeting from the selection bar, narrow by the tag, and search within
   await expect(rows(page)).toHaveCount(1);
   // A search keeps the tag filter: only that meeting's hits.
   await page.getByRole("searchbox").fill("nhan dien");
-  const groups = page.getByRole("region").filter({ has: page.getByRole("listitem") });
+  const groups = page.getByRole("group").filter({ has: page.locator("mark") });
   await expect(groups.first()).toBeVisible();
   await expect(groups).toHaveCount(1);
 });

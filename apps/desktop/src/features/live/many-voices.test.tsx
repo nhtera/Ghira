@@ -23,8 +23,11 @@ describe("more than eight voices", () => {
     setLive({ state: "recording", meeting: "m", speakers: speakers(11) });
     renderLive(<SpeakerStrip />);
     const chip = screen.getByTestId("others-chip");
-    expect(chip.textContent).toBe("+3");
+    expect(chip.textContent).toBe("+3Others");
     expect(chip.getAttribute("aria-label")).toBe("3 voices in Others");
+    // The timeline is closed until asked for.
+    expect(screen.queryByText("Others · 3")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Timeline/ }));
     expect(screen.getAllByText("Others · 3").length).toBeGreaterThan(0);
     // Eight chips of their own: the nine to eleven are not listed one by one.
     expect(within(screen.getByRole("list", { name: "Speakers" })).queryByText("Speaker 9")).toBeNull();

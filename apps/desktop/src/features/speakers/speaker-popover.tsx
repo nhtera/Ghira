@@ -8,7 +8,7 @@ import { useMemo, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { APP_NAME } from "@ghi/i18n";
-import { Button, Icon, Popover, SpeakerChip, cn, usePlatform } from "@ghi/ui";
+import { Avatar, Button, Icon, Popover, PopoverClose, SpeakerChip, cn, usePlatform } from "@ghi/ui";
 import type { SpeakerInfo } from "../../bindings";
 import { ipc } from "../../ipc";
 import { settingsQuery } from "../../shell/root-view";
@@ -101,6 +101,7 @@ function Content({ speaker, onClose, onNamed }: { speaker: SpeakerInfo; onClose:
   const labelOf = useSpeakerLabel();
   const [view, setView] = useState<View>("main");
   const [saveVoice, setSaveVoice] = useState(false);
+  const [text, setText] = useState("");
   const known = useQuery(knownNamesQuery).data;
   // The people in the calendar invite come first.
   const attendees = useMeetingAttendees(useLive((s) => s.meeting));
@@ -124,31 +125,49 @@ function Content({ speaker, onClose, onNamed }: { speaker: SpeakerInfo; onClose:
       </div>
     );
   }
+  const typed = text.trim();
+  const submit = (name: string) => {
+    if (saveVoice) return onNamed(name, true);
+    void actions.rename(speaker.id, name).then((ok) => ok && onClose());
+  };
   return (
-    <div className="flex w-72 flex-col gap-2.5">
-      <b className="text-body font-semibold">{title}</b>
-      <NameField
-        names={names}
-        label={t("speakers.rename")}
-        placeholder={t("speakers.typeName")}
-        onSubmit={(name) => {
-          if (saveVoice) return onNamed(name, true);
-          void actions.rename(speaker.id, name).then((ok) => ok && onClose());
-        }}
-      />
+    <div className="flex w-[360px] max-w-full flex-col gap-3">
+      <div className="flex items-center gap-2.5">
+        <Avatar kind="person" name={labelOf(speaker)} initial={speakerNumber(speaker) ?? undefined} colorSlot={speaker.colorSlot} size="lg" />
+        <div className="min-w-0 flex-1">
+          <b className="block text-[15px]">{title}</b>
+          <span className="block truncate text-[12px] text-muted">{labelOf(speaker)}</span>
+        </div>
+        <PopoverClose aria-label={t("speakers.close")} className="grid size-7 place-items-center rounded-seg text-faint hover:bg-sunk">
+          <Icon name="close" size={18} />
+        </PopoverClose>
+      </div>
+      <NameField names={names} text={text} onTextChange={setText} label={t("speakers.rename")} placeholder={t("speakers.typeName")} onSubmit={submit} />
       {canSaveVoice && (
-        <div className="flex flex-col gap-1">
-          <label className="text-body flex cursor-pointer items-center gap-2">
-            <input type="checkbox" checked={saveVoice} onChange={(e) => setSaveVoice(e.target.checked)} />
+        <div className="flex flex-col gap-1 border-t border-line pt-2.5">
+          <label className="flex cursor-pointer items-center gap-2 text-[13px] font-semibold">
+            <input type="checkbox" checked={saveVoice} onChange={(e) => setSaveVoice(e.target.checked)} className="size-4 accent-accent" />
             {t("speakers.saveVoice")}
           </label>
-          <p className="text-small m-0 text-muted">{saveVoice ? t("speakers.saveVoiceNext") : t("speakers.saveVoiceHint", { context: platform, app: APP_NAME })}</p>
+          <p className="m-0 pl-6 text-[12px] text-muted">{saveVoice ? t("speakers.saveVoiceNext") : t("speakers.saveVoiceHint", { context: platform, app: APP_NAME })}</p>
         </div>
       )}
-      <div className="-mx-1 border-t border-line pt-1.5">
-        <Row icon="call_merge" onClick={() => setView("merge")}>
+      <div className="flex items-center gap-2">
+        <Button variant="primary" size="lg" disabled={!typed} onClick={() => submit(typed)} className="h-[34px] px-4 font-semibold">
+          {t("common.save")}
+        </Button>
+        <PopoverClose asChild>
+          <Button size="lg" className="h-[34px] px-3 font-medium">
+            {t("common.cancel")}
+          </Button>
+        </PopoverClose>
+        <span className="flex-1" />
+        <Button variant="ghost" size="lg" icon="call_merge" onClick={() => setView("merge")} className="h-[34px] px-2.5 font-medium text-muted">
           {t("speakers.mergeInto")}
-        </Row>
+        </Button>
+      </div>
+      {/* Split and "not a person" are in the app, not in the design: kept, quieter. */}
+      <div className="-mx-1 flex flex-col border-t border-line pt-1.5">
         <Row icon="call_split" onClick={() => setView("split")}>
           {t("speakers.split.action")}
         </Row>
@@ -172,6 +191,7 @@ export function SpeakerPopover({ speaker, chip }: { speaker: SpeakerInfo; chip: 
         open={open}
         onOpenChange={setOpen}
         label={t("speakers.panel")}
+        className="rounded-[14px] p-4"
         trigger={
           <button type="button" className="rounded-full">
             {chip}

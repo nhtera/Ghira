@@ -8,7 +8,7 @@ export const MEETINGS_KEY = ["meetings"] as const;
 const PAGE = 200; // the command allows 500; a small first page paints fast
 const MAX_ROWS = 2000;
 
-/** The library rows (newest first), loaded page by page up to MAX_ROWS; refetched when a meeting's state, job or notes change. */
+/** The library rows (newest first), loaded page by page up to MAX_ROWS; refetched when a meeting's state or notes change or a job starts or ends. */
 export function useMeetings() {
   const client = useQueryClient();
   useEffect(() => {
@@ -16,8 +16,10 @@ export function useMeetings() {
     let gone = false;
     void ipc
       .onCoreEvent((env) => {
-        const type = env.event.type;
-        if (type === "stateChanged" || type === "notesReady" || type === "jobProgress") void client.invalidateQueries({ queryKey: MEETINGS_KEY });
+        const e = env.event;
+        // Progress ticks only move the row's % (the processing store has it); a job starting or finishing changes the row.
+        const edge = e.type === "jobProgress" && e.stage === null && (e.progress == null || e.progress <= 0 || e.progress >= 1);
+        if (e.type === "stateChanged" || e.type === "notesReady" || edge) void client.invalidateQueries({ queryKey: MEETINGS_KEY });
       })
       .then((u) => (gone ? u() : (off = u)));
     return () => {

@@ -6,24 +6,28 @@ import { expect, test, type Page } from "@playwright/test";
 const open = (page: Page, query = "") => page.goto(`/?platform=win${query}#/meetings`);
 const core = (page: Page, event: object) => page.evaluate((e) => (window as unknown as { __ghiMock: { simulateCoreEvent: (e: object) => void } }).__ghiMock.simulateCoreEvent(e), event);
 
-test("a crash-recovered meeting shows a banner that opens it", async ({ page }) => {
+test("a crash-recovered meeting shows a dialog that opens it", async ({ page }) => {
   await open(page, "&recovered=1");
-  const banner = page.locator("[data-banner=recovered]");
-  await expect(banner).toContainText("closed unexpectedly");
-  await expect(banner).toContainText("25:20");
-  await banner.locator("button").first().click();
+  const dialog = page.getByRole("dialog", { name: /closed unexpectedly/ });
+  await expect(dialog).toContainText("saved up to 25:20");
+  await dialog.getByRole("button", { name: "Recover and write notes" }).click();
   await expect(page).toHaveURL(/#\/meetings\/sample-0\/notes/);
   // Told once per launch: it doesn't come back on the next screen.
-  await expect(banner).toHaveCount(0);
+  await expect(dialog).toHaveCount(0);
 });
 
 test("discarding a recovered meeting asks first", async ({ page }) => {
   await open(page, "&recovered=1");
-  const banner = page.locator("[data-banner=recovered]");
-  await expect(banner).toBeVisible();
-  await banner.getByRole("button", { name: "Discard recording" }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Discard recording" }).click();
-  await expect(banner).toHaveCount(0);
+  const dialog = page.getByRole("dialog", { name: /closed unexpectedly/ });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Discard recording" }).click();
+  // The same dialog asks before deleting; Cancel goes back.
+  await expect(dialog.getByRole("alert")).toContainText("This can’t be undone");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Discard recording" }).click();
+  await dialog.getByRole("button", { name: "Discard recording" }).click();
+  await expect(dialog).toHaveCount(0);
 });
 
 test("no banner without a crash", async ({ page }) => {

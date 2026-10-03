@@ -5,20 +5,27 @@ import type { EventView } from "../../bindings";
 import { Switch } from "../settings/parts";
 import { useSetEventAsk } from "./use-calendar";
 
-export function AskToggle({ event }: { event: EventView }) {
+/** `compact`: the switch alone (the label is its tooltip), for the popover row. */
+export function AskToggle({ event, compact = false }: { event: EventView; compact?: boolean }) {
   const { t } = useTranslation();
   const setAsk = useSetEventAsk();
   const label = t("library.askToRecord");
+  if (compact)
+    return (
+      <span title={label}>
+        <Switch checked={event.ask} label={label} onChange={(v) => void setAsk(event.key, v)} />
+      </span>
+    );
   return (
     <span className="flex flex-none items-center gap-2">
-      <span aria-hidden className="text-small text-muted">
-        {label}
-      </span>
       <Switch
         checked={event.ask}
         label={label}
         onChange={(v) => void setAsk(event.key, v)}
       />
+      <span aria-hidden className="text-[12.5px] text-ink">
+        {label}
+      </span>
     </span>
   );
 }

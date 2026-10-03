@@ -8,7 +8,7 @@ import { formatBytes } from "@ghi/i18n";
 import { Button } from "@ghi/ui";
 import { ipc } from "../../ipc";
 import { useModelDownload } from "../onboarding/use-model-download";
-import { SystemBanner } from "./system-banner";
+import { BANNER_ACTION, SystemBanner } from "./system-banner";
 
 export function ModelDamagedBanner() {
   const { t, i18n } = useTranslation();
@@ -38,12 +38,12 @@ export function ModelDamagedBanner() {
   return (
     <SystemBanner
       id="model-damaged"
-      icon="warning"
+      icon="error"
       actions={
         active ? (
           <span className="text-small font-semibold">{t("settings.models.status.downloading", { percent: active.percent })}</span>
         ) : (
-          <Button size="sm" variant="primary" onClick={dl.start}>
+          <Button size="sm" variant="ghost" className={BANNER_ACTION} onClick={dl.start}>
             {t("system.redownload", { size: formatBytes(size, i18n.language) })}
           </Button>
         )

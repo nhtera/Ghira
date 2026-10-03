@@ -138,11 +138,20 @@ function process(id: string) {
 
 // Library: the design's sample rows, plus meetings recorded in this session.
 const STATUS: Record<string, string> = { ready: "ready", cloud: "ready", final: "processing", needs: "ready", failed: "failed" };
+/** The sample's time of day ("08:30"; the weekday rows have none), on a day `ago` days back. */
+function sampleStart(tm: string, ago: number): number {
+  const [h, m] = /^\d\d:\d\d$/.test(tm) ? tm.split(":").map(Number) : [9, 30];
+  const d = new Date(Date.now() - ago * 86_400_000);
+  d.setHours(h!, m!, 0, 0);
+  return d.getTime();
+}
+/** "1 h 34 min" / "28 min" as minutes. */
+const sampleMinutes = (dur: string) => Number(/(\d+) h/.exec(dur)?.[1] ?? 0) * 60 + Number(/(\d+) min/.exec(dur)?.[1] ?? 0) || 30;
 const rows: MeetingRow[] = library.rows.map((r, i) => ({
   gid: `sample-${i}`,
   title: r.ti,
-  startedAt: Date.now() - (r.g + 1) * 86_400_000,
-  durationMs: (parseInt(r.dur) || 30) * 60_000,
+  startedAt: sampleStart(r.tm, r.g + 1),
+  durationMs: sampleMinutes(r.dur) * 60_000,
   source: r.src,
   mode: r.src === "room" ? "room" : "call",
   status: STATUS[r.st] ?? "ready",
@@ -150,11 +159,12 @@ const rows: MeetingRow[] = library.rows.map((r, i) => ({
   cloudUsed: r.st === "cloud",
   consentConfirmed: false,
   template: null,
-  people: r.ppl.filter((p) => p !== "Me").map((name, k) => ({ name, colorSlot: SLOTS[(k + 1) % SLOTS.length]! })),
+  people: r.ppl.filter((p) => p !== "Me" && p !== "?").map((name, k) => ({ name, colorSlot: SLOTS[(k + 1) % SLOTS.length]! })),
   job: r.st === "final" ? { kind: "final_pass", progress: (("pct" in r ? r.pct : 0) ?? 0) / 100, waitingForModels: false } : null,
   folder: null,
   tags: [],
   sourceApp: null,
+  summary: r.sn,
 }));
 const notes = new Map<string, NoteLine[]>();
 // Onboarding is skipped on the mock so the shell opens straight away.
@@ -262,6 +272,7 @@ const commands: Commands = {
       folder: null,
       tags: [],
       sourceApp: null,
+      summary: null,
     });
     emit({ type: "stateChanged", meeting: id, state: "starting" });
     emit({ type: "sessionStarted", meeting: id, mode, language: null, title: "" });

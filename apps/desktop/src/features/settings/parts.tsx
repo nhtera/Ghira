@@ -21,7 +21,10 @@ export function useSettings() {
         queryClient.setQueryData(settingsQuery.queryKey, r.data);
         return r.data;
       }
-      show({ tone: "warning", title: t("system.commandFailed", { message: r.error }) });
+      show({
+        tone: "warning",
+        title: t("system.commandFailed", { message: r.error }),
+      });
       return null;
     },
     [queryClient, show, t],
@@ -36,25 +39,26 @@ export function useFail() {
   return useCallback((message: string) => show({ tone: "warning", title: t("system.commandFailed", { message }) }), [show, t]);
 }
 
+/** A flat group: an optional bold heading + hint, then its rows (no box). */
 export function Card({ title, hint, children, className, danger }: { title?: string; hint?: ReactNode; children?: ReactNode; className?: string; danger?: boolean }) {
   return (
-    <section className={cn("flex max-w-2xl flex-col gap-3 rounded-xl border px-4 py-4", danger ? "border-rec bg-rec-soft" : "border-line bg-surface", className)}>
-      {title && <h3 className="text-body m-0 font-semibold">{title}</h3>}
-      {hint && <p className="text-small m-0 text-muted">{hint}</p>}
-      {children}
+    <section className={cn("flex flex-col", title && "mt-[26px]", danger && "text-rec-ink", className)}>
+      {title && <h3 className="m-0 text-[13px] font-semibold">{title}</h3>}
+      {hint && <p className="m-0 text-[12.5px] text-muted">{hint}</p>}
+      {children && <div className={cn("flex flex-col [&>:not([data-row])]:mt-3 [&>:first-child]:mt-0", title && "mt-2")}>{children}</div>}
     </section>
   );
 }
 
-/** A label + hint on the left, the control on the right. */
+/** A label + hint on the left, the control on the right, a rule below. */
 export function Row({ label, hint, children, id }: { label: string; hint?: ReactNode; children?: ReactNode; id?: string }) {
   return (
-    <div className="flex min-h-9 items-center justify-between gap-6">
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span id={id} className="text-body">
+    <div data-row className="flex items-center gap-4 border-b border-line py-3.5">
+      <div className="min-w-0 flex-1">
+        <div id={id} className="text-[14px] font-medium">
           {label}
-        </span>
-        {hint && <span className="text-small text-muted">{hint}</span>}
+        </div>
+        {hint && <div className="text-[12.5px] leading-normal text-muted">{hint}</div>}
       </div>
       {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}
     </div>
@@ -71,12 +75,9 @@ export function Switch({ checked, onChange, labelledBy, label, disabled }: { che
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-6 w-10 shrink-0 items-center rounded-full border border-line2 transition-colors disabled:opacity-50",
-        checked ? "bg-accent" : "bg-sunk",
-      )}
+      className={cn("relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full border-0 p-0 transition-colors disabled:opacity-55", checked ? "bg-accent" : "bg-line2")}
     >
-      <i className={cn("block size-[18px] rounded-full bg-on-accent shadow transition-transform", checked ? "translate-x-[18px]" : "translate-x-[3px]")} />
+      <i className={cn("absolute top-0.5 left-0 block size-3.5 rounded-full bg-white transition-transform", checked ? "translate-x-4" : "translate-x-0.5")} />
     </button>
   );
 }
@@ -102,5 +103,4 @@ export function Note({ icon = "info", children, tone }: { icon?: IconName; child
   );
 }
 
-export const inputCls =
-  "h-8 min-w-0 rounded-ctl border border-line2 bg-surface px-2.5 text-[13.5px] text-ink placeholder:text-faint focus-visible:outline-2 focus-visible:outline-accent";
+export const inputCls = "h-8 min-w-0 rounded-ctl border border-line2 bg-surface px-2.5 text-[13.5px] text-ink placeholder:text-faint focus-visible:outline-2 focus-visible:outline-accent";

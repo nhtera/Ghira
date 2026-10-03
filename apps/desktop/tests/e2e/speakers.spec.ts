@@ -7,8 +7,8 @@ type Mock = { __ghiMock: { simulateCoreEvent: (e: object) => void } };
 
 async function record(page: Page) {
   await page.goto("/?platform=win#/meetings");
-  await page.getByRole("button", { name: "New recording" }).click();
-  await expect(page.getByRole("heading", { name: "Live" })).toBeVisible();
+  await page.getByRole("button", { name: "Record call", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Meeting title" })).toBeVisible();
   // The scripted call introduces Me, Speaker 2 and Speaker 3.
   await expect(page.getByRole("list", { name: "Speakers" }).getByRole("button", { name: /Speaker 3/ })).toBeVisible({ timeout: 8000 });
 }

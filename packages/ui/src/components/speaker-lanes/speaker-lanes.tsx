@@ -7,8 +7,19 @@ import { formatClock } from "@ghi/i18n";
 import { useState, type KeyboardEvent, type PointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "../../utils/cn";
+import { Avatar } from "../avatar";
 
-export type LaneSpeaker = { id: number; label: string; /** 1..8; 0 is the shared "Others" lane. */ colorSlot: number };
+export type LaneSpeaker = {
+  id: number;
+  label: string;
+  /** 1..8; 0 is the shared "Others" lane. */
+  colorSlot: number;
+  /** Text of the small avatar before the label (a number, "+3"); default: the label's first letter. */
+  initial?: string;
+  isMe?: boolean;
+  /** Others: how many voices share the lane ("+3"). */
+  count?: number;
+};
 export type LaneSegment = { speaker: number; t0Ms: number; t1Ms: number };
 
 export type SpeakerLanesProps = {
@@ -71,11 +82,16 @@ export function SpeakerLanes({ speakers, segments, durationMs, live, onSeek, scr
   const marker = scrubMs ?? hoverMs ?? (focused ? cursorMs : null);
 
   return (
-    <div data-live={live ? "true" : undefined} className={cn("grid grid-cols-[64px_minmax(0,1fr)] items-start gap-2 rounded-row bg-surface2 p-2.5", className)}>
+    <div data-live={live ? "true" : undefined} className={cn("grid grid-cols-[110px_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1.5 rounded-[10px] bg-surface2 px-3 py-2.5", className)}>
       <div className="flex flex-col gap-1.5">
         {speakers.map((s) => (
-          <span key={s.id} className="h-4 truncate text-[11px] leading-4 text-muted">
-            {s.label}
+          <span key={s.id} className="flex h-4 min-w-0 items-center gap-1.5 text-[12px] leading-4 text-muted">
+            {s.colorSlot === 0 ? (
+              <Avatar kind="group" count={s.count ?? 0} size="sm" className="!size-4 !text-[9px]" />
+            ) : (
+              <Avatar kind={s.isMe ? "me" : "person"} name={s.label} initial={s.initial} colorSlot={s.colorSlot} size="sm" className="!size-4 !text-[9px]" />
+            )}
+            <span className="truncate">{s.label}</span>
           </span>
         ))}
       </div>
@@ -134,6 +150,12 @@ export function SpeakerLanes({ speakers, segments, durationMs, live, onSeek, scr
             </span>
           </>
         )}
+      </div>
+      <span aria-hidden="true" />
+      <div aria-hidden="true" className="flex justify-between text-mono text-[10px] text-muted">
+        <span>{formatClock(0)}</span>
+        <span>{formatClock(total / 2)}</span>
+        <span>{formatClock(total)}</span>
       </div>
     </div>
   );

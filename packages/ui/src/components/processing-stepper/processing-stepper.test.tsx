@@ -32,14 +32,15 @@ describe("ProcessingStepper", () => {
     const bar = screen.getByRole("progressbar", { name: "Improving transcript" });
     expect(bar.getAttribute("aria-valuenow")).toBe("45");
     expect(bar.closest("li")?.getAttribute("aria-current")).toBe("step");
-    expect(screen.getByText("Running · ~40 s")).toBeTruthy();
+    expect(screen.getByText("~40 s")).toBeTruthy();
     expect(screen.getAllByRole("progressbar")).toHaveLength(1);
   });
 
-  it("estimates over 90 s are minutes; unknown progress is indeterminate", () => {
-    render(<ProcessingStepper steps={steps([{ status: "running", estimateSeconds: 210 }])} />);
-    expect(screen.getByText("Running · ~4 min")).toBeTruthy();
-    expect(screen.getByRole("progressbar").hasAttribute("aria-valuenow")).toBe(false);
+  it("estimates over 90 s are minutes; unknown progress draws no bar", () => {
+    render(<ProcessingStepper steps={steps([{ status: "running", estimateSeconds: 210 }, { status: "pending", estimateSeconds: 40 }])} />);
+    expect(screen.getByText("~4 min")).toBeTruthy();
+    expect(screen.getByText("~40 s")).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
   it("shows each status as text", () => {

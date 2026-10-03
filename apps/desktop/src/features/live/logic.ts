@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Pure helpers of the live view (kept apart so they test without a DOM).
 import type { LineInfo, SpeakerInfo } from "../../bindings";
+import { speakerNumber } from "../../state/speaker-label";
 import { stackRuns } from "../transcript/logic";
 
 /** Distance (px) from the bottom within which the transcript keeps following the newest line. */
@@ -28,7 +29,7 @@ export const minutesLeft = (bytes: number) => Math.max(0, Math.floor(bytes / 240
 /** "1.5 GB" / "480 MB" with the locale's decimal separator ("1,5 GB" in Vietnamese). */
 export { formatBytes } from "@ghi/i18n";
 
-export type Lane = { id: number; label: string; colorSlot: number };
+export type Lane = { id: number; label: string; colorSlot: number; initial?: string; isMe?: boolean; count?: number };
 export type Segment = { speaker: number; t0Ms: number; t1Ms: number };
 
 /** Turns closer than this (same speaker) are drawn as one segment: thousands of lines stay cheap. */
@@ -56,9 +57,9 @@ export function splitOthers(speakers: readonly SpeakerInfo[]): { own: SpeakerInf
 export function laneModel(speakers: SpeakerInfo[], lines: LineInfo[], labelOf: (s: SpeakerInfo) => string, othersLabel: string): { lanes: Lane[]; segments: Segment[] } {
   const { own, others } = splitOthers(speakers);
   const laneOf = new Map<number, number>(own.map((s) => [s.id, s.id]));
-  const lanes: Lane[] = own.map((s) => ({ id: s.id, label: labelOf(s), colorSlot: s.colorSlot }));
+  const lanes: Lane[] = own.map((s) => ({ id: s.id, label: labelOf(s), colorSlot: s.colorSlot, initial: speakerNumber(s) ?? undefined, isMe: s.isMe }));
   if (others.length > 0) {
-    lanes.push({ id: 0, label: othersLabel, colorSlot: 0 });
+    lanes.push({ id: 0, label: othersLabel, colorSlot: 0, count: others.length });
     for (const s of others) laneOf.set(s.id, 0);
   }
   const segments: Segment[] = [];

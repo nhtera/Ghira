@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useTranslation } from "react-i18next";
 import { Segmented, type ThemePreference } from "@ghi/ui";
-import { APP_NAME, type Locale } from "@ghi/i18n";
+import { type Locale } from "@ghi/i18n";
 import { OrganizeCard } from "../folders/organize-card";
 import { usePrefs } from "../../state/prefs";
-import { Card, Row, SwitchRow, useSettings } from "./parts";
+import { Card, Row } from "./parts";
 
 export function GeneralSection() {
   const { t } = useTranslation();
   const { theme, setTheme, language, setLanguage } = usePrefs();
-  const { settings, patch } = useSettings();
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col">
       <Card>
         <Row label={t("settings.general.appearance")}>
           <Segmented<ThemePreference>
@@ -20,8 +19,8 @@ export function GeneralSection() {
             onChange={setTheme}
             options={[
               { value: "system", label: t("settings.general.themeSystem") },
-              { value: "light", label: t("settings.general.themeLight"), icon: "light_mode" },
-              { value: "dark", label: t("settings.general.themeDark"), icon: "dark_mode" },
+              { value: "light", label: t("settings.general.themeLight") },
+              { value: "dark", label: t("settings.general.themeDark") },
             ]}
           />
         </Row>
@@ -36,14 +35,6 @@ export function GeneralSection() {
             ]}
           />
         </Row>
-        {settings && (
-          <SwitchRow
-            label={t("settings.general.detectMeetings")}
-            hint={t("settings.general.detectMeetingsHint", { app: APP_NAME })}
-            checked={settings.detectMeetings}
-            onChange={(v) => void patch({ detectMeetings: v })}
-          />
-        )}
       </Card>
       <OrganizeCard />
     </div>

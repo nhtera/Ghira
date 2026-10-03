@@ -15,7 +15,9 @@ export function rowStatus(row: MeetingRow, liveProgress: number | undefined, nee
   if (row.job?.waitingForModels) return { status: "waitingModels" };
   if (inProgress(row.status) || row.job) {
     const p = liveProgress ?? row.job?.progress ?? undefined;
-    return { status: "processing", percent: p == null ? undefined : p * 100 };
+    const percent = p == null ? undefined : p * 100;
+    // A second pass running in the background has its own look; the one the stepper shows is plain processing.
+    return { status: row.job?.kind === "final_pass" && liveProgress === undefined ? "finalPass" : "processing", percent };
   }
   if (needsNames) return { status: "needsNames" };
   return { status: row.cloudUsed ? "cloudEnhanced" : "ready" };

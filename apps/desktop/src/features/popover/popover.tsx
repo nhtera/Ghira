@@ -13,16 +13,29 @@ import {
   Button,
   Icon,
   PrivacyIndicator,
-  RecordControl,
+  cn,
+  type IconName,
   type RecordMode,
 } from "@ghi/ui";
+import type { MeetingRow } from "../../bindings";
 import { ipc } from "../../ipc";
 import { elapsedMs, isActive, useLive } from "../../state/live";
-import { useUi } from "../../state/ui";
 import { useNow } from "../live/clock";
 import { usePanelWindow } from "./panel-window";
 
 type Result = { status: "ok" } | { status: "error"; error: string };
+
+const TILE =
+  "flex h-14 flex-col items-center justify-center gap-0.5 rounded-[10px] text-[13px] font-semibold";
+
+/** The row's source glyph and its state glyph, as in the library. */
+function rowIcons(m: MeetingRow): { source: IconName; state: IconName; warn: boolean; label: "failedRetry" | "processing" | "cloudEnhanced" | "ready" } {
+  const source = m.source === "import" ? "description" : m.mode === "room" ? "groups" : "videocam";
+  if (m.status === "failed") return { source, state: "warning", warn: true, label: "failedRetry" };
+  if (m.job || m.status === "processing") return { source, state: "sync", warn: false, label: "processing" };
+  if (m.cloudUsed) return { source, state: "cloud", warn: true, label: "cloudEnhanced" };
+  return { source, state: "check_circle", warn: false, label: "ready" };
+}
 
 export function Popover() {
   const { t, i18n } = useTranslation();
@@ -38,7 +51,6 @@ export function Popover() {
     })),
   );
   const now = useNow(state === "recording");
-  const [mode, setMode] = useState<RecordMode>(useUi.getState().recordMode);
   const [error, setError] = useState<string | null>(null);
   const speakers = useLive((s) => Object.keys(s.speakers).length);
   const active = isActive(state);
@@ -141,13 +153,24 @@ export function Popover() {
           </div>
         </section>
       ) : (
-        <RecordControl
-          state="idle"
-          mode={mode}
-          onModeChange={setMode}
-          onStart={(m) => void start(m)}
-          className="self-start"
-        />
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={() => void start("call")}
+            className={cn(TILE, "bg-accent text-on-accent hover:brightness-110")}
+          >
+            <Icon name="videocam" size={20} />
+            {t("tray.recordCall")}
+          </button>
+          <button
+            type="button"
+            onClick={() => void start("room")}
+            className={cn(TILE, "border border-ctl bg-surface hover:bg-surface2")}
+          >
+            <Icon name="groups" size={20} />
+            {t("tray.recordRoom")}
+          </button>
+        </div>
       )}
 
       {error && (
@@ -162,7 +185,7 @@ export function Popover() {
         aria-label={t("tray.recent")}
         className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden"
       >
-        <h2 className="text-small m-0 px-1.5 font-semibold text-muted">
+        <h2 className="m-0 px-1.5 text-[11px] font-semibold tracking-[.06em] text-faint uppercase">
           {t("tray.recent")}
         </h2>
         <ul className="m-0 flex list-none flex-col gap-px p-0">
@@ -171,14 +194,21 @@ export function Popover() {
               <button
                 type="button"
                 onClick={() => void goMain(`/meetings/${m.gid}/notes`)}
-                className="flex min-h-9 w-full items-center gap-2 rounded-seg px-1.5 py-1 text-left text-[13px] hover:bg-surface2"
+                className="flex min-h-8 w-full items-center gap-2 rounded-seg px-1.5 py-1 text-left text-[13px] hover:bg-surface2"
               >
-                <span className="min-w-0 flex-1 truncate font-semibold">
+                <Icon name={rowIcons(m).source} size={16} className="flex-none text-faint" />
+                <span className="min-w-0 flex-1 truncate">
                   {m.title || t("live.titlePlaceholder")}
                 </span>
-                <span className="text-small flex-none text-muted">
+                <span className="sr-only">
                   {m.startedAt != null && formatTime(m.startedAt, locale)}
                 </span>
+                <Icon
+                  name={rowIcons(m).state}
+                  size={15}
+                  label={t(`library.status.${rowIcons(m).label}`)}
+                  className={cn("flex-none", rowIcons(m).warn ? "text-warn" : "text-muted")}
+                />
               </button>
             </li>
           ))}
@@ -190,8 +220,7 @@ export function Popover() {
           state={state === "paused" ? "paused" : active ? "recording" : "local"}
         />
         <div className="ml-auto flex items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={() => void goMain(null)}>
-            <Icon name="open_in_new" size={15} />
+          <Button size="sm" onClick={() => void goMain(null)}>
             {t("tray.open")}
           </Button>
           <Button
