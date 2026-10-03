@@ -7,55 +7,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ghi_core::export::{self, ExportOptions, Format, Lang};
-use serde::Deserialize;
-use specta::Type;
+use ghi_core::export::{self, Format};
 use tauri::AppHandle;
 
-use crate::dialogs::{self, LastExport};
+pub use ghi_app::export_cmd::*;
+
+use crate::dialogs;
 use crate::{CoreState, blocking};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub enum ExportFormat {
-    Markdown,
-    Text,
-    Srt,
-    Vtt,
-    Docx,
-}
-
-impl From<ExportFormat> for Format {
-    fn from(f: ExportFormat) -> Format {
-        match f {
-            ExportFormat::Markdown => Format::Markdown,
-            ExportFormat::Text => Format::Text,
-            ExportFormat::Srt => Format::Srt,
-            ExportFormat::Vtt => Format::Vtt,
-            ExportFormat::Docx => Format::Docx,
-        }
-    }
-}
-
-/// What goes into the file; headings in the app's language.
-#[derive(Debug, Clone, Copy, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportContent {
-    pub notes: bool,
-    pub transcript: bool,
-    /// Headings in Vietnamese (else English).
-    pub vietnamese: bool,
-}
-
-impl From<ExportContent> for ExportOptions {
-    fn from(c: ExportContent) -> ExportOptions {
-        ExportOptions {
-            include_notes: c.notes,
-            include_transcript: c.transcript,
-            ui_lang: if c.vietnamese { Lang::Vi } else { Lang::En },
-        }
-    }
-}
 
 /// Where the Obsidian vault folder is remembered (a local path, never content).
 const OBSIDIAN_SETTING: &str = "export.obsidian_vault";
@@ -199,27 +157,6 @@ pub async fn export_obsidian(
         remember(&store, OBSIDIAN_SETTING, &dir);
         *last.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(dir.join(&name));
         Ok(Some(name))
-    })
-    .await
-}
-
-/// The meeting as Markdown or plain text, for the clipboard.
-#[tauri::command]
-#[specta::specta]
-pub async fn meeting_as_text(
-    core: CoreState<'_>,
-    meeting: String,
-    markdown: bool,
-    content: ExportContent,
-) -> Result<String, String> {
-    blocking(&core, move |c| {
-        let f = if markdown {
-            Format::Markdown
-        } else {
-            Format::Text
-        };
-        let bytes = export::render(&*c.store()?, &meeting, f, &content.into())?;
-        String::from_utf8(bytes).map_err(|e| e.to_string())
     })
     .await
 }

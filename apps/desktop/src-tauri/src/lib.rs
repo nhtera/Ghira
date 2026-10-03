@@ -9,6 +9,8 @@ mod calendar_cmd;
 mod calendar_mac;
 mod cloud_cmd;
 mod core;
+#[cfg(all(test, unix))]
+mod core_real_tests;
 mod detail;
 mod diag_cmd;
 mod dialogs;
@@ -73,18 +75,7 @@ pub struct Stopped {
     pub duration_ms: f64,
 }
 
-type CoreState<'a> = tauri::State<'a, Arc<core::Core>>;
-
-/// Runs a blocking core call off the async runtime's workers.
-async fn blocking<T: Send + 'static>(
-    core: &Arc<core::Core>,
-    f: impl FnOnce(&core::Core) -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
-    let core = core.clone();
-    tauri::async_runtime::spawn_blocking(move || f(&core))
-        .await
-        .map_err(|e| e.to_string())?
-}
+use ghi_app::{CoreState, blocking};
 
 #[tauri::command]
 #[specta::specta]
@@ -489,6 +480,8 @@ pub fn run() {
                 diag_cmd::track(e);
                 tray::on_event(&tray_app, e)
             })?);
+            // Onboarding finished or a setting changed: (un)register ⌘⇧R.
+            core.set_settings_hook(Arc::new(tray::sync_record_shortcut));
             core.init_in_background();
             let detection = Arc::new(system::Detection::default());
             system::spawn_detection(app.handle().clone(), core.clone(), detection.clone());

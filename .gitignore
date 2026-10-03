@@ -41,3 +41,6 @@ tools/eval/results/
 
 # Local agent state
 /.claude/agent-memory/
+
+# Local release builds kept outside target/ (ad-hoc DMGs for owner testing)
+/release-builds/

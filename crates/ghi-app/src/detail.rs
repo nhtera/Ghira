@@ -25,7 +25,7 @@ fn err(e: ghi_store::StoreError) -> String {
 /// Text the user typed: a sane upper bound.
 const MAX_TEXT_CHARS: usize = 10_000;
 /// Characters of transcript shown as a citation's quote.
-pub(crate) const QUOTE_CHARS: usize = 280;
+pub const QUOTE_CHARS: usize = 280;
 
 fn cap(text: String) -> String {
     if text.chars().count() > MAX_TEXT_CHARS {
@@ -203,7 +203,7 @@ pub struct MeetingTranscript {
     pub topics: Vec<TopicView>,
 }
 
-pub(crate) fn shorten(text: &str, max: usize) -> String {
+pub fn shorten(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         return text.to_string();
     }

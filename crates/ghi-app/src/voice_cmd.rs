@@ -22,17 +22,17 @@ use crate::speakers_cmd::{BUSY_RECORDING, INVALID_CONSENT, storage};
 use crate::{CoreState, blocking};
 
 /// The speaker model is not installed.
-pub(crate) const NO_MODEL: &str = "noModel";
+pub const NO_MODEL: &str = "noModel";
 /// Microphone access was refused.
-pub(crate) const MIC_PERMISSION: &str = "micPermission";
+pub const MIC_PERMISSION: &str = "micPermission";
 /// No microphone could be opened.
-pub(crate) const NO_MIC: &str = "noMic";
+pub const NO_MIC: &str = "noMic";
 /// `enroll_voice_finish` or `_level` without a running enrollment.
-pub(crate) const NOT_ENROLLING: &str = "notEnrolling";
+pub const NOT_ENROLLING: &str = "notEnrolling";
 /// Under 10 s of speech.
-pub(crate) const TOO_SHORT: &str = "tooShort";
+pub const TOO_SHORT: &str = "tooShort";
 /// Nearly nothing but silence.
-pub(crate) const TOO_QUIET: &str = "tooQuiet";
+pub const TOO_QUIET: &str = "tooQuiet";
 
 /// The longest passage kept (seconds of 16 kHz audio).
 pub const MAX_SECONDS: f32 = 25.0;
@@ -331,13 +331,13 @@ fn place_enrollment(
 }
 
 /// Ends the enrollment in `slot` (lock, quit, a recording starting).
-pub(crate) fn drop_enrollment(slot: &Mutex<Option<Enrollment>>) {
+pub fn drop_enrollment(slot: &Mutex<Option<Enrollment>>) {
     drop(slot.lock().unwrap_or_else(|x| x.into_inner()).take());
 }
 
 impl Core {
     /// Starts an enrollment (refused while recording or without the model).
-    pub(crate) fn start_enrollment(&self) -> Result<(), String> {
+    pub fn start_enrollment(&self) -> Result<(), String> {
         enrollment_gate(self.busy(), crate::core::voice_ready(&self.models()))?;
         // One at a time: an earlier one (a reopened dialog) is dropped first.
         drop(self.take_enrollment());
@@ -348,11 +348,11 @@ impl Core {
         place_enrollment(self.enrollment_mutex(), self.recording(), e)
     }
 
-    pub(crate) fn enrolling(&self) -> bool {
+    pub fn enrolling(&self) -> bool {
         self.enrollment_slot().is_some()
     }
 
-    pub(crate) fn take_enrollment(&self) -> Option<Enrollment> {
+    pub fn take_enrollment(&self) -> Option<Enrollment> {
         self.enrollment_slot().take()
     }
 

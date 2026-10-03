@@ -4,7 +4,6 @@
 //! ever sees file names [RT-6].
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{AppHandle, Manager};
@@ -41,11 +40,7 @@ fn dialog(app: &AppHandle) -> rfd::AsyncFileDialog {
     }
 }
 
-/// Audio and video files the importer reads (Symphonia + AVFoundation).
-pub const IMPORT_EXTENSIONS: &[&str] = &[
-    "m4a", "mp3", "wav", "aac", "ogg", "opus", "flac", "mp4", "mov", "m4v", "webm", "caf", "aif",
-    "aiff", "wma", "amr", "3gp",
-];
+pub use ghi_app::import_cmd::IMPORT_EXTENSIONS;
 
 pub async fn pick_audio_files(app: &AppHandle, title: String) -> Result<Vec<PathBuf>, String> {
     let _open = Open::take()?;
@@ -91,9 +86,7 @@ pub async fn pick_folder(
     Ok(d.pick_folder().await.map(|f| f.path().to_path_buf()))
 }
 
-/// The last file or folder written by an export, for "Show in Finder".
-#[derive(Default)]
-pub struct LastExport(pub Mutex<Option<PathBuf>>);
+pub use ghi_app::export_cmd::LastExport;
 
 /// Shows a file in Finder / Explorer (selected).
 pub fn reveal(path: &Path) -> Result<(), String> {

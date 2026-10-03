@@ -1,0 +1,60 @@
+[package]
+name = "ghi-app"
+description = "The store-facing app layer shared by the desktop and iOS apps: Core, its DTOs and Tauri commands."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Local notes model (the worker process) and the Ask/regenerate paths that use it.
+local-llm = []
+# The embedding model: meaning search and the semantic index job.
+embeddings = []
+# Speech engines (NeMo-Speech.cpp; tools/scripts/build-nemo.sh first).
+nemo = ["ghi-core/nemo", "ghi-speech/nemo"]
+# The speaker model (voice profiles).
+voice = ["ghi-core/voice"]
+# TypeScript types for the apps (tauri-specta). The commands and DTOs always
+# carry their specta derives; this switches on the core's.
+specta = ["ghi-core/specta"]
+# `Core::for_test`, for the apps' own harness tests.
+test-support = []
+default = ["local-llm", "embeddings", "voice", "specta"]
+
+[dependencies]
+tauri = { version = "2" }
+specta = "=2.0.0-rc.25"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+zeroize = "1"
+rand_core = { version = "0.6", features = ["getrandom"] }
+ghi-audio = { path = "../ghi-audio" }
+ghi-core = { path = "../ghi-core" }
+ghi-llm = { path = "../ghi-llm" }
+ghi-models = { path = "../ghi-models" }
+ghi-net = { path = "../ghi-net" }
+ghi-speech = { path = "../ghi-speech" }
+ghi-store = { path = "../ghi-store" }
+ghi-text = { path = "../ghi-text" }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+# App lock: Touch ID / the login password (LocalAuthentication).
+objc2-local-authentication = { version = "0.3", features = ["LAContext", "block2"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSError"] }
+block2 = "0.6"
+objc2 = "0.6"
+core-foundation = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+hound = "3"
+
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"

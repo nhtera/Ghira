@@ -20,7 +20,9 @@ use std::time::{Duration, Instant};
 
 use ghi_core::events::{Event, EventRx};
 
-use super::*;
+use ghi_app::core::{
+    Core, embed_ready, llm_ready, preset, speech_ready, voice_factory, voice_ready,
+};
 
 fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")

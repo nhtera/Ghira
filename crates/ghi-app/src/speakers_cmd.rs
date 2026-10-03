@@ -10,23 +10,23 @@ use crate::core::Core;
 use crate::{CoreState, blocking};
 
 /// Error codes of the voice commands (the UI turns them into words).
-pub(crate) const BUSY_RECORDING: &str = "busyRecording";
+pub const BUSY_RECORDING: &str = "busyRecording";
 /// The meeting is the one being recorded: use the live speaker controls.
-pub(crate) const LIVE_MEETING: &str = "liveMeeting";
-pub(crate) const NOT_A_SPEAKER: &str = "notASpeaker";
+pub const LIVE_MEETING: &str = "liveMeeting";
+pub const NOT_A_SPEAKER: &str = "notASpeaker";
 /// In a call only the mic speaker is Me.
-pub(crate) const FAR_SIDE: &str = "farSide";
-pub(crate) const NOT_ME: &str = "notMe";
-pub(crate) const NO_SUGGESTION: &str = "noSuggestion";
+pub const FAR_SIDE: &str = "farSide";
+pub const NOT_ME: &str = "notMe";
+pub const NO_SUGGESTION: &str = "noSuggestion";
 /// Other people's voice profiles are off in this build.
-pub(crate) const THIRD_PARTY_OFF: &str = "thirdPartyOff";
-pub(crate) const NOT_NAMED: &str = "notNamed";
-pub(crate) const NO_VOICE: &str = "noVoice";
-pub(crate) const INVALID_CONSENT: &str = "invalidConsent";
-pub(crate) const STORAGE: &str = "storage";
+pub const THIRD_PARTY_OFF: &str = "thirdPartyOff";
+pub const NOT_NAMED: &str = "notNamed";
+pub const NO_VOICE: &str = "noVoice";
+pub const INVALID_CONSENT: &str = "invalidConsent";
+pub const STORAGE: &str = "storage";
 
 /// A store failure as a code (the detail goes to the log, never the UI).
-pub(crate) fn storage(e: impl std::fmt::Display) -> String {
+pub fn storage(e: impl std::fmt::Display) -> String {
     log::warn!("voice: {e}");
     STORAGE.into()
 }

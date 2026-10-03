@@ -32,7 +32,7 @@ use crate::{CoreState, blocking};
 
 /// How long a reviewed request may wait for its confirmation.
 const PLAN_TTL: Duration = Duration::from_secs(10 * 60);
-pub(crate) const PROVIDERS: [&str; 3] = ["openai", "anthropic", "gemini"];
+pub const PROVIDERS: [&str; 3] = ["openai", "anthropic", "gemini"];
 
 fn err(e: ghi_store::StoreError) -> String {
     e.to_string()
@@ -233,7 +233,7 @@ pub enum CloudPreviewResult {
     Answer(AskAnswer),
 }
 
-pub(crate) fn out_lang(l: NotesLanguage, store: &Store, meeting: &str) -> Result<OutLang, String> {
+pub fn out_lang(l: NotesLanguage, store: &Store, meeting: &str) -> Result<OutLang, String> {
     Ok(match l {
         NotesLanguage::En => OutLang::En,
         NotesLanguage::Vi => OutLang::Vi,
@@ -539,13 +539,13 @@ pub async fn cloud_request_log(
 
 /// Error codes of [`local_model_free`] the UI turns into words
 /// (`ask.busy.*`).
-pub(crate) const BUSY_RECORDING: &str = "busyRecording";
-pub(crate) const BUSY_NOTES: &str = "busyNotes";
-pub(crate) const NO_MODEL: &str = "noModel";
+pub const BUSY_RECORDING: &str = "busyRecording";
+pub const BUSY_NOTES: &str = "busyNotes";
+pub const NO_MODEL: &str = "noModel";
 
 /// The local model can run now: installed, not recording, no notes job
 /// using it (one model in memory at a time). Errors are the codes above.
-pub(crate) fn local_model_free(c: &Core, store: &Store) -> Result<(), String> {
+pub fn local_model_free(c: &Core, store: &Store) -> Result<(), String> {
     if c.recording() {
         return Err(BUSY_RECORDING.into());
     }

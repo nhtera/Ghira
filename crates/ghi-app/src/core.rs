@@ -47,6 +47,9 @@ pub struct Core {
     recovered: Mutex<Vec<String>>,
     /// App settings as last read or written (system.rs).
     settings: Mutex<Option<crate::system::AppSettings>>,
+    /// What the app does after a settings change (the desktop re-registers
+    /// its global shortcuts).
+    settings_hook: Mutex<Option<SettingsHook>>,
     /// "Record your voice" in progress (voice_cmd.rs).
     enrollment: Mutex<Option<crate::voice_cmd::Enrollment>>,
     /// The runner's thread, joined (bounded) at shutdown.
@@ -59,9 +62,13 @@ pub struct Core {
     events: EventTx,
 }
 
+/// See [`Core::set_settings_hook`].
+pub type SettingsHook = Arc<dyn Fn(&AppHandle) + Send + Sync>;
+
 type QueryEmbedder = Arc<Mutex<Option<(Box<dyn ghi_llm::embed::Embedder + Send>, Instant)>>>;
 
 /// The query embedder is unloaded after this long unused.
+#[cfg(feature = "embeddings")]
 const QUERY_EMBEDDER_IDLE: Duration = Duration::from_secs(120);
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -83,7 +90,7 @@ fn keystore(dir: &Path) -> Result<Arc<dyn KeyStore>, String> {
     platform_keystore(dir)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn platform_keystore(_dir: &Path) -> Result<Arc<dyn KeyStore>, String> {
     Ok(Arc::new(ghi_store::keys::apple::KeychainStore::new(
         "com.nhtera.ghira",
@@ -98,16 +105,14 @@ fn platform_keystore(dir: &Path) -> Result<Arc<dyn KeyStore>, String> {
     )))
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", windows)))]
 fn platform_keystore(_dir: &Path) -> Result<Arc<dyn KeyStore>, String> {
     Err("no OS key store on this platform yet".into())
 }
 
 /// Where cloud API keys live: the Keychain (Windows: DPAPI files); debug
 /// builds use files next to the data directory unless `GHI_KEYSTORE=keychain`.
-pub(crate) fn secrets(
-    data: &Path,
-) -> Result<Box<dyn ghi_store::keys::secrets::SecretStore>, String> {
+pub fn secrets(data: &Path) -> Result<Box<dyn ghi_store::keys::secrets::SecretStore>, String> {
     #[cfg(debug_assertions)]
     if std::env::var("GHI_KEYSTORE").as_deref() != Ok("keychain") {
         return Ok(Box::new(ghi_store::keys::secrets::FileSecrets::new(
@@ -117,7 +122,7 @@ pub(crate) fn secrets(
     platform_secrets(data)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn platform_secrets(
     _data: &Path,
 ) -> Result<Box<dyn ghi_store::keys::secrets::SecretStore>, String> {
@@ -133,7 +138,7 @@ fn platform_secrets(data: &Path) -> Result<Box<dyn ghi_store::keys::secrets::Sec
     )))
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", windows)))]
 fn platform_secrets(
     _data: &Path,
 ) -> Result<Box<dyn ghi_store::keys::secrets::SecretStore>, String> {
@@ -145,16 +150,16 @@ fn platform_secrets(
 static DAMAGED: Mutex<std::collections::BTreeSet<String>> =
     Mutex::new(std::collections::BTreeSet::new());
 
-pub(crate) fn damaged_models() -> std::collections::BTreeSet<String> {
+pub fn damaged_models() -> std::collections::BTreeSet<String> {
     lock(&DAMAGED).clone()
 }
 
-pub(crate) fn clear_damaged(id: &str) {
+pub fn clear_damaged(id: &str) {
     lock(&DAMAGED).remove(id);
 }
 
 /// Verifies a model before native code parses it, remembering damage.
-pub(crate) fn checked_model(models: &Path, id: &str) -> Result<PathBuf, String> {
+pub fn checked_model(models: &Path, id: &str) -> Result<PathBuf, String> {
     let m = ghi_models::find(id).ok_or_else(|| format!("{id} is not in the registry"))?;
     let p = ghi_models::path_in(models, &m);
     ghi_models::verify_for_load(&p, &m).map_err(|e| {
@@ -173,32 +178,33 @@ pub(crate) fn checked_model(models: &Path, id: &str) -> Result<PathBuf, String> 
 const TEST_MEETING_KEY: &str = "test_capture_meeting";
 
 /// This machine's tier preset (the hardware is probed once).
-fn preset() -> &'static ghi_models::Preset {
+pub fn preset() -> &'static ghi_models::Preset {
     static PRESET: OnceLock<ghi_models::Preset> = OnceLock::new();
     PRESET.get_or_init(|| ghi_models::preset(ghi_models::tier_for(&ghi_models::detect())))
 }
 
 /// This build has speech engines and their models are installed. Without
 /// them a recording keeps the audio only and its jobs wait (doc 02 §L).
-pub(crate) fn speech_ready(models: &Path) -> bool {
+pub fn speech_ready(models: &Path) -> bool {
     let ids: Vec<&str> = preset().speech_models.iter().map(String::as_str).collect();
     cfg!(feature = "nemo") && ghi_models::installed(models, &ids)
 }
 
 /// The embedding model (semantic search) is installed, on a tier that has one.
-pub(crate) fn embed_ready(models: &Path) -> bool {
-    preset()
-        .embed_id
-        .is_some_and(|id| ghi_models::installed(models, &[id]))
+pub fn embed_ready(models: &Path) -> bool {
+    cfg!(feature = "embeddings")
+        && preset()
+            .embed_id
+            .is_some_and(|id| ghi_models::installed(models, &[id]))
 }
 
 /// The speaker-voice model (voice profiles) is installed.
-pub(crate) fn voice_ready(models: &Path) -> bool {
+pub fn voice_ready(models: &Path) -> bool {
     ghi_models::installed(models, &[preset().voice_id])
 }
 
 /// [`voice_ready`] remembered for 30 s (settings are read often).
-pub(crate) fn voice_ready_cached(models: &Path) -> bool {
+pub fn voice_ready_cached(models: &Path) -> bool {
     static CACHE: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
     let mut c = lock(&CACHE);
     if let Some((at, v)) = *c
@@ -212,7 +218,7 @@ pub(crate) fn voice_ready_cached(models: &Path) -> bool {
 }
 
 /// Opens the speaker model (checked against its SHA-256 first).
-pub(crate) fn voice_factory(models: &Path) -> ghi_core::profiles::VoiceFactory {
+pub fn voice_factory(models: &Path) -> ghi_core::profiles::VoiceFactory {
     let models = models.to_path_buf();
     Arc::new(move || {
         let path = checked_model(&models, preset().voice_id)?;
@@ -241,9 +247,11 @@ fn voice_step(models: &Path, store: &Arc<Store>) -> ghi_core::voice_step::VoiceS
     }
 }
 
-/// The notes model for this machine's tier is installed.
-pub(crate) fn llm_ready(models: &Path) -> bool {
-    ghi_models::installed(models, &[preset().llm_id])
+/// The notes model for this machine's tier is installed (and this build runs
+/// it: without feature `local-llm` the notes jobs wait, as they do for any
+/// missing model).
+pub fn llm_ready(models: &Path) -> bool {
+    cfg!(feature = "local-llm") && ghi_models::installed(models, &[preset().llm_id])
 }
 
 /// Speech engines for a recording (live chunk) or the final pass (1120 ms).
@@ -333,6 +341,7 @@ impl Core {
             llm: Mutex::new(None),
             query_embedder: Arc::new(Mutex::new(None)),
             settings: Mutex::new(None),
+            settings_hook: Mutex::new(None),
             recovered: Mutex::new(Vec::new()),
             events,
         }
@@ -340,8 +349,8 @@ impl Core {
 
     /// A core over a data directory with no window: the events stay in the
     /// returned receiver. For the real-model harness test only.
-    #[cfg(all(test, unix))]
-    pub(crate) fn for_test(data: PathBuf) -> (Arc<Core>, ghi_core::events::EventRx) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(data: PathBuf) -> (Arc<Core>, ghi_core::events::EventRx) {
         let (events, rx) = bus();
         let locked = Arc::new(std::sync::atomic::AtomicBool::new(false));
         (Arc::new(Core::assemble(data, events, locked)), rx)
@@ -365,17 +374,17 @@ impl Core {
             });
     }
 
-    pub(crate) fn enrollment_mutex(&self) -> &Mutex<Option<crate::voice_cmd::Enrollment>> {
+    pub fn enrollment_mutex(&self) -> &Mutex<Option<crate::voice_cmd::Enrollment>> {
         &self.enrollment
     }
 
     /// Held while a recording starts or stops (an enrollment checks
     /// `recording()` under it).
-    pub(crate) fn lifecycle_guard(&self) -> MutexGuard<'_, ()> {
+    pub fn lifecycle_guard(&self) -> MutexGuard<'_, ()> {
         lock(&self.lifecycle)
     }
 
-    pub(crate) fn enrollment_slot(&self) -> MutexGuard<'_, Option<crate::voice_cmd::Enrollment>> {
+    pub fn enrollment_slot(&self) -> MutexGuard<'_, Option<crate::voice_cmd::Enrollment>> {
         lock(&self.enrollment)
     }
 
@@ -392,6 +401,19 @@ impl Core {
     /// Takes the meetings recovered at launch (the notice is shown once).
     pub fn take_recovered(&self) -> Vec<String> {
         std::mem::take(&mut *lock(&self.recovered))
+    }
+
+    /// Sets what runs after every settings change.
+    pub fn set_settings_hook(&self, hook: SettingsHook) {
+        *lock(&self.settings_hook) = Some(hook);
+    }
+
+    /// Runs the settings hook (see [`Core::set_settings_hook`]).
+    pub fn settings_changed(&self, app: &AppHandle) {
+        let hook = lock(&self.settings_hook).clone();
+        if let Some(h) = hook {
+            h(app);
+        }
     }
 
     pub fn settings_cache(&self) -> &Mutex<Option<crate::system::AppSettings>> {
@@ -436,6 +458,7 @@ impl Core {
         }
         let mut slot = lock(&self.query_embedder);
         if slot.is_none() {
+            #[cfg(feature = "embeddings")]
             match ghi_llm::embed::LocalEmbedder::open_registry_in(
                 &models,
                 ghi_core::index_job::MODEL_ID,
@@ -450,6 +473,11 @@ impl Core {
                     return f(None);
                 }
             }
+            #[cfg(not(feature = "embeddings"))]
+            {
+                drop(slot);
+                return f(None);
+            }
         }
         let Some((e, used)) = slot.as_mut() else {
             return f(None);
@@ -460,6 +488,7 @@ impl Core {
     }
 
     /// Drops the query embedder once it has been idle long enough.
+    #[cfg(feature = "embeddings")]
     fn unload_when_idle(&self) {
         let slot = self.query_embedder.clone();
         let _ = std::thread::Builder::new()
@@ -579,7 +608,7 @@ impl Core {
     /// The store for what keeps working while the app is locked: starting a
     /// recording (⌘⇧R, detection) and imports. Never for a command that
     /// returns content to the webview.
-    pub(crate) fn store_even_locked(&self) -> Result<Arc<Store>, String> {
+    pub fn store_even_locked(&self) -> Result<Arc<Store>, String> {
         if self.deleting.load(std::sync::atomic::Ordering::Acquire) {
             return Err("all data is being deleted".into());
         }
@@ -606,6 +635,7 @@ impl Core {
         }
         let models = self.models();
         let speech_models = models.clone();
+        #[cfg(feature = "embeddings")]
         let embed_dir = models.clone();
         let template = ghi_llm::template::builtin("general").map_err(|e| e.to_string())?;
         // The notes model lives with the speech models in the app data dir.
@@ -616,71 +646,79 @@ impl Core {
         };
         let llm: ghi_core::notes_job::LlmFactory = Arc::new(move |bytes| {
             let n_ctx = ((bytes / 3) as u32 * 6 / 5 + 6_144).clamp(8_192, 32_768);
+            #[cfg(feature = "local-llm")]
             {
                 // Marks a damaged file for the UI (the worker checks it too).
                 checked_model(&llm_dir, preset().llm_id)?;
                 ghi_llm::local::LocalLlm::open_registry_in(&llm_dir, preset().llm_id, n_ctx)
+                    .map(|l| Box::new(l) as Box<dyn ghi_llm::Llm + Send>)
+                    .map_err(|e| e.to_string())
             }
-            .map(|l| Box::new(l) as Box<dyn ghi_llm::Llm + Send>)
-            .map_err(|e| e.to_string())
+            #[cfg(not(feature = "local-llm"))]
+            {
+                let _ = (&llm_dir, n_ctx);
+                Err("this build has no local notes model".into())
+            }
         });
         *lock(&self.llm) = Some(llm.clone());
-        let runner = JobRunner::new(
-            store.clone(),
-            self.events.clone(),
-            vec![
-                Arc::new(ghi_core::notes_job::NotesJob {
-                    kind: ghi_core::session::NOTES_LIVE_JOB,
-                    version: 1,
-                    template: template.clone(),
-                    llm: llm.clone(),
-                    ready: notes_ready.clone(),
-                }),
-                Arc::new(ghi_core::final_pass::FinalPassJob {
-                    engines: {
-                        let models = models.clone();
-                        Arc::new(move || engines(&models, 1120))
-                    },
-                    chunk_s: 600.0,
-                    ready: Arc::new(move || speech_ready(&speech_models)),
-                    voice: Some(voice_step(&models, &store)),
-                }),
-                // After a "This is me" or an accepted suggestion: add that
-                // voice to the profile (checks consent again when it runs).
-                Arc::new(ghi_core::voice_job::VoiceLearnJob {
-                    embedder: voice_factory(&models),
-                    ready: voice_ready_fn(&models),
-                    third_party: third_party_gate(&store),
-                }),
-                Arc::new(ghi_core::notes_job::NotesJob {
-                    kind: ghi_core::notes_job::NOTES_FINAL_JOB,
-                    version: 2,
-                    template,
-                    llm,
-                    ready: notes_ready,
-                }),
-                // Semantic search: lowest priority, after the notes.
-                Arc::new(ghi_core::index_job::IndexJob {
-                    embedder: {
-                        let dir = embed_dir.clone();
-                        Arc::new(move || {
-                            ghi_llm::embed::LocalEmbedder::open_registry_in(
-                                &dir,
-                                ghi_core::index_job::MODEL_ID,
-                            )
-                            .map(|e| Box::new(e) as Box<dyn ghi_llm::embed::Embedder + Send>)
-                            .map_err(|e| e.to_string())
-                        })
-                    },
-                    ready: {
-                        let dir = embed_dir;
-                        Arc::new(move || embed_ready(&dir))
-                    },
-                }),
-            ],
-        );
+        #[allow(unused_mut)]
+        let mut handlers: Vec<Arc<dyn ghi_core::jobs::JobHandler>> = vec![
+            Arc::new(ghi_core::notes_job::NotesJob {
+                kind: ghi_core::session::NOTES_LIVE_JOB,
+                version: 1,
+                template: template.clone(),
+                llm: llm.clone(),
+                ready: notes_ready.clone(),
+            }),
+            Arc::new(ghi_core::final_pass::FinalPassJob {
+                engines: {
+                    let models = models.clone();
+                    Arc::new(move || engines(&models, 1120))
+                },
+                chunk_s: 600.0,
+                ready: Arc::new(move || speech_ready(&speech_models)),
+                voice: Some(voice_step(&models, &store)),
+            }),
+            // After a "This is me" or an accepted suggestion: add that
+            // voice to the profile (checks consent again when it runs).
+            Arc::new(ghi_core::voice_job::VoiceLearnJob {
+                embedder: voice_factory(&models),
+                ready: voice_ready_fn(&models),
+                third_party: third_party_gate(&store),
+            }),
+            Arc::new(ghi_core::notes_job::NotesJob {
+                kind: ghi_core::notes_job::NOTES_FINAL_JOB,
+                version: 2,
+                template,
+                llm,
+                ready: notes_ready,
+            }),
+        ];
+        // Semantic search: lowest priority, after the notes.
+        #[cfg(feature = "embeddings")]
+        handlers.push(Arc::new(ghi_core::index_job::IndexJob {
+            embedder: {
+                let dir = embed_dir.clone();
+                Arc::new(move || {
+                    ghi_llm::embed::LocalEmbedder::open_registry_in(
+                        &dir,
+                        ghi_core::index_job::MODEL_ID,
+                    )
+                    .map(|e| Box::new(e) as Box<dyn ghi_llm::embed::Embedder + Send>)
+                    .map_err(|e| e.to_string())
+                })
+            },
+            ready: {
+                let dir = embed_dir;
+                Arc::new(move || embed_ready(&dir))
+            },
+        }));
+        let runner = JobRunner::new(store.clone(), self.events.clone(), handlers);
         // Light machines search by keywords only (no embedding model).
-        let _ = ghi_core::index_job::set_enabled(&store, preset().embed_id.is_some());
+        let _ = ghi_core::index_job::set_enabled(
+            &store,
+            cfg!(feature = "embeddings") && preset().embed_id.is_some(),
+        );
         let _ = ghi_core::index_job::queue_missing(&store);
         *lock(&self.runner_thread) = Some(runner.spawn().map_err(|e| e.to_string())?);
         *lock(&self.runner) = Some(runner);
@@ -912,7 +950,3 @@ impl Core {
         Ok(r)
     }
 }
-
-#[cfg(all(test, unix))]
-#[path = "core_real_tests.rs"]
-mod real_tests;

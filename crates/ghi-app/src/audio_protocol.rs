@@ -375,12 +375,7 @@ fn pcm16(samples: &[f32]) -> Vec<u8> {
 
 /// The meeting's audio between `t0_ms` and `t1_ms` (at most 30 s) as a 16 kHz
 /// mono WAV: the evidence clip of a verbal consent.
-pub(crate) fn span_wav(
-    store: &Store,
-    meeting: &str,
-    t0_ms: i64,
-    t1_ms: i64,
-) -> Result<Vec<u8>, String> {
+pub fn span_wav(store: &Store, meeting: &str, t0_ms: i64, t1_ms: i64) -> Result<Vec<u8>, String> {
     if t1_ms <= t0_ms || t1_ms - t0_ms > MAX_SPAN_MS {
         return Err("bad span".into());
     }

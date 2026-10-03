@@ -78,7 +78,7 @@ const JOB_KINDS: [&str; 3] = [
 ];
 
 /// The active job of each meeting that has one (the first in priority order).
-pub(crate) fn active_jobs(
+pub fn active_jobs(
     core: &Core,
     store: &ghi_store::store::Store,
 ) -> Result<std::collections::HashMap<String, MeetingJob>, String> {

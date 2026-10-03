@@ -63,6 +63,13 @@ guards release binaries.
 `meeting_tags` (names unique by folded form, link rows with fresh gids),
 `meetings.source_app`, sealed `calendar_ct` / `track_speakers_ct`, and
 `segments.overlap` via `mark_overlaps`.
+`crates/ghi-app` (phase 16-A): the app layer both Ghira apps share. `Core` and the
+store-facing Tauri commands (library, detail, speakers, cloud, settings,
+lock, audio protocol, import queue, voice) live there, registered by the desktop
+with `ghi_app::<module>::<cmd>` (so bindings are the same for any app);
+windows, dialogs, tray, menu, calendar, updater stay in `apps/desktop`, whose
+files of the same names `pub use ghi_app::…` (features `local-llm`,
+`embeddings`, `nemo`, `voice`, `specta`).
 Phase 14d modules (stubbed in W0-B, filled by slices S2-S6): `ghi-core` `calendar`
 (events, ICS, prompt rules), `activity` (per-track speech spans), `presets`
 (import source/title/date, Zoom grouping), `recluster` (>8 speakers),

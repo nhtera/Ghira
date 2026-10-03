@@ -1859,6 +1859,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "ghi-app"
+version = "0.1.0"
+dependencies = [
+ "block2",
+ "core-foundation",
+ "ghi-audio",
+ "ghi-core",
+ "ghi-llm",
+ "ghi-models",
+ "ghi-net",
+ "ghi-speech",
+ "ghi-store",
+ "ghi-text",
+ "hound",
+ "libc",
+ "log",
+ "objc2",
+ "objc2-foundation",
+ "objc2-local-authentication",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "specta",
+ "tauri",
+ "tauri-specta",
+ "tempfile",
+ "zeroize",
+]
+
+[[package]]
 name = "ghi-audio"
 version = "0.1.0"
 dependencies = [
@@ -1929,6 +1959,7 @@ version = "0.1.0"
 dependencies = [
  "block2",
  "core-foundation",
+ "ghi-app",
  "ghi-audio",
  "ghi-core",
  "ghi-diag",
