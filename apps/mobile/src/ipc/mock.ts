@@ -28,18 +28,23 @@ const scripted: Partial<Commands> = {
  */
 export const RAW_COMMANDS = new Set(["appVersion", "cloudModels", "micPermission", "openAppSettings", "requestMicPermission"]);
 
-const commands = new Proxy(scripted, {
-  get(target, name: string) {
-    const scriptedCommand = (target as Record<string, unknown>)[name];
-    if (scriptedCommand) return scriptedCommand;
-    if (RAW_COMMANDS.has(name)) {
-      return async () => {
-        throw new Error(`not mocked: ${name}`);
-      };
-    }
-    return async () => ({ status: "error", error: `not mocked: ${name}` });
-  },
-}) as Commands;
+/** Answers scripted commands; the rest fail like the real "not yet" stubs. */
+export function scriptedCommands(script: Partial<Commands>): Commands {
+  return new Proxy(script, {
+    get(target, name: string) {
+      const scriptedCommand = (target as Record<string, unknown>)[name];
+      if (scriptedCommand) return scriptedCommand;
+      if (RAW_COMMANDS.has(name)) {
+        return async () => {
+          throw new Error(`not mocked: ${name}`);
+        };
+      }
+      return async () => ({ status: "error", error: `not mocked: ${name}` });
+    },
+  }) as Commands;
+}
+
+const commands = scriptedCommands(scripted);
 
 export const mockIpc: Ipc = {
   kind: "mock",

@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { RAW_COMMANDS, mockIpc } from "./mock";
+import { RAW_COMMANDS, scriptedCommands } from "./mock";
 
 describe("mock ipc", () => {
   it("lists exactly the commands that return raw values", () => {
@@ -16,13 +16,12 @@ describe("mock ipc", () => {
   });
 
   it("answers unscripted result commands with an error result", async () => {
-    // A name no slice scripts, so the test doesn't depend on mock-*.ts.
-    const commands = mockIpc.commands as unknown as Record<string, () => Promise<unknown>>;
-    const r = await commands.notARealCommand!();
-    expect(r).toEqual({ status: "error", error: "not mocked: notARealCommand" });
+    // An empty script, so the test doesn't depend on what mock-*.ts script.
+    const r = await scriptedCommands({}).inboxList();
+    expect(r).toEqual({ status: "error", error: "not mocked: inboxList" });
   });
 
   it("rejects unscripted raw commands instead of answering a result", async () => {
-    await expect(mockIpc.commands.requestMicPermission()).rejects.toThrow("not mocked");
+    await expect(scriptedCommands({}).requestMicPermission()).rejects.toThrow("not mocked");
   });
 });
