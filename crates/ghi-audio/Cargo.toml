@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 ogg = "0.9"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 opus = "0.4"
 rtrb = "0.4"
 rubato = "5"

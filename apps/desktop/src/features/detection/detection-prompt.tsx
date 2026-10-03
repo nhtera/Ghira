@@ -5,12 +5,35 @@
 // hidden) is `DetectPanel`; both draw the same `DetectionCard`.
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Button, Icon, cn, useToast } from "@ghi/ui";
 import type { DetectReply, MeetingDetected } from "../../bindings";
 import { ipc } from "../../ipc";
 import { useAppActions } from "../../shell/actions";
+import { useLock } from "../../state/lock";
 
-/** The prompt itself: what was detected and the three answers. */
+/** A prompt that came from the calendar alone (no app was heard). */
+export const isCalendarPrompt = (d: MeetingDetected) => d.app === "calendar";
+
+/**
+ * What the prompt says: the call app, or the event that is starting. An event
+ * without a title (or while the app is locked, when a title is content) is
+ * "a calendar meeting".
+ */
+export function detectionTitle(
+  t: TFunction,
+  d: MeetingDetected,
+  locked = false,
+): string {
+  if (!isCalendarPrompt(d))
+    return t("tray.detected.title", { meetingApp: d.appName });
+  const title = locked ? "" : (d.title ?? "").trim();
+  return title
+    ? t("tray.calendarStart.title", { title })
+    : (t as unknown as (key: string) => string)("tray.calendarStart.untitled");
+}
+
+/** The prompt itself: what was detected and the answers (a calendar start has no "Never"). */
 export function DetectionCard({
   detected,
   onReply,
@@ -21,12 +44,13 @@ export function DetectionCard({
   className?: string;
 }) {
   const { t } = useTranslation();
+  const locked = useLock((st) => st.locked === true);
   // Browsers prompt generically; the core sends a display name for them.
   const meetingApp = detected.appName;
   return (
     <div
       role="region"
-      aria-label={t("tray.detected.title", { meetingApp })}
+      aria-label={detectionTitle(t, detected, locked)}
       className={cn(
         "flex flex-col gap-3 rounded-panel border border-line2 bg-surface p-4",
         className,
@@ -38,9 +62,16 @@ export function DetectionCard({
           size={20}
           className="mt-px flex-none text-accent"
         />
-        <p className="m-0 text-[13.5px] leading-snug font-semibold text-ink">
-          {t("tray.detected.title", { meetingApp })}
-        </p>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p className="m-0 text-[13.5px] leading-snug font-semibold text-ink">
+            {detectionTitle(t, detected, locked)}
+          </p>
+          {!isCalendarPrompt(detected) && detected.title && !locked && (
+            <p className="text-small m-0 text-muted">
+              {t("tray.detected.subtitle", { title: detected.title })}
+            </p>
+          )}
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="primary" onClick={() => onReply("start")}>
@@ -49,9 +80,11 @@ export function DetectionCard({
         <Button size="sm" onClick={() => onReply("notNow")}>
           {t("tray.detected.notNow")}
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => onReply("never")}>
-          {t("tray.detected.never", { meetingApp })}
-        </Button>
+        {!isCalendarPrompt(detected) && (
+          <Button size="sm" variant="ghost" onClick={() => onReply("never")}>
+            {t("tray.detected.never", { meetingApp })}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -61,6 +94,7 @@ export function DetectionPrompt() {
   const { t } = useTranslation();
   const { show } = useToast();
   const { startRecording } = useAppActions();
+  const locked = useLock((st) => st.locked === true);
   const [detected, setDetected] = useState<MeetingDetected | null>(null);
 
   useEffect(() => {
@@ -92,12 +126,11 @@ export function DetectionPrompt() {
     [startRecording, show, t],
   );
 
-  const meetingApp = detected?.appName ?? "";
   return (
     <>
       {/* Always mounted so screen readers pick up the change; the card never takes focus. */}
       <div role="status" aria-live="polite" className="sr-only">
-        {detected ? t("tray.detected.title", { meetingApp }) : ""}
+        {detected ? detectionTitle(t, detected, locked) : ""}
       </div>
       {detected && (
         <DetectionCard

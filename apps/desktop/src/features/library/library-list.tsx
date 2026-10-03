@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { formatClock, formatTime, type Locale } from "@ghi/i18n";
 import { Avatar, Icon, InlineConfirm, StatusPill, cn, usePlatform, type IconName } from "@ghi/ui";
 import type { MeetingRow } from "../../bindings";
+import { RowChips } from "../folders/row-chips";
 import { groupByDay, type DayGroupKey } from "./group-by-day";
 import { rowStatus } from "./meeting-status";
 import { addRange, rangeIds, toggleSelected } from "./selection";
@@ -37,6 +38,8 @@ export type LibraryListProps = {
   onExport?: (meeting: string) => void;
   /** Copy the notes as Markdown (the action is disabled without it). */
   onCopyNotes?: (meeting: string) => void;
+  /** Folder names by gid, for the folder chip on a row. */
+  folderNames?: Readonly<Record<string, string>>;
   /** Controlled multi-select; the checkbox column shows when `onSelectionChange` is set. */
   selected?: ReadonlySet<string>;
   onSelectionChange?: (next: Set<string>) => void;
@@ -83,6 +86,7 @@ export function LibraryList({
   onCopyNotes,
   selected,
   onSelectionChange,
+  folderNames,
   header,
   now,
 }: LibraryListProps) {
@@ -189,6 +193,7 @@ export function LibraryList({
                       {kind && `${t("common.metaSep")}${t(`library.sources.${kind}`)}`}
                       {row.durationMs != null && `${t("common.metaSep")}${formatClock(row.durationMs)}`}
                     </span>
+                    <RowChips row={row} folderName={row.folder ? folderNames?.[row.folder] : undefined} />
                   </span>
                   {row.people.length > 0 && (
                     <span className="flex flex-none items-center">

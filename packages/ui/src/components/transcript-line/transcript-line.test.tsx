@@ -55,6 +55,27 @@ describe("TranscriptLine", () => {
     expect(container.querySelectorAll('[data-low="true"]').length).toBe(1);
   });
 
+  it("overlap: a marker with its hint, the text muted", () => {
+    const { container } = render(<TranscriptLine startMs={0} speaker={speaker} words={wordsFromText("hai người cùng nói")} overlap />);
+    const tag = screen.getByTestId("overlap-tag");
+    expect(tag.textContent).toContain("Talking over each other");
+    expect(tag.getAttribute("title")).toBe("Two people spoke at once here, so some words may be wrong.");
+    expect(container.querySelector("p")?.className).toContain("text-muted");
+    expect(container.querySelector("[data-overlap]")?.getAttribute("data-overlap")).toBe("true");
+  });
+
+  it("inside a stack the line keeps the short label only", () => {
+    render(<TranscriptLine startMs={0} speaker={speaker} words={wordsFromText("x")} overlap overlapHint={false} />);
+    const tag = screen.getByTestId("overlap-tag");
+    expect(tag.textContent).toBe("Talking over each other");
+    expect(tag.getAttribute("title")).toBeNull();
+  });
+
+  it("no overlap, no marker", () => {
+    render(<TranscriptLine startMs={0} speaker={speaker} words={wordsFromText("x")} />);
+    expect(screen.queryByTestId("overlap-tag")).toBeNull();
+  });
+
   it("marked shows a named star; edited shows its label", () => {
     render(<TranscriptLine startMs={26_000} speaker={speaker} words={wordsFromText("x")} marked edited />);
     expect(screen.getByRole("img", { name: "Marked 0:26" })).toBeTruthy();

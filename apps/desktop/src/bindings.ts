@@ -209,9 +209,17 @@ export const commands = {
 	pickImportFiles: (title: string) => typedError<StagedFile[], string>(__TAURI_INVOKE("pick_import_files", { title })),
 	/**  What was staged by a drop (the event carries ids only). */
 	stagedFiles: (ids: string[]) => __TAURI_INVOKE<StagedFile[]>("staged_files", { ids }),
-	/**  Removes files from the staging list. */
-	unstageFiles: (ids: string[]) => __TAURI_INVOKE<void>("unstage_files", { ids }),
-	/**  Queues staged files for import (unsupported or empty ones are refused). */
+	/**
+	 *  Removes files from the staging list. Returns the staged files whose
+	 *  problems changed because of it: the mixed Zoom recording comes back once
+	 *  its participant tracks are all gone.
+	 */
+	unstageFiles: (ids: string[]) => __TAURI_INVOKE<StagedFile[]>("unstage_files", { ids }),
+	/**
+	 *  Queues staged files for import (unsupported, empty and superseded ones
+	 *  are skipped). The tracks of a group, if all are passed, become one import
+	 *  whose id is the group's.
+	 */
 	startImport: (ids: string[], choice: ImportChoice) => typedError<null, string>(__TAURI_INVOKE("start_import", { ids, choice })),
 	/**  Stops a queued or running import (its half-made meeting is removed). */
 	cancelImport: (id: string) => __TAURI_INVOKE<void>("cancel_import", { id }),
@@ -371,13 +379,14 @@ export const commands = {
 	saveVoiceProfile: (meeting: string, speaker: string, consent: VoiceConsentInput) => typedError<null, string>(__TAURI_INVOKE("save_voice_profile", { meeting, speaker, consent })),
 	/**  Where calendar access stands. Errors: `storage`. */
 	calendarStatus: () => typedError<CalendarStatus, string>(__TAURI_INVOKE("calendar_status")),
-	/**  Asks macOS for calendar access (the OS prompt). Errors: `notImplemented`. */
+	/**  Asks macOS for calendar access (the OS prompt). Errors: `notSupported`. */
 	requestCalendarAccess: () => typedError<CalendarStatus, string>(__TAURI_INVOKE("request_calendar_access")),
 	/**  Changes calendar settings; returns the new status. Errors: `storage`. */
 	setCalendar: (patch: CalendarPatch) => typedError<CalendarStatus, string>(__TAURI_INVOKE("set_calendar", { patch })),
 	/**
 	 *  Lets the user pick an .ics file (a native dialog in Rust); returns its
-	 *  name, or `null` if cancelled. Errors: `icsInvalid`, `notImplemented`.
+	 *  name, or `null` if cancelled. Errors: `icsInvalid`, `icsTooLarge`,
+	 *  `storage`.
 	 */
 	pickIcsFile: () => typedError<string | null, string>(__TAURI_INVOKE("pick_ics_file")),
 	/**  Forgets the ICS file. Errors: `storage`. */
@@ -399,9 +408,9 @@ export const commands = {
 	meetingAttendees: (meeting: string) => typedError<string[], string>(__TAURI_INVOKE("meeting_attendees", { meeting })),
 	/**  All folders, by name. */
 	listFolders: () => typedError<FolderRow[], string>(__TAURI_INVOKE("list_folders")),
-	/**  Makes a folder. Errors: `duplicate`, `tooLong`, `limit`. */
+	/**  Makes a folder. Errors: `duplicate`, `tooLong`, `empty`, `limit`. */
 	createFolder: (name: string) => typedError<FolderRow, string>(__TAURI_INVOKE("create_folder", { name })),
-	/**  Renames a folder. Errors: `duplicate`, `tooLong`, `notFound`. */
+	/**  Renames a folder. Errors: `duplicate`, `tooLong`, `empty`, `notFound`. */
 	renameFolder: (folder: string, name: string) => typedError<null, string>(__TAURI_INVOKE("rename_folder", { folder, name })),
 	/**
 	 *  Deletes a folder; its meetings stay (in no folder). Returns how many were
@@ -417,10 +426,10 @@ export const commands = {
 	listTags: () => typedError<TagRow[], string>(__TAURI_INVOKE("list_tags")),
 	/**
 	 *  Gets the tag with this name, making it if new (so the same name is never
-	 *  two tags). Errors: `tooLong`, `limit`.
+	 *  two tags). Errors: `tooLong`, `empty`, `limit`.
 	 */
 	createTag: (name: string) => typedError<TagRow, string>(__TAURI_INVOKE("create_tag", { name })),
-	/**  Renames a tag. Errors: `duplicate`, `tooLong`, `notFound`. */
+	/**  Renames a tag. Errors: `duplicate`, `tooLong`, `empty`, `notFound`. */
 	renameTag: (tag: string, name: string) => typedError<null, string>(__TAURI_INVOKE("rename_tag", { tag, name })),
 	/**
 	 *  Deletes a tag from every meeting. Returns how many had it. Errors:
@@ -434,6 +443,14 @@ export const commands = {
 	tagMeetings: (meetings: string[], tag: string) => typedError<number, string>(__TAURI_INVOKE("tag_meetings", { meetings, tag })),
 	/**  Removes a tag from meetings. Returns how many lost it. Errors: `notFound`. */
 	untagMeetings: (meetings: string[], tag: string) => typedError<number, string>(__TAURI_INVOKE("untag_meetings", { meetings, tag })),
+	/**
+	 *  Imports a staged Zoom recording's tracks as separate meetings instead of
+	 *  one: the tracks lose their group (each is checked for duplicates as a file
+	 *  of its own) and the mixed recording is no longer left out. Returns every
+	 *  staged file that changed. The way out for a recording with more than 49
+	 *  tracks. Errors: `storage`.
+	 */
+	importTracksSeparately: (group: string) => typedError<StagedFile[], string>(__TAURI_INVOKE("import_tracks_separately", { group })),
 	/**
 	 *  A system notification (notes ready, recovered); clicking it brings the
 	 *  app forward. The text comes localized from the UI.
@@ -855,9 +872,19 @@ export type ImportProblem =
 /**  Over 4 hours: allowed, with a warning. */
 "veryLong" | 
 /**  Imported before (see `duplicateOf`). */
-"duplicate";
+"duplicate" | 
+/**
+ *  The mixed recording of a Zoom meeting whose participant tracks are
+ *  staged too: the tracks are imported instead ("Won't be imported").
+ */
+"superseded" | 
+/**
+ *  A Zoom recording with more participant tracks than one import takes
+ *  (49): on every one of its tracks; import them separately instead.
+ */
+"tooManyTracks";
 
-export type ImportSource = "plaud" | "zoom" | "teams" | "voiceMemos" | "other";
+export type ImportSource = "plaud" | "zoom" | "teams" | "meet" | "voiceMemos" | "other";
 
 /**  Files dropped on the window or the Dock icon were staged. */
 export type ImportStaged = {
@@ -1378,6 +1405,20 @@ export type StagedFile = {
 	source: ImportSource,
 	problems: ImportProblem[],
 	duplicateOf: DuplicateOf | null,
+	/**
+	 *  The participant tracks of one Zoom recording share this id: they are
+	 *  imported as one meeting (start them together; the update's id is this).
+	 */
+	group: string | null,
+	/**  The participant's name from the file name (a track in a group). */
+	participant: string | null,
+	/**  A title found in the folder or file name or the file's tags. */
+	title: string | null,
+	/**
+	 *  When it was recorded (unix ms): from the name or tags, else the file's
+	 *  modification time.
+	 */
+	startedAt: number | null,
 };
 
 /**  [`StagedFile`] as carried by an event (events need `Deserialize`). */

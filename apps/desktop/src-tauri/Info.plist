@@ -8,5 +8,7 @@
   <string>Ghira records your microphone to transcribe your meetings. Audio stays on this Mac.</string>
   <key>NSAudioCaptureUsageDescription</key>
   <string>Ghira records the call audio from your meeting app so both sides of the conversation are transcribed. Audio stays on this Mac.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Ghira reads event titles, times and attendees to name your meetings. Calendar data stays on this Mac.</string>
 </dict>
 </plist>

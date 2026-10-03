@@ -40,8 +40,12 @@ const index = createRoute({
 const meetings = createRoute({
   getParentRoute: () => shell,
   path: "/meetings",
-  // `q`: start with this text in the library search (from Ask).
-  validateSearch: (s: Record<string, unknown>): { q?: string } => (typeof s.q === "string" && s.q ? { q: s.q } : {}),
+  // `q`: start with this text in the library search (from Ask). `folder`: show one folder
+  // (a gid; "none": meetings in no folder), from the sidebar.
+  validateSearch: (s: Record<string, unknown>): { q?: string; folder?: string } => ({
+    ...(typeof s.q === "string" && s.q ? { q: s.q } : {}),
+    ...(typeof s.folder === "string" && s.folder ? { folder: s.folder } : {}),
+  }),
   component: MeetingsScreen,
 });
 

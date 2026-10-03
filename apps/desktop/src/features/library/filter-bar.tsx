@@ -77,12 +77,17 @@ export function FilterBar({
   onChange,
   people,
   templates,
+  folders = [],
+  tags = [],
   onClear,
 }: {
   filters: LibraryFilters;
   onChange: (f: LibraryFilters) => void;
   people: string[];
   templates: Option[];
+  /** Folders and tags that exist (the chips are hidden while there are none). */
+  folders?: Option[];
+  tags?: Option[];
   onClear: () => void;
 }) {
   const { t } = useTranslation();
@@ -123,6 +128,25 @@ export function FilterBar({
         selected={filters.template}
         onToggle={(v) => onChange({ ...filters, template: toggleIn(filters.template, v) })}
       />
+      {(folders.length > 0 || filters.folder != null) && (
+        <Chip
+          single
+          label={t("library.filters.folder")}
+          count={filters.folder != null ? 1 : 0}
+          options={[{ value: "", label: t("organize.noFolder") }, ...folders]}
+          selected={filters.folder != null ? [filters.folder] : []}
+          onToggle={(v) => onChange({ ...filters, folder: filters.folder === v ? null : v })}
+        />
+      )}
+      {(tags.length > 0 || filters.tags.length > 0) && (
+        <Chip
+          label={t("library.filters.tags")}
+          count={filters.tags.length}
+          options={tags}
+          selected={filters.tags}
+          onToggle={(v) => onChange({ ...filters, tags: toggleIn(filters.tags, v) })}
+        />
+      )}
       <Chip
         single
         label={t("library.filters.date")}

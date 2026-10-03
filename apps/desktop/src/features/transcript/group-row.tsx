@@ -9,12 +9,14 @@ import { Avatar, Button, Icon, Menu, SpeakerChip, cn } from "@ghi/ui";
 import type { MarkView, SegmentView } from "../../bindings";
 import { usePlayer } from "../../state/player";
 import { LineText, type LineRange } from "./line-text";
-import type { Row } from "./logic";
+import type { GroupData } from "./logic";
 
 export type SpeakerLabel = { name: string; initial?: string; colorSlot: number; isMe: boolean };
 
 type GroupProps = {
-  group: Extract<Row, { kind: "group" }>;
+  group: GroupData;
+  /** Inside a stack: its header carries the hint, so each line only gets the short label. */
+  stacked?: boolean;
   speaker: SpeakerLabel | null;
   /** Everyone who can take a line (for "change speaker"), with labels. */
   others: { gid: string; label: SpeakerLabel; numbered: boolean }[];
@@ -82,6 +84,18 @@ function Editor({ seg, onSave, onCancel }: { seg: SegmentView; onSave: (text: st
   );
 }
 
+/** "Talking over each other": the line is less certain (`hint`: also on hover and for screen readers; a stack's header says it once). */
+export function OverlapTag({ hint = true }: { hint?: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <span data-testid="overlap-tag" title={hint ? t("transcript.overlapHint") : undefined} className="inline-flex items-center gap-0.5 text-[11px] text-muted">
+      <Icon name="forum" size={13} />
+      {t("transcript.overlap")}
+      {hint && <span className="sr-only">{`. ${t("transcript.overlapHint")}`}</span>}
+    </span>
+  );
+}
+
 function MarkTag({ mark }: { mark: MarkView }) {
   const { t } = useTranslation();
   const time = formatClock(mark.tMs ?? 0);
@@ -94,7 +108,7 @@ function MarkTag({ mark }: { mark: MarkView }) {
   );
 }
 
-export const GroupRow = memo(function GroupRow({ group, speaker, others, active, ranges, marks, editing, picking, onEdit, onPick, onSave, onSetSpeaker }: GroupProps) {
+export const GroupRow = memo(function GroupRow({ group, stacked, speaker, others, active, ranges, marks, editing, picking, onEdit, onPick, onSave, onSetSpeaker }: GroupProps) {
   const { t } = useTranslation();
   const first = group.segs[0]!;
   const time = formatClock(first.t0Ms ?? 0);
@@ -121,7 +135,9 @@ export const GroupRow = memo(function GroupRow({ group, speaker, others, active,
               data-seg={index}
               data-playing={isActive ? "true" : undefined}
               aria-current={isActive ? "true" : undefined}
-              className={cn("group/line relative -mx-1.5 rounded-ctl px-1.5 py-0.5", isActive && "bg-accent-soft")}
+              data-overlap={seg.overlap ? "true" : undefined}
+              // An overlapped line is less certain: its text is muted like a low-confidence one.
+              className={cn("group/line relative -mx-1.5 rounded-ctl px-1.5 py-0.5", isActive && "bg-accent-soft", seg.overlap && "[&_p]:text-muted")}
               onDoubleClick={() => editing !== seg.gid && onEdit(seg.gid)}
             >
               {editing === seg.gid ? (
@@ -129,8 +145,9 @@ export const GroupRow = memo(function GroupRow({ group, speaker, others, active,
               ) : (
                 <>
                   <LineText seg={seg} active={isActive} ranges={ranges.get(index) ?? NONE} />
-                  {(seg.edited || lineMarks) && (
+                  {(seg.edited || seg.overlap || lineMarks) && (
                     <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                      {seg.overlap && <OverlapTag hint={!stacked} />}
                       {seg.edited && (
                         <span className="inline-flex items-center gap-0.5 text-[11px] text-muted">
                           <Icon name="edit" size={13} />

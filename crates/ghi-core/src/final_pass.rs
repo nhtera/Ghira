@@ -33,6 +33,7 @@ use crate::events::Stage;
 use crate::jobs::{JobCtx, JobHandler, Outcome};
 use crate::live::line_language;
 use crate::notes_job::NOTES_FINAL_JOB;
+use crate::recluster;
 use crate::session::JOB_PAYLOAD_VERSION;
 use crate::speakers::COLOR_ORDER;
 use crate::vocab::Vocabulary;
@@ -67,6 +68,8 @@ struct Line {
     text: String,
     words: Vec<(i64, i64, Option<f32>)>,
     confidence: Option<f32>,
+    /// Another speaker talked over this line.
+    overlap: bool,
 }
 
 fn ms(s: f64) -> i64 {
@@ -182,6 +185,7 @@ fn line_from(track: Track, label: Option<u32>, me: bool, l: &aligner::AlignedLin
             .map(|w| (ms(w.word.start), ms(w.word.end), Some(w.word.confidence)))
             .collect(),
         confidence: Some(l.words.iter().map(|w| w.word.confidence).sum::<f32>() / n),
+        overlap: l.overlap(),
     }
 }
 
@@ -250,15 +254,70 @@ impl JobHandler for FinalPassJob {
             Track::Mic
         };
         ctx.progress(Some(Stage::RefiningSpeakers), 0.0);
-        let mut diar = engines.diar().map_err(|e| e.to_string())?;
-        for block in pcm[&diar_track].chunks(10 * SAMPLE_RATE as usize) {
-            if ctx.preempted() {
-                return restart();
+        // A multi-track import knows who spoke when (each participant's own
+        // track): those spans stand in for the diarizer, which is not run.
+        let known = store.track_speakers(&meeting).map_err(err)?;
+        let from_tracks = !known.is_empty();
+        let spans: Vec<TrackSpan> = known
+            .iter()
+            .enumerate()
+            .flat_map(|(i, k)| {
+                k.spans.iter().map(move |s| TrackSpan {
+                    label: i as u32 + 1,
+                    t0_ms: s[0],
+                    t1_ms: s[1],
+                })
+            })
+            .collect();
+        let mut segs: Vec<SpeakerSegment> = if from_tracks {
+            known
+                .iter()
+                .enumerate()
+                .flat_map(|(i, k)| {
+                    k.spans.iter().map(move |s| SpeakerSegment {
+                        start: s[0] as f64 / 1000.0,
+                        end: s[1] as f64 / 1000.0,
+                        speaker: i as u32 + 1,
+                    })
+                })
+                .collect()
+        } else {
+            let mut diar = engines.diar().map_err(|e| e.to_string())?;
+            for block in pcm[&diar_track].chunks(10 * SAMPLE_RATE as usize) {
+                if ctx.preempted() {
+                    return restart();
+                }
+                diar.push(block, SAMPLE_RATE).map_err(|e| e.to_string())?;
             }
-            diar.push(block, SAMPLE_RATE).map_err(|e| e.to_string())?;
+            diar.finish().map_err(|e| e.to_string())?;
+            diar.segments().map_err(|e| e.to_string())?
+        };
+        // The diarizer tops out at 8 voices: when it did, tell them apart
+        // again with the speaker model (phase 14d, D12). Never blocks the pass.
+        if !from_tracks
+            && recluster_wanted(&segs)
+            && let Some(voice) = self.voice.as_ref().filter(|v| (v.ready)())
+        {
+            match (voice.embedder)() {
+                Ok(mut embedder) => {
+                    match recluster::run(
+                        &pcm[&diar_track],
+                        engines.as_ref(),
+                        embedder.as_mut(),
+                        &segs,
+                        &|| ctx.preempted(),
+                    ) {
+                        Ok(Some(better)) => segs = better,
+                        Ok(None) => {}
+                        Err(e) => log::warn!("recluster skipped: {} chars of error", e.len()),
+                    }
+                    if ctx.preempted() {
+                        return restart();
+                    }
+                }
+                Err(_) => log::warn!("recluster skipped: no speaker model"),
+            }
         }
-        diar.finish().map_err(|e| e.to_string())?;
-        let segs: Vec<SpeakerSegment> = diar.segments().map_err(|e| e.to_string())?;
 
         // ImprovingTranscript.
         let mut lines: Vec<Line> = Vec::new();
@@ -278,7 +337,20 @@ impl JobHandler for FinalPassJob {
                     }
                 } else {
                     for al in aligner::align(&words, &segs) {
-                        lines.push(line_from(t, al.speaker, false, &al));
+                        let mut line = line_from(t, al.speaker, false, &al);
+                        if from_tracks {
+                            // Who spoke comes from the tracks: a line no span
+                            // reaches goes to the nearest one, and "talked
+                            // over" means two people really spoke at once
+                            // for a while (the spans' trailing hangover and
+                            // a quick turn-over don't count).
+                            line.label = line
+                                .label
+                                .or_else(|| nearest_label(&spans, line.t0_ms, line.t1_ms));
+                            line.overlap =
+                                overlap_ms(&spans, line.t0_ms, line.t1_ms) >= TRACK_OVERLAP_MIN_MS;
+                        }
+                        lines.push(line);
                     }
                 }
             }
@@ -323,13 +395,43 @@ impl JobHandler for FinalPassJob {
                 })
             })
             .collect();
-        let c = carry::carry_over(&live_turns, &final_turns);
-        let by_idx: HashMap<u32, &String> = live_idx.iter().map(|(g, i)| (*i, g)).collect();
-        let mut label_gid: HashMap<u32, String> = c
-            .matched
-            .iter()
-            .map(|(f, l)| (*f, by_idx[l].clone()))
-            .collect();
+        let (mut label_gid, unmatched): (HashMap<u32, String>, Vec<u32>) = if from_tracks {
+            // The speakers were made at import; a merged one answers for
+            // the speaker it was merged into, down the chain (A into B, B
+            // into C: C).
+            let target = |gid: &str| {
+                let mut at = gid.to_string();
+                for _ in 0..speakers.len() {
+                    match speakers
+                        .iter()
+                        .find(|s| s.gid == at)
+                        .and_then(|s| s.merged_into.clone())
+                    {
+                        Some(next) => at = next,
+                        None => break,
+                    }
+                }
+                at
+            };
+            (
+                known
+                    .iter()
+                    .enumerate()
+                    .map(|(i, k)| (i as u32 + 1, target(&k.speaker_gid)))
+                    .collect(),
+                Vec::new(),
+            )
+        } else {
+            let c = carry::carry_over(&live_turns, &final_turns);
+            let by_idx: HashMap<u32, &String> = live_idx.iter().map(|(g, i)| (*i, g)).collect();
+            (
+                c.matched
+                    .iter()
+                    .map(|(f, l)| (*f, by_idx[l].clone()))
+                    .collect(),
+                c.unmatched,
+            )
+        };
         if ctx.preempted() {
             return restart();
         }
@@ -340,7 +442,7 @@ impl JobHandler for FinalPassJob {
             .iter()
             .map(|&c| i64::from(c))
             .filter(|c| !used.contains(c));
-        for (label, idx) in c.unmatched.iter().zip(first_idx..) {
+        for (label, idx) in unmatched.iter().zip(first_idx..) {
             let gid = store
                 .add_speaker(
                     &meeting,
@@ -376,14 +478,17 @@ impl JobHandler for FinalPassJob {
         // silence; this also covers anything the engine still hears there).
         let discarded = store.discarded_spans(&meeting).map_err(err)?;
         // The user's terms and the names they gave speakers (RT-14).
-        let vocab =
-            Some(Vocabulary::new(&crate::vocab::effective_terms(store)?)).filter(|v| !v.is_empty());
+        let vocab = Some(Vocabulary::new(&crate::vocab::meeting_terms(
+            store, &meeting,
+        )?))
+        .filter(|v| !v.is_empty());
         let me_spans: Vec<(i64, i64)> = lines
             .iter()
             .filter(|l| l.me)
             .filter(|l| !discarded.iter().any(|&(a, b)| a < l.t1_ms && l.t0_ms < b))
             .map(|l| (l.t0_ms, l.t1_ms))
             .collect();
+        let mut overlaps: Vec<String> = Vec::new();
         let mut v2: Vec<NewSegment> = lines
             .into_iter()
             .filter(|l| {
@@ -397,8 +502,12 @@ impl JobHandler for FinalPassJob {
                     Some(v) => v.correct(&l.text).unwrap_or(l.text),
                     None => l.text,
                 };
+                let gid = ghi_store::new_gid();
+                if l.overlap {
+                    overlaps.push(gid.clone());
+                }
                 NewSegment {
-                    gid: None,
+                    gid: Some(gid),
                     speaker_gid: if l.me {
                         me_gid.clone()
                     } else {
@@ -419,8 +528,12 @@ impl JobHandler for FinalPassJob {
             })
             .collect();
         for e in edited {
+            let gid = ghi_store::new_gid();
+            if e.overlap {
+                overlaps.push(gid.clone());
+            }
             v2.push(NewSegment {
-                gid: None,
+                gid: Some(gid),
                 speaker_gid: e.speaker_gid.clone(),
                 t0_ms: e.t0_ms,
                 t1_ms: e.t1_ms,
@@ -455,12 +568,75 @@ impl JobHandler for FinalPassJob {
             }
         }
         let lines = v2.len();
-        store.replace_transcript(&meeting, v2).map_err(err)?;
+        // The marks of the lines another speaker talked over go in with them.
+        store
+            .replace_transcript_marked(&meeting, v2, &overlaps)
+            .map_err(err)?;
         log::info!("final pass stored lines={lines}");
         queue_notes(store, &meeting)?;
         ctx.progress(Some(Stage::MatchingVoices), 1.0);
         Ok(Outcome::Done)
     }
+}
+
+/// A participant's speech span on the import's timeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TrackSpan {
+    label: u32,
+    t0_ms: i64,
+    t1_ms: i64,
+}
+
+/// A line is "talked over" with at least this much simultaneous speech (ms).
+const TRACK_OVERLAP_MIN_MS: i64 = 500;
+
+/// The label whose span is nearest the middle of `[t0, t1]` (0 distance
+/// inside it); `None` without spans.
+fn nearest_label(spans: &[TrackSpan], t0_ms: i64, t1_ms: i64) -> Option<u32> {
+    let mid = (t0_ms + t1_ms) / 2;
+    spans
+        .iter()
+        .min_by_key(|s| {
+            if mid < s.t0_ms {
+                s.t0_ms - mid
+            } else {
+                (mid - s.t1_ms).max(0)
+            }
+        })
+        .map(|s| s.label)
+}
+
+/// How long, within `[t0, t1]`, two or more participants speak at once. The
+/// spans carry the detector's hangover on their ends, which is not speech:
+/// it is taken off first.
+fn overlap_ms(spans: &[TrackSpan], t0_ms: i64, t1_ms: i64) -> i64 {
+    let mut edges: Vec<(i64, i32)> = Vec::new();
+    for s in spans {
+        let end = s.t1_ms - crate::activity::HANGOVER_MS;
+        let (a, b) = (s.t0_ms.max(t0_ms), end.min(t1_ms));
+        if b > a {
+            edges.push((a, 1));
+            edges.push((b, -1));
+        }
+    }
+    edges.sort_unstable();
+    let (mut active, mut from, mut total) = (0, 0, 0);
+    for (t, d) in edges {
+        if active >= 2 {
+            total += t - from;
+        }
+        active += d;
+        from = t;
+    }
+    total
+}
+
+/// The diarizer returned as many voices as it can tell apart.
+fn recluster_wanted(segs: &[SpeakerSegment]) -> bool {
+    let mut labels: Vec<u32> = segs.iter().map(|s| s.speaker).collect();
+    labels.sort_unstable();
+    labels.dedup();
+    labels.len() >= recluster::SATURATED_AT
 }
 
 fn queue_notes(store: &Store, meeting: &str) -> Result<(), String> {

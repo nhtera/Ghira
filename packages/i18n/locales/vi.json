@@ -131,7 +131,7 @@
       "roomHint": "Chuyển sang chế độ Phòng để ghi mọi người qua micro.",
       "micLost": "Micro đã bị ngắt. Hãy cắm lại để tiếp tục ghi giọng bạn.",
       "systemLost": "Âm thanh hệ thống đã dừng. Những người khác trong cuộc gọi không được ghi.",
-      "diskFull": "Ổ đĩa đã đầy. Bản ghi không thể lưu thêm. Hãy giải phóng dung lượng ngay."
+      "diskFull": "Ổ đĩa đã đầy. Bản ghi âm không thể lưu thêm. Hãy giải phóng dung lượng ngay."
     },
     "manyVoices": "Hơn 8 giọng nói. Các giọng thêm tạm chung làn Khác; {{app}} sẽ tách riêng sau cuộc họp."
   },
@@ -320,7 +320,7 @@
     "liveTag": "Gắn nhãn khi họp",
     "others": "Khác",
     "deferred": {
-      "title": "Đã lưu bản ghi. Ghi chú sẽ được viết khi tải xong mô hình.",
+      "title": "Đã lưu bản ghi âm. Ghi chú sẽ được viết khi tải xong mô hình.",
       "body": "Đã tải {{percent}}% mô hình giọng nói. {{app}} tự tiếp tục khi có mạng."
     },
     "othersCount": "Khác · {{count}}"
@@ -423,7 +423,8 @@
     "recording": "Đang ghi",
     "quit": "Thoát {{app}}",
     "calendarStart": {
-      "title": "“{{title}}” sắp bắt đầu. Ghi lại không?"
+      "title": "“{{title}}” sắp bắt đầu. Ghi lại không?",
+      "untitled": "Một cuộc họp trong lịch sắp bắt đầu. Ghi lại không?"
     }
   },
   "cloud": {
@@ -889,7 +890,7 @@
       "pairBody": "Mở {{app}} trên điện thoại và quét mã này. Hai máy cần cùng Wi-Fi, không cần internet.",
       "pairedDevices": "Thiết bị đã ghép",
       "whatSyncs": "Đồng bộ những gì",
-      "phoneRecordings": "Gửi bản ghi từ điện thoại về đây để xử lý cuối",
+      "phoneRecordings": "Gửi bản ghi âm từ điện thoại về đây để xử lý cuối",
       "notes": "Ghi chú và bản ghi, hai chiều",
       "voiceProfiles": "Hồ sơ giọng nói",
       "voiceProfilesHint": "Để điện thoại cũng gọi được tên người nói.",
@@ -961,18 +962,18 @@
   "system": {
     "crash": {
       "title": "{{app}} bị đóng đột ngột",
-      "body": "Bản ghi “{{title}}” đã được lưu đến {{time}}.",
+      "body": "Bản ghi âm “{{title}}” đã được lưu đến {{time}}.",
       "recover": "Khôi phục và viết ghi chú",
-      "discard": "Bỏ bản ghi",
+      "discard": "Bỏ bản ghi âm",
       "open": "Mở cuộc họp",
       "discardQuestion": "Xóa bản ghi này và bản chép lời? Không hoàn tác được."
     },
     "permissionLost": "Quyền ghi âm thanh hệ thống đã bị tắt. {{app}} chỉ đang ghi micro, nên thiếu giọng những người khác.",
     "micTaken": "Một ứng dụng khác đang dùng micro ở chế độ độc quyền. Đóng ứng dụng đó hoặc tắt chế độ độc quyền trong cài đặt Âm thanh.",
     "diskLow": "Máy chỉ còn {{free}}, đủ khoảng {{minutes}} phút ghi âm.",
-    "modelDamaged": "File mô hình viết ghi chú bị hỏng nên chưa viết được ghi chú. Các bản ghi vẫn an toàn.",
+    "modelDamaged": "File mô hình viết ghi chú bị hỏng nên chưa viết được ghi chú. Các bản ghi âm vẫn an toàn.",
     "mutedInMeetingApp": "Bạn đang tắt tiếng trong {{meetingApp}}. {{app}} vẫn ghi giọng người khác.",
-    "recovered": "Đã khôi phục bản ghi sau khi {{app}} khởi động lại. Có thể thiếu khoảng {{seconds}} giây tại {{time}}.",
+    "recovered": "Đã khôi phục bản ghi âm sau khi {{app}} khởi động lại. Có thể thiếu khoảng {{seconds}} giây tại {{time}}.",
     "manageStorage": "Quản lý dung lượng",
     "redownload": "Tải lại · {{size}}",
     "update": {
@@ -1007,9 +1008,9 @@
     "dismiss": "Bỏ qua",
     "storage": {
       "title": "{{app}} không mở được các cuộc họp của bạn",
-      "body": "Hiện chưa thể lưu gì. Các bản ghi trên ổ đĩa không bị đụng đến. Hãy thử lại, nếu vẫn lỗi thì khởi động lại máy."
+      "body": "Hiện chưa thể lưu gì. Các bản ghi âm trên ổ đĩa không bị đụng đến. Hãy thử lại, nếu vẫn lỗi thì khởi động lại máy."
     },
-    "storageWrite": "Một phần bản ghi này chưa lưu được vào ổ đĩa.",
+    "storageWrite": "Một phần bản ghi âm này chưa lưu được vào ổ đĩa.",
     "crashReport": {
       "title": "Lần trước {{app}} đã thoát bất ngờ",
       "body": "Báo cáo đã được lưu trên máy Mac này. Báo cáo không chứa nội dung cuộc họp và không bao giờ được gửi đi.",
@@ -1382,14 +1383,24 @@
       "unsupported": "{{app}} không đọc được tệp này. Hãy nhập tệp âm thanh hoặc video.",
       "empty": "Tệp này trống.",
       "veryLong": "Dài hơn 4 giờ. Vẫn nhập được nhưng sẽ mất khá lâu.",
-      "duplicate": "Đã nhập trước đó với tên “{{title}}”"
+      "duplicate": "Đã nhập trước đó với tên “{{title}}”",
+      "superseded": "Các tệp âm thanh của từng người tham dự Zoom sẽ được nhập thay thế.",
+      "tooManyTracks": "Hơn 49 tệp âm thanh của người tham dự. Hãy nhập từng tệp riêng."
     },
     "removeFile": "Bỏ {{name}}",
     "channelsN": "{{count}} kênh",
     "group": {
       "title_other": "Bản thu Zoom · {{count}} người",
       "body": "Mỗi người có một tệp âm thanh riêng, nên {{app}} biết ai nói gì mà không cần đoán.",
-      "unnamed": "Người tham dự {{number}}"
+      "unnamed": "Người tham dự {{number}}",
+      "separately": "Nhập từng tệp riêng"
+    },
+    "errors": {
+      "tooManyTracks": "Một bản thu có tối đa 49 tệp âm thanh của người tham dự.",
+      "noTracks": "Không có tệp âm thanh nào để nhập.",
+      "trackMissing": "Một tệp âm thanh không còn nữa. Hãy thêm lại các tệp.",
+      "trackUnreadable": "Không đọc được một trong các tệp âm thanh.",
+      "tooLong": "Bản thu này quá dài để nhập theo từng tệp của mỗi người."
     }
   },
   "palette": {
@@ -1507,7 +1518,14 @@
     "at": "lúc {{time}}",
     "people_other": "{{count}} người",
     "inInvite": "Trong lời mời họp",
-    "denied_win": "Quyền truy cập Lịch đang tắt cho {{app}}. Bật trong Cài đặt → Quyền riêng tư & bảo mật → Lịch."
+    "denied_win": "Quyền truy cập Lịch đang tắt cho {{app}}. Bật trong Cài đặt → Quyền riêng tư & bảo mật → Lịch.",
+    "error": {
+      "storage": "Không đọc hoặc ghi được cài đặt lịch. Hãy thử lại.",
+      "notFound": "Sự kiện này không còn trong lịch.",
+      "notSupported": "Máy tính này không hỗ trợ truy cập Lịch.",
+      "generic": "Đã xảy ra lỗi với lịch. Hãy thử lại."
+    },
+    "untitled": "Sự kiện chưa đặt tên"
   },
   "organize": {
     "folders": "Thư mục",
@@ -1533,6 +1551,8 @@
     "limit": "Đã đạt giới hạn {{max}}.",
     "fromTemplate": "Theo mẫu",
     "manageTitle": "Thư mục và thẻ",
-    "manageEmpty": "Chưa có thư mục hay thẻ nào. Thêm từ một cuộc họp hoặc khi chọn nhiều cuộc họp."
+    "manageEmpty": "Chưa có thư mục hay thẻ nào. Thêm từ một cuộc họp hoặc khi chọn nhiều cuộc họp.",
+    "notFound": "Thư mục hoặc thẻ này không còn nữa.",
+    "failed": "Chưa thực hiện được. Hãy thử lại."
   }
 }

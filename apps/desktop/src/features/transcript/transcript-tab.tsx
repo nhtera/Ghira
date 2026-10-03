@@ -13,9 +13,9 @@ import { useMeetingTranscript } from "../../state/meeting-queries";
 import { usePlayer } from "../../state/player";
 import { TopicRail, showTopicRail } from "../topic-rail";
 import { FindBar } from "./find-bar";
-import { GroupRow, type SpeakerLabel } from "./group-row";
+import { GroupRow, OverlapTag, type SpeakerLabel } from "./group-row";
 import type { LineRange } from "./line-text";
-import { buildRows, findMatches, marksOf, rowIndexBySegment, segmentAt } from "./logic";
+import { buildRows, type GroupData, findMatches, marksOf, rowIndexBySegment, segmentAt } from "./logic";
 import { useLineActions } from "./use-line-actions";
 
 const ESTIMATE_PX = 96;
@@ -203,6 +203,25 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
     }
   };
 
+  const group = (g: GroupData, stacked = false) => (
+    <GroupRow
+      key={g.key}
+      group={g}
+      stacked={stacked}
+      speaker={(g.speakerGid && labels.get(g.speakerGid)) || null}
+      others={others}
+      active={active}
+      ranges={ranges}
+      marks={marks}
+      editing={editing}
+      picking={picking}
+      onEdit={setEditing}
+      onPick={setPicking}
+      onSave={actions.saveText}
+      onSetSpeaker={actions.setSpeaker}
+    />
+  );
+
   const durationMs = detail.durationMs ?? segments.at(-1)?.t1Ms ?? 0;
   const rail = showTopicRail(durationMs, topics);
 
@@ -258,21 +277,15 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
                       </button>
                       <span aria-hidden="true" className="h-px flex-1 bg-line" />
                     </div>
+                  ) : row.kind === "stack" ? (
+                    <div role="group" aria-label={t("transcript.overlap")} data-testid="transcript-stack" className="mx-1 my-1 rounded-l-ctl border-l-[3px] border-warn bg-warn-soft/30 pl-1">
+                      <div className="flex items-center px-2 pt-1">
+                        <OverlapTag />
+                      </div>
+                      {row.groups.map((g) => group(g, true))}
+                    </div>
                   ) : (
-                    <GroupRow
-                      group={row}
-                      speaker={(row.speakerGid && labels.get(row.speakerGid)) || null}
-                      others={others}
-                      active={active}
-                      ranges={ranges}
-                      marks={marks}
-                      editing={editing}
-                      picking={picking}
-                      onEdit={setEditing}
-                      onPick={setPicking}
-                      onSave={actions.saveText}
-                      onSetSpeaker={actions.setSpeaker}
-                    />
+                    group(row)
                   )}
                 </li>
               );

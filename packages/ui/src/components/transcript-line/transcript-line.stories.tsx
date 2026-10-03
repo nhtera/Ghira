@@ -24,6 +24,10 @@ export const PlayingKaraoke: Story = {
   render: () => <Line i={4} playing activeWordIndex={2} />,
   note: "Only the current word is highlighted.",
 };
+export const Overlap: Story = {
+  render: () => <Line i={6} overlap />,
+  note: "Talking over each other: marker with a hint, text muted like a low-confidence line.",
+};
 export const Selected: Story = { render: () => <Line i={5} selected /> };
 export const Edited: Story = { render: () => <Line i={10} edited /> };
 export const HoverActions: Story = {

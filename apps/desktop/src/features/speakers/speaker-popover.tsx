@@ -14,6 +14,7 @@ import { ipc } from "../../ipc";
 import { settingsQuery } from "../../shell/root-view";
 import { useLive } from "../../state/live";
 import { speakerNumber, useSpeakerLabel } from "../../state/speaker-label";
+import { useMeetingAttendees } from "../calendar/use-calendar";
 import { ConsentDialog } from "./consent-dialog";
 import { NameField } from "./name-field";
 import { useSpeakerActions } from "./use-speaker-actions";
@@ -100,7 +101,13 @@ function Content({ speaker, onClose, onNamed }: { speaker: SpeakerInfo; onClose:
   const labelOf = useSpeakerLabel();
   const [view, setView] = useState<View>("main");
   const [saveVoice, setSaveVoice] = useState(false);
-  const names = useQuery(knownNamesQuery).data ?? [];
+  const known = useQuery(knownNamesQuery).data;
+  // The people in the calendar invite come first.
+  const attendees = useMeetingAttendees(useLive((s) => s.meeting));
+  const names = useMemo(() => {
+    const invited = new Set(attendees.map((n) => n.toLowerCase()));
+    return [...attendees, ...(known ?? []).filter((n) => !invited.has(n.toLowerCase()))];
+  }, [attendees, known]);
   // Voice profiles of other people are off in this phase; the option only shows when they are on.
   const canSaveVoice = useQuery(settingsQuery).data?.voiceProfilesThirdParty === true;
   const title = speaker.provisional || speakerNumber(speaker) ? t("speakers.whoIs") : t("speakers.rename");

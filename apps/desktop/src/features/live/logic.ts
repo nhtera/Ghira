@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Pure helpers of the live view (kept apart so they test without a DOM).
 import type { LineInfo, SpeakerInfo } from "../../bindings";
+import { stackRuns } from "../transcript/logic";
 
 /** Distance (px) from the bottom within which the transcript keeps following the newest line. */
 export const FOLLOW_SLOP_PX = 48;
@@ -36,19 +37,29 @@ const MERGE_GAP_MS = 1500;
 export const MAX_LANES = 8;
 
 /**
- * Lane rows and merged segments from live lines. Speakers are in arrival order
- * (id order); the ones past `MAX_LANES`, and any the core already put in
- * Others, fold into one shared lane.
+ * The speakers who get their own lane and chip (in arrival order, at most
+ * `MAX_LANES`, with a color) and the ones who share Others: those past the
+ * limit and any the core already put there.
  */
-export function laneModel(speakers: SpeakerInfo[], lines: LineInfo[], labelOf: (s: SpeakerInfo) => string, othersLabel: string): { lanes: Lane[]; segments: Segment[] } {
+export function splitOthers(speakers: readonly SpeakerInfo[]): { own: SpeakerInfo[]; others: SpeakerInfo[] } {
   const ordered = [...speakers].filter((s) => !s.notPerson).sort((a, b) => a.id - b.id);
   const own = ordered.filter((s) => !s.others && s.colorSlot > 0).slice(0, MAX_LANES);
+  const ids = new Set(own.map((s) => s.id));
+  return { own, others: ordered.filter((s) => !ids.has(s.id)) };
+}
+
+/**
+ * Lane rows and merged segments from live lines. Speakers are in arrival order
+ * (id order); the ones past `MAX_LANES`, and any the core already put in
+ * Others, fold into one shared lane (`othersLabel`, e.g. "Others · 3").
+ */
+export function laneModel(speakers: SpeakerInfo[], lines: LineInfo[], labelOf: (s: SpeakerInfo) => string, othersLabel: string): { lanes: Lane[]; segments: Segment[] } {
+  const { own, others } = splitOthers(speakers);
   const laneOf = new Map<number, number>(own.map((s) => [s.id, s.id]));
   const lanes: Lane[] = own.map((s) => ({ id: s.id, label: labelOf(s), colorSlot: s.colorSlot }));
-  const hasOthers = ordered.length > own.length;
-  if (hasOthers) {
+  if (others.length > 0) {
     lanes.push({ id: 0, label: othersLabel, colorSlot: 0 });
-    for (const s of ordered) if (!laneOf.has(s.id)) laneOf.set(s.id, 0);
+    for (const s of others) laneOf.set(s.id, 0);
   }
   const segments: Segment[] = [];
   const last = new Map<number, Segment>();
@@ -89,4 +100,30 @@ export function parseNoteLine(text: string): NoteLineView {
   }
   if (at < body.length) parts.push({ text: body.slice(at) });
   return { bullet: Boolean(m), parts };
+}
+
+/** What the live transcript draws: one line, or a stack of lines the core flagged as talked over. */
+export type LiveBlock = { from: number; to: number; stacked: boolean };
+
+/**
+ * The lines as blocks. Lines flagged as talked over, with the neighbours they
+ * overlap in time, form one stacked block ([`stackRuns`]); everything else is
+ * one block per line. The lines themselves are untouched.
+ */
+export function liveBlocks(lines: readonly Pick<LineInfo, "speaker" | "t0Ms" | "t1Ms" | "overlap">[]): LiveBlock[] {
+  const runs = stackRuns(lines.map((l) => ({ speaker: l.speaker, t0Ms: l.t0Ms, t1Ms: l.t1Ms, overlap: l.overlap })));
+  const out: LiveBlock[] = [];
+  let r = 0;
+  for (let i = 0; i < lines.length; ) {
+    const run = runs[r];
+    if (run && run[0] === i) {
+      out.push({ from: i, to: run[1], stacked: true });
+      i = run[1];
+      r++;
+    } else {
+      out.push({ from: i, to: i + 1, stacked: false });
+      i++;
+    }
+  }
+  return out;
 }

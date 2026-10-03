@@ -255,6 +255,22 @@ pub fn save_notes_with(
 /// Opens the local model for a transcript of `transcript_bytes`.
 pub type LlmFactory = Arc<dyn Fn(usize) -> Result<Box<dyn Llm + Send>, String> + Send + Sync>;
 
+/// The template for notes: the one asked for, else the meeting's own, else the
+/// one its calendar event suggests, else `default`. An id that is not a
+/// built-in template is passed over.
+fn choose_template(
+    asked: Option<String>,
+    meeting: Option<String>,
+    suggested: Option<String>,
+    default: &Template,
+) -> Template {
+    [asked, meeting, suggested]
+        .into_iter()
+        .flatten()
+        .find_map(|id| ghi_llm::template::builtin(&id).ok())
+        .unwrap_or_else(|| default.clone())
+}
+
 /// `notes_live` / `notes_final`.
 pub struct NotesJob {
     pub kind: &'static str,
@@ -311,19 +327,21 @@ impl JobHandler for NotesJob {
         }
         if !t.is_empty() {
             // A regenerate may pick the template and language (payload); else
-            // the meeting's template, else the default.
+            // the meeting's template, else one its calendar event suggests,
+            // else the default.
             let payload = &ctx.job.payload;
-            let template = [
+            let suggested = crate::calendar::info(ctx.store, meeting).and_then(|i| {
+                crate::calendar::suggest_template(&i.title, &i.attendees).map(str::to_string)
+            });
+            let template = choose_template(
                 payload
                     .get("template")
                     .and_then(|v| v.as_str())
                     .map(str::to_string),
                 ctx.store.get_meeting(meeting).map_err(store_err)?.template,
-            ]
-            .into_iter()
-            .flatten()
-            .find_map(|id| ghi_llm::template::builtin(&id).ok())
-            .unwrap_or_else(|| self.template.clone());
+                suggested,
+                &self.template,
+            );
             let lang = payload
                 .get("lang")
                 .and_then(|v| v.as_str())
@@ -364,5 +382,31 @@ impl JobHandler for NotesJob {
             version: self.version,
         });
         Ok(Outcome::Done)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn template_order_is_asked_then_meeting_then_calendar_then_default() {
+        let d = ghi_llm::template::builtin("general").unwrap();
+        let id = |a: Option<&str>, m: Option<&str>, c: Option<&str>| {
+            choose_template(
+                a.map(str::to_string),
+                m.map(str::to_string),
+                c.map(str::to_string),
+                &d,
+            )
+            .id
+        };
+        assert_eq!(id(Some("sales"), Some("client"), Some("standup")), "sales");
+        assert_eq!(id(None, Some("client"), Some("standup")), "client");
+        assert_eq!(id(None, None, Some("standup")), "standup");
+        assert_eq!(id(None, None, None), "general");
+        // An unknown id is passed over, not an error.
+        assert_eq!(id(Some("nope"), None, Some("interview")), "interview");
+        assert_eq!(id(Some("nope"), Some("also-nope"), None), "general");
     }
 }

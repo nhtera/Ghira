@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Hardened runtime entitlements of the app. Only the microphone: system
+<!-- Hardened runtime entitlements of the app. The microphone and Calendars (EventKit, phase 14d; without
+     this a signed hardened app is denied silently, with no prompt): system
      audio (the process tap) needs no entitlement, only the TCC prompt
      (NSAudioCaptureUsageDescription); Metal needs no JIT; every bundled dylib
      is signed by the same team, so library validation stays on. No sandbox
@@ -9,6 +10,8 @@
 <plist version="1.0">
 <dict>
   <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.personal-information.calendars</key>
   <true/>
 </dict>
 </plist>

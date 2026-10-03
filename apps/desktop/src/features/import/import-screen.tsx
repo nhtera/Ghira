@@ -5,19 +5,21 @@
 // webview only shows the drop affordance.
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { formatBytes, formatClock, type Locale } from "@ghi/i18n";
+import { APP_NAME, formatBytes, formatClock, formatDate, type Locale } from "@ghi/i18n";
 import { Button, Icon, Segmented, cn, useToast, usePlatform, type IconName } from "@ghi/ui";
 import type { ImportSource, StagedFile } from "../../bindings";
 import { ipc } from "../../ipc";
 import { Page } from "../../shell/page";
-import { activeCount, doneCount, importChoice, isActive, isImportable, type Language, type QueueItem } from "./import-model";
+import { IMPORT_ERROR_CODES, activeCount, doneCount, importChoice, importableFiles, isActive, isImportable, unitsOf, type Language, type QueueItem, type Unit } from "./import-model";
 import { useImportStore } from "./import-store";
 
 const SOURCE_ICON: Record<ImportSource, IconName> = {
   plaud: "mic",
   zoom: "videocam",
   teams: "videocam",
+  meet: "videocam",
   voiceMemos: "graphic_eq",
   other: "music_note",
 };
@@ -60,8 +62,10 @@ export function ImportScreen() {
   const [language, setLanguage] = useState<Language>("auto");
   const [split, setSplit] = useState(true);
   const [busy, setBusy] = useState(false);
-  const importable = staged.filter(isImportable);
-  const stereo = staged.some((f) => f.channels >= 2);
+  const units = unitsOf(staged);
+  // A group's tracks go together; a track left alone goes as a file.
+  const importable = units.flatMap(importableFiles);
+  const stereo = staged.some((f) => f.channels >= 2 && !f.group);
   const items = Object.values(queue);
   const active = activeCount(queue);
 
@@ -84,7 +88,13 @@ export function ImportScreen() {
   };
   const remove = (id: string) => {
     useImportStore.getState().removeStaged([id]);
-    void ipc.commands.unstageFiles([id]);
+    // Removing the last track brings the mixed recording back.
+    void ipc.commands.unstageFiles([id]).then((changed) => useImportStore.getState().updateStaged(changed));
+  };
+  const separate = async (group: string) => {
+    const r = await ipc.commands.importTracksSeparately(group);
+    if (r.status === "error") return fail(r.error);
+    useImportStore.getState().updateStaged(r.data);
   };
   const start = async () => {
     setBusy(true);
@@ -97,7 +107,9 @@ export function ImportScreen() {
       const st = useImportStore.getState();
       st.dispatch({
         type: "start",
-        files: importable.map((f) => ({ id: f.id, name: f.name })),
+        files: units
+          .filter((u) => importableFiles(u).length > 0)
+          .map((u) => ({ id: u.group && importableFiles(u).length >= 2 ? u.id : importableFiles(u)[0]!.id, name: unitName(u, t) })),
       });
       st.removeStaged(importable.map((f) => f.id));
     } finally {
@@ -132,9 +144,13 @@ export function ImportScreen() {
             {t("import.staged.title")}
           </h2>
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-            {staged.map((f) => (
-              <StagedRow key={f.id} file={f} locale={(i18n.language === "vi" ? "vi" : "en") as Locale} onRemove={() => remove(f.id)} onOpen={openMeeting} />
-            ))}
+            {units.map((u) =>
+              u.group ? (
+                <GroupRow key={u.id} unit={u} locale={(i18n.language === "vi" ? "vi" : "en") as Locale} onRemove={remove} onSeparate={() => void separate(u.id)} onOpen={openMeeting} />
+              ) : (
+                <StagedRow key={u.id} file={u.files[0]!} locale={(i18n.language === "vi" ? "vi" : "en") as Locale} onRemove={() => remove(u.files[0]!.id)} onOpen={openMeeting} />
+              ),
+            )}
           </ul>
           <div className="mt-1 flex flex-col gap-3 rounded-panel border border-line bg-surface p-3.5" role="group" aria-label={t("import.options.title")}>
             <div className="flex flex-wrap items-center gap-3">
@@ -223,6 +239,18 @@ export function ImportScreen() {
   );
 }
 
+/** Keys of the 14d import copy, not in the typed locale until PENDING-s7b.json is merged. */
+const KEYS = { superseded: "import.problems.superseded", tooManyTracks: "import.problems.tooManyTracks", separately: "import.group.separately" } as const;
+
+/** A word that isn't in the typed locale until the 14d import copy (apps/desktop/PENDING-s7b.json) is merged. */
+const word = (t: TFunction, key: string): string => (t as unknown as (k: string) => string)(key);
+
+/** The queue's name for a unit: the file's name, or the recording's title. */
+function unitName(u: Unit, t: TFunction): string {
+  const f = u.files[0]!;
+  return u.group ? (f.title ?? t("import.group.title", { count: u.files.length })) : f.name;
+}
+
 function Tag({ tone, children }: { tone: "bad" | "warn"; children: ReactNode }) {
   return <span className={cn("text-small", tone === "bad" ? "font-semibold text-rec-ink" : "text-warn")}>{children}</span>;
 }
@@ -232,6 +260,8 @@ function StagedRow({ file: f, locale, onRemove, onOpen }: { file: StagedFile; lo
   const blocked = !isImportable(f);
   const meta = [
     t(`import.sources.${f.source}`),
+    f.title,
+    f.startedAt != null ? formatDate(f.startedAt, locale) : null,
     f.durationMs != null ? formatClock(f.durationMs) : null,
     f.sizeBytes != null ? formatBytes(f.sizeBytes, locale) : null,
     f.channels >= 2 ? t("import.stereo") : null,
@@ -250,6 +280,7 @@ function StagedRow({ file: f, locale, onRemove, onOpen }: { file: StagedFile; lo
         {f.problems.includes("unsupported") && <Tag tone="bad">{t("import.problems.unsupported")}</Tag>}
         {f.problems.includes("empty") && <Tag tone="bad">{t("import.problems.empty")}</Tag>}
         {f.problems.includes("veryLong") && <Tag tone="warn">{t("import.problems.veryLong")}</Tag>}
+        {f.problems.includes("superseded") && <Tag tone="warn">{word(t, KEYS.superseded)}</Tag>}
         {f.problems.includes("duplicate") && f.duplicateOf && (
           <span className="text-small flex flex-wrap items-center gap-1.5">
             <Tag tone="warn">{t("import.problems.duplicate", { title: f.duplicateOf.title })}</Tag>
@@ -265,6 +296,61 @@ function StagedRow({ file: f, locale, onRemove, onOpen }: { file: StagedFile; lo
   );
 }
 
+/** One Zoom recording: its participants' tracks, imported together as one meeting. */
+function GroupRow({ unit, locale, onRemove, onSeparate, onOpen }: { unit: Unit; locale: Locale; onRemove: (id: string) => void; onSeparate: () => void; onOpen: (meeting: string) => void }) {
+  const { t } = useTranslation();
+  const first = unit.files[0]!;
+  const blocked = unit.files.some((f) => !isImportable(f));
+  const dup = unit.files.find((f) => f.problems.includes("duplicate") && f.duplicateOf)?.duplicateOf ?? null;
+  const total = unit.files.reduce((n, f) => n + (f.sizeBytes ?? 0), 0);
+  const meta = [first.title, first.startedAt != null ? formatDate(first.startedAt, locale) : null, first.durationMs != null ? formatClock(first.durationMs) : null, formatBytes(total, locale)]
+    .filter(Boolean)
+    .join(t("common.metaSep"));
+  return (
+    <li data-group={unit.id} data-blocked={blocked ? "true" : undefined} className={cn("flex flex-col gap-2 rounded-row border border-line bg-surface px-3 py-2.5", blocked && "bg-surface2")}>
+      <div className="flex items-start gap-3">
+        <Icon name={SOURCE_ICON.zoom} size={22} className="mt-0.5 flex-none text-muted" />
+        <div className="min-w-0 flex-1">
+          <b className={cn("block truncate text-[13.5px] font-semibold", blocked && "text-muted")}>{t("import.group.title", { count: unit.files.length })}</b>
+          <span className="text-small block text-muted">{meta}</span>
+          <span className="text-small block text-muted">{t("import.group.body", { app: APP_NAME })}</span>
+          {dup && (
+            <span className="text-small flex flex-wrap items-center gap-1.5">
+              <Tag tone="warn">{t("import.problems.duplicate", { title: dup.title })}</Tag>
+              <button type="button" onClick={() => onOpen(dup.meeting)} className="font-semibold text-accent hover:underline">
+                {t("common.open")}
+              </button>
+            </span>
+          )}
+          {unit.files.some((f) => f.problems.includes("tooManyTracks")) && <Tag tone="bad">{word(t, KEYS.tooManyTracks)}</Tag>}
+        </div>
+        <Button variant="ghost" size="sm" onClick={onSeparate}>
+          {word(t, KEYS.separately)}
+        </Button>
+      </div>
+      <ul aria-label={t("import.group.title", { count: unit.files.length })} className="m-0 flex list-none flex-col gap-0.5 p-0 pl-9">
+        {unit.files.map((f, i) => (
+          <li key={f.id} className="flex items-center gap-2 text-[13px]">
+            <Icon name="person" size={16} className="flex-none text-muted" />
+            <span className="min-w-0 truncate font-medium">{f.participant ?? t("import.group.unnamed", { number: i + 1 })}</span>
+            <span className="text-small min-w-0 flex-1 truncate text-faint">{f.name}</span>
+            {f.problems.includes("unsupported") && <Tag tone="bad">{t("import.problems.unsupported")}</Tag>}
+            {f.problems.includes("empty") && <Tag tone="bad">{t("import.problems.empty")}</Tag>}
+            {f.problems.includes("veryLong") && <Tag tone="warn">{t("import.problems.veryLong")}</Tag>}
+            <Button variant="ghost" size="sm" icon="close" aria-label={t("import.removeFile", { name: f.participant ?? f.name })} title={t("common.remove")} onClick={() => onRemove(f.id)} />
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+}
+
+/** A failed import's message: the words for a code the core returns, else the message as it is. */
+function errorWords(error: string | null, t: TFunction): string {
+  if (error && (IMPORT_ERROR_CODES as readonly string[]).includes(error)) return (t as unknown as (key: string) => string)(`import.errors.${error}`);
+  return error ?? "";
+}
+
 function QueueRow({ item, onOpen }: { item: QueueItem; onOpen: (meeting: string) => void }) {
   const { t } = useTranslation();
   const pct = Math.round((item.progress ?? 0) * 100);
@@ -277,7 +363,7 @@ function QueueRow({ item, onOpen }: { item: QueueItem; onOpen: (meeting: string)
           ? t("import.queue.ready")
           : item.state === "cancelled"
             ? t("import.queue.cancelled")
-            : t("import.queue.failed", { message: item.error ?? "" });
+            : t("import.queue.failed", { message: errorWords(item.error, t) });
   return (
     <li data-state={item.state} className="flex flex-wrap items-center gap-3 rounded-row border border-line bg-surface px-3 py-2.5">
       <Icon

@@ -440,7 +440,8 @@
     "recording": "Recording",
     "quit": "Quit {{app}}",
     "calendarStart": {
-      "title": "“{{title}}” is starting. Record it?"
+      "title": "“{{title}}” is starting. Record it?",
+      "untitled": "A calendar meeting is starting. Record it?"
     }
   },
   "cloud": {
@@ -1424,7 +1425,9 @@
       "unsupported": "{{app}} can’t read this file. Import audio or video instead.",
       "empty": "This file is empty.",
       "veryLong": "Over 4 hours. It can be imported, but it will take a while.",
-      "duplicate": "Already imported as “{{title}}”"
+      "duplicate": "Already imported as “{{title}}”",
+      "superseded": "The Zoom participant tracks are imported instead.",
+      "tooManyTracks": "More than 49 participant tracks. Import them separately."
     },
     "removeFile": "Remove {{name}}",
     "channelsN": "{{count}} channels",
@@ -1432,7 +1435,15 @@
       "title_one": "Zoom recording · {{count}} participant",
       "title_other": "Zoom recording · {{count}} participants",
       "body": "Each person has their own track, so {{app}} knows who said what without guessing.",
-      "unnamed": "Participant {{number}}"
+      "unnamed": "Participant {{number}}",
+      "separately": "Import tracks separately"
+    },
+    "errors": {
+      "tooManyTracks": "A recording can have up to 49 participant tracks.",
+      "noTracks": "There are no audio tracks to import.",
+      "trackMissing": "A track file is gone. Add the files again.",
+      "trackUnreadable": "One of the tracks can’t be read.",
+      "tooLong": "This recording is too long to import with a track for each person."
     }
   },
   "palette": {
@@ -1552,7 +1563,14 @@
     "people_one": "{{count}} person",
     "people_other": "{{count}} people",
     "inInvite": "In the invite",
-    "denied_win": "Calendar access is off for {{app}}. Turn it on in Settings → Privacy & security → Calendar."
+    "denied_win": "Calendar access is off for {{app}}. Turn it on in Settings → Privacy & security → Calendar.",
+    "error": {
+      "storage": "Couldn’t read or write the calendar settings. Try again.",
+      "notFound": "That event is no longer in your calendar.",
+      "notSupported": "Calendar access isn’t available on this computer.",
+      "generic": "Something went wrong with the calendar. Try again."
+    },
+    "untitled": "Untitled event"
   },
   "organize": {
     "folders": "Folders",
@@ -1581,6 +1599,8 @@
     "limit": "You have reached the limit of {{max}}.",
     "fromTemplate": "From the template",
     "manageTitle": "Folders and tags",
-    "manageEmpty": "No folders or tags yet. Add them from a meeting or by selecting meetings."
+    "manageEmpty": "No folders or tags yet. Add them from a meeting or by selecting meetings.",
+    "notFound": "That folder or tag no longer exists.",
+    "failed": "That didn’t work. Try again."
   }
 }

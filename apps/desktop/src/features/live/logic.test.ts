@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
 import type { LineInfo, SpeakerInfo } from "../../bindings";
-import { FOLLOW_SLOP_PX, formatBytes, isFollowing, laneModel, minutesLeft, parseNoteLine, waitingForAudio } from "./logic";
+import { FOLLOW_SLOP_PX, formatBytes, isFollowing, laneModel, liveBlocks, minutesLeft, parseNoteLine, splitOthers, waitingForAudio } from "./logic";
 
 const sp = (id: number, over: Partial<SpeakerInfo> = {}): SpeakerInfo => ({ id, label: `Speaker ${id}`, colorSlot: ((id - 1) % 8) + 1, isMe: false, provisional: false, notPerson: false, others: false, ...over });
 const line = (speaker: number | null, t0Ms: number, t1Ms: number): LineInfo => ({ gid: `${t0Ms}`, speaker, t0Ms, t1Ms, text: "x", overlap: false, words: [] });
@@ -51,6 +51,47 @@ describe("laneModel", () => {
   });
   it("skips lines without a speaker or time", () => {
     expect(laneModel([sp(1)], [line(null, 0, 1), { ...line(1, 0, 1), t0Ms: null }], label, "Others").segments).toEqual([]);
+  });
+});
+
+describe("splitOthers", () => {
+  it("gives the first eight their own place and the rest to Others", () => {
+    const { own, others } = splitOthers(Array.from({ length: 11 }, (_, i) => sp(i + 1)));
+    expect(own.map((s) => s.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(others.map((s) => s.id)).toEqual([9, 10, 11]);
+  });
+  it("keeps what the core already put in Others, and leaves out non-persons", () => {
+    const { own, others } = splitOthers([sp(1), sp(2, { others: true, colorSlot: 0 }), sp(3, { notPerson: true }), sp(4)]);
+    expect(own.map((s) => s.id)).toEqual([1, 4]);
+    expect(others.map((s) => s.id)).toEqual([2]);
+  });
+});
+
+describe("liveBlocks", () => {
+  const l = (speaker: number, t0Ms: number, t1Ms: number, overlap = false) => ({ speaker, t0Ms, t1Ms, overlap });
+  it("one block per line when nothing is flagged, however the lines overlap", () => {
+    expect(liveBlocks([l(1, 0, 5000), l(2, 1000, 3000)])).toEqual([
+      { from: 0, to: 1, stacked: false },
+      { from: 1, to: 2, stacked: false },
+    ]);
+  });
+  it("stacks flagged lines with the lines they overlap, three ways too", () => {
+    const lines = [l(1, 0, 5000, true), l(2, 4000, 9000, true), l(3, 8000, 12_000, true), l(1, 20_000, 21_000)];
+    expect(liveBlocks(lines)).toEqual([
+      { from: 0, to: 3, stacked: true },
+      { from: 3, to: 4, stacked: false },
+    ]);
+  });
+  it("a long turn with a flagged mm-hm stacks only the turn it interrupts", () => {
+    const lines = [l(1, 0, 20_000), l(1, 20_000, 40_000), l(2, 25_000, 26_000, true), l(1, 40_000, 60_000)];
+    expect(liveBlocks(lines).map((b) => [b.from, b.to, b.stacked])).toEqual([
+      [0, 1, false],
+      [1, 3, true],
+      [3, 4, false],
+    ]);
+  });
+  it("does not stack the same speaker", () => {
+    expect(liveBlocks([l(1, 0, 5000, true), l(1, 2000, 6000, true)]).every((b) => !b.stacked)).toBe(true);
   });
 });
 

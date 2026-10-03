@@ -2418,7 +2418,7 @@ pub(crate) fn id_of(conn: &Connection, table: &'static str, gid: &str) -> Result
 }
 
 /// Inserts segments (+ words + FTS rows) for `meeting_id` at `version`.
-fn insert_segments(
+pub(crate) fn insert_segments(
     tx: &rusqlite::Transaction,
     dek: &Dek,
     meeting_id: i64,

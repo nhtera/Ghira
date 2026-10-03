@@ -163,6 +163,25 @@ pub fn file_stem(m: &Meeting) -> String {
     }
 }
 
+/// A tag name as Obsidian accepts it: letters (any script), digits, `_`, `-`
+/// and `/`, no spaces ("Q4 plan" becomes "Q4-plan"); `#`, commas and every
+/// other character are dropped, so the value is safe in a YAML list. `None`
+/// when nothing is left or only digits are (Obsidian rejects those).
+fn obsidian_tag(name: &str) -> Option<String> {
+    let mut out = String::new();
+    for c in name.trim().chars() {
+        let c = if c.is_whitespace() { '-' } else { c };
+        if c.is_alphanumeric() || matches!(c, '_' | '-' | '/') {
+            if c == '-' && out.ends_with('-') {
+                continue;
+            }
+            out.push(c);
+        }
+    }
+    let out = out.trim_matches(|c| c == '-' || c == '/').to_string();
+    (!out.is_empty() && !out.chars().all(|c| c.is_ascii_digit())).then_some(out)
+}
+
 /// Writes the Obsidian note `<stem>.md` into `dir`, never over a file that is
 /// there (" (2)", " (3)" … is appended). Returns the file name written.
 pub fn write_obsidian(
@@ -393,6 +412,8 @@ struct Model {
     started_at: i64,
     duration_ms: i64,
     participants: Vec<String>,
+    /// The meeting's tags, by their names (front matter of the Obsidian note).
+    tags: Vec<String>,
     sections: Vec<Section>,
     transcript: Vec<Turn>,
     s: &'static Strings,
@@ -418,11 +439,20 @@ impl Model {
         } else {
             Vec::new()
         };
+        let tags = store
+            .meeting_tags(&[meeting.to_string()])
+            .map_err(store_err)?
+            .remove(meeting)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
         Ok(Model {
             title: m.title.trim().to_string(),
             started_at: m.started_at,
             duration_ms: m.duration_ms,
             participants,
+            tags,
             sections,
             transcript: if opts.include_transcript {
                 transcript
@@ -463,11 +493,25 @@ impl Model {
         };
         let people: Vec<String> = self.participants.iter().map(|p| q(p)).collect();
         let (y, mo, d, h, mi) = civil(self.started_at);
+        // `tags:` is what Obsidian indexes (safe names); `ghira_tags:` keeps the names as typed.
+        let mut tags = vec!["ghira".to_string()];
+        for t in self.tags.iter().filter_map(|t| obsidian_tag(t)) {
+            if !tags.iter().any(|x| x.to_lowercase() == t.to_lowercase()) {
+                tags.push(t);
+            }
+        }
+        let originals = if self.tags.is_empty() {
+            String::new()
+        } else {
+            let names: Vec<String> = self.tags.iter().map(|t| q(t)).collect();
+            format!("ghira_tags: [{}]\n", names.join(", "))
+        };
         format!(
-            "---\ntitle: {}\ndate: {y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}\nduration: {}\nparticipants: [{}]\ntags: [ghira]\n---\n\n",
+            "---\ntitle: {}\ndate: {y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}\nduration: {}\nparticipants: [{}]\ntags: [{}]\n{originals}---\n\n",
             q(&self.title),
             q(&clock(self.duration_ms)),
-            people.join(", ")
+            people.join(", "),
+            tags.join(", ")
         )
     }
 
@@ -1154,6 +1198,53 @@ mod tests {
         assert!(body.starts_with(&format!(
             "---\ntitle: \"Weekly sync\"\ndate: 2026-10-02T09:30\nduration: \"12:05\"\nparticipants: [\"{AN}\", \"Speaker 2\"]\ntags: [ghira]\n---\n\n# Weekly sync"
         )), "{body}");
+    }
+
+    #[test]
+    fn obsidian_tag_names_are_made_safe() {
+        assert_eq!(obsidian_tag("Q4 plan").as_deref(), Some("Q4-plan"));
+        assert_eq!(
+            obsidian_tag("  #urgent, now ").as_deref(),
+            Some("urgent-now")
+        );
+        assert_eq!(obsidian_tag("Họp").as_deref(), Some("Họp"));
+        assert_eq!(
+            obsidian_tag("clients/Acme").as_deref(),
+            Some("clients/Acme")
+        );
+        assert_eq!(obsidian_tag("a  --  b").as_deref(), Some("a-b"));
+        assert_eq!(
+            obsidian_tag("\"quoted\" [x]: y").as_deref(),
+            Some("quoted-x-y")
+        );
+        // Nothing left, or only digits: Obsidian would not take it.
+        assert_eq!(obsidian_tag("#, ,"), None);
+        assert_eq!(obsidian_tag("2026"), None);
+    }
+
+    #[test]
+    fn obsidian_front_matter_has_the_meeting_tags() {
+        let (_t, store, g) = fixture();
+        for name in ["Q4 plan", "Họp", "q4  PLAN", "2026"] {
+            let t = store.create_tag(name).unwrap();
+            store
+                .tag_meetings(std::slice::from_ref(&g), &t.gid)
+                .unwrap();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let n = write_obsidian(&store, &g, dir.path(), &opts()).unwrap();
+        let body = std::fs::read_to_string(dir.path().join(n)).unwrap();
+        let tags_line = body.lines().find(|l| l.starts_with("tags:")).unwrap();
+        // "q4  PLAN" is the same tag as "Q4 plan" (names compare ignoring case): one entry, "2026" is dropped.
+        assert_eq!(tags_line, "tags: [ghira, Họp, Q4-plan]", "{body}");
+        let originals = body.lines().find(|l| l.starts_with("ghira_tags:")).unwrap();
+        assert_eq!(
+            originals, "ghira_tags: [\"2026\", \"Họp\", \"Q4 plan\"]",
+            "{body}"
+        );
+        // Other exports do not carry tags.
+        let md = render(&store, &g, Format::Markdown, &opts()).unwrap();
+        assert!(!String::from_utf8(md).unwrap().contains("ghira_tags"));
     }
 
     #[test]

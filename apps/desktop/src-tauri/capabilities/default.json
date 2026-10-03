@@ -145,6 +145,7 @@
     "allow-rename-tag",
     "allow-delete-tag",
     "allow-tag-meetings",
-    "allow-untag-meetings"
+    "allow-untag-meetings",
+    "allow-import-tracks-separately"
   ]
 }

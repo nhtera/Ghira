@@ -51,7 +51,9 @@ tauri-nspanel = "2.1"
 objc2-app-kit = { version = "0.3", features = ["NSWindow"] }
 # App lock: Touch ID / the login password (LocalAuthentication).
 objc2-local-authentication = { version = "0.3", features = ["LAContext", "block2"] }
-objc2-foundation = { version = "0.3", features = ["NSString", "NSError"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSError", "NSDate", "NSArray", "NSURL", "NSPredicate"] }
+# Calendar events (phase 14d): EventKit, read on demand.
+objc2-event-kit = { version = "0.3", features = ["EKEventStore", "EKEvent", "EKParticipant", "EKCalendarItem", "EKCalendar", "EKTypes", "EKObject", "block2"] }
 block2 = "0.6"
 objc2 = "0.6"
 core-foundation = "0.10"

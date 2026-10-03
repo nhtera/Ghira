@@ -113,7 +113,7 @@ fn gate(store: &Store, meeting: &str) -> Result<MeetingGate, String> {
 }
 
 /// The names the user gave this meeting's speakers (never "Me" or
-/// "Speaker N", which aren't names), each also by its first and last word
+/// "Speaker N", which aren't names) and the calendar attendees, each also by its first and last word
 /// (a given name: "Sarah" of "Sarah Chen", "Lan" of "Nguyễn Thị Lan"), plus
 /// `extra_names`.
 fn people(store: &Store, meeting: &str, extra_names: &[String]) -> Result<Vec<String>, String> {
@@ -125,9 +125,14 @@ fn people(store: &Store, meeting: &str, extra_names: &[String]) -> Result<Vec<St
         }
     };
     let named = store.speakers(meeting).map_err(store_err)?;
+    // The people in the calendar invite are known names too (doc 05 layer 2).
+    let invited = crate::calendar::info(store, meeting)
+        .map(|i| i.attendees)
+        .unwrap_or_default();
     for full in named
         .iter()
         .filter_map(|s| s.display_name.as_deref())
+        .chain(invited.iter().map(String::as_str))
         .chain(extra_names.iter().map(String::as_str))
     {
         add(full);
@@ -494,5 +499,24 @@ mod tests {
             Planned::Send(p) => assert!(p.preview.payload.contains("pricing deck")),
             Planned::NotDiscussed(_) => panic!(),
         }
+    }
+
+    #[test]
+    fn calendar_attendees_are_known_names_in_the_redaction() {
+        let (_tmp, store) = store();
+        let m = meeting(&store);
+        let info = crate::calendar::CalendarInfo {
+            event: "e".into(),
+            title: "Sync".into(),
+            attendees: vec!["Hoàng Gia Bảo".into()],
+            calendar: None,
+        };
+        store
+            .set_calendar_info(&m, Some(&serde_json::to_value(&info).unwrap()))
+            .unwrap();
+        let p = people(&store, &m, &[]).unwrap();
+        assert!(p.contains(&"Nguyễn Thị Lan".to_string()));
+        assert!(p.contains(&"Hoàng Gia Bảo".to_string()));
+        assert!(p.contains(&"Hoàng".to_string()) && p.contains(&"Bảo".to_string()));
     }
 }

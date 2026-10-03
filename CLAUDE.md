@@ -69,6 +69,16 @@ Phase 14d modules (stubbed in W0-B, filled by slices S2-S6): `ghi-core` `calenda
 `import::import_tracks`, `vocab::meeting_terms`; desktop `calendar_cmd`,
 `calendar_mac` (EventKit), `organize_cmd` (folders/tags); UI mount points under
 `features/{calendar,folders}`; mocks `ipc/mock-{calendar,organize}.ts`.
+Import (S2/S7): `import_tracks` mixes a Zoom recording's per-participant files into
+one `file` track and stores each participant's speech spans (`track_speakers`);
+the final pass uses them instead of the diarizer. Staging groups the tracks
+(`import_cmd.rs`, `presets::zoom_group`); `ghi import --tracks <dir|files>`.
+Calendar (S4/S5): events are read on demand (EventKit on macOS, one ICS file on
+any OS; its path stays in Rust, setting `calendar`) and never stored; a ticker
+(`calendar_cmd::spawn_ticker`, beside detection) offers "record when it starts"
+once per event (shared with the app detector), and only a recorded meeting
+keeps sealed `calendar_ct` (attendees feed vocab, cloud redaction, rename
+suggestions and the notes template). Needs the Calendars entitlement + plist key.
 
 Notes engine: `crates/ghi-llm` (templates in `templates/*.toml`, generated
 JSON schemas, map-reduce notes with citations, enhance, Ask, redaction, send

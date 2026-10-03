@@ -8,8 +8,10 @@ import type { CalendarStatus, EventView } from "../bindings";
 import type { Commands } from "./ipc";
 
 type Result<T> = { status: "ok"; data: T } | { status: "error"; error: string };
-const ok = <T>(data: T): Promise<Result<T>> => Promise.resolve({ status: "ok", data });
-const fail = <T>(error: string): Promise<Result<T>> => Promise.resolve({ status: "error", error });
+const ok = <T>(data: T): Promise<Result<T>> =>
+  Promise.resolve({ status: "ok", data });
+const fail = <T>(error: string): Promise<Result<T>> =>
+  Promise.resolve({ status: "error", error });
 const flag = () => new URLSearchParams(location.search).get("calendar");
 
 type CalendarCommands = Pick<
@@ -27,16 +29,41 @@ type CalendarCommands = Pick<
 export function calendarCommands(): CalendarCommands {
   let askOnStart = true;
   let ics = flag() === "ics";
-  let eventkit = flag() === "1" ? "authorized" : flag() === "denied" ? "denied" : "notDetermined";
+  let eventkit =
+    flag() === "1"
+      ? "authorized"
+      : flag() === "denied"
+        ? "denied"
+        : "notDetermined";
   const asks = new Map<string, boolean>();
   const events = (): EventView[] =>
     eventkit === "authorized" || ics
       ? [
-          { key: "ev-1", title: "Sprint planning", startMs: Date.now() + 12 * 60_000, endMs: Date.now() + 72 * 60_000, attendees: 5, joinApp: "zoom", ask: asks.get("ev-1") ?? true },
-          { key: "ev-2", title: "Lunch", startMs: Date.now() + 3 * 3_600_000, endMs: Date.now() + 4 * 3_600_000, attendees: 0, joinApp: null, ask: asks.get("ev-2") ?? false },
+          {
+            key: "ev-1",
+            title: "Sprint planning",
+            startMs: Date.now() + 12 * 60_000,
+            endMs: Date.now() + 72 * 60_000,
+            attendees: 5,
+            joinApp: "zoom",
+            ask: asks.get("ev-1") ?? true,
+          },
+          {
+            key: "ev-2",
+            title: "Lunch",
+            startMs: Date.now() + 3 * 3_600_000,
+            endMs: Date.now() + 4 * 3_600_000,
+            attendees: 0,
+            joinApp: null,
+            ask: asks.get("ev-2") ?? false,
+          },
         ]
       : [];
-  const status = (): CalendarStatus => ({ eventkit, ics: ics ? { name: "work.ics", events: 2 } : null, askOnStart });
+  const status = (): CalendarStatus => ({
+    eventkit,
+    ics: ics ? { name: "work.ics", events: 2 } : null,
+    askOnStart,
+  });
   return {
     calendarStatus: () => ok(status()),
     requestCalendarAccess: () => {
@@ -62,6 +89,8 @@ export function calendarCommands(): CalendarCommands {
       asks.set(key, ask);
       return ok(null);
     },
-    meetingAttendees: () => ok(["Linh", "Minh", "Sarah"]),
+    // Only with the calendar on: other tests see no invite.
+    meetingAttendees: () =>
+      ok(flag() === "1" || flag() === "ics" ? ["Linh", "Minh", "Sarah"] : []),
   };
 }

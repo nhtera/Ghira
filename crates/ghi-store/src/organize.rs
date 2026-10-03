@@ -13,8 +13,10 @@
 //!   a tag does not touch the meeting's lamport (a folder is a meeting column,
 //!   so changing it does).
 //! - `meetings.source_app`: which app an import came from.
-//! - `calendar_ct` and `track_speakers_ct`: JSON sealed under the meeting key
-//!   (crypto-shredded with it).
+//! - `calendar_ct`: JSON sealed under the meeting key (crypto-shredded with
+//!   it). `track_speakers_ct`: the participants' speech spans as a compact
+//!   binary (delta-encoded varints), sealed the same way, up to
+//!   [`MAX_TRACK_SPEAKERS_BYTES`].
 //! - `segments.overlap`: set by [`Store::mark_overlaps`].
 //!
 //! Every deletion writes tombstones; names are never logged.
@@ -24,8 +26,8 @@ use std::collections::HashMap;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use crate::rowcrypt::{open_text, row_aad, seal_text};
-use crate::store::{Store, now_ms};
+use crate::rowcrypt::{self, open_text, row_aad, seal_text};
+use crate::store::{NewSegment, Segment, Store, insert_segments, now_ms};
 use crate::{Result, StoreError, db, fold, new_gid, tombstones};
 
 pub const MAX_FOLDER_NAME: usize = 60;
@@ -39,6 +41,20 @@ pub const SOURCE_APPS: [&str; 5] = ["zoom", "teams", "meet", "plaud", "voice_mem
 const MAX_BULK: usize = 5_000;
 /// Largest sealed JSON value (calendar info, track speakers), in bytes.
 pub const MAX_SEALED_JSON: usize = 256 * 1024;
+/// Largest encoded size of a meeting's participant spans, in bytes (a 49-track
+/// recording of many hours stays far below it; see [`track_speakers_bound`]).
+pub const MAX_TRACK_SPEAKERS_BYTES: usize = 32 * 1024 * 1024;
+
+/// An upper bound of the encoded size of `tracks` participants' spans over
+/// `duration_ms`, given that consecutive spans start at least
+/// `min_period_ms` apart: lets an importer refuse a recording too long to
+/// store before decoding it.
+pub fn track_speakers_bound(tracks: usize, duration_ms: i64, min_period_ms: i64) -> usize {
+    let per_track = (duration_ms.max(0) / min_period_ms.max(1) + 1) as usize;
+    // Two varints per span, each at most 4 bytes while a recording is under
+    // 74 hours; plus the names and counts.
+    tracks.saturating_mul(per_track.saturating_mul(8).saturating_add(512))
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Folder {
@@ -583,39 +599,124 @@ impl Store {
     }
 
     /// Stores the speech spans per participant of a multi-track import
-    /// (replacing earlier ones; an empty list clears them), sealed. Every
-    /// `speaker_gid` must be a speaker of this meeting.
+    /// (replacing earlier ones; an empty list clears them), compactly encoded
+    /// and sealed. Every `speaker_gid` must be a speaker of this meeting; the
+    /// spans of each participant must be in time order and not overlap; the
+    /// encoding may not exceed [`MAX_TRACK_SPEAKERS_BYTES`].
     pub fn set_track_speakers(&self, meeting_gid: &str, speakers: &[TrackSpeaker]) -> Result<()> {
-        {
-            let conn = self.conn();
-            let m = Store::meeting_ref(&conn, meeting_gid)?;
-            for s in speakers {
-                let ok: bool = conn.query_row(
-                    "SELECT EXISTS (SELECT 1 FROM speakers WHERE gid = ?1 AND meeting_id = ?2)",
-                    params![s.speaker_gid, m.id],
-                    |r| r.get(0),
-                )?;
-                if !ok {
-                    return Err(StoreError::Invalid(
-                        "a track speaker is not a speaker of this meeting".into(),
-                    ));
-                }
+        let plain = (!speakers.is_empty())
+            .then(|| encode_track_speakers(speakers))
+            .transpose()?;
+        let mut conn = self.conn();
+        let m = Store::meeting_ref(&conn, meeting_gid)?;
+        for s in speakers {
+            let ok: bool = conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM speakers WHERE gid = ?1 AND meeting_id = ?2)",
+                params![s.speaker_gid, m.id],
+                |r| r.get(0),
+            )?;
+            if !ok {
+                return Err(StoreError::Invalid(
+                    "a track speaker is not a speaker of this meeting".into(),
+                ));
             }
         }
-        let json = (!speakers.is_empty())
-            .then(|| serde_json::to_value(speakers))
-            .transpose()
-            .map_err(|e| StoreError::Invalid(e.to_string()))?;
-        self.set_sealed_json(meeting_gid, "track_speakers_ct", json.as_ref())
+        let ct = match &plain {
+            Some(p) => {
+                let dek = self.dek(&conn, m.id)?;
+                Some(rowcrypt::seal(
+                    &dek.subkey(rowcrypt::ROWS_INFO),
+                    p,
+                    &row_aad("meetings", "track_speakers_ct", meeting_gid),
+                ))
+            }
+            None => None,
+        };
+        let tx = conn.transaction()?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        tx.execute(
+            "UPDATE meetings SET track_speakers_ct = ?1, lamport = ?2 WHERE id = ?3",
+            params![ct, lamport, m.id],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
-    /// The stored participant spans (empty if none).
+    /// The stored participant spans (empty if none). A shredded meeting is
+    /// [`StoreError::Decrypt`].
     pub fn track_speakers(&self, meeting_gid: &str) -> Result<Vec<TrackSpeaker>> {
-        match self.get_sealed_json(meeting_gid, "track_speakers_ct")? {
-            Some(v) => serde_json::from_value(v)
-                .map_err(|_| StoreError::Invalid("stored track speakers are malformed".into())),
-            None => Ok(Vec::new()),
-        }
+        let conn = self.conn();
+        let m = Store::meeting_ref(&conn, meeting_gid)?;
+        let ct: Option<Vec<u8>> = conn.query_row(
+            "SELECT track_speakers_ct FROM meetings WHERE id = ?1",
+            [m.id],
+            |r| r.get(0),
+        )?;
+        let Some(ct) = ct else {
+            return Ok(Vec::new());
+        };
+        let dek = self.dek(&conn, m.id)?;
+        let plain = rowcrypt::open(
+            &dek.subkey(rowcrypt::ROWS_INFO),
+            &ct,
+            &row_aad("meetings", "track_speakers_ct", meeting_gid),
+        )?;
+        decode_track_speakers(&plain)
+    }
+
+    /// [`Store::replace_transcript`] that also marks `overlap_gids` (gids among
+    /// `segs`) as talked over, in the same transaction: a crash never leaves
+    /// the new transcript without its marks. Returns the new version.
+    pub fn replace_transcript_marked(
+        &self,
+        meeting_gid: &str,
+        segs: Vec<NewSegment>,
+        overlap_gids: &[String],
+    ) -> Result<i64> {
+        let mut conn = self.conn();
+        let m = Store::meeting_ref(&conn, meeting_gid)?;
+        let dek = self.dek(&conn, m.id)?;
+        let new_version = m.version + 1;
+        let tx = conn.transaction()?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        tombstones::write_where(
+            &tx,
+            "segment",
+            "SELECT gid FROM segments WHERE meeting_id = ?1 AND version < ?2",
+            params![m.id, new_version],
+            lamport,
+        )?;
+        tx.execute(
+            "DELETE FROM segments_fts WHERE rowid IN (SELECT id FROM segments WHERE meeting_id = ?1)",
+            [m.id],
+        )?;
+        tx.execute("DELETE FROM segments WHERE meeting_id = ?1", [m.id])?;
+        tx.execute(
+            "UPDATE meetings SET transcript_version = ?1, lamport = ?2 WHERE id = ?3",
+            params![new_version, lamport, m.id],
+        )?;
+        insert_segments(&tx, &dek, m.id, new_version, &segs)?;
+        mark_in(&tx, m.id, overlap_gids)?;
+        tx.commit()?;
+        Ok(new_version)
+    }
+
+    /// [`Store::add_segments`] that also marks `overlap_gids` as talked over,
+    /// in the same transaction.
+    pub fn add_segments_marked(
+        &self,
+        meeting_gid: &str,
+        segs: Vec<NewSegment>,
+        overlap_gids: &[String],
+    ) -> Result<Vec<Segment>> {
+        let mut conn = self.conn();
+        let m = Store::meeting_ref(&conn, meeting_gid)?;
+        let dek = self.dek(&conn, m.id)?;
+        let tx = conn.transaction()?;
+        let out = insert_segments(&tx, &dek, m.id, m.version, &segs)?;
+        mark_in(&tx, m.id, overlap_gids)?;
+        tx.commit()?;
+        Ok(out)
     }
 
     fn set_sealed_json(
@@ -680,19 +781,132 @@ impl Store {
         if segment_gids.is_empty() {
             return Ok(0);
         }
-        let want =
-            serde_json::to_string(segment_gids).map_err(|e| StoreError::Invalid(e.to_string()))?;
         let mut conn = self.conn();
         let m = Store::meeting_ref(&conn, meeting_gid)?;
         let tx = conn.transaction()?;
-        let lamport = Store::alloc_lamport(&tx, 1)?;
-        let n = tx.execute(
-            "UPDATE segments SET overlap = 1, lamport = ?1
-             WHERE meeting_id = ?2 AND overlap = 0
-               AND gid IN (SELECT value FROM json_each(?3))",
-            params![lamport, m.id, want],
-        )?;
+        let n = mark_in(&tx, m.id, segment_gids)?;
         tx.commit()?;
         Ok(n)
     }
+}
+
+/// Marks lines of meeting `meeting_id` as talked over, in the caller's
+/// transaction.
+fn mark_in(tx: &rusqlite::Transaction, meeting_id: i64, segment_gids: &[String]) -> Result<usize> {
+    if segment_gids.is_empty() {
+        return Ok(0);
+    }
+    let want =
+        serde_json::to_string(segment_gids).map_err(|e| StoreError::Invalid(e.to_string()))?;
+    let lamport = Store::alloc_lamport(tx, 1)?;
+    Ok(tx.execute(
+        "UPDATE segments SET overlap = 1, lamport = ?1
+         WHERE meeting_id = ?2 AND overlap = 0
+           AND gid IN (SELECT value FROM json_each(?3))",
+        params![lamport, meeting_id, want],
+    )?)
+}
+
+// -------------------------------------------------- track speakers encoding
+
+const TS_VERSION: u8 = 1;
+
+fn put_varint(out: &mut Vec<u8>, mut v: u64) {
+    while v >= 0x80 {
+        out.push((v as u8 & 0x7f) | 0x80);
+        v >>= 7;
+    }
+    out.push(v as u8);
+}
+
+fn take_varint(b: &[u8], pos: &mut usize) -> Result<u64> {
+    let mut v = 0u64;
+    for shift in (0..70).step_by(7) {
+        let byte = *b.get(*pos).ok_or_else(malformed)?;
+        *pos += 1;
+        v |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Ok(v);
+        }
+    }
+    Err(malformed())
+}
+
+fn take_str(b: &[u8], pos: &mut usize) -> Result<String> {
+    let n = take_varint(b, pos)? as usize;
+    let end = pos
+        .checked_add(n)
+        .filter(|e| *e <= b.len())
+        .ok_or_else(malformed)?;
+    let s = std::str::from_utf8(&b[*pos..end]).map_err(|_| malformed())?;
+    *pos = end;
+    Ok(s.to_string())
+}
+
+fn malformed() -> StoreError {
+    StoreError::Invalid("stored track speakers are malformed".into())
+}
+
+/// Version, count, then per participant: label, speaker gid, span count and
+/// the spans as (gap since the previous span's end, length) varints, in ms.
+fn encode_track_speakers(speakers: &[TrackSpeaker]) -> Result<Vec<u8>> {
+    let mut out = vec![TS_VERSION];
+    put_varint(&mut out, speakers.len() as u64);
+    for s in speakers {
+        for text in [&s.label, &s.speaker_gid] {
+            put_varint(&mut out, text.len() as u64);
+            out.extend_from_slice(text.as_bytes());
+        }
+        put_varint(&mut out, s.spans.len() as u64);
+        let mut end = 0i64;
+        for [t0, t1] in &s.spans {
+            if *t0 < end || *t1 < *t0 {
+                return Err(StoreError::Invalid(
+                    "spans must be in time order and not overlap".into(),
+                ));
+            }
+            put_varint(&mut out, (*t0 - end) as u64);
+            put_varint(&mut out, (*t1 - *t0) as u64);
+            end = *t1;
+        }
+        if out.len() > MAX_TRACK_SPEAKERS_BYTES {
+            return Err(StoreError::Limit {
+                kind: "bytes of participant spans",
+                max: MAX_TRACK_SPEAKERS_BYTES,
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn decode_track_speakers(b: &[u8]) -> Result<Vec<TrackSpeaker>> {
+    // The first release stored these as JSON; both read.
+    if b.first() == Some(&b'[') {
+        return serde_json::from_slice(b).map_err(|_| malformed());
+    }
+    if b.first() != Some(&TS_VERSION) {
+        return Err(malformed());
+    }
+    let mut pos = 1;
+    let n = take_varint(b, &mut pos)? as usize;
+    let mut out = Vec::with_capacity(n.min(1024));
+    for _ in 0..n {
+        let label = take_str(b, &mut pos)?;
+        let speaker_gid = take_str(b, &mut pos)?;
+        let count = take_varint(b, &mut pos)? as usize;
+        let mut spans = Vec::with_capacity(count.min(1 << 20));
+        let mut end = 0i64;
+        for _ in 0..count {
+            let t0 = end + take_varint(b, &mut pos)? as i64;
+            let t1 = t0 + take_varint(b, &mut pos)? as i64;
+            spans.push([t0, t1]);
+            end = t1;
+        }
+        out.push(TrackSpeaker {
+            label,
+            speaker_gid,
+            spans,
+        });
+    }
+    Ok(out)
 }

@@ -9,14 +9,15 @@ import type { LineInfo, SpeakerInfo } from "../../bindings";
 import { speakerNumber, useSpeakerLabel } from "../../state/speaker-label";
 import { useLive } from "../../state/live";
 import { LineSpeakerPicker } from "../speakers";
-import { isFollowing } from "./logic";
+import { OverlapTag } from "../transcript/group-row";
+import { isFollowing, liveBlocks } from "./logic";
 
 type Speaker = ReturnType<typeof toSpeaker>;
 const toSpeaker = (label: string, s: SpeakerInfo) => ({ label, colorSlot: s.colorSlot, isMe: s.isMe, initial: speakerNumber(s) ?? undefined });
 
 /** One final line; unchanged lines don't re-render as new ones arrive. */
 const Row = memo(
-  function Row({ line, speaker, marked }: { line: LineInfo; speaker: Speaker | null; marked: boolean }) {
+  function Row({ line, speaker, marked, stacked }: { line: LineInfo; speaker: Speaker | null; marked: boolean; stacked?: boolean }) {
     const { t } = useTranslation();
     const [picking, setPicking] = useState(false);
     const box = useRef<HTMLDivElement>(null);
@@ -34,13 +35,15 @@ const Row = memo(
           speaker={speaker}
           words={line.words.length ? line.words.map((w) => ({ text: w.text, lowConfidence: w.lowConfidence })) : wordsFromText(line.text)}
           marked={marked}
+          overlap={line.overlap}
+          overlapHint={!stacked}
           onChangeSpeaker={movable ? () => setPicking(true) : undefined}
         />
         {picking && line.speaker != null && <LineSpeakerPicker gid={line.gid} from={line.speaker} onClose={closePicker} />}
       </div>
     );
   },
-  (a, b) => a.line === b.line && a.marked === b.marked && a.speaker?.label === b.speaker?.label && a.speaker?.colorSlot === b.speaker?.colorSlot && a.speaker?.initial === b.speaker?.initial,
+  (a, b) => a.line === b.line && a.stacked === b.stacked && a.marked === b.marked && a.speaker?.label === b.speaker?.label && a.speaker?.colorSlot === b.speaker?.colorSlot && a.speaker?.initial === b.speaker?.initial,
 );
 
 const ESTIMATE_PX = 68;
@@ -53,7 +56,9 @@ export function TranscriptView() {
   const marks = useLive((s) => s.marks);
   const labelOf = useSpeakerLabel();
   const words = Object.values(partial).filter(Boolean).join(" ");
-  const count = lines.length + (words ? 1 : 0);
+  // Lines flagged as talked over stack with the lines they overlap, in one bracket.
+  const blocks = useMemo(() => liveBlocks(lines), [lines]);
+  const count = blocks.length + (words ? 1 : 0);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
@@ -87,11 +92,23 @@ export function TranscriptView() {
         {/* Announcing every line is too noisy: the shell announces new speaker turns. */}
         <ol aria-live="off" style={{ height: virtual.getTotalSize() }} className="relative m-0 w-full list-none p-0">
           {virtual.getVirtualItems().map((v) => {
-            const line = lines[v.index];
+            const block = blocks[v.index];
+            const line = block ? lines[block.from] : undefined;
             return (
               <li key={line ? line.gid || line.t0Ms || v.index : "partial"} data-index={v.index} ref={virtual.measureElement} className="absolute top-0 left-0 w-full pb-1" style={{ transform: `translateY(${v.start}px)` }}>
-                {line ? (
-                  <Row line={line} speaker={speakerOf(line.speaker)} marked={markedAt(line)} />
+                {block && line ? (
+                  block.stacked ? (
+                    <div role="group" aria-label={t("transcript.overlap")} data-testid="transcript-stack" className="mx-1 rounded-l-ctl border-l-[3px] border-warn bg-warn-soft/30 pl-1">
+                      <div className="flex items-center px-2 pt-1">
+                        <OverlapTag />
+                      </div>
+                      {lines.slice(block.from, block.to).map((l, k) => (
+                        <Row key={l.gid || l.t0Ms || k} line={l} speaker={speakerOf(l.speaker)} marked={markedAt(l)} stacked />
+                      ))}
+                    </div>
+                  ) : (
+                    <Row line={line} speaker={speakerOf(line.speaker)} marked={markedAt(line)} />
+                  )
                 ) : (
                   <TranscriptLine startMs={lines.at(-1)?.t1Ms ?? 0} speaker={null} words={wordsFromText(words)} partial />
                 )}

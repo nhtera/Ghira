@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // The bulk bar over a multi-selection: Export…, Delete (inline confirm), Clear.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Icon, InlineConfirm, usePlatform } from "@ghi/ui";
 
-export function SelectionBar({ count, onExport, onDelete, onClear }: { count: number; onExport: () => void; onDelete: () => void; onClear: () => void }) {
+export function SelectionBar({ count, onExport, onDelete, onClear, organize }: { count: number; onExport: () => void; onDelete: () => void; onClear: () => void; organize?: ReactNode }) {
   const { t } = useTranslation();
   const platform = usePlatform();
   const [asking, setAsking] = useState(false);
@@ -29,6 +29,7 @@ export function SelectionBar({ count, onExport, onDelete, onClear }: { count: nu
     >
       <Icon name="check_box" size={19} className="text-accent" />
       <b className="flex-1 font-semibold">{t("library.selected", { count })}</b>
+      {organize}
       <Button icon="ios_share" onClick={onExport}>
         {t("library.exportSel")}
       </Button>

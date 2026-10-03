@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { Icon, cn, usePlatform, type IconName } from "@ghi/ui";
 import { useLive } from "../../state/live";
-import { NO_AUDIO_MS, formatBytes, minutesLeft, waitingForAudio } from "./logic";
+import { NO_AUDIO_MS, formatBytes, minutesLeft, splitOthers, waitingForAudio } from "./logic";
 import type { ReactNode } from "react";
 
 type Tone = "warn" | "rec" | "info";
@@ -50,11 +50,51 @@ function useNoAudio(): boolean {
   return waiting;
 }
 
+/** How long the "more than eight voices" note stays (it is news once, not a standing warning). */
+export const MANY_VOICES_MS = 20_000;
+
+/**
+ * True for a while after the first speaker of this meeting lands in Others,
+ * and not again for the same meeting (a later speaker doesn't bring it back).
+ */
+function useManyVoices(): boolean {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    let firedFor: string | null = null;
+    let seen: string | null = null;
+    let timer: number | undefined;
+    const check = (s: ReturnType<typeof useLive.getState>) => {
+      if (s.meeting !== seen) {
+        // Another meeting: the old note goes, and this one may have its own.
+        seen = s.meeting;
+        window.clearTimeout(timer);
+        setVisible(false);
+      }
+      if (s.meeting && firedFor !== s.meeting && splitOthers(Object.values(s.speakers)).others.length > 0) {
+        firedFor = s.meeting;
+        setVisible(true);
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => setVisible(false), MANY_VOICES_MS);
+      }
+    };
+    const unsub = useLive.subscribe(check);
+    // Already in the store when this mounts (a window opened mid-meeting).
+    const first = window.setTimeout(() => check(useLive.getState()), 0);
+    return () => {
+      unsub();
+      window.clearTimeout(first);
+      window.clearTimeout(timer);
+    };
+  }, []);
+  return visible;
+}
+
 export function LiveBanners() {
   const { t, i18n } = useTranslation();
   const platform = usePlatform();
   const s = useLive(useShallow((x) => ({ state: x.state, recordOnly: x.recordOnly, ...x.capture })));
   const noAudio = useNoAudio();
+  const manyVoices = useManyVoices();
   const lost = (track: number) => s.lostTracks.includes(track);
   return (
     <div data-testid="live-banners" className="flex flex-col gap-2 empty:hidden">
@@ -98,6 +138,11 @@ export function LiveBanners() {
             {t("system.diskLow", { free: formatBytes(s.diskLowBytes, i18n.language), minutes: minutesLeft(s.diskLowBytes) })}
           </Banner>
         )
+      )}
+      {manyVoices && (
+        <Banner id="many-voices" tone="info" icon="groups">
+          {t("live.manyVoices")}
+        </Banner>
       )}
       {noAudio && (
         <Banner id="no-audio" icon="volume_off">

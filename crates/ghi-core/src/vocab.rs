@@ -8,6 +8,9 @@
 //! with the term's length. Exact folded matches are re-cased/re-accented too
 //! ("le minh" → "Lê Minh").
 
+/// At most this many of a meeting's attendees become terms.
+const MAX_ATTENDEE_TERMS: usize = 30;
+
 /// At most this many terms (doc 02 §B).
 pub const MAX_TERMS: usize = 200;
 
@@ -67,14 +70,26 @@ pub fn effective_terms(store: &ghi_store::store::Store) -> Result<Vec<String>, S
     Ok(t)
 }
 
-/// What the final pass corrects towards for one meeting: [`effective_terms`]
-/// and, first, the names of the people in its calendar event (phase 14d).
-/// W0-B: the global terms only; the attendees arrive with slice S4.
+/// What the final pass corrects towards for one meeting: the names of the
+/// people in its calendar event (phase 14d), then [`effective_terms`], at most
+/// [`MAX_TERMS`].
 pub fn meeting_terms(
     store: &ghi_store::store::Store,
-    _meeting: &str,
+    meeting: &str,
 ) -> Result<Vec<String>, String> {
-    effective_terms(store)
+    let mut terms: Vec<String> = crate::calendar::info(store, meeting)
+        .map(|i| i.attendees)
+        .unwrap_or_default();
+    terms.retain(|n| n.chars().count() >= 2);
+    terms.truncate(MAX_ATTENDEE_TERMS);
+    for t in effective_terms(store)? {
+        let folded = ghi_text::fold(&t);
+        if !terms.iter().any(|x| ghi_text::fold(x) == folded) {
+            terms.push(t);
+        }
+    }
+    terms.truncate(MAX_TERMS);
+    Ok(terms)
 }
 
 #[derive(Debug, Clone)]

@@ -8,7 +8,9 @@
 //!   line) and gets its notes and final pass, like a normal stop: the final
 //!   pass re-transcribes everything that reached the bundles;
 //! - an import that was still decoding is deleted (the file can be imported
-//!   again; decoding is not resumable).
+//!   again; decoding is not resumable);
+//! - a meeting marked `processing` with no job at all (a crash between the
+//!   import marking it and queueing its final pass) gets its final pass.
 
 use ghi_store::store::Store;
 
@@ -22,6 +24,8 @@ pub struct Recovered {
     pub meetings: Vec<String>,
     /// Half-imported meetings deleted.
     pub imports_dropped: usize,
+    /// Meetings `processing` without a job that got their final pass queued.
+    pub jobs_requeued: usize,
 }
 
 fn err(e: ghi_store::StoreError) -> String {
@@ -50,6 +54,25 @@ pub fn recover(store: &Store) -> Result<Recovered, String> {
             store.delete_meeting(&m.gid).map_err(err)?;
             out.imports_dropped += 1;
             offset -= 1;
+        }
+        for m in page.iter().filter(|m| m.status == "processing") {
+            let busy = [NOTES_LIVE_JOB, FINAL_PASS_JOB, NOTES_FINAL_JOB]
+                .iter()
+                .try_fold(false, |busy, kind| {
+                    store.active_job(&m.gid, kind).map(|j| busy || j.is_some())
+                })
+                .map_err(err)?;
+            if !busy && !store.tracks(&m.gid).map_err(err)?.is_empty() {
+                store
+                    .enqueue_job(
+                        Some(&m.gid),
+                        FINAL_PASS_JOB,
+                        JOB_PAYLOAD_VERSION,
+                        &serde_json::json!({}),
+                    )
+                    .map_err(err)?;
+                out.jobs_requeued += 1;
+            }
         }
         for m in page.into_iter().filter(|m| m.status == "recording") {
             let duration = store

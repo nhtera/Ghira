@@ -34,6 +34,10 @@ export type TranscriptLineProps = {
   partial?: boolean;
   marked?: boolean;
   edited?: boolean;
+  /** Another speaker talked over this line: marker + hint, text muted like a low-confidence one. */
+  overlap?: boolean;
+  /** With `overlap`: the hint too (tooltip, screen readers). Off inside a stack, whose header says it once. */
+  overlapHint?: boolean;
   /** This line is being played. */
   playing?: boolean;
   /** Karaoke: only this word is highlighted (index into `words`). */
@@ -48,7 +52,7 @@ export type TranscriptLineProps = {
 
 const TAIL = 2;
 
-export function TranscriptLine({ startMs, speaker, words, partial, marked, edited, playing, activeWordIndex, selected, onPlay, onEdit, onChangeSpeaker, className }: TranscriptLineProps) {
+export function TranscriptLine({ startMs, speaker, words, partial, marked, edited, overlap, overlapHint = true, playing, activeWordIndex, selected, onPlay, onEdit, onChangeSpeaker, className }: TranscriptLineProps) {
   const { t } = useTranslation();
   const time = formatClock(startMs);
   const color = speaker && speaker.colorSlot > 0 ? `var(--s${speaker.colorSlot})` : undefined;
@@ -57,6 +61,7 @@ export function TranscriptLine({ startMs, speaker, words, partial, marked, edite
     <div
       data-state={partial ? "partial" : "final"}
       data-playing={playing ? "true" : undefined}
+      data-overlap={overlap ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       aria-current={playing ? "true" : undefined}
       className={cn(
@@ -79,6 +84,13 @@ export function TranscriptLine({ startMs, speaker, words, partial, marked, edite
             {speaker ? speaker.label : t("speakers.identifying")}
           </b>
           {marked && <Icon name="star" size={16} label={t("live.markedToast", { time })} className="text-warn" />}
+          {overlap && (
+            <span data-testid="overlap-tag" title={overlapHint ? t("transcript.overlapHint") : undefined} className="inline-flex items-center gap-0.5 text-[11px] text-muted">
+              <Icon name="forum" size={13} />
+              {t("transcript.overlap")}
+              {overlapHint && <span className="sr-only">{`. ${t("transcript.overlapHint")}`}</span>}
+            </span>
+          )}
           {edited && (
             <span className="inline-flex items-center gap-0.5 text-[11px] text-muted">
               <Icon name="edit" size={13} />
@@ -86,7 +98,7 @@ export function TranscriptLine({ startMs, speaker, words, partial, marked, edite
             </span>
           )}
         </div>
-        <p aria-live="off" className={cn("m-0 mt-0.5 font-serif text-transcript", partial ? "text-muted" : "text-ink")}>
+        <p aria-live="off" className={cn("m-0 mt-0.5 font-serif text-transcript", partial || overlap ? "text-muted" : "text-ink")}>
           {words.map((w, i) => (
             <Fragment key={i}>
               {i > 0 && " "}

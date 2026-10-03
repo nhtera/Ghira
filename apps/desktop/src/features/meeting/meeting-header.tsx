@@ -17,6 +17,7 @@ import { ipc } from "../../ipc";
 import { meetingKeys } from "../../state/meeting-queries";
 import { MEETINGS_KEY } from "../library/use-meetings";
 import { detailStatus } from "./detail-status";
+import { FolderTags } from "../folders/folder-tags";
 import { StoredSpeaker } from "../speakers/stored-speaker";
 
 function Chip({
@@ -145,6 +146,7 @@ export function MeetingHeader({ detail }: { detail: MeetingDetail }) {
           <Chip icon="lock">{t("cloud.before", { context: platform })}</Chip>
         )}
       </div>
+      <FolderTags meeting={detail.gid} />
       {people.length > 0 && (
         <ul
           aria-label={t("speakers.title")}

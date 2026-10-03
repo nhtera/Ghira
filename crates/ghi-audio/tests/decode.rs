@@ -614,3 +614,113 @@ fn unknown_formats_are_unsupported_off_macos() {
         other => panic!("{:?}", other.map(|d| d.info().clone())),
     }
 }
+
+/// A WAV with a RIFF `LIST`/`INFO` chunk: title (`INAM`) and date (`ICRD`).
+fn tagged_wav(path: &Path, title: &str, date: &str) {
+    let pad = |s: &str| {
+        let mut b = s.as_bytes().to_vec();
+        b.push(0);
+        if b.len() % 2 == 1 {
+            b.push(0);
+        }
+        b
+    };
+    let sub = |id: &[u8; 4], v: &str| {
+        let body = pad(v);
+        let mut c = id.to_vec();
+        c.extend((body.len() as u32).to_le_bytes());
+        c.extend(body);
+        c
+    };
+    let mut info = b"INFO".to_vec();
+    info.extend(sub(b"INAM", title));
+    info.extend(sub(b"ICRD", date));
+    let samples: Vec<u8> = (0..16_000u32)
+        .flat_map(|i| (((i as f32 * 0.05).sin() * 8_000.0) as i16).to_le_bytes())
+        .collect();
+    let mut b = b"RIFF".to_vec();
+    let total = 4 + 24 + 8 + info.len() + 8 + samples.len();
+    b.extend((total as u32).to_le_bytes());
+    b.extend(b"WAVEfmt ");
+    b.extend(16u32.to_le_bytes());
+    b.extend(1u16.to_le_bytes());
+    b.extend(1u16.to_le_bytes());
+    b.extend(16_000u32.to_le_bytes());
+    b.extend(32_000u32.to_le_bytes());
+    b.extend(2u16.to_le_bytes());
+    b.extend(16u16.to_le_bytes());
+    b.extend(b"LIST");
+    b.extend((info.len() as u32).to_le_bytes());
+    b.extend(info);
+    b.extend(b"data");
+    b.extend((samples.len() as u32).to_le_bytes());
+    b.extend(samples);
+    std::fs::write(path, b).unwrap();
+}
+
+#[test]
+fn tags_give_title_and_date_without_decoding() {
+    use ghi_audio::decode::{Tags, parse_tag_date, tags};
+    let dir = Dir::new("tags");
+    let p = dir.path("t.wav");
+    tagged_wav(&p, "Họp kế hoạch", "2026-07-03T14:05:02Z");
+    let t = tags(&p);
+    assert_eq!(t.title.as_deref(), Some("Họp kế hoạch"));
+    assert_eq!(t.date_ms, Some(1_783_087_502_000));
+    // No tags, no file, garbage: empty, never an error.
+    let plain = dir.path("plain.wav");
+    write_wav(&plain, 16_000, &[tone(300.0, 16_000, 1.0)]);
+    assert_eq!(tags(&plain), Tags::default());
+    assert_eq!(tags(&dir.path("missing.wav")), Tags::default());
+    // Date forms: a zone is exact; a time without one is local; a bare date
+    // keeps the file's time when it is that day, else local noon.
+    use chrono::{Local, NaiveDate, TimeZone};
+    let local = |y, mo, d, h, mi, s| {
+        Local
+            .from_local_datetime(
+                &NaiveDate::from_ymd_opt(y, mo, d)
+                    .unwrap()
+                    .and_hms_opt(h, mi, s)
+                    .unwrap(),
+            )
+            .earliest()
+            .unwrap()
+            .timestamp_millis()
+    };
+    assert_eq!(
+        parse_tag_date("2026-07-03T14:05:02Z", None),
+        Some(1_783_087_502_000)
+    );
+    assert_eq!(
+        parse_tag_date("2026-07-03T14:05Z", None),
+        Some(1_783_087_500_000)
+    );
+    assert_eq!(
+        parse_tag_date("2026-07-03T21:05:02+07:00", None),
+        Some(1_783_087_502_000)
+    );
+    assert_eq!(
+        parse_tag_date("2026-07-03T21:05+07:00", None),
+        Some(1_783_087_500_000)
+    );
+    assert_eq!(
+        parse_tag_date("2026-07-03 14:05:02", None),
+        Some(local(2026, 7, 3, 14, 5, 2))
+    );
+    assert_eq!(
+        parse_tag_date("2026-07-03T14:05", None),
+        Some(local(2026, 7, 3, 14, 5, 0))
+    );
+    let same_day = local(2026, 7, 3, 9, 30, 0);
+    assert_eq!(parse_tag_date("2026-07-03", Some(same_day)), Some(same_day));
+    assert_eq!(
+        parse_tag_date("2026-07-03", Some(same_day + 3 * 86_400_000)),
+        Some(local(2026, 7, 3, 12, 0, 0))
+    );
+    assert_eq!(
+        parse_tag_date("2026-07-03", None),
+        Some(local(2026, 7, 3, 12, 0, 0))
+    );
+    assert_eq!(parse_tag_date("2026", None), None);
+    assert_eq!(parse_tag_date("last week", None), None);
+}

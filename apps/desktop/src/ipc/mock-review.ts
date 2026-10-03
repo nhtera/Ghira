@@ -40,6 +40,10 @@ const SLOTS = [1, 2, 4, 8, 3, 5];
 /** `?suggest=1`: one unnamed speaker per meeting "sounds like Me" (the final pass's voice match). */
 const SUGGEST_SPEAKER = 2;
 const withSuggestion = () => new URLSearchParams(location.search).has("suggest");
+/** `?overlap=1`: lines 4 and 5 (two speakers, clear of any topic header) talk over each other for a few seconds. */
+const withOverlap = () => new URLSearchParams(location.search).has("overlap");
+const OVERLAP_LINES = [4, 5];
+const OVERLAP_MS = 4000;
 
 type Detail = { speakers: MeetingSpeaker[]; notes: MeetingNotes; transcript: MeetingTranscript };
 const details = new Map<string, Detail>();
@@ -51,7 +55,9 @@ const endOf = (i: number) => starts[i + 1] ?? sample.durationSeconds * 1000;
 
 function segments(): SegmentView[] {
   return sample.transcript.map((l, i) => {
-    const t0 = starts[i] ?? 0;
+    const overlap = withOverlap() && OVERLAP_LINES.includes(i);
+    // The second of the two starts before the first has finished.
+    const t0 = i === OVERLAP_LINES[1] && overlap ? endOf(i - 1) - 400 - OVERLAP_MS : (starts[i] ?? 0);
     const t1 = endOf(i) - 400;
     const words = l.x.split(" ");
     const step = (t1 - t0) / words.length;
@@ -64,7 +70,7 @@ function segments(): SegmentView[] {
       language: "vi",
       confidence: 0.92,
       edited: false,
-      overlap: false,
+      overlap,
       words: words.map((w, k) => ({
         t0Ms: t0 + k * step,
         t1Ms: t0 + (k + 1) * step,
@@ -262,10 +268,77 @@ function stageSamples(): StagedFile[] {
       problems:
         f.kind === "corrupt" ? ["unsupported"] : f.kind === "long" ? ["veryLong"] : f.kind === "dup" ? ["duplicate"] : [],
       duplicateOf: f.kind === "dup" ? { meeting: "sample-1", title: "Client call — Acme onboarding" } : null,
+      group: null,
+      participant: null,
+      title: null,
+      startedAt: null,
     };
     staged.set(s.id, s);
     return s;
   });
+}
+
+/**
+ * `?importgroup=1` (or `=dup`): the open dialog returns a Zoom meeting's
+ * per-participant tracks (one unnamed), the mixed recording that is then not
+ * imported, and a stray file; `=dup` marks the group as imported before.
+ */
+const importGroup = () => new URLSearchParams(location.search).get("importgroup");
+
+/** The mixed recording is left out while tracks of its recording are staged (and back when none is). */
+function refreshSuperseded(): StagedFile[] {
+  const hasTracks = [...staged.values()].some((f) => f.group);
+  const changed: StagedFile[] = [];
+  for (const f of staged.values()) {
+    if (f.group || f.source !== "zoom" || !f.name.startsWith("audio_only")) continue;
+    const marked = f.problems.includes("superseded");
+    if (hasTracks && !marked) f.problems = [...f.problems, "superseded"];
+    else if (!hasTracks && marked) f.problems = f.problems.filter((p) => p !== "superseded");
+    else continue;
+    changed.push({ ...f });
+  }
+  return changed;
+}
+
+function stageZoomGroup(): StagedFile[] {
+  const group = gid("group");
+  const dup = importGroup() === "dup";
+  const track = (name: string, participant: string | null): StagedFile => ({
+    id: gid("stage"),
+    name,
+    sizeBytes: 24_000_000,
+    durationMs: 3_540_000,
+    channels: 1,
+    source: "zoom",
+    problems: dup ? ["duplicate"] : [],
+    duplicateOf: dup ? { meeting: "sample-1", title: "Sprint planning" } : null,
+    group,
+    participant,
+    title: "Sprint planning",
+    startedAt: Date.now() - 86_400_000,
+  });
+  const files: StagedFile[] = [
+    track("audioLinh1111.m4a", "Linh"),
+    track("audioMinh2222.m4a", "Minh"),
+    track("audioSarah3333.m4a", "Sarah"),
+    track("audio_recording_4.m4a", null),
+    {
+      id: gid("stage"),
+      name: "audio_only.m4a",
+      sizeBytes: 48_000_000,
+      durationMs: 3_540_000,
+      channels: 1,
+      source: "zoom",
+      problems: ["superseded"],
+      duplicateOf: null,
+      group: null,
+      participant: null,
+      title: "Sprint planning",
+      startedAt: Date.now() - 86_400_000,
+    },
+  ];
+  files.forEach((f) => staged.set(f.id, f));
+  return files;
 }
 
 /** Dropped files not yet read by the import screen. */
@@ -322,6 +395,7 @@ type ReviewCommands = Pick<
   | "stagedFiles"
   | "takeDroppedFiles"
   | "unstageFiles"
+  | "importTracksSeparately"
   | "startImport"
   | "cancelImport"
 >;
@@ -499,7 +573,7 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         return [markdown ? `# ${title}` : title, "", ...lines].join("\n");
       }),
     revealLastExport: () => ok(null),
-    pickImportFiles: () => ok(stageSamples()),
+    pickImportFiles: () => ok(importGroup() ? stageZoomGroup() : stageSamples()),
     stagedFiles: (ids) => Promise.resolve(ids.map((id) => staged.get(id)).filter((f): f is StagedFile => !!f)),
     takeDroppedFiles: () => {
       const ids = dropped;
@@ -508,13 +582,36 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
     },
     unstageFiles: (ids) => {
       ids.forEach((id) => staged.delete(id));
-      return Promise.resolve();
+      return Promise.resolve(refreshSuperseded());
+    },
+    importTracksSeparately: (group) => {
+      const changed: StagedFile[] = [];
+      for (const f of staged.values()) {
+        if (f.group !== group) continue;
+        f.group = null;
+        f.participant = null;
+        f.problems = f.problems.filter((p) => p !== "duplicate" && p !== "tooManyTracks");
+        f.duplicateOf = null;
+        changed.push({ ...f });
+      }
+      return Promise.resolve({ status: "ok" as const, data: [...changed, ...refreshSuperseded()] });
     },
     startImport: (ids) => {
-      ids.forEach((id, k) => {
-        const f = staged.get(id);
-        staged.delete(id);
-        if (!f || f.problems.includes("unsupported") || f.problems.includes("empty")) return;
+      // The tracks of a group are one import, under the group's id.
+      const files = ids.map((id) => staged.get(id)).filter((f): f is StagedFile => !!f);
+      ids.forEach((id) => staged.delete(id));
+      const jobs = new Map<string, StagedFile[]>();
+      const blocked = (f: StagedFile) => ["unsupported", "empty", "superseded", "tooManyTracks"].some((p) => f.problems.includes(p as never));
+      const usable = files.filter((f) => !blocked(f));
+      const size = (g: string) => usable.filter((f) => f.group === g).length;
+      for (const f of usable) {
+        // A group left with one track is a file, under the file's id (as in the core).
+        const key = f.group && size(f.group) >= 2 ? f.group : f.id;
+        jobs.set(key, [...(jobs.get(key) ?? []), f]);
+      }
+      [...jobs.entries()].forEach(([id, members], k) => {
+        const f = members[0]!;
+        const group = members.length > 1;
         const at = (ms: number, fn: () => void) => window.setTimeout(fn, 1200 * k + ms);
         emitUpdate({ id, state: "queued", meeting: null, progress: 0, error: null });
         const meeting = `import-${id}`;
@@ -528,21 +625,21 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
           if (cancelled.has(id)) return emitUpdate({ id, state: "cancelled", meeting: null, progress: 0, error: null });
           host.rows.unshift({
             gid: meeting,
-            title: f.name.replace(/\.[^.]+$/, ""),
-            startedAt: Date.now(),
+            title: group ? (f.title ?? "Zoom recording") : f.name.replace(/\.[^.]+$/, ""),
+            startedAt: f.startedAt ?? Date.now(),
             durationMs: f.durationMs ?? 0,
             source: "file",
-            mode: f.channels > 1 ? "call" : "room",
+            mode: f.channels > 1 && !group ? "call" : "room",
             status: "processing",
             transcriptVersion: 0,
             cloudUsed: false,
             consentConfirmed: false,
             template: null,
-            people: [],
+            people: group ? members.flatMap((m, i) => (m.participant ? [{ name: m.participant, colorSlot: [1, 2, 4, 8][i % 4]! }] : [])) : [],
             job: { kind: "final_pass", progress: 0, waitingForModels: false },
             folder: null,
             tags: [],
-            sourceApp: null,
+            sourceApp: group ? "zoom" : null,
           });
           emitUpdate({ id, state: "done", meeting, progress: 1, error: null });
           host.process(meeting);

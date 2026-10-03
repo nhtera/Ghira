@@ -877,6 +877,24 @@ impl Core {
         }
     }
 
+    /// Imports one recording from several participants' tracks (a staged
+    /// Zoom group); see `ghi_core::import::import_tracks`.
+    pub fn import_tracks(
+        &self,
+        files: &[(PathBuf, Option<String>)],
+        opts: ghi_core::import::ImportOptions,
+    ) -> Result<ghi_core::import::ImportReport, String> {
+        if files.iter().any(|(p, _)| !p.is_absolute() || !p.is_file()) {
+            return Err("not a file".into());
+        }
+        let store = self.store_even_locked()?;
+        let r = ghi_core::import::import_tracks(&store, files, &opts, &self.events)?;
+        if let Some(runner) = lock(&self.runner).as_ref() {
+            runner.notify();
+        }
+        Ok(r)
+    }
+
     /// Imports a file the user chose (staged by import_cmd.rs).
     pub fn import(
         &self,

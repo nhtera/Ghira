@@ -426,6 +426,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             organize_cmd::delete_tag,
             organize_cmd::tag_meetings,
             organize_cmd::untag_meetings,
+            import_cmd::import_tracks_separately,
             system::show_notification
         ])
         .events(tauri_specta::collect_events![

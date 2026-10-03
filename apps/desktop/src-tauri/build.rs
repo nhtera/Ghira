@@ -69,6 +69,7 @@ fn main() {
             "cancel_recovery_key",
             "open_privacy_settings",
             "test_capture",
+            "import_tracks_separately",
             "untag_meetings",
             "tag_meetings",
             "delete_tag",

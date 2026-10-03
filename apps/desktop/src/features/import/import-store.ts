@@ -14,6 +14,8 @@ type State = {
   queue: Queue;
   addStaged: (files: StagedFile[]) => void;
   removeStaged: (ids: string[]) => void;
+  /** Replaces staged files by id with newer versions (the core changed their problems or grouping). */
+  updateStaged: (files: StagedFile[]) => void;
   dispatch: (a: QueueAction) => void;
 };
 
@@ -27,6 +29,11 @@ export const useImportStore = create<State>((set) => ({
       return fresh.length ? { staged: [...s.staged, ...fresh] } : s;
     }),
   removeStaged: (ids) => set((s) => ({ staged: s.staged.filter((f) => !ids.includes(f.id)) })),
+  updateStaged: (files) =>
+    set((s) => {
+      const by = new Map(files.map((f) => [f.id, f]));
+      return by.size ? { staged: s.staged.map((f) => by.get(f.id) ?? f) } : s;
+    }),
   dispatch: (a) => set((s) => ({ queue: queueReducer(s.queue, a) })),
 }));
 

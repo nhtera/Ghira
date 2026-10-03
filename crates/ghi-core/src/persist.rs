@@ -192,6 +192,13 @@ impl Persist {
         if self.pending.is_empty() {
             return;
         }
+        // Lines another speaker talked over (the gids are the lines' own).
+        let overlaps: Vec<String> = self
+            .pending
+            .iter()
+            .filter(|l| l.overlap)
+            .map(|l| l.gid.clone())
+            .collect();
         let segs: Vec<NewSegment> = self
             .pending
             .drain(..)
@@ -211,7 +218,10 @@ impl Persist {
                 edited: false,
             })
             .collect();
-        if let Err(e) = self.store.add_segments(&self.meeting, segs) {
+        if let Err(e) = self
+            .store
+            .add_segments_marked(&self.meeting, segs, &overlaps)
+        {
             self.error(format!("saving the transcript: {e}"));
         }
     }

@@ -5,9 +5,10 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Avatar, Button, Icon, useToast } from "@ghi/ui";
 import { ipc } from "../../ipc";
+import { useMeetingAttendees } from "../calendar/use-calendar";
 import { adapter, type UnnamedSpeaker } from "./speakers-adapter";
 
-function SpeakerCard({ meeting, speaker, onDone }: { meeting: string; speaker: UnnamedSpeaker; onDone: () => void }) {
+function SpeakerCard({ meeting, speaker, invited, onDone }: { meeting: string; speaker: UnnamedSpeaker; invited: string[]; onDone: () => void }) {
   const { t } = useTranslation();
   const { show } = useToast();
   const [name, setName] = useState("");
@@ -50,6 +51,16 @@ function SpeakerCard({ meeting, speaker, onDone }: { meeting: string; speaker: U
       <Button size="sm" variant="primary" disabled={!name.trim()} onClick={() => void save()}>
         {t("common.save")}
       </Button>
+      {invited.length > 0 && (
+        <div role="group" aria-label={t("calendar.inInvite")} className="flex basis-full flex-wrap items-center gap-1.5">
+          <span className="text-small text-muted">{t("calendar.inInvite")}</span>
+          {invited.map((n) => (
+            <Button key={n} size="sm" variant="ghost" onClick={() => setName(n)}>
+              {n}
+            </Button>
+          ))}
+        </div>
+      )}
     </li>
   );
 }
@@ -57,7 +68,10 @@ function SpeakerCard({ meeting, speaker, onDone }: { meeting: string; speaker: U
 /** `speakers` is what is still unnamed; `onDone(gid)` removes one card, `onSkipAll` dismisses all. */
 export function NameSpeakers({ meeting, speakers, onDone, onSkipAll }: { meeting: string; speakers: UnnamedSpeaker[]; onDone: (gid: string) => void; onSkipAll: () => void }) {
   const { t } = useTranslation();
+  const attendees = useMeetingAttendees(meeting);
   if (speakers.length === 0) return null;
+  // By label number, so voices past the 8th (the Others lane) come after the first eight.
+  const ordered = [...speakers].sort((a, b) => a.number - b.number);
   return (
     <section aria-label={t("speakers.nameTitle")} className="mb-5 flex flex-col gap-3 rounded-panel border border-line2 px-[18px] py-4">
       <div className="flex items-start gap-2.5">
@@ -71,8 +85,8 @@ export function NameSpeakers({ meeting, speakers, onDone, onSkipAll }: { meeting
         </Button>
       </div>
       <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
-        {speakers.map((s) => (
-          <SpeakerCard key={s.gid} meeting={meeting} speaker={s} onDone={() => onDone(s.gid)} />
+        {ordered.map((s) => (
+          <SpeakerCard key={s.gid} meeting={meeting} speaker={s} invited={attendees} onDone={() => onDone(s.gid)} />
         ))}
       </ul>
     </section>

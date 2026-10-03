@@ -42,6 +42,61 @@ test("files dragged over the window show the drop target", async ({ page }) => {
 
 test("a drop staged by the core appears in the list", async ({ page }) => {
   await page.goto("/?platform=win#/import");
+  // The mock installs its hooks once the app has started.
+  await page.waitForFunction(() => "__ghiMock" in window);
   await page.evaluate(() => (window as unknown as { __ghiMock: { simulateImportDrop: () => void } }).__ghiMock.simulateImportDrop());
   await expect(page.getByRole("region", { name: "Ready to import" })).toBeVisible();
+});
+
+test("a Zoom recording's participant tracks import as one meeting", async ({ page }) => {
+  await page.goto("/?platform=win&importgroup=1#/import");
+  await page.getByRole("button", { name: "Choose files…" }).first().click();
+  const staged = page.getByRole("region", { name: "Ready to import" });
+  // One row for the recording, with its participants (one has no name in the file).
+  await expect(staged.getByText("Zoom recording · 4 participants")).toBeVisible();
+  for (const name of ["Linh", "Minh", "Sarah", "Participant 4"]) await expect(staged.getByText(name, { exact: true })).toBeVisible();
+  // The mixed recording of the same folder is not imported.
+  await expect(staged.getByText("audio_only.m4a")).toBeVisible();
+  await expect(staged.getByText("Won’t be imported")).toBeVisible();
+  // Removing a participant leaves the rest as the recording.
+  await staged.getByRole("button", { name: "Remove Sarah" }).click();
+  await expect(staged.getByText("Zoom recording · 3 participants")).toBeVisible();
+  const go = page.getByRole("button", { name: "Import 3 files" });
+  await go.click();
+  // One queue item, named for the meeting.
+  const queue = page.getByRole("region", { name: "Queue" });
+  await expect(queue.getByText("Sprint planning")).toBeVisible();
+  await expect(queue.getByText(/1 file importing/)).toBeVisible();
+  await expect(queue.getByRole("button", { name: "Open notes" })).toBeVisible({ timeout: 20000 });
+});
+
+test("a Zoom recording imported before is blocked as a whole", async ({ page }) => {
+  await page.goto("/?platform=win&importgroup=dup#/import");
+  await page.getByRole("button", { name: "Choose files…" }).first().click();
+  const staged = page.getByRole("region", { name: "Ready to import" });
+  await expect(staged.getByText(/Already imported as “Sprint planning”/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Import 0 files" })).toBeDisabled();
+});
+
+test("a Zoom recording can be imported track by track, and the mixed recording comes back", async ({ page }) => {
+  await page.goto("/?platform=win&importgroup=1#/import");
+  await page.getByRole("button", { name: "Choose files…" }).first().click();
+  const staged = page.getByRole("region", { name: "Ready to import" });
+  await expect(staged.getByText("The Zoom participant tracks are imported instead.")).toBeVisible();
+  await staged.getByRole("button", { name: "Import tracks separately" }).click();
+  // Four files on their own, and the mixed recording is no longer left out.
+  await expect(staged.getByText(/Zoom recording · \d+ participants/)).toHaveCount(0);
+  await expect(staged.getByText("The Zoom participant tracks are imported instead.")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Import 5 files" })).toBeEnabled();
+});
+
+test("removing every track brings the mixed Zoom recording back", async ({ page }) => {
+  await page.goto("/?platform=win&importgroup=1#/import");
+  await page.getByRole("button", { name: "Choose files…" }).first().click();
+  const staged = page.getByRole("region", { name: "Ready to import" });
+  for (const name of ["Linh", "Minh", "Sarah"]) await staged.getByRole("button", { name: `Remove ${name}` }).click();
+  await staged.getByRole("button", { name: "Remove audio_recording_4.m4a" }).click();
+  await expect(staged.getByText("audio_only.m4a")).toBeVisible();
+  await expect(staged.getByText("Won’t be imported")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Import 1 file" })).toBeEnabled();
 });

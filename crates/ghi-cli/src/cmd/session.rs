@@ -359,7 +359,14 @@ pub fn jobs(args: &JobsArgs) -> Result<(), ErrorDoc> {
 #[derive(Debug, Clone, clap::Args)]
 pub struct ImportArgs {
     /// An audio or video file (WAV, MP3, M4A/AAC, FLAC, Ogg, Opus, MP4, ...).
-    pub file: PathBuf,
+    #[arg(required_unless_present = "tracks", conflicts_with = "tracks")]
+    pub file: Option<PathBuf>,
+    /// One recording from several participants' own tracks (Zoom "record a
+    /// separate audio file for each participant"): the files, or a Zoom
+    /// meeting folder (its `Audio Record` folder is used). Speakers are named
+    /// from the file names and the diarizer is skipped.
+    #[arg(long, num_args = 1.., value_name = "FILE_OR_DIR")]
+    pub tracks: Vec<PathBuf>,
     #[arg(long)]
     pub dir: PathBuf,
     /// Keep the first two channels as separate tracks (a stereo call
@@ -379,6 +386,51 @@ pub struct ImportArgs {
     pub model: ModelArgs,
 }
 
+/// The participant files named on the command line: files as given, a folder
+/// as its audio files (a Zoom meeting folder: its `Audio Record` folder). The
+/// mixed `audio_only` recording is never a participant, paths are listed once,
+/// and each file carries the name its file name has.
+fn track_files(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Option<String>)>, ErrorDoc> {
+    const AUDIO: [&str; 8] = ["m4a", "wav", "mp3", "aac", "flac", "ogg", "opus", "mp4"];
+    let bad = |m: String| ErrorDoc::new(ErrorCode::BadInput, m);
+    let mut files: Vec<PathBuf> = Vec::new();
+    for p in paths {
+        if p.is_dir() {
+            let record = p.join("Audio Record");
+            let dir = if record.is_dir() { record } else { p.clone() };
+            let mut found: Vec<PathBuf> = std::fs::read_dir(&dir)
+                .map_err(|e| bad(format!("{}: {e}", dir.display())))?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|f| f.is_file())
+                .filter(|f| {
+                    f.extension()
+                        .and_then(|x| x.to_str())
+                        .is_some_and(|x| AUDIO.contains(&x.to_lowercase().as_str()))
+                })
+                .collect();
+            found.sort();
+            files.extend(found);
+        } else {
+            files.push(p.clone());
+        }
+    }
+    files.retain(|f| {
+        !f.file_name()
+            .is_some_and(|n| n.to_string_lossy().to_lowercase().starts_with("audio_only"))
+    });
+    let mut seen = std::collections::HashSet::new();
+    files.retain(|f| seen.insert(f.canonicalize().unwrap_or_else(|_| f.clone())));
+    Ok(files
+        .into_iter()
+        .map(|f| {
+            let name = f
+                .file_name()
+                .and_then(|n| ghi_core::presets::zoom_participant(&n.to_string_lossy()));
+            (f, name)
+        })
+        .collect())
+}
+
 /// `ghi import`: a recording into the store as a meeting (`ghi.import/1`).
 pub fn import(args: &ImportArgs) -> Result<(), ErrorDoc> {
     let started = Instant::now();
@@ -386,17 +438,16 @@ pub fn import(args: &ImportArgs) -> Result<(), ErrorDoc> {
     ghi_core::recover::recover(&store).map_err(|e| internal("recovery", e))?;
     let (tx, rx) = bus();
     let printer = print_events(rx);
-    let report = ghi_core::import::import_file(
-        &store,
-        &args.file,
-        &ghi_core::import::ImportOptions {
-            title: args.title.clone(),
-            language: language(args.lang),
-            split_channels: args.split_channels,
-            ..Default::default()
-        },
-        &tx,
-    )
+    let opts = ghi_core::import::ImportOptions {
+        title: args.title.clone(),
+        language: language(args.lang),
+        split_channels: args.split_channels,
+        ..Default::default()
+    };
+    let report = match (&args.file, args.tracks.is_empty()) {
+        (Some(file), true) => ghi_core::import::import_file(&store, file, &opts, &tx),
+        _ => ghi_core::import::import_tracks(&store, &track_files(&args.tracks)?, &opts, &tx),
+    }
     .map_err(|e| ErrorDoc::new(ErrorCode::BadInput, e))?;
     let decode_s = started.elapsed().as_secs_f64();
     let jobs = if args.process && !report.duplicate {

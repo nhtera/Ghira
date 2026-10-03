@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DetectReply, MeetingDetected } from "../../bindings";
 import { ipc } from "../../ipc";
+import { useLock } from "../../state/lock";
 import { usePanelWindow } from "../popover/panel-window";
 import { DetectionCard } from "./detection-prompt";
 
@@ -21,6 +22,9 @@ export function detectedFromHash(hash: string): MeetingDetected | null {
     app,
     appName: q.get("name") || app,
     browser: q.get("browser") === "1",
+    // A calendar meeting: its title and key.
+    title: q.get("title") ?? undefined,
+    event: q.get("event") ?? undefined,
   };
 }
 
@@ -33,6 +37,14 @@ export function DetectPanel({
   usePanelWindow();
   const [detected, setDetected] = useState<MeetingDetected | null>(initial);
   const [error, setError] = useState<string | null>(null);
+  const locked = useLock((st) => st.locked === true);
+
+  // Locking forgets the prompt (so the panel closes below) and leaves no event
+  // title in its address.
+  if (locked && detected) setDetected(null);
+  useEffect(() => {
+    if (locked) window.history.replaceState(null, "", "#/detect");
+  }, [locked]);
 
   // The next detection (the panel is reused, not rebuilt).
   useEffect(() => {

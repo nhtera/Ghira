@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PlatformProvider, ToastProvider } from "@ghi/ui";
 import type { MeetingRow } from "../../bindings";
 import { ipc } from "../../ipc";
-import { NO_FILTERS, applyFilters, dateFrom, searchParams, sourceOf } from "./filters";
+import { NO_FILTERS, applyFilters, dateFrom, hasFilters, searchParams, sourceOf } from "./filters";
 import { LibraryList } from "./library-list";
 import { rangeIds } from "./selection";
 import { UNDO_MS, usePendingDelete } from "./use-pending-delete";
@@ -76,7 +76,38 @@ describe("filters", () => {
       template: null,
       fromMs: new Date(2026, 9, 1).getTime(),
       toMs: null,
+      folder: null,
+      tags: null,
     });
+  });
+  it("folder: one folder, or \"\" for no folder", () => {
+    const withFolders = [row("a", { folder: "f1" }), row("b"), row("c", { folder: "f2" })];
+    const pick = (folder: string | null) => applyFilters(withFolders, { ...NO_FILTERS, folder }, NOW).map((r) => r.gid);
+    expect(pick("f1")).toEqual(["a"]);
+    expect(pick("")).toEqual(["b"]);
+    expect(pick(null)).toEqual(["a", "b", "c"]);
+  });
+  it("tags: any of the selected tags, combined with the other filters", () => {
+    const tagged = [
+      row("a", { tags: [{ gid: "t1", name: "Họp" }], folder: "f1" }),
+      row("b", { tags: [{ gid: "t2", name: "Hộp" }], folder: "f1" }),
+      row("c", { tags: [{ gid: "t1", name: "Họp" }, { gid: "t2", name: "Hộp" }] }),
+      row("d"),
+    ];
+    const pick = (f: Partial<typeof NO_FILTERS>) => applyFilters(tagged, { ...NO_FILTERS, ...f }, NOW).map((r) => r.gid);
+    expect(pick({ tags: ["t1"] })).toEqual(["a", "c"]);
+    expect(pick({ tags: ["t1", "t2"] })).toEqual(["a", "b", "c"]);
+    expect(pick({ tags: ["t2"], folder: "f1" })).toEqual(["b"]);
+    expect(pick({ tags: ["t1"], folder: "" })).toEqual(["c"]);
+  });
+  it("search params carry the folder and any-of tags to the store", () => {
+    expect(searchParams({ ...NO_FILTERS, folder: "", tags: ["t1", "t2"] }, NOW)).toMatchObject({ folder: "", tags: ["t1", "t2"] });
+    expect(searchParams({ ...NO_FILTERS, folder: "f9" }, NOW)).toMatchObject({ folder: "f9", tags: null });
+  });
+  it("a folder or a tag counts as an active filter", () => {
+    expect(hasFilters({ ...NO_FILTERS, folder: "" })).toBe(true);
+    expect(hasFilters({ ...NO_FILTERS, tags: ["t1"] })).toBe(true);
+    expect(hasFilters(NO_FILTERS)).toBe(false);
   });
 });
 

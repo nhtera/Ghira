@@ -168,3 +168,34 @@ test("compact window: the header fits and keeps accessible names", async ({ page
   await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test("more than eight voices: Others · 3 on the lane, a +3 chip, and the note once", async ({ page }) => {
+  await record(page);
+  // Eleven speakers arrive (the mock already has a few); 9 to 11 are past the palette.
+  for (let id = 1; id <= 11; id++) {
+    await emit(page, { type: "speakerArrived", speaker: { id, label: `Speaker ${id}`, colorSlot: id <= 8 ? id : 0, isMe: false, provisional: false, notPerson: false, others: id > 8 } });
+  }
+  await expect(page.getByTestId("others-chip")).toHaveText("+3");
+  await expect(page.getByText("Others · 3").first()).toBeVisible();
+  await expect(page.locator("[data-banner=many-voices]")).toHaveCount(1);
+  await expect(page.locator("[data-banner=many-voices]")).toContainText("More than 8 voices");
+  await page.getByTestId("others-chip").click();
+  await expect(page.getByRole("dialog", { name: "3 voices in Others" })).toContainText("Speaker 11");
+  // A twelfth does not bring a second note.
+  await page.keyboard.press("Escape");
+  await emit(page, { type: "speakerArrived", speaker: { id: 12, label: "Speaker 12", colorSlot: 0, isMe: false, provisional: false, notPerson: false, others: true } });
+  await expect(page.getByTestId("others-chip")).toHaveText("+4");
+  await expect(page.locator("[data-banner=many-voices]")).toHaveCount(1);
+});
+
+test("a call stacks lines that overlap in time and marks them", async ({ page }) => {
+  await record(page);
+  const base = { type: "transcriptFinal", line: { speaker: 1, text: "Chốt ngân sách trước thứ Sáu", overlap: true, words: [] } };
+  await emit(page, { ...base, line: { ...base.line, gid: "ov-1", t0Ms: 600_000, t1Ms: 606_000 } });
+  await emit(page, { ...base, line: { ...base.line, gid: "ov-2", speaker: 2, text: "Cho tôi nói với", t0Ms: 604_000, t1Ms: 609_000 } });
+  const stack = page.getByTestId("transcript-stack");
+  await expect(stack).toBeVisible();
+  // The header says it all; each of the two lines keeps the short label.
+  await expect(stack.getByTestId("overlap-tag")).toHaveCount(3);
+  await expect(stack).toContainText("Cho tôi nói với");
+});

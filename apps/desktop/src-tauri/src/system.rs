@@ -18,7 +18,6 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::AppHandle;
-#[cfg(target_os = "macos")]
 use tauri::Manager;
 use tauri_specta::Event;
 
@@ -510,6 +509,12 @@ pub async fn reply_meeting_detected(
     app: String,
     reply: DetectReply,
 ) -> Result<(), String> {
+    // Anything but Start forgets the calendar event the prompt was about.
+    crate::calendar_cmd::prompt_answered(reply == DetectReply::Start);
+    // A calendar-only prompt has no app to remember (and no "Never").
+    if app == crate::calendar_cmd::CALENDAR_APP {
+        return Ok(());
+    }
     let Some(app) = ghi_audio::detect::App::from_key(&app) else {
         return Err("unknown app".into());
     };
@@ -530,6 +535,8 @@ pub async fn reply_meeting_detected(
 
 /// Starts the detection poller (macOS; elsewhere a no-op until phase 13).
 pub fn spawn_detection(app: AppHandle, core: Arc<Core>, detection: Arc<Detection>) {
+    // Calendar meetings (EventKit on macOS, an ICS file anywhere).
+    crate::calendar_cmd::spawn_ticker(app.clone(), core.clone());
     #[cfg(target_os = "macos")]
     {
         let _ = std::thread::Builder::new()
@@ -582,25 +589,38 @@ fn detection_loop(app: AppHandle, core: Arc<Core>, detection: Arc<Detection>) {
             p
         };
         if let Some(p) = prompt {
-            let detected = MeetingDetected {
-                app: p.app.key().into(),
-                app_name: p.app.display_name().into(),
-                browser: p.app.is_browser(),
-                title: None,
-                event: None,
+            // Inside a calendar meeting the prompt carries its title; one
+            // already asked about (by the calendar) is not asked again (D3).
+            let (title, event) = match crate::calendar_cmd::for_detection(&core) {
+                Some(crate::calendar_cmd::Attach::Skip) => continue,
+                Some(crate::calendar_cmd::Attach::Event { title, key }) => (Some(title), Some(key)),
+                None => (None, None),
             };
-            // In the main window only when the user is looking at it; else
-            // (hidden, behind a full-screen call, another Space) the panel.
-            let main_focused = app
-                .get_webview_window("main")
-                .and_then(|w| w.is_focused().ok())
-                .unwrap_or(false);
-            if main_focused {
-                let _ = detected.emit_to(&app, "main");
-            } else {
-                crate::panels::open_detect(&app, detected);
-            }
+            show_detect(
+                &app,
+                MeetingDetected {
+                    app: p.app.key().into(),
+                    app_name: p.app.display_name().into(),
+                    browser: p.app.is_browser(),
+                    title,
+                    event,
+                },
+            );
         }
+    }
+}
+
+/// Shows a detection prompt: in the main window only when the user is looking
+/// at it; else (hidden, behind a full-screen call, another Space) the panel.
+pub fn show_detect(app: &AppHandle, detected: MeetingDetected) {
+    let main_focused = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false);
+    if main_focused {
+        let _ = detected.emit_to(app, "main");
+    } else {
+        crate::panels::open_detect(app, detected);
     }
 }
 

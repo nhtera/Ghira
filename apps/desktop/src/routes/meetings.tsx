@@ -11,6 +11,8 @@ import { ipc } from "../ipc";
 import { LibraryList } from "../features/library/library-list";
 import { FilterBar } from "../features/library/filter-bar";
 import { NO_FILTERS, applyFilters, hasFilters, peopleOf, type LibraryFilters } from "../features/library/filters";
+import { BulkOrganize } from "../features/folders/bulk-organize";
+import { useFolders, useTags } from "../features/folders/organize";
 import { SelectionBar } from "../features/library/selection-bar";
 import { useMeetings } from "../features/library/use-meetings";
 import { usePendingDelete } from "../features/library/use-pending-delete";
@@ -45,6 +47,10 @@ function useUnnamed(meeting: string | undefined) {
   };
 }
 
+/** The URL says "none" for meetings in no folder; the filter says "". */
+const folderFromUrl = (v: string | undefined): string | null => (v == null ? null : v === "none" ? "" : v);
+const folderToUrl = (v: string | null): string | undefined => (v == null ? undefined : v === "" ? "none" : v);
+
 const isTyping = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 
 export function MeetingsScreen() {
@@ -61,9 +67,31 @@ export function MeetingsScreen() {
   const clearFinished = useProcessing((s) => s.clearFinished);
   const templates = useTemplates();
 
-  const { q: initialQuery } = useSearch({ from: "/shell/meetings" });
+  const { q: initialQuery, folder: urlFolder } = useSearch({ from: "/shell/meetings" });
   const [text, setText] = useState(initialQuery ?? "");
-  const [filters, setFilters] = useState<LibraryFilters>(NO_FILTERS);
+  const [filters, setFilters] = useState<LibraryFilters>({ ...NO_FILTERS, folder: folderFromUrl(urlFolder) });
+  // The sidebar changes the folder through the URL: follow it.
+  const [seenFolder, setSeenFolder] = useState(urlFolder);
+  if (seenFolder !== urlFolder) {
+    setSeenFolder(urlFolder);
+    setFilters((f) => ({ ...f, folder: folderFromUrl(urlFolder) }));
+  }
+  const folderList = useFolders().data;
+  const tagList = useTags().data;
+  const folders = useMemo(() => folderList ?? [], [folderList]);
+  // The folder in the URL was deleted (here or elsewhere): drop it once the folders are known.
+  const staleFolder = folderList != null && urlFolder != null && urlFolder !== "none" && !folderList.some((f) => f.gid === urlFolder);
+  useEffect(() => {
+    if (staleFolder) void navigate({ to: "/meetings", search: (p) => ({ ...p, folder: undefined }), replace: true });
+  }, [staleFolder, navigate]);
+  const tags = useMemo(() => tagList ?? [], [tagList]);
+  const folderNames = useMemo(() => Object.fromEntries(folders.map((f) => [f.gid, f.name])), [folders]);
+  // The folder filter lives in the URL too (the sidebar links to it), so Back and reload keep it.
+  const changeFilters = (next: LibraryFilters) => {
+    // A push, like the sidebar's links: Back undoes the folder choice.
+    if (next.folder !== filters.folder) void navigate({ to: "/meetings", search: (p) => ({ ...p, folder: folderToUrl(next.folder) }) });
+    setFilters(next);
+  };
   const [picked, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [exporting, setExporting] = useState<string[] | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -162,7 +190,7 @@ export function MeetingsScreen() {
   };
   const processingIds = Object.keys(processing);
   const filtering = hasFilters(filters);
-  const clearFilters = () => setFilters(NO_FILTERS);
+  const clearFilters = () => changeFilters(NO_FILTERS);
 
   const top = (
     <>
@@ -211,7 +239,7 @@ export function MeetingsScreen() {
                   onChange={(e) => {
                     setText(e.target.value);
                     // The `?q=` from Ask was only the starting text: drop it so Back doesn't bring it back.
-                    if (initialQuery) void navigate({ to: "/meetings", search: {}, replace: true });
+                    if (initialQuery) void navigate({ to: "/meetings", search: (p) => ({ folder: p.folder }), replace: true });
                   }}
                   onKeyDown={(e) => e.key === "Escape" && text && (e.stopPropagation(), setText(""))}
                   placeholder={t("library.searchPlaceholder")}
@@ -222,16 +250,19 @@ export function MeetingsScreen() {
               </label>
               <FilterBar
                 filters={filters}
-                onChange={setFilters}
+                onChange={changeFilters}
                 people={peopleOf(all)}
                 templates={(templates.data ?? []).map((x) => ({
                   value: x.id,
                   label: x.name,
                 }))}
+                folders={folders.map((f) => ({ value: f.gid, label: f.name }))}
+                tags={tags.map((x) => ({ value: x.gid, label: x.name }))}
                 onClear={clearFilters}
               />
               {selected.size > 0 && (
                 <SelectionBar
+                  organize={<BulkOrganize meetings={[...selected]} />}
                   count={selected.size}
                   onExport={() => setExporting([...selected])}
                   onDelete={() => (schedule([...selected]), setSelected(new Set()))}
@@ -269,6 +300,7 @@ export function MeetingsScreen() {
             ) : (
               <LibraryList
                 rows={rows}
+                folderNames={folderNames}
                 header={top}
                 progress={progress}
                 needsNames={needsNames}

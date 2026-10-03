@@ -145,6 +145,115 @@ impl Block {
     }
 }
 
+/// What a file's embedded tags say about the recording (phase 14d).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Tags {
+    /// The title tag (ID3 `TIT2`, MP4 `©nam`, RIFF `INAM`, ...), trimmed.
+    pub title: Option<String>,
+    /// When it was recorded (unix ms), from the date tag (see
+    /// [`parse_tag_date`]). A bare year is too vague to count.
+    pub date_ms: Option<i64>,
+}
+
+/// The title and date tags of `path`, read at probe time without decoding.
+/// Never fails: an unreadable or untagged file has empty [`Tags`].
+pub fn tags(path: &Path) -> Tags {
+    read_tags(path).unwrap_or_default()
+}
+
+fn read_tags(path: &Path) -> Option<Tags> {
+    use symphonia::core::meta::StandardTagKey as K;
+    let file = File::open(path).ok()?;
+    let mtime_ms = file
+        .metadata()
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64);
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+    let mut probed = symphonia::default::get_probe()
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
+        .ok()?;
+    let mut out = Tags::default();
+    let mut take = |rev: &symphonia::core::meta::MetadataRevision| {
+        for t in rev.tags() {
+            let v = t.value.to_string();
+            let v = v.trim_matches(|c: char| c == '\0' || c.is_whitespace());
+            if v.is_empty() {
+                continue;
+            }
+            match t.std_key {
+                Some(K::TrackTitle) if out.title.is_none() => out.title = Some(v.to_string()),
+                Some(K::Date | K::ReleaseDate | K::OriginalDate) if out.date_ms.is_none() => {
+                    out.date_ms = parse_tag_date(v, mtime_ms)
+                }
+                _ => {}
+            }
+        }
+    };
+    if let Some(m) = probed.metadata.get()
+        && let Some(rev) = m.current()
+    {
+        take(rev);
+    }
+    if let Some(rev) = probed.format.metadata().current() {
+        take(rev);
+    }
+    Some(out)
+}
+
+/// A tag's date as unix ms. With a time zone (`Z` or an offset, seconds
+/// optional) it is exact; a date and time without one are this machine's local
+/// time; a bare date is the file's modification time `mtime_ms` when that falls
+/// on the same local day, else local noon of that day; a bare year or other
+/// text is `None`.
+pub fn parse_tag_date(s: &str, mtime_ms: Option<i64>) -> Option<i64> {
+    use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
+    let s = s.trim();
+    if let Ok(d) = DateTime::parse_from_rfc3339(s) {
+        return Some(d.timestamp_millis());
+    }
+    if let Ok(d) = DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M%:z") {
+        return Some(d.timestamp_millis());
+    }
+    if let Ok(d) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%MZ") {
+        return Some(d.and_utc().timestamp_millis());
+    }
+    let local = |d: NaiveDateTime| {
+        Local
+            .from_local_datetime(&d)
+            .earliest()
+            .map(|t| t.timestamp_millis())
+    };
+    for f in [
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M",
+    ] {
+        if let Ok(d) = NaiveDateTime::parse_from_str(s, f) {
+            return local(d);
+        }
+    }
+    let day = NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()?;
+    if let Some(m) = mtime_ms
+        && let Some(t) = Utc.timestamp_millis_opt(m).single()
+        && t.with_timezone(&Local).date_naive() == day
+    {
+        return Some(m);
+    }
+    local(day.and_hms_opt(12, 0, 0)?)
+}
+
 /// Reads only the file's header and metadata.
 pub fn probe(path: &Path) -> Result<Info, DecodeError> {
     Ok(Decoder::open(path)?.info)

@@ -101,21 +101,68 @@ export function segmentAt(segments: readonly Pick<SegmentView, "t0Ms" | "t1Ms">[
   return ms <= end + graceMs ? at : -1;
 }
 
-export type Row =
-  | { kind: "topic"; key: string; title: string; tMs: number }
-  | { kind: "group"; key: string; speakerGid: string | null; first: number; segs: SegmentView[] };
+export type GroupData = { kind: "group"; key: string; speakerGid: string | null; first: number; segs: SegmentView[] };
+export type StackRow = { kind: "stack"; key: string; first: number; groups: GroupData[] };
+export type Row = { kind: "topic"; key: string; title: string; tMs: number } | GroupData | StackRow;
+
+export type StackSpan = { speaker: string | number | null; t0Ms: number | null; t1Ms: number | null; overlap: boolean };
+
+/**
+ * Runs of consecutive lines to draw as one stack, as `[start, end)` index
+ * ranges. Only lines the core flagged as talked over (`overlap`) start one:
+ * a flagged line takes in the lines next to it that overlap it in time (a
+ * "mm-hm" inside a long turn brings in just that turn), and flagged lines
+ * that share a neighbour join into one run. A run holds at most
+ * `MAX_LINES_PER_GROUP` lines (a longer one is cut), needs at least two
+ * speakers, and never crosses an index in `cuts` (a topic header goes there).
+ * Ordinary turn-taking, even with a hair of overlap, is not stacked. Purely
+ * presentational: the lines keep their identity and order.
+ */
+export function stackRuns(spans: readonly StackSpan[], cuts: readonly number[] = []): [number, number][] {
+  const cut = new Set(cuts);
+  const t0 = (x: StackSpan) => x.t0Ms ?? 0;
+  const t1 = (x: StackSpan) => Math.max(x.t1Ms ?? t0(x), t0(x));
+  const touches = (a: StackSpan, b: StackSpan) => t0(a) < t1(b) && t0(b) < t1(a);
+  // The reach of each flagged line, merged where they meet.
+  const ranges: [number, number][] = [];
+  spans.forEach((x, i) => {
+    if (!x.overlap) return;
+    let lo = i;
+    while (lo > 0 && !cut.has(lo) && touches(spans[lo - 1]!, x)) lo--;
+    let hi = i + 1;
+    while (hi < spans.length && !cut.has(hi) && touches(spans[hi]!, x)) hi++;
+    const last = ranges.at(-1);
+    if (last && lo < last[1]) last[1] = Math.max(last[1], hi);
+    else ranges.push([lo, hi]);
+  });
+  const runs: [number, number][] = [];
+  for (const [lo, hi] of ranges) {
+    for (let a = lo; a < hi; a += MAX_LINES_PER_GROUP) {
+      const b = Math.min(hi, a + MAX_LINES_PER_GROUP);
+      if (b - a > 1 && new Set(spans.slice(a, b).map((x) => x.speaker)).size > 1) runs.push([a, b]);
+    }
+  }
+  return runs;
+}
 
 /**
  * Rows of the transcript: speaker paragraphs (consecutive lines of one
  * speaker, cut at a topic header or after MAX_LINES_PER_GROUP lines) with the
  * topic headers between them. `first` is the index of the group's first line
- * in the segment array.
+ * in the segment array. Lines the core flagged as talked over, with the lines
+ * they overlap in time, form one `stack` row of paragraphs ([`stackRuns`]),
+ * drawn inside one bracket.
  */
 export function buildRows(segments: readonly SegmentView[], topics: readonly TopicView[]): Row[] {
   const rows: Row[] = [];
   const heads = [...topics].filter((t) => t.tMs != null).sort((a, b) => a.tMs! - b.tMs!);
+  // The line each topic header sits before: runs may not cross it.
+  const cuts = heads.map((h) => segments.findIndex((s) => (s.t0Ms ?? 0) >= h.tMs!)).filter((i) => i > 0);
+  const runAt = new Map<number, number>();
+  for (const [a, b] of stackRuns(segments.map((s) => ({ speaker: s.speakerGid, t0Ms: s.t0Ms, t1Ms: s.t1Ms, overlap: s.overlap })), cuts)) runAt.set(a, b);
   let next = 0;
-  let cur: Extract<Row, { kind: "group" }> | null = null;
+  let cur: GroupData | null = null;
+  let skipTo = 0;
   segments.forEach((seg, i) => {
     const t0 = seg.t0Ms ?? 0;
     // A topic goes before the first line that starts at or after it.
@@ -124,6 +171,24 @@ export function buildRows(segments: readonly SegmentView[], topics: readonly Top
       rows.push({ kind: "topic", key: `topic-${next}`, title: h.title, tMs: h.tMs! });
       next++;
       cur = null;
+    }
+    if (i < skipTo) return;
+    const runEnd = runAt.get(i);
+    if (runEnd !== undefined) {
+      const groups: GroupData[] = [];
+      let g: GroupData | null = null;
+      for (let k = i; k < runEnd; k++) {
+        const s = segments[k]!;
+        if (!g || g.speakerGid !== s.speakerGid) {
+          g = { kind: "group", key: `g-${s.gid}`, speakerGid: s.speakerGid, first: k, segs: [] };
+          groups.push(g);
+        }
+        g.segs.push(s);
+      }
+      rows.push({ kind: "stack", key: `s-${seg.gid}`, first: i, groups });
+      skipTo = runEnd;
+      cur = null;
+      return;
     }
     if (!cur || cur.speakerGid !== seg.speakerGid || cur.segs.length >= MAX_LINES_PER_GROUP) {
       cur = { kind: "group", key: `g-${seg.gid}`, speakerGid: seg.speakerGid, first: i, segs: [] };
@@ -138,7 +203,8 @@ export function buildRows(segments: readonly SegmentView[], topics: readonly Top
 export function rowIndexBySegment(rows: readonly Row[], count: number): number[] {
   const by = new Array<number>(count).fill(0);
   rows.forEach((r, ri) => {
-    if (r.kind === "group") r.segs.forEach((_, k) => (by[r.first + k] = ri));
+    const groups = r.kind === "group" ? [r] : r.kind === "stack" ? r.groups : [];
+    for (const g of groups) g.segs.forEach((_, k) => (by[g.first + k] = ri));
   });
   return by;
 }

@@ -168,4 +168,47 @@ describe("TranscriptTab", () => {
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Edit text" }), { key: "Enter", ctrlKey: true });
     expect(await screen.findByText(/disk full/)).toBeTruthy();
   });
+
+  const overlapped: MeetingTranscript = {
+    version: 2,
+    segments: [seg(0, "a", "Xin chào cả nhà", { overlap: true, t1Ms: 14_000 }), seg(1, "b", "Cho tôi nói với", { t0Ms: 9_000, t1Ms: 16_000, overlap: true }), seg(3, "a", "Tiếp theo nhé")],
+    marks: [],
+    topics: [],
+  };
+
+  it("marks an overlapped line with its hint and mutes its text", async () => {
+    // A flagged line nobody overlaps in time stays a plain paragraph, with the full hint.
+    mount({ ...overlapped, segments: [seg(0, "a", "Xin chào cả nhà", { overlap: true }), seg(1, "b", "Tiếp theo nhé")] });
+    const tags = await screen.findAllByTestId("overlap-tag");
+    expect(tags).toHaveLength(1);
+    expect(tags[0]!.getAttribute("title")).toBe("Two people spoke at once here, so some words may be wrong.");
+    expect(screen.queryByTestId("transcript-stack")).toBeNull();
+    expect(document.querySelector('[data-seg="0"]')?.getAttribute("data-overlap")).toBe("true");
+    expect(document.querySelector('[data-seg="1"]')?.getAttribute("data-overlap")).toBeNull();
+  });
+
+  it("stacks the flagged overlapping lines in one bracket, each line still editable", async () => {
+    vi.spyOn(ipc.commands, "updateSegmentText").mockResolvedValue({ status: "ok", data: null });
+    mount(overlapped);
+    const stack = await screen.findByTestId("transcript-stack");
+    expect(stack.getAttribute("aria-label")).toBe("Talking over each other");
+    expect(within(stack).getAllByTestId("transcript-group")).toHaveLength(2);
+    expect(within(stack).getByText("Cho")).toBeTruthy();
+    // The third line is outside the bracket.
+    expect(within(stack).queryByText("Tiếp")).toBeNull();
+    // The stack says what it is once: its lines carry the short label only.
+    const tags = within(stack).getAllByTestId("overlap-tag");
+    expect(tags[0]!.getAttribute("title")).toBe("Two people spoke at once here, so some words may be wrong.");
+    expect(tags.slice(1).every((t) => t.getAttribute("title") === null)).toBe(true);
+    fireEvent.doubleClick(within(stack).getByText("Cho"));
+    expect(within(stack).getByRole("textbox", { name: "Edit text" })).toBeTruthy();
+  });
+
+  it("find reaches lines inside a stack", async () => {
+    mount(overlapped);
+    await screen.findByTestId("transcript-stack");
+    fireEvent.change(screen.getByRole("searchbox", { name: "Find in transcript" }), { target: { value: "noi voi" } });
+    await waitFor(() => expect(within(screen.getByTestId("transcript-stack")).getAllByText("nói", { exact: false }).length).toBeGreaterThan(0));
+    expect(document.querySelector("mark")).toBeTruthy();
+  });
 });

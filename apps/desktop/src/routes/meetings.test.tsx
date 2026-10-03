@@ -11,10 +11,13 @@ const commands = vi.hoisted(() => ({
   searchMeetings: vi.fn(),
   relatedMeetings: vi.fn(),
   listTemplates: vi.fn(),
+  listFolders: vi.fn(),
+  listTags: vi.fn(),
 }));
 const navigate = vi.hoisted(() => vi.fn());
+const search = vi.hoisted(() => ({ value: {} as { q?: string; folder?: string } }));
 vi.mock("../ipc", () => ({ ipc: { commands, onCoreEvent: () => Promise.resolve(() => {}) } }));
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate, useSearch: () => ({}) }));
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate, useSearch: () => search.value }));
 vi.mock("../shell/actions", () => ({ useAppActions: () => ({ startRecording: vi.fn() }) }));
 
 import { renderLive } from "../features/live/test-utils";
@@ -44,6 +47,10 @@ beforeEach(() => {
   Object.values(commands).forEach((c) => c.mockReset());
   commands.listMeetings.mockImplementation((_n: number, offset: number) => ok(offset ? [] : [row("a", "Alpha live", "live"), row("a2", "Alpha two live", "live"), row("b", "Bravo import", "import")]));
   commands.listTemplates.mockResolvedValue([]);
+  commands.listFolders.mockReturnValue(ok([{ gid: "f1", name: "Clients", meetings: 1 }]));
+  commands.listTags.mockReturnValue(ok([]));
+  search.value = {};
+  navigate.mockReset();
   commands.searchMeetings.mockReturnValue(
     ok({
       truncated: false,
@@ -74,4 +81,20 @@ describe("MeetingsScreen related list", () => {
     expect(within(after).getByText("Bravo import")).toBeTruthy();
     expect(within(after).getByText("Zulu unloaded")).toBeTruthy();
   }, 15_000);
+
+  it("a folder in the URL that no longer exists is dropped (replace), a known one is kept", async () => {
+    search.value = { folder: "gone" };
+    renderLive(<MeetingsScreen />);
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    const call = navigate.mock.calls[0]![0] as { replace: boolean; search: (p: object) => object };
+    expect(call.replace).toBe(true);
+    expect(call.search({ folder: "gone", q: "x" })).toEqual({ folder: undefined, q: "x" });
+    cleanup();
+    navigate.mockReset();
+    search.value = { folder: "f1" };
+    renderLive(<MeetingsScreen />);
+    await screen.findByRole("searchbox");
+    await waitFor(() => expect(commands.listFolders).toHaveBeenCalled());
+    expect(navigate).not.toHaveBeenCalled();
+  });
 });

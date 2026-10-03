@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-import-tracks-separately"
+description = "Enables the import_tracks_separately command without any pre-configured scope."
+commands.allow = ["import_tracks_separately"]
+
+[[permission]]
+identifier = "deny-import-tracks-separately"
+description = "Denies the import_tracks_separately command without any pre-configured scope."
+commands.deny = ["import_tracks_separately"]
