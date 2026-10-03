@@ -18,6 +18,7 @@ import { FollowupEmailDialog } from "../email/followup-email-dialog";
 import { ipc } from "../../ipc";
 import { invalidateMeeting, useTemplates } from "../../state/meeting-queries";
 import { DEFAULT_TEMPLATE, templateName } from "./template-names";
+import { inProgress } from "../library/meeting-status";
 
 export type MeetingToolbarProps = {
   detail: MeetingDetail;
@@ -48,7 +49,7 @@ export function MeetingToolbar({
   const [asking, setAsking] = useState(false);
   const [emailing, setEmailing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const busyJob = busy || detail.status === "processing" || detail.job != null;
+  const busyJob = busy || inProgress(detail.status) || detail.job != null;
   const failed = (message: string) =>
     show({ tone: "warning", title: t("system.commandFailed", { message }) });
 

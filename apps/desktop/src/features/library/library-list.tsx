@@ -11,7 +11,7 @@ import { Avatar, Icon, InlineConfirm, StatusPill, cn, usePlatform, type IconName
 import type { MeetingRow } from "../../bindings";
 import { RowChips } from "../folders/row-chips";
 import { groupByDay, type DayGroupKey } from "./group-by-day";
-import { rowStatus } from "./meeting-status";
+import { inProgress, rowStatus } from "./meeting-status";
 import { addRange, rangeIds, toggleSelected } from "./selection";
 
 const KIND_ICON: Record<string, IconName> = { call: "videocam", room: "groups", mobile: "mobile", import: "upload_file" };
@@ -151,7 +151,7 @@ export function LibraryList({
           const status = rowStatus(row, progress[row.gid], needsNames?.has(row.gid) ?? false);
           const kind = KINDS.find((k) => k === kindOf(row));
           const isSelected = selected?.has(row.gid) ?? false;
-          const busy = row.status === "recording" || row.status === "processing";
+          const busy = row.status === "recording" || inProgress(row.status);
           return (
             <div key={v.key} role="listitem" data-index={v.index} ref={virt.measureElement} style={pos} className="absolute top-0 left-0 w-full">
               {it.heading && <h2 className="text-small m-0 mt-3 mb-1 px-2 font-semibold text-muted">{it.heading}</h2>}

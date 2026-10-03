@@ -30,6 +30,7 @@ import { NotesTab } from "../notes/notes-tab";
 import { TranscriptTab } from "../transcript/transcript-tab";
 import { MeetingHeader } from "./meeting-header";
 import { MeetingToolbar } from "./meeting-toolbar";
+import { inProgress } from "../library/meeting-status";
 
 export type DetailTab = "notes" | "transcript";
 
@@ -231,7 +232,7 @@ export function MeetingScreen({
     );
   }
 
-  const busy = detail.status === "processing" || detail.job != null;
+  const busy = inProgress(detail.status) || detail.job != null;
   const tabs: { id: DetailTab; label: string }[] = [
     { id: "notes", label: t("notes.tab") },
     { id: "transcript", label: t("notes.transcriptTab") },

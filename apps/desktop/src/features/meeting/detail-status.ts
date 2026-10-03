@@ -3,6 +3,7 @@
 // detail's own fields. Progress from the job is kept fresh by useMeetingEvents.
 import type { StatusKind } from "@ghi/ui";
 import type { MeetingDetail } from "../../bindings";
+import { inProgress } from "../library/meeting-status";
 
 export function needsNames(d: Pick<MeetingDetail, "speakers">): boolean {
   return d.speakers.some((s) => !s.isMe && !s.notPerson && !s.name);
@@ -14,7 +15,7 @@ export function detailStatus(
   if (d.status === "recording") return { status: "recording" };
   if (d.status === "failed") return { status: "failed" };
   if (d.job?.waitingForModels) return { status: "waitingModels" };
-  if (d.status === "processing" || d.job)
+  if (inProgress(d.status) || d.job)
     return {
       status: "processing",
       percent: d.job?.progress == null ? undefined : d.job.progress * 100,

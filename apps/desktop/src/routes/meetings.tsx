@@ -14,6 +14,7 @@ import { NO_FILTERS, applyFilters, hasFilters, peopleOf, type LibraryFilters } f
 import { BulkOrganize } from "../features/folders/bulk-organize";
 import { useFolders, useTags } from "../features/folders/organize";
 import { SelectionBar } from "../features/library/selection-bar";
+import { inProgress } from "../features/library/meeting-status";
 import { useMeetings } from "../features/library/use-meetings";
 import { usePendingDelete } from "../features/library/use-pending-delete";
 import { ExportSheet } from "../features/export/export-sheet";
@@ -127,7 +128,7 @@ export function MeetingsScreen() {
         searchRef.current?.select();
       } else if (matchChord(e, "Mod+A", platform) && !isTyping(e.target) && !document.querySelector('[role="dialog"]') && !search.active) {
         e.preventDefault();
-        setSelected(new Set(rows.filter((r) => r.status !== "recording" && r.status !== "processing").map((r) => r.gid)));
+        setSelected(new Set(rows.filter((r) => r.status !== "recording" && !inProgress(r.status)).map((r) => r.gid)));
       } else if (e.key === "Escape" && !isTyping(e.target) && selected.size > 0 && !document.querySelector('[role="dialog"],[role="alertdialog"]')) {
         setSelected(new Set());
       }

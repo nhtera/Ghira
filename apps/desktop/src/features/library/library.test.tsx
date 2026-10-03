@@ -60,6 +60,10 @@ describe("rowStatus", () => {
     expect(rowStatus(row("a", { status: "processing", job }), undefined, false)).toEqual({ status: "processing", percent: 40 });
     expect(rowStatus(row("a", { status: "processing", job }), 0.75, false).percent).toBe(75);
   });
+  it("an import being converted is in progress, not ready", () => {
+    expect(rowStatus(row("a", { status: "importing", durationMs: 0 }), undefined, false).status).toBe("processing");
+    expect(rowStatus(row("a", { status: "importing" }), 0.11, false).percent).toBe(11);
+  });
   it("waiting for models wins over processing", () => {
     const job = { kind: "final_pass", progress: null, waitingForModels: true };
     expect(rowStatus(row("a", { status: "processing", job }), undefined, false).status).toBe("waitingModels");

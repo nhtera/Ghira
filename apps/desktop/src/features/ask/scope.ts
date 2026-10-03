@@ -4,6 +4,7 @@
 // library rows.
 import type { AskScope, MeetingRow } from "../../bindings";
 import { dateFrom } from "../library/filters";
+import { inProgress } from "../library/meeting-status";
 
 export type ScopeKind = "all" | "meeting" | "person" | "range";
 export type RangeKey = "last7Days" | "last30Days" | "thisYear";
@@ -16,7 +17,7 @@ export function rangeFrom(key: RangeKey, now: Date): number {
 }
 
 /** Meetings the core can read: finished ones (not recording, being processed or failed). */
-export const searchable = (r: Pick<MeetingRow, "status" | "job">) => r.status !== "recording" && r.status !== "processing" && r.status !== "failed" && !r.job;
+export const searchable = (r: Pick<MeetingRow, "status" | "job">) => r.status !== "recording" && !inProgress(r.status) && r.status !== "failed" && !r.job;
 
 export const countInRange = (rows: readonly Pick<MeetingRow, "startedAt" | "status" | "job">[], key: RangeKey, now: Date) => {
   const from = rangeFrom(key, now);

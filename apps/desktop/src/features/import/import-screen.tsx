@@ -369,7 +369,7 @@ function QueueRow({ item, onOpen }: { item: QueueItem; onOpen: (meeting: string)
       <Icon
         name={item.state === "done" ? "check_circle" : item.state === "failed" ? "error" : item.state === "cancelled" ? "block" : "progress_activity"}
         size={20}
-        className={cn("flex-none", item.state === "done" ? "text-accent" : "text-muted")}
+        className={cn("flex-none", item.state === "done" ? "text-accent" : "text-muted", item.state === "decoding" && "animate-spin motion-reduce:animate-none")}
       />
       <div className="min-w-0 flex-1">
         <span className="block truncate text-[13.5px] font-semibold">{item.name}</span>
