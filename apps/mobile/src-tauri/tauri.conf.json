@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Ghira Spike",
+  "productName": "Ghira",
   "version": "0.1.0",
-  "identifier": "com.nhtera.ghira.spike",
+  "identifier": "com.nhtera.ghira",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1430",
@@ -13,8 +13,8 @@
     "windows": [],
     "withGlobalTauri": false,
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'",
-      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1430 ws://localhost:1431; object-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'"
+      "csp": "default-src 'self'; img-src 'self' data:; media-src 'self' ghi-audio: http://ghi-audio.localhost; connect-src ipc: http://ipc.localhost; object-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' ghi-audio: http://ghi-audio.localhost; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1430 ws://localhost:1431; object-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'"
     }
   },
   "bundle": {

@@ -39,6 +39,9 @@ final class GhiAudio {
         UIDevice.current.isBatteryMonitoringEnabled = true
         updateBattery()
         GhiLiveActivity.shared.endStale()
+        #if GHI_TEST_HOOKS
+        GhiTestHooks.install()
+        #endif
         // Ask at launch, so Record never blocks on the permission prompt.
         AVAudioApplication.requestRecordPermission { _ in }
         let nc = NotificationCenter.default
@@ -121,6 +124,11 @@ final class GhiAudio {
         input.installTap(onBus: 0, bufferSize: 4800, format: format) { buffer, time in
             guard let data = buffer.floatChannelData, buffer.frameLength > 0 else { return }
             let hostNs = time.isHostTimeValid ? UInt64(Double(time.hostTime) * toNs) : 0
+            #if GHI_TEST_HOOKS
+            // Fake mic: the engine and tap keep running (so background audio
+            // stays alive); the samples come from GHI_FAKE_MIC instead.
+            if GhiTestHooks.pushFakeMic(frames: Int(buffer.frameLength), rate: rate, hostNs: hostNs) { return }
+            #endif
             // Channel 0 only: the phone's (mono) microphone.
             ghi_ios_push_pcm(data[0], Int(buffer.frameLength), rate, hostNs)
         }

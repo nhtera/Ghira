@@ -10,7 +10,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
-bundle=com.nhtera.ghira.spike
+bundle=com.nhtera.ghira
 models_dir="${GHI_MODELS_DIR:-$root/models}"
 device="${1:-}"
 if [[ -z "$device" ]]; then

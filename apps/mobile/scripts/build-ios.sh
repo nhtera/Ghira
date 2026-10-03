@@ -2,12 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Builds the iOS spike app (phase 7) with the speech engine.
 #
-#   apps/mobile/scripts/build-ios.sh [--release] [--sim]
+#   apps/mobile/scripts/build-ios.sh [--release] [--sim [--test-hooks]]
 #
 # - Device (default): signed with $APPLE_DEVELOPMENT_TEAM, or the first paid
 #   team Xcode knows. The team only goes into the generated Xcode project,
 #   which is not committed.
 # - --sim: the simulator (no signing; a placeholder team id is used).
+# - --test-hooks (with --sim only): the cargo feature `test-hooks` + Swift
+#   condition GHI_TEST_HOOKS (fake mic, Darwin-notification triggers).
+# - CARGO_TARGET_DIR is honoured (set it to keep clear of other builds).
 # - Builds NeMo-Speech.cpp for iOS first if needed (tools/scripts/build-nemo-ios.sh).
 set -euo pipefail
 
@@ -15,13 +18,25 @@ root="$(cd "$(dirname "$0")/../../.." && pwd)"
 mobile="$root/apps/mobile"
 profile=(--debug)
 target=aarch64
+hooks=0
 for arg in "$@"; do
   case "$arg" in
     --release) profile=() ;;
     --sim) target=aarch64-sim ;;
-    *) echo "usage: $0 [--release] [--sim]" >&2; exit 2 ;;
+    --test-hooks) hooks=1 ;;
+    *) echo "usage: $0 [--release] [--sim [--test-hooks]]" >&2; exit 2 ;;
   esac
 done
+if [[ $hooks == 1 && ("$target" != aarch64-sim || ${#profile[@]} == 0) ]]; then
+  echo "--test-hooks is for the simulator debug build only (--sim, no --release)" >&2
+  exit 2
+fi
+features=nemo
+export GHI_SWIFT_TEST_HOOKS=
+if [[ $hooks == 1 ]]; then
+  features=nemo,test-hooks
+  export GHI_SWIFT_TEST_HOOKS=GHI_TEST_HOOKS
+fi
 
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim >/dev/null
 # (Re)build NeMo-Speech.cpp when the slice we need is missing or the pin moved.
@@ -45,5 +60,5 @@ export APPLE_DEVELOPMENT_TEAM="${APPLE_DEVELOPMENT_TEAM:-0000000000}"
 
 (cd "$mobile/src-tauri/gen/apple" && xcodegen generate --quiet)
 cd "$mobile"
-CI=true pnpm tauri ios build ${profile[@]+"${profile[@]}"} --features nemo --target "$target"
+CI=true pnpm tauri ios build ${profile[@]+"${profile[@]}"} --features "$features" --target "$target"
 find "$mobile/src-tauri/gen/apple/build" -maxdepth 3 \( -name '*.ipa' -o -name '*.app' \) -newer "$mobile/src-tauri/gen/apple/project.yml" -print

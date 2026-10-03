@@ -3,7 +3,7 @@
 # Don't re-run `tauri ios init`: it overwrites this file.
 name: ghi-mobile
 options:
-  bundleIdPrefix: com.nhtera.ghira.spike
+  bundleIdPrefix: com.nhtera.ghira
   deploymentTarget:
     iOS: 17.0
 fileGroups: [../../src]
@@ -13,8 +13,8 @@ configs:
 settingGroups:
   app:
     base:
-      PRODUCT_NAME: Ghira Spike
-      PRODUCT_BUNDLE_IDENTIFIER: com.nhtera.ghira.spike
+      PRODUCT_NAME: Ghira
+      PRODUCT_BUNDLE_IDENTIFIER: com.nhtera.ghira
 targetTemplates:
   app:
     type: application
@@ -49,30 +49,31 @@ targets:
       - path: ../../../../../native/ios/GhiAudio
         excludes: ["include/**"]
       - path: ../../../../../native/ios/Shared
+      # Ghira: privacy manifest (app + both extensions) and the en/vi
+      # InfoPlist.strings (permission prompts).
+      - path: ../../../../../native/ios/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: ../../../../../native/ios/Resources
+        buildPhase: resources
     info:
       path: ghi-mobile_iOS/Info.plist
       properties:
         LSRequiresIPhoneOS: true
         UILaunchStoryboardName: LaunchScreen
         UIRequiredDeviceCapabilities: [arm64, metal]
-        UISupportedInterfaceOrientations:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
-        UISupportedInterfaceOrientations~ipad:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationPortraitUpsideDown
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
+        # Ghira: iPhone only, portrait only (plan 16 D7).
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        CFBundleDisplayName: Ghira
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, vi]
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "0.1.0"
-        # Ghira: record with the screen locked, Live Activity, and recordings
-        # + metrics visible in the Files app (spike: the owner pulls them).
+        # Ghira: record with the screen locked, Live Activity. No file sharing
+        # keys: recordings never appear in the Files app (they are encrypted).
         UIBackgroundModes: [audio]
         NSMicrophoneUsageDescription: Ghira records meetings on this phone. Audio stays on the device.
+        NSFaceIDUsageDescription: Ghira uses Face ID to unlock your meetings when app lock is on.
         NSSupportsLiveActivities: true
-        UIFileSharingEnabled: true
-        LSSupportsOpeningDocumentsInPlace: true
     entitlements:
       path: ghi-mobile_iOS/ghi-mobile_iOS.entitlements
       properties:
@@ -80,6 +81,8 @@ targets:
         # untouched) host memory per session; the default iOS limits refuse it.
         com.apple.developer.kernel.increased-memory-limit: true
         com.apple.developer.kernel.extended-virtual-addressing: true
+        # Ghira: shared with the share extension (inbox) and the widget.
+        com.apple.security.application-groups: [group.com.nhtera.ghira]
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full
@@ -96,7 +99,9 @@ targets:
         # Ghira: the C header for Swift (module GhiIOS); GHI_APP enables the
         # intents' calls into Rust (the widget extension has no Rust).
         SWIFT_INCLUDE_PATHS: $(inherited) $(PROJECT_DIR)/../../../../../native/ios/GhiAudio/include
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) GHI_APP
+        # GHI_TEST_HOOKS comes from build-ios.sh --sim --test-hooks (never release).
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) GHI_APP ${GHI_SWIFT_TEST_HOOKS}
+        TARGETED_DEVICE_FAMILY: "1"
         DEVELOPMENT_TEAM: ${APPLE_DEVELOPMENT_TEAM}
         SWIFT_VERSION: "5.0"
       groups: [app]
@@ -122,6 +127,8 @@ targets:
       - sdk: ActivityKit.framework
       - target: GhiLiveActivity
         embed: true
+      - target: GhiShareExtension
+        embed: true
     preBuildScripts:
       - script: |
           pnpm tauri ios xcode-script -v --platform "${PLATFORM_DISPLAY_NAME:?}" --sdk-root "${SDKROOT:?}" --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration "${CONFIGURATION:?}" ${FORCE_COLOR} ${ARCHS:?}
@@ -137,17 +144,24 @@ targets:
     sources:
       - path: ../../../../../native/ios/GhiLiveActivity
       - path: ../../../../../native/ios/Shared
+      - path: ../../../../../native/ios/PrivacyInfo.xcprivacy
+        buildPhase: resources
     info:
       path: GhiLiveActivity/Info.plist
       properties:
-        CFBundleDisplayName: Ghira Spike
+        CFBundleDisplayName: Ghira
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "0.1.0"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: GhiLiveActivity/GhiLiveActivity.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.nhtera.ghira]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.nhtera.ghira.spike.LiveActivity
+        PRODUCT_BUNDLE_IDENTIFIER: com.nhtera.ghira.LiveActivity
+        TARGETED_DEVICE_FAMILY: "1"
         # Set at generation time by apps/mobile/scripts/build-ios.sh (not committed).
         DEVELOPMENT_TEAM: ${APPLE_DEVELOPMENT_TEAM}
         CODE_SIGN_STYLE: Automatic
@@ -159,3 +173,39 @@ targets:
       - sdk: SwiftUI.framework
       - sdk: WidgetKit.framework
       - sdk: ActivityKit.framework
+  # Ghira: share extension "Open in Ghira" (M5). A stub here; 16-E fills it in.
+  GhiShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ../../../../../native/ios/GhiShareExtension
+      - path: ../../../../../native/ios/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    info:
+      path: GhiShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Ghira
+        CFBundleShortVersionString: 0.1.0
+        CFBundleVersion: "0.1.0"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule: SUBQUERY (extensionItems, $extensionItem, SUBQUERY ($extensionItem.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.audio").@count >= 1).@count >= 1
+    entitlements:
+      path: GhiShareExtension/GhiShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.nhtera.ghira]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nhtera.ghira.ShareExtension
+        DEVELOPMENT_TEAM: ${APPLE_DEVELOPMENT_TEAM}
+        CODE_SIGN_STYLE: Automatic
+        PRODUCT_NAME: GhiShareExtension
+        SWIFT_VERSION: "5.0"
+        ARCHS: [arm64]
+        EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+        TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      - sdk: UIKit.framework
+      - sdk: UniformTypeIdentifiers.framework

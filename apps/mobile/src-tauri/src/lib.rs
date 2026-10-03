@@ -11,6 +11,8 @@ mod engine;
 mod gate;
 mod platform;
 mod session;
+#[cfg(feature = "test-hooks")]
+mod spikes;
 
 use std::path::PathBuf;
 
@@ -186,8 +188,14 @@ fn selftest_on_launch(data: &std::path::Path) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     configure_ggml();
+    #[cfg(feature = "test-hooks")]
+    eprintln!("ghira: TEST HOOKS ENABLED (simulator build)");
     let builder = specta_builder();
-    tauri::Builder::default()
+    let tauri_builder = tauri::Builder::default();
+    #[cfg(feature = "test-hooks")]
+    let tauri_builder =
+        tauri_builder.register_uri_scheme_protocol("ghi-audio", spikes::audio_scheme);
+    tauri_builder
         .plugin(navigation::guard())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
@@ -211,14 +219,21 @@ pub fn run() {
             selftest_on_launch(&data);
             app.manage(Paths { data });
             platform::init();
-            tauri::WebviewWindowBuilder::new(
+            let window = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
                 tauri::WebviewUrl::App("index.html".into()),
-            )
-            .title("Ghira Spike")
-            .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny)
-            .build()?;
+            );
+            #[cfg(feature = "test-hooks")]
+            let window = if std::env::var("GHI_SPIKE").as_deref() == Ok("audio") {
+                window.initialization_script(spikes::AUDIO_SCRIPT)
+            } else {
+                window
+            };
+            window
+                .title("Ghira")
+                .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny)
+                .build()?;
             Ok(())
         })
         .run(tauri::generate_context!())

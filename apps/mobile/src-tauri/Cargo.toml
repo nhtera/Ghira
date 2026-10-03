@@ -16,6 +16,10 @@ crate-type = ["staticlib", "rlib"]
 [features]
 # Live ASR + diarization (NeMo-Speech.cpp). iOS: tools/scripts/build-nemo-ios.sh.
 nemo = ["ghi-speech/nemo"]
+# Test-only hooks for the Simulator harness (fake mic, Darwin-notification
+# triggers). Paired with the Swift condition GHI_TEST_HOOKS; on only for
+# `build-ios.sh --sim --test-hooks`, never in a release or device build.
+test-hooks = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

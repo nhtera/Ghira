@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "Ghira";
+"NSMicrophoneUsageDescription" = "Ghira ghi âm cuộc họp ngay trên điện thoại này. Âm thanh không rời khỏi thiết bị.";
+"NSFaceIDUsageDescription" = "Ghira dùng Face ID để mở khóa các cuộc họp của bạn khi bật khóa ứng dụng.";

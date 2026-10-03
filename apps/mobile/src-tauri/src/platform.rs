@@ -87,7 +87,7 @@ pub fn audio_start() -> Result<(), String> {
     // SAFETY: plain C call into Swift; no arguments.
     match unsafe { swift::ghi_swift_audio_start() } {
         0 => Ok(()),
-        1 => Err("microphone access is off: allow it in Settings → Ghira Spike".into()),
+        1 => Err("microphone access is off: allow it in Settings → Ghira".into()),
         code => Err(format!("the audio session could not start (code {code})")),
     }
 }

@@ -12,7 +12,7 @@ set -euo pipefail
 
 wav="${1:?usage: $0 <file.wav> [device-id]}"
 device="${2:-}"
-bundle=com.nhtera.ghira.spike
+bundle=com.nhtera.ghira
 if [[ -z "$device" ]]; then
   device="$(xcrun devicectl list devices 2>/dev/null | grep -E 'available \(paired\)|connected' | grep 'iPhone' |
     grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1 || true)"
