@@ -44,3 +44,6 @@ tools/eval/results/
 
 # Local release builds kept outside target/ (ad-hoc DMGs for owner testing)
 /release-builds/
+
+# TypeScript incremental build state
+*.tsbuildinfo
