@@ -112,5 +112,5 @@ pub fn builder() -> Builder<tauri::Wry> {
             ghi_app::lock_cmd::set_app_lock,
             ghi_app::voice_cmd::voice_status,
         ])
-        .events(collect_events![CoreEvent, MobileEvent])
+        .events(collect_events![CoreEvent, MobileEvent, ghi_app::lock_cmd::LockChanged])
 }

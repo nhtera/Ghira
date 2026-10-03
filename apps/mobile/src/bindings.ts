@@ -214,6 +214,7 @@ export const commands = {
 /** Events */
 export const events = {
 	coreEvent: makeEvent<CoreEvent>("core-event"),
+	lockChanged: makeEvent<LockChanged>("lock-changed"),
 	mobileEvent: makeEvent<MobileEvent>("mobile-event"),
 };
 
@@ -533,6 +534,11 @@ export type LiveMode =
 "fast" | 
 /**  Captions sooner, more processing while recording (0.56 s chunks). */
 "accurate";
+
+/**  The lock changed (every window follows it). */
+export type LockChanged = {
+	locked: boolean,
+};
 
 export type MarkView = {
 	tMs: number | null,
