@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The share-extension inbox (M5): audio files the extension copied into the
-//! App Group `inbox/<uuid>/` with a manifest. Contracts only (16-G).
+//! App Group `inbox/<uuid>/` with a manifest (`inbox.rs`).
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -33,26 +33,67 @@ pub struct InboxItem {
     pub reason: Option<String>,
 }
 
+type InboxHandle<'a> = tauri::State<'a, std::sync::Arc<crate::inbox::Inbox>>;
+
+/// The items waiting, importing or rejected. Items the share extension's user
+/// already confirmed are imported by the app on its own.
 #[tauri::command]
 #[specta::specta]
-pub async fn inbox_list() -> Result<Vec<InboxItem>, String> {
-    Err("not yet".into())
+pub async fn inbox_list(
+    core: ghi_app::CoreState<'_>,
+    inbox: InboxHandle<'_>,
+) -> Result<Vec<InboxItem>, String> {
+    // File names are content: nothing while the app is locked.
+    if core.locked() {
+        return Err("the app is locked".into());
+    }
+    let inbox = inbox.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || inbox.list())
+        .await
+        .map_err(|e| e.to_string())
 }
 
-/// Imports the item with these choices; returns the new meeting id.
+/// Imports the item with these choices; returns the new meeting id. Errors are
+/// codes: `notFound`, `busy`, `desktopUnavailable`, and the item's rejection
+/// reason (`unsupportedType`, `tooLarge`, `unreadable`, ...).
 #[tauri::command]
 #[specta::specta]
 pub async fn inbox_confirm(
-    _id: String,
-    _language: MeetingLanguage,
-    _target: ProcessingTarget,
+    core: ghi_app::CoreState<'_>,
+    recorder: tauri::State<'_, std::sync::Arc<crate::session::Recorder>>,
+    inbox: InboxHandle<'_>,
+    id: String,
+    language: MeetingLanguage,
+    target: ProcessingTarget,
 ) -> Result<String, String> {
-    Err("not yet".into())
+    if core.locked() {
+        return Err("the app is locked".into());
+    }
+    let (core, recorder, inbox) = (
+        core.inner().clone(),
+        recorder.inner().clone(),
+        inbox.inner().clone(),
+    );
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::core::import_item(&core, &recorder, &inbox, &id, language, target)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Deletes the item and its file.
 #[tauri::command]
 #[specta::specta]
-pub async fn inbox_dismiss(_id: String) -> Result<(), String> {
-    Err("not yet".into())
+pub async fn inbox_dismiss(
+    core: ghi_app::CoreState<'_>,
+    inbox: InboxHandle<'_>,
+    id: String,
+) -> Result<(), String> {
+    if core.locked() {
+        return Err("the app is locked".into());
+    }
+    let inbox = inbox.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || inbox.dismiss(&id))
+        .await
+        .map_err(|e| e.to_string())?
 }

@@ -15,7 +15,7 @@ crate-type = ["staticlib", "rlib"]
 
 [features]
 # Live ASR + diarization (NeMo-Speech.cpp). iOS: tools/scripts/build-nemo-ios.sh.
-nemo = ["ghi-speech/nemo", "ghi-app/nemo"]
+nemo = ["ghi-speech/nemo", "ghi-app/nemo", "ghi-core/nemo"]
 # Test-only hooks for the Simulator harness (fake mic, Darwin-notification
 # triggers). Paired with the Swift condition GHI_TEST_HOOKS; on only for
 # `build-ios.sh --sim --test-hooks`, never in a release or device build.
@@ -36,10 +36,28 @@ ghi-app = { path = "../../../crates/ghi-app", default-features = false, features
 ghi-core = { path = "../../../crates/ghi-core", features = ["specta", "voice"] }
 ghi-audio = { path = "../../../crates/ghi-audio" }
 ghi-models = { path = "../../../crates/ghi-models" }
+# Model downloads only (ghi-net is the one network egress point).
+ghi-net = { path = "../../../crates/ghi-net" }
 ghi-speech = { path = "../../../crates/ghi-speech" }
+ghi-store = { path = "../../../crates/ghi-store" }
+crossbeam-channel = "0.5"
+log = "0.4"
+# The sealed backlog: an ephemeral in-memory key, per-record AEAD.
+chacha20poly1305 = "0.10"
+rand_core = { version = "0.6", features = ["getrandom"] }
+zeroize = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(target_os = "ios")'.dependencies]
-libc = "0.2"
+# The App Group container (the share extension's inbox).
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSFileManager", "NSURL", "NSString"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+hound = "3"
+ghi-app = { path = "../../../crates/ghi-app", default-features = false, features = ["specta", "voice", "test-support"] }

@@ -40,7 +40,7 @@ pub fn recover(store: &Store) -> Result<Recovered, String> {
 /// Like [`recover`], queueing only `kinds` for closed meetings and for
 /// `processing` ones with no job (the phone: `[FINAL_PASS_JOB]`). A kind set
 /// without a final pass (the device is below the processing tier) queues
-/// nothing: those meetings are set `ready` as recorded.
+/// nothing: those meetings stay `done`, as recorded.
 pub fn recover_with_kinds(store: &Store, kinds: &[&'static str]) -> Result<Recovered, String> {
     let mut out = Recovered::default();
     for d in store.pending_discards().map_err(err)? {
@@ -72,7 +72,7 @@ pub fn recover_with_kinds(store: &Store, kinds: &[&'static str]) -> Result<Recov
                 })
                 .map_err(err)?;
             if !busy && !kinds.contains(&FINAL_PASS_JOB) {
-                store.set_meeting_status(&m.gid, "ready").map_err(err)?;
+                store.set_meeting_status(&m.gid, "done").map_err(err)?;
             } else if !busy && !store.tracks(&m.gid).map_err(err)?.is_empty() {
                 store
                     .enqueue_job(
@@ -98,7 +98,7 @@ pub fn recover_with_kinds(store: &Store, kinds: &[&'static str]) -> Result<Recov
                 .set_meeting_status(
                     &m.gid,
                     if kinds.is_empty() {
-                        "ready"
+                        "done"
                     } else {
                         "processing"
                     },
@@ -230,7 +230,7 @@ mod tests {
     fn below_tier_nothing_is_queued_and_meetings_stay_as_recorded() {
         let (_tmp, store, gid) = open_with_crashed_meeting();
         recover_with_kinds(&store, &[]).unwrap();
-        assert_eq!(store.get_meeting(&gid).unwrap().status, "ready");
+        assert_eq!(store.get_meeting(&gid).unwrap().status, "done");
         assert!(store.jobs_for_meeting(&gid).unwrap().is_empty());
         // A meeting `processing` with no job is settled the same way.
         let other = store.create_meeting(NewMeeting::default()).unwrap().gid;
@@ -241,7 +241,7 @@ mod tests {
         store.finish_meeting(&other, 1_000).unwrap();
         store.set_meeting_status(&other, "processing").unwrap();
         recover_with_kinds(&store, &[]).unwrap();
-        assert_eq!(store.get_meeting(&other).unwrap().status, "ready");
+        assert_eq!(store.get_meeting(&other).unwrap().status, "done");
         assert!(store.jobs_for_meeting(&other).unwrap().is_empty());
     }
 }

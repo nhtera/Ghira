@@ -76,6 +76,18 @@ public func ghiSwiftPhysicalMemory() -> UInt64 {
     ProcessInfo.processInfo.physicalMemory
 }
 
+// Free space the system would make available for important data (it counts
+// purgeable space, unlike statvfs); negative when unknown.
+@_cdecl("ghi_swift_available_capacity")
+public func ghiSwiftAvailableCapacity() -> Int64 {
+    let home = URL(fileURLWithPath: NSHomeDirectory())
+    let key = URLResourceKey.volumeAvailableCapacityForImportantUsageKey
+    guard let v = try? home.resourceValues(forKeys: [key]).volumeAvailableCapacityForImportantUsage else {
+        return -1
+    }
+    return v
+}
+
 @_cdecl("ghi_swift_text_scale")
 public func ghiSwiftTextScale() -> Float {
     TextScaleCache.shared.current

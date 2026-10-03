@@ -9,7 +9,7 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 export const commands = {
 	/**
 	 *  Starts a recording; returns the meeting id. Refused while a call is active
-	 *  (`record_call_active`) until the user has acknowledged M6.
+	 *  (`call_active`) until the user has acknowledged M6.
 	 */
 	recordStart: (start: RecordStart) => typedError<string, string>(__TAURI_INVOKE("record_start", { start })),
 	/**  Stops and saves. Safe to call from the Live Activity while locked. */
@@ -34,20 +34,27 @@ export const commands = {
 	/**
 	 *  Downloads what is missing, resuming `.part` files. `wifi_only: false` is the
 	 *  user's "download over cellular this time". Progress comes as `MobileEvent::ModelDownload`.
+	 *  Refused in strict offline mode (`offline`). A second call while one runs does nothing.
 	 */
 	modelsDownload: (wifiOnly: boolean) => typedError<null, string>(__TAURI_INVOKE("models_download", { wifiOnly })),
 	modelsCancel: () => typedError<null, string>(__TAURI_INVOKE("models_cancel")),
 	/**
 	 *  Exports everything as an encrypted archive and presents the system share
-	 *  sheet (the path never reaches the webview). Resolves when the sheet closes.
+	 *  sheet (the path never reaches the webview). Resolves once the sheet is
+	 *  presented; Swift deletes the archive when the sheet closes.
+	 * 
+	 *  `password` seals the archive (at least 8 characters, error
+	 *  `passwordTooShort`): without it the file is useless, and anyone with the
+	 *  file and the password gets every meeting and key.
 	 */
-	privacyExportAllShare: () => typedError<null, string>(__TAURI_INVOKE("privacy_export_all_share")),
+	privacyExportAllShare: (password: string) => typedError<null, string>(__TAURI_INVOKE("privacy_export_all_share", { password })),
 	/**
 	 *  Deletes every meeting, key and setting, including the Keychain items.
 	 * 
-	 *  `confirm` must be the exact phrase the user typed in the typed confirmation
-	 *  (`mobile.privacy.deleteAll.phrase` in the current language); Rust checks it
-	 *  again, so a stray call from the webview cannot wipe the phone.
+	 *  `confirm` must be the phrase the user typed in the typed confirmation
+	 *  (`DELETE` or `XÓA`, see `privacy_cmd::DELETE_PHRASES`; case and accents
+	 *  are ignored); Rust checks it again, so a stray call from the webview
+	 *  cannot wipe the phone. Refused while a recording or import runs (`busy`).
 	 */
 	privacyDeleteAll: (confirm: string) => typedError<null, string>(__TAURI_INVOKE("privacy_delete_all", { confirm })),
 	/**
@@ -57,8 +64,16 @@ export const commands = {
 	meetingChips: (ids: string[]) => typedError<MeetingChipRow[], string>(__TAURI_INVOKE("meeting_chips", { ids })),
 	mobileSettings: () => typedError<MobileSettings, string>(__TAURI_INVOKE("mobile_settings")),
 	setMobileSettings: (settings: MobileSettings) => typedError<MobileSettings, string>(__TAURI_INVOKE("set_mobile_settings", { settings })),
+	/**
+	 *  The items waiting, importing or rejected. Items the share extension's user
+	 *  already confirmed are imported by the app on its own.
+	 */
 	inboxList: () => typedError<InboxItem[], string>(__TAURI_INVOKE("inbox_list")),
-	/**  Imports the item with these choices; returns the new meeting id. */
+	/**
+	 *  Imports the item with these choices; returns the new meeting id. Errors are
+	 *  codes: `notFound`, `busy`, `desktopUnavailable`, and the item's rejection
+	 *  reason (`unsupportedType`, `tooLarge`, `unreadable`, ...).
+	 */
 	inboxConfirm: (id: string, language: MeetingLanguage, target: ProcessingTarget) => typedError<string, string>(__TAURI_INVOKE("inbox_confirm", { id, language, target })),
 	/**  Deletes the item and its file. */
 	inboxDismiss: (id: string) => typedError<null, string>(__TAURI_INVOKE("inbox_dismiss", { id })),
@@ -67,6 +82,10 @@ export const commands = {
 	micPermission: () => __TAURI_INVOKE<MicPermission>("mic_permission"),
 	/**  Shows the system prompt (only the first time); resolves with the answer. */
 	requestMicPermission: () => __TAURI_INVOKE<MicPermission>("request_mic_permission"),
+	/**
+	 *  The agreement for the next passage (checked before the mic opens). Taking
+	 *  it back ends an enrollment in progress and wipes its audio.
+	 */
 	voiceSetConsent: (given: boolean) => typedError<null, string>(__TAURI_INVOKE("voice_set_consent", { given })),
 	/**  Starts capturing the passage. Needs consent and the voice model. */
 	voiceEnrollStart: () => typedError<null, string>(__TAURI_INVOKE("voice_enroll_start")),
@@ -796,8 +815,14 @@ export type RecordStart = {
 	/**  A title, or `None` for the generated one. */
 	title: string | null,
 	target: ProcessingTarget,
-	/**  The user agreed that everyone being recorded knows (M2 / M6 reminder). */
+	/**  The user agreed that everyone being recorded knows (M2 reminder). */
 	consentAcknowledged: boolean,
+	/**
+	 *  The user saw the M6 notice (use speakerphone and Room mode) while a
+	 *  phone call is active. Only this lifts the call block; the consent flag
+	 *  above never does.
+	 */
+	callAcknowledged: boolean,
 };
 
 /**
@@ -999,7 +1024,7 @@ export type TemplateSection = {
 	titleVi: string,
 };
 
-/**  What the device can do (16-D `tier.rs`). */
+/**  What the device can do (`tier.rs`). */
 export type TierClass = 
 /**  Live transcript and the on-phone final pass. */
 "live" | 

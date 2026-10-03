@@ -2036,12 +2036,20 @@ dependencies = [
 name = "ghi-mobile"
 version = "0.1.0"
 dependencies = [
+ "chacha20poly1305",
+ "crossbeam-channel",
  "ghi-app",
  "ghi-audio",
  "ghi-core",
  "ghi-models",
+ "ghi-net",
  "ghi-speech",
+ "ghi-store",
+ "hound",
  "libc",
+ "log",
+ "objc2-foundation",
+ "rand_core 0.6.4",
  "serde",
  "serde_json",
  "specta",
@@ -2049,6 +2057,8 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-specta",
+ "tempfile",
+ "zeroize",
 ]
 
 [[package]]

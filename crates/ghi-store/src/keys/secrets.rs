@@ -113,7 +113,21 @@ mod keychain {
         /// Adds the item, or updates it in place if it exists.
         fn set(&self, account: &str, bytes: &[u8]) -> Result<(), StoreError> {
             check_account(account)?;
-            set_generic_password_options(bytes, self.query(account)).map_err(map)
+            #[allow(unused_mut)]
+            let mut o = self.query(account);
+            // iOS: readable only while unlocked, never in a backup restored
+            // on another device. (macOS's login keychain needs no class.)
+            #[cfg(target_os = "ios")]
+            {
+                use security_framework::access_control::{ProtectionMode, SecAccessControl};
+                let ac = SecAccessControl::create_with_protection(
+                    Some(ProtectionMode::AccessibleWhenUnlockedThisDeviceOnly),
+                    0,
+                )
+                .map_err(map)?;
+                o.set_access_control(ac);
+            }
+            set_generic_password_options(bytes, o).map_err(map)
         }
 
         fn delete(&self, account: &str) -> Result<(), StoreError> {

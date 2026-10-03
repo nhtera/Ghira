@@ -7,22 +7,31 @@
 //! Commands and events are typed with tauri-specta; regenerate the TypeScript
 //! bindings with `GHI_UPDATE_BINDINGS=1 cargo test -p ghi-mobile`.
 //!
-//! The spike session (`session`, `engine`, `gate`, `backlog`) stays until
-//! slice 16-D rewrites it onto `ghi-core`; nothing registers its commands any
-//! more, so only the Live Activity intents and the self-test reach it.
+//! The recording core (16-D) is `session` (the [`session::Recorder`] slot, on
+//! `ghi-core` blocks), `engine`, `gate`, `backlog`, `lifecycle`, `tier` and
+//! `metrics`; the mobile core manages an `Arc<session::Recorder>` and the
+//! `engine::job_handlers` for its job runner.
 
-#[allow(dead_code)] // replaced by 16-D
 mod backlog;
 pub mod cmd;
-#[allow(dead_code)] // replaced by 16-D
-mod engine;
-#[allow(dead_code)] // replaced by 16-D
+mod core;
+pub mod engine;
 mod gate;
+mod inbox;
+pub mod lifecycle;
+mod metrics;
+mod models_cmd;
 mod platform;
-#[allow(dead_code)] // replaced by 16-D
-mod session;
+mod privacy_cmd;
+#[cfg(feature = "test-hooks")]
+mod selfcheck;
+pub mod session;
+mod share;
 #[cfg(feature = "test-hooks")]
 mod spikes;
+#[cfg(all(test, target_os = "ios"))]
+mod test_swift;
+mod tier;
 
 use std::sync::Arc;
 
@@ -58,7 +67,7 @@ fn configure_ggml() {
 /// iOS (spike): stderr goes to `Documents/logs/<unix time>.log`, so ggml's
 /// Metal errors (a refused background submission is only logged) can be
 /// checked after a lock test.
-#[cfg(target_os = "ios")]
+#[cfg(all(target_os = "ios", feature = "test-hooks"))]
 fn capture_stderr(data: &std::path::Path) -> std::io::Result<()> {
     use std::os::fd::AsRawFd;
     let dir = data.join("logs");
@@ -79,11 +88,18 @@ fn capture_stderr(data: &std::path::Path) -> std::io::Result<()> {
 /// Spike self-test: launched with `GHI_SELFTEST=<file in Documents>` (see
 /// apps/mobile/scripts/selftest-ios.sh), runs that 16 kHz WAV through the
 /// engine as fast as possible and writes `Documents/selftest-<unix>.json`.
-fn selftest_on_launch(data: &std::path::Path) {
+#[cfg(feature = "test-hooks")]
+fn selftest_on_launch(data: &std::path::Path, models: &std::path::Path) {
     let Some(name) = std::env::var_os("GHI_SELFTEST") else {
         return;
     };
+    // The storage checks are `selfcheck.rs`.
+    if name == "storage" || name == "keychain" {
+        return;
+    }
     let data = data.to_path_buf();
+    let models = models.to_path_buf();
+    let _ = &models; // used with `nemo` only
     std::thread::spawn(move || {
         let file = name.to_string_lossy().into_owned();
         let secs = std::time::SystemTime::now()
@@ -94,8 +110,9 @@ fn selftest_on_launch(data: &std::path::Path) {
             Ok(bytes) => match engine::read_wav_16k(&bytes) {
                 Err(e) => serde_json::json!({"file": file, "error": e}),
                 #[cfg(feature = "nemo")]
-                Ok(pcm) => serde_json::to_value(engine::selftest(&data.join("models"), file, &pcm))
-                    .unwrap_or_default(),
+                Ok(pcm) => {
+                    serde_json::to_value(engine::selftest(&models, file, &pcm)).unwrap_or_default()
+                }
                 #[cfg(not(feature = "nemo"))]
                 Ok(_) => {
                     serde_json::json!({"file": file, "error": "no speech engine in this build"})
@@ -116,20 +133,19 @@ pub fn run() {
     eprintln!("ghira: TEST HOOKS ENABLED (simulator build)");
     let builder = cmd::builder();
     let tauri_builder = tauri::Builder::default();
-    #[cfg(feature = "test-hooks")]
-    let tauri_builder =
-        tauri_builder.register_uri_scheme_protocol("ghi-audio", spikes::audio_scheme);
+    // Meeting audio for the webview, by token only.
+    let tauri_builder = core::register_audio_scheme(tauri_builder);
     tauri_builder
         .plugin(navigation::guard())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
             cmd::events::install(app.handle());
-            // The store-facing state the shared commands take. Nothing is
-            // opened here: 16-G builds the core's data dir and starts it.
-            app.manage(Arc::new(ghi_app::core::Core::new(app.handle(), |_| {})?));
-            app.manage(Arc::new(ghi_app::audio_protocol::AudioTokens::default()));
-            app.manage(Arc::new(ghi_app::cloud_cmd::CloudPlans::default()));
+            // The store-facing state the shared commands take (the core, the
+            // recorder, the inbox, the lock) and the launch chores (recovery,
+            // retention, the share inbox): core.rs.
+            core::init(app.handle())?;
+            let models = app.state::<Arc<ghi_app::core::Core>>().models();
             // iOS: Documents (visible in the Files app, where the owner pulls
             // recordings and metrics); elsewhere the app data dir.
             let data = if cfg!(target_os = "ios") {
@@ -137,16 +153,21 @@ pub fn run() {
             } else {
                 app.path().app_data_dir()?
             };
-            std::fs::create_dir_all(data.join("models"))?;
             // Recordings are unencrypted in the spike: never in device backups.
             if let Err(e) = platform::exclude_from_backup(&data) {
                 eprintln!("ghira: {e}");
             }
-            #[cfg(target_os = "ios")]
+            #[cfg(all(target_os = "ios", feature = "test-hooks"))]
             if let Err(e) = capture_stderr(&data) {
                 eprintln!("ghira: could not capture stderr: {e}");
             }
-            selftest_on_launch(&data);
+            #[cfg(feature = "test-hooks")]
+            {
+                selftest_on_launch(&data, &models);
+                selfcheck::spawn_if_asked(app.state::<Arc<ghi_app::core::Core>>().inner().clone());
+            }
+            #[cfg(not(feature = "test-hooks"))]
+            let _ = &models;
             platform::init();
             let window = tauri::WebviewWindowBuilder::new(
                 app,

@@ -114,8 +114,8 @@ case "$cmd" in
   models)
     ensure_booted
     data="$(container data)"
-    # The spike shell reads Documents/models; the v1 app Library/Application Support/models.
-    dests=("$data/Library/Application Support/models" "$data/Documents/models")
+    # The spike shell reads Documents/models; the v1 app Library/Application Support/Ghira/models.
+    dests=("$data/Library/Application Support/Ghira/models" "$data/Documents/models")
     while IFS=$'\t' read -r file sha size; do
       src="$models_dir/$file"
       [[ -f "$src" ]] || die "missing $src: run tools/scripts/fetch-models.sh"

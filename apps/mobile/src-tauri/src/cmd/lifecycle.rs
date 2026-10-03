@@ -28,7 +28,7 @@ pub struct LifecycleState {
     pub thermal: u8,
 }
 
-/// What the device can do (16-D `tier.rs`).
+/// What the device can do (`tier.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum TierClass {
@@ -77,7 +77,7 @@ pub async fn lifecycle_state() -> Result<LifecycleState, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn device_tier() -> Result<DeviceTier, String> {
-    Err("not yet".into())
+    Ok(crate::tier::detect())
 }
 
 /// Opens this app's page in the Settings app (microphone denied).

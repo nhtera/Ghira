@@ -60,10 +60,59 @@ pub struct Core {
     /// searches (dropped after [`QUERY_EMBEDDER_IDLE`]).
     query_embedder: QueryEmbedder,
     events: EventTx,
+    hooks: CoreHooks,
+    /// The launch lock check ran (see [`CoreHooks::gate_launch`]).
+    launch_checked: std::sync::atomic::AtomicBool,
 }
 
 /// See [`Core::set_settings_hook`].
 pub type SettingsHook = Arc<dyn Fn(&AppHandle) + Send + Sync>;
+
+/// The job handlers an app registers in place of the desktop's.
+pub type HandlerFactory =
+    Arc<dyn Fn(&Arc<Store>, &Path) -> Vec<Arc<dyn ghi_core::jobs::JobHandler>> + Send + Sync>;
+
+/// Opens the microphone for a voice enrollment where `ghi_core::capture::live`
+/// does not exist (iOS): the ring to read and a guard that releases the mic
+/// when dropped. Errors are the `voice_cmd` codes (`micPermission`, `noMic`).
+pub type MicSource = Arc<
+    dyn Fn() -> Result<(ghi_audio::ring::RingConsumer, Box<dyn std::any::Any + Send>), String>
+        + Send
+        + Sync,
+>;
+
+/// See [`CoreHooks::before_spawn`].
+pub type RunnerHook = Arc<dyn Fn(&Arc<JobRunner>) + Send + Sync>;
+
+/// See [`CoreHooks::secrets`].
+pub type SecretsFactory =
+    Arc<dyn Fn() -> Result<Box<dyn ghi_store::keys::secrets::SecretStore>, String> + Send + Sync>;
+
+/// What an app plugs into the core instead of the desktop's defaults. The
+/// desktop passes none ([`Core::new`]); the iOS app sets its own data
+/// directory, handlers (no local notes), recovery kinds and key stores.
+#[derive(Default, Clone)]
+pub struct CoreHooks {
+    /// The data directory (default: Tauri's app data dir).
+    pub data_dir: Option<PathBuf>,
+    /// The job handlers (default: notes, final pass, voice, semantic index).
+    pub handlers: Option<HandlerFactory>,
+    /// The job kinds crash recovery queues (default: live notes and final pass).
+    pub recover_kinds: Option<Vec<&'static str>>,
+    /// Runs on the new job runner right before it is spawned (the phone
+    /// pauses it when launched in the background).
+    pub before_spawn: Option<RunnerHook>,
+    /// The master key store (default: the platform's, see `keystore`).
+    pub keystore: Option<Arc<dyn KeyStore>>,
+    /// Cloud key store (default: the platform's, see [`secrets`]).
+    pub secrets: Option<SecretsFactory>,
+    /// The microphone for a voice enrollment (default: `ghi_core::capture`).
+    pub mic: Option<MicSource>,
+    /// `store()` refuses ("the app is starting") until the launch lock check
+    /// has run ([`Core::mark_launch_checked`]), so no content command can
+    /// slip in before the app lock engages (the phone).
+    pub gate_launch: bool,
+}
 
 type QueryEmbedder = Arc<Mutex<Option<(Box<dyn ghi_llm::embed::Embedder + Send>, Instant)>>>;
 
@@ -292,7 +341,19 @@ impl Core {
         app: &AppHandle<R>,
         on_event: impl Fn(&ghi_core::events::Event) + Send + 'static,
     ) -> Result<Core, String> {
-        let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        Core::with_hooks(app, on_event, CoreHooks::default())
+    }
+
+    /// [`Core::new`] with an app's own data directory, handlers and key stores.
+    pub fn with_hooks<R: Runtime>(
+        app: &AppHandle<R>,
+        on_event: impl Fn(&ghi_core::events::Event) + Send + 'static,
+        hooks: CoreHooks,
+    ) -> Result<Core, String> {
+        let data = match &hooks.data_dir {
+            Some(d) => d.clone(),
+            None => app.path().app_data_dir().map_err(|e| e.to_string())?,
+        };
         let (events, rx) = bus();
         let handle = app.clone();
         let locked = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -320,13 +381,14 @@ impl Core {
                 }
             })
             .map_err(|e| e.to_string())?;
-        Ok(Core::assemble(data, events, locked))
+        Ok(Core::assemble(data, events, locked, hooks))
     }
 
     fn assemble(
         data: PathBuf,
         events: EventTx,
         locked: Arc<std::sync::atomic::AtomicBool>,
+        hooks: CoreHooks,
     ) -> Core {
         Core {
             data,
@@ -344,6 +406,8 @@ impl Core {
             settings_hook: Mutex::new(None),
             recovered: Mutex::new(Vec::new()),
             events,
+            hooks,
+            launch_checked: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -351,9 +415,18 @@ impl Core {
     /// returned receiver. For the real-model harness test only.
     #[cfg(any(test, feature = "test-support"))]
     pub fn for_test(data: PathBuf) -> (Arc<Core>, ghi_core::events::EventRx) {
+        Core::for_test_with(data, CoreHooks::default())
+    }
+
+    /// [`Core::for_test`] with an app's hooks (the phone's harness tests).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test_with(
+        data: PathBuf,
+        hooks: CoreHooks,
+    ) -> (Arc<Core>, ghi_core::events::EventRx) {
         let (events, rx) = bus();
         let locked = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        (Arc::new(Core::assemble(data, events, locked)), rx)
+        (Arc::new(Core::assemble(data, events, locked, hooks)), rx)
     }
 
     /// Opens the store, runs crash recovery and starts the jobs off the main
@@ -579,7 +652,7 @@ impl Core {
             }
         };
         let dir = self.data.join("store");
-        let ks = keystore(&dir)?;
+        let ks = self.keystore(&dir)?;
         store
             .delete_all(ks.as_ref(), Protection::default())
             .map_err(|e| e.to_string())?;
@@ -594,46 +667,15 @@ impl Core {
         Ok(())
     }
 
-    /// Opens the store on first use, runs crash recovery and starts the job runner.
-    pub fn store(&self) -> Result<Arc<Store>, String> {
-        if self.deleting.load(std::sync::atomic::Ordering::Acquire) {
-            return Err("all data is being deleted".into());
-        }
-        if self.locked() {
-            return Err("the app is locked".into());
-        }
-        self.store_even_locked()
-    }
-
-    /// The store for what keeps working while the app is locked: starting a
-    /// recording (⌘⇧R, detection) and imports. Never for a command that
-    /// returns content to the webview.
-    pub fn store_even_locked(&self) -> Result<Arc<Store>, String> {
-        if self.deleting.load(std::sync::atomic::Ordering::Acquire) {
-            return Err("all data is being deleted".into());
-        }
-        let mut slot = lock(&self.store);
-        if let Some(s) = slot.as_ref() {
-            return Ok(s.clone());
-        }
-        let dir = self.data.join("store");
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let store = Arc::new(
-            Store::open(&dir, keystore(&dir)?, Protection::default()).map_err(|e| e.to_string())?,
-        );
-        // A test recording interrupted by a quit or crash goes first, so
-        // recovery doesn't turn it into a meeting with jobs.
-        if let Some(test) = Self::pending_test(&store) {
-            let _ = store.delete_meeting(&test);
-            let _ = store.set_setting(TEST_MEETING_KEY, &serde_json::Value::Null);
-        }
-        let recovered = ghi_core::recover::recover(&store)?;
-        *lock(&self.recovered) = recovered.meetings;
-        // Names given before 14c get their person rows (idempotent).
-        if let Err(e) = store.link_named_speakers() {
-            log::warn!("linking named speakers: {e}");
-        }
-        let models = self.models();
+    /// The desktop's job handlers: live and final notes, the final pass, voice
+    /// learning and (with `embeddings`) the semantic index.
+    fn desktop_handlers(
+        &self,
+        store: &Arc<Store>,
+        models: &Path,
+    ) -> Result<Vec<Arc<dyn ghi_core::jobs::JobHandler>>, String> {
+        let models = models.to_path_buf();
+        let store = store.clone();
         let speech_models = models.clone();
         #[cfg(feature = "embeddings")]
         let embed_dir = models.clone();
@@ -713,13 +755,82 @@ impl Core {
                 Arc::new(move || embed_ready(&dir))
             },
         }));
-        let runner = JobRunner::new(store.clone(), self.events.clone(), handlers);
-        // Light machines search by keywords only (no embedding model).
-        let _ = ghi_core::index_job::set_enabled(
-            &store,
-            cfg!(feature = "embeddings") && preset().embed_id.is_some(),
+        Ok(handlers)
+    }
+
+    /// Opens the store on first use, runs crash recovery and starts the job runner.
+    pub fn store(&self) -> Result<Arc<Store>, String> {
+        if self.deleting.load(std::sync::atomic::Ordering::Acquire) {
+            return Err("all data is being deleted".into());
+        }
+        if self.locked() {
+            return Err("the app is locked".into());
+        }
+        if self.hooks.gate_launch
+            && !self
+                .launch_checked
+                .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err("the app is starting".into());
+        }
+        self.store_even_locked()
+    }
+
+    /// The launch lock check ran: `store()` serves content from now on.
+    pub fn mark_launch_checked(&self) {
+        self.launch_checked
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// The store for what keeps working while the app is locked: starting a
+    /// recording (⌘⇧R, detection) and imports. Never for a command that
+    /// returns content to the webview.
+    pub fn store_even_locked(&self) -> Result<Arc<Store>, String> {
+        if self.deleting.load(std::sync::atomic::Ordering::Acquire) {
+            return Err("all data is being deleted".into());
+        }
+        let mut slot = lock(&self.store);
+        if let Some(s) = slot.as_ref() {
+            return Ok(s.clone());
+        }
+        let dir = self.data.join("store");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let store = Arc::new(
+            Store::open(&dir, self.keystore(&dir)?, Protection::default())
+                .map_err(|e| e.to_string())?,
         );
-        let _ = ghi_core::index_job::queue_missing(&store);
+        // A test recording interrupted by a quit or crash goes first, so
+        // recovery doesn't turn it into a meeting with jobs.
+        if let Some(test) = Self::pending_test(&store) {
+            let _ = store.delete_meeting(&test);
+            let _ = store.set_setting(TEST_MEETING_KEY, &serde_json::Value::Null);
+        }
+        let recovered = match &self.hooks.recover_kinds {
+            Some(kinds) => ghi_core::recover::recover_with_kinds(&store, kinds)?,
+            None => ghi_core::recover::recover(&store)?,
+        };
+        *lock(&self.recovered) = recovered.meetings;
+        // Names given before 14c get their person rows (idempotent).
+        if let Err(e) = store.link_named_speakers() {
+            log::warn!("linking named speakers: {e}");
+        }
+        let models = self.models();
+        let handlers = match &self.hooks.handlers {
+            Some(f) => f(&store, &models),
+            None => self.desktop_handlers(&store, &models)?,
+        };
+        let runner = JobRunner::new(store.clone(), self.events.clone(), handlers);
+        if self.hooks.handlers.is_none() {
+            // Light machines search by keywords only (no embedding model).
+            let _ = ghi_core::index_job::set_enabled(
+                &store,
+                cfg!(feature = "embeddings") && preset().embed_id.is_some(),
+            );
+            let _ = ghi_core::index_job::queue_missing(&store);
+        }
+        if let Some(f) = &self.hooks.before_spawn {
+            f(&runner);
+        }
         *lock(&self.runner_thread) = Some(runner.spawn().map_err(|e| e.to_string())?);
         *lock(&self.runner) = Some(runner);
         *slot = Some(store.clone());
@@ -897,7 +1008,32 @@ impl Core {
 
     /// Cloud API keys (never shown, never sent anywhere but their provider).
     pub fn secrets(&self) -> Result<Box<dyn ghi_store::keys::secrets::SecretStore>, String> {
-        secrets(&self.data)
+        match &self.hooks.secrets {
+            Some(f) => f(),
+            None => secrets(&self.data),
+        }
+    }
+
+    fn keystore(&self, dir: &Path) -> Result<Arc<dyn KeyStore>, String> {
+        match &self.hooks.keystore {
+            Some(k) => Ok(k.clone()),
+            None => keystore(dir),
+        }
+    }
+
+    /// The event bus (the phone's recorder and lifecycle emit on it).
+    pub fn events(&self) -> EventTx {
+        self.events.clone()
+    }
+
+    /// The job runner, once the store is open.
+    pub fn runner(&self) -> Option<Arc<JobRunner>> {
+        lock(&self.runner).clone()
+    }
+
+    /// The microphone hook for voice enrollment (see [`MicSource`]).
+    pub fn mic_source(&self) -> Option<MicSource> {
+        self.hooks.mic.clone()
     }
 
     /// The local notes model's factory (once the store is open).

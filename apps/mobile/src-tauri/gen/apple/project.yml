@@ -124,6 +124,8 @@ targets:
         codeSign: true
       - sdk: AVFoundation.framework
       - sdk: Accelerate.framework
+      # Wi-Fi-only model downloads (models_cmd: SCNetworkReachability).
+      - sdk: SystemConfiguration.framework
       - sdk: ActivityKit.framework
       - target: GhiLiveActivity
         embed: true

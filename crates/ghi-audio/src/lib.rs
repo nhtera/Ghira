@@ -18,6 +18,7 @@ pub mod detect;
 pub mod encoder;
 #[cfg(target_os = "macos")]
 pub mod macos;
+pub mod muffle;
 pub mod pipeline;
 pub mod resample;
 pub mod ring;

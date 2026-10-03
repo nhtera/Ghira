@@ -36,16 +36,73 @@ pub enum MicPermission {
     Denied,
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn onboarding_state() -> Result<OnboardingState, String> {
-    Err("not yet".into())
+/// The settings-table key holding the completed steps.
+const KEY: &str = "onboarding";
+
+fn load(store: &ghi_store::store::Store) -> Result<OnboardingState, String> {
+    let completed: Vec<OnboardingStep> = store
+        .get_setting(KEY)
+        .map_err(|e| e.to_string())?
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    Ok(OnboardingState {
+        completed,
+        // Pairing is phase 15.
+        sync_available: false,
+    })
+}
+
+/// Records `step` as done (once). `Done` also marks onboarding finished in
+/// the shared settings (`AppSettings.onboarding_done`), which the app uses to
+/// decide between onboarding and the library.
+pub fn complete(
+    store: &ghi_store::store::Store,
+    step: OnboardingStep,
+) -> Result<OnboardingState, String> {
+    let mut state = load(store)?;
+    if !state.completed.contains(&step) {
+        state.completed.push(step);
+    }
+    let v = serde_json::to_value(&state.completed).map_err(|e| e.to_string())?;
+    store.set_setting(KEY, &v).map_err(|e| e.to_string())?;
+    Ok(state)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn onboarding_complete_step(_step: OnboardingStep) -> Result<OnboardingState, String> {
-    Err("not yet".into())
+pub async fn onboarding_state(core: ghi_app::CoreState<'_>) -> Result<OnboardingState, String> {
+    ghi_app::blocking(&core, |c| {
+        let store = c.store()?;
+        load(&store)
+    })
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn onboarding_complete_step(
+    app: tauri::AppHandle,
+    core: ghi_app::CoreState<'_>,
+    step: OnboardingStep,
+) -> Result<OnboardingState, String> {
+    let core = core.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = core.store()?;
+        let state = complete(&store, step)?;
+        if step == OnboardingStep::Done {
+            ghi_app::system::patch_settings(
+                &app,
+                &core,
+                ghi_app::system::SettingsPatch {
+                    onboarding_done: Some(true),
+                    ..Default::default()
+                },
+            )?;
+        }
+        Ok(state)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

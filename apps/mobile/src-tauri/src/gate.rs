@@ -16,7 +16,7 @@
 //! A hot phone (`.serious` thermal state or worse) holds the engine too.
 
 use std::sync::{Condvar, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Default)]
 struct State {
@@ -34,6 +34,12 @@ struct State {
     poisoned: bool,
     /// How often that happened (metrics).
     overlaps: u32,
+    /// Since when the app has been inactive (the models unload after 30 s).
+    suspended_at: Option<Instant>,
+    /// Engine steps that ended while the app was not active (metrics).
+    inactive_steps: u32,
+    /// A memory warning arrived while inactive: unload now, not after 30 s.
+    unload_now: bool,
 }
 
 #[derive(Debug, Default)]
@@ -60,6 +66,7 @@ impl Gate {
         let mut s = self.lock();
         if !s.suspended {
             s.busy_at_suspend = s.busy;
+            s.suspended_at = Some(Instant::now());
         }
         s.suspended = true;
     }
@@ -70,6 +77,9 @@ impl Gate {
     /// transition. Returns `true` if no step overlapped.
     pub fn entered_background(&self) -> bool {
         let mut s = self.lock();
+        if !s.suspended {
+            s.suspended_at = Some(Instant::now());
+        }
         s.suspended = true;
         let overlapped = s.busy || s.busy_at_suspend;
         if overlapped {
@@ -92,9 +102,45 @@ impl Gate {
         self.lock().overlaps
     }
 
+    /// How long the app has been inactive, if it is.
+    pub fn suspended_for(&self) -> Option<Duration> {
+        self.lock().suspended_at.map(|t| t.elapsed())
+    }
+
+    /// The models should go: inactive for the grace period, or the system
+    /// warned about memory while inactive.
+    pub fn unload_due(&self, after: Duration) -> bool {
+        let s = self.lock();
+        s.suspended && (s.unload_now || s.suspended_at.is_some_and(|t| t.elapsed() >= after))
+    }
+
+    /// A memory warning: unload at once if the app is not active (the models
+    /// are what jetsam would take the app for).
+    pub fn request_unload(&self) {
+        let mut s = self.lock();
+        if s.suspended {
+            s.unload_now = true;
+        }
+        drop(s);
+        self.cv.notify_all();
+    }
+
+    /// Engine steps that ended while the app was not active.
+    pub fn steps_while_inactive(&self) -> u32 {
+        self.lock().inactive_steps
+    }
+
+    /// Makes the gate look inactive since `ago` (tests of the 30 s unload).
+    #[cfg(test)]
+    pub fn pretend_suspended_for(&self, ago: Duration) {
+        self.lock().suspended_at = Instant::now().checked_sub(ago);
+    }
+
     pub fn resume(&self) {
         let mut s = self.lock();
         s.suspended = false;
+        s.suspended_at = None;
+        s.unload_now = false;
         s.busy_at_suspend = false;
         drop(s);
         self.cv.notify_all();
@@ -147,6 +193,9 @@ impl Gate {
         let mut s = self.lock();
         s.busy = false;
         let suspect = s.poisoned || s.suspended;
+        if s.suspended {
+            s.inactive_steps += 1;
+        }
         drop(s);
         self.cv.notify_all();
         suspect
@@ -212,5 +261,18 @@ mod tests {
         assert!(!gate.stopping());
         gate.stop();
         assert!(gate.stopping());
+    }
+
+    #[test]
+    fn a_memory_warning_while_inactive_unloads_at_once() {
+        let gate = Gate::default();
+        gate.request_unload();
+        assert!(!gate.unload_due(Duration::from_secs(30)), "active: nothing");
+        gate.suspend();
+        assert!(!gate.unload_due(Duration::from_secs(30)), "grace period");
+        gate.request_unload();
+        assert!(gate.unload_due(Duration::from_secs(30)));
+        gate.resume();
+        assert!(!gate.unload_due(Duration::from_secs(30)));
     }
 }

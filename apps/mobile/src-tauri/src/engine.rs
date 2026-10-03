@@ -1,16 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The live engine thread: reads the backlog, runs streaming ASR and
-//! diarization (Light tier: 1120 ms ASR chunk, diarization `v3-streaming`),
-//! and turns finals into speaker-tagged transcript lines.
+//! The live engine thread: reads the sealed backlog, runs streaming ASR and
+//! diarization (Light tier: 1120 ms ASR chunk, diarization `v3-streaming`) and
+//! turns finals into speaker-tagged lines through the `ghi-core` blocks
+//! (`aligner`, `SpeakerTracker`, the persist thread and the event bus).
 //!
-//! Spike code: phase 8 builds the real live pipeline (final pass, "Me"
-//! anchoring, renames, word-level speakers) in the shared core.
+//! Kept mobile-only (phase 16 D3): the lock / catch-up contract of [`Gate`]
+//! (suspect steps dropped and redone, models unloaded after 30 s inactive)
+//! would add desktop regression risk inside `ghi_core::live`.
+//!
+//! The streams, the models and the speaker tracker all live on this thread's
+//! stack: when the thread ends they are gone, before the session reports it
+//! is done (and so before the job runner may load the final pass's models).
+//!
+//! [`Gate`]: crate::gate::Gate
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ghi_speech::SpeakerSegment;
+use crossbeam_channel::Sender;
+use ghi_core::aligner;
+use ghi_core::engines::SpeechEngines;
+use ghi_core::events::{Event, EventTx, LineInfo, SpeakerInfo, WordInfo};
+use ghi_core::live::{LineOut, PersistMsg, SpeakerOut, line_language};
+use ghi_core::speakers::{Change, Source, SpeakerId, SpeakerTracker};
+use ghi_speech::{SpeakerSegment, Word};
 
 use crate::backlog::BacklogReader;
 use crate::session::Shared;
@@ -21,9 +35,21 @@ const LIVE_STEP: usize = 2_560; // 160 ms
 const CATCH_UP_STEP: usize = 8_000; // 500 ms
 const POLL: Duration = Duration::from_millis(40);
 pub const SAMPLE_RATE: u32 = ghi_audio::SAMPLE_RATE;
+const RATE: f64 = SAMPLE_RATE as f64;
+/// The ASR chunk the live and final engines are loaded with.
+pub const CHUNK_MS: u32 = 1120;
+/// Inactive this long, the engine drops its streams and models (the GPU
+/// memory goes back to the system) and reloads on return.
+pub const UNLOAD_AFTER: Duration = Duration::from_secs(30);
 
 /// Model files the engine needs, by registry id.
 pub const MODELS: [&str; 2] = ["nemotron-3.5-asr", "nemotron-3-diarization"];
+
+/// The speech models are installed (the live engine and the final pass wait
+/// for them; "record now, process later").
+pub fn models_ready(dir: &Path) -> bool {
+    cfg!(feature = "nemo") && ghi_models::installed(dir, &MODELS)
+}
 
 /// Path of a registry model in `dir`, if it is there with the pinned size.
 pub fn model_file(dir: &Path, id: &str) -> Option<PathBuf> {
@@ -33,45 +59,329 @@ pub fn model_file(dir: &Path, id: &str) -> Option<PathBuf> {
     (len == m.size).then_some(path)
 }
 
+/// Opens the speech engines (loads the models). Called by the engine thread
+/// while the app is active, and by the final pass job.
+pub type EnginesProvider = Arc<dyn Fn() -> Result<Arc<dyn SpeechEngines>, String> + Send + Sync>;
+
+/// Metal on devices; the simulator runs the CPU backend.
+#[cfg(feature = "nemo")]
+const DEVICE: ghi_speech::nemo::Device = if cfg!(target_abi = "sim") {
+    ghi_speech::nemo::Device::Cpu
+} else {
+    ghi_speech::nemo::Device::Gpu
+};
+
+/// NeMo engines over the registry models in `dir`, verified first.
+pub fn nemo_provider(dir: &Path) -> EnginesProvider {
+    let dir = dir.to_path_buf();
+    Arc::new(move || {
+        #[cfg(feature = "nemo")]
+        {
+            let path = |id: &str| ghi_app::core::checked_model(&dir, id);
+            let e = ghi_core::engines::NemoEngines::load(
+                &path(MODELS[0])?,
+                &path(MODELS[1])?,
+                CHUNK_MS,
+                DEVICE,
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(Arc::new(e) as Arc<dyn SpeechEngines>)
+        }
+        #[cfg(not(feature = "nemo"))]
+        {
+            let _ = &dir;
+            Err("this build has no speech engine (feature `nemo`): recording only".into())
+        }
+    })
+}
+
+/// The engines a recording uses: the scripted fakes when a test-hooks build
+/// asks (`GHI_FAKE_ENGINES=1`; CI without models), else NeMo.
+pub fn provider(models: &Path) -> EnginesProvider {
+    #[cfg(feature = "test-hooks")]
+    if std::env::var_os("GHI_FAKE_ENGINES").is_some() {
+        return Arc::new(|| Ok(ghi_core::engines::FakeEngines::new(fake_script()) as _));
+    }
+    nemo_provider(models)
+}
+
+/// Whether live recording would have engines here (fakes count).
+pub fn engines_available(models: &Path) -> bool {
+    if cfg!(feature = "test-hooks") && std::env::var_os("GHI_FAKE_ENGINES").is_some() {
+        return true;
+    }
+    models_ready(models)
+}
+
+/// Two voices taking turns, a line every 4 s for ten minutes.
+#[cfg(feature = "test-hooks")]
+pub fn fake_script() -> ghi_core::engines::Script {
+    let mut utterances = Vec::new();
+    let mut turns = Vec::new();
+    for i in 0..150u32 {
+        let t = f64::from(i) * 4.0;
+        utterances.push((t + 0.5, t + 3.0, format!("câu số {i} hello there")));
+        turns.push(SpeakerSegment {
+            start: t,
+            end: t + 3.5,
+            speaker: 1 + i % 2,
+        });
+    }
+    ghi_core::engines::Script { utterances, turns }
+}
+
 #[cfg_attr(not(feature = "nemo"), allow(dead_code))]
 /// The speaker who talks most within `start..end` (seconds), if anyone does.
 pub fn majority_speaker(segs: &[SpeakerSegment], start: f64, end: f64) -> Option<u32> {
-    let mut best: Option<(u32, f64)> = None;
-    let mut totals: Vec<(u32, f64)> = Vec::new();
-    for s in segs {
-        let overlap = s.end.min(end) - s.start.max(start);
-        if overlap <= 0.0 {
-            continue;
-        }
-        match totals.iter_mut().find(|(k, _)| *k == s.speaker) {
-            Some((_, t)) => *t += overlap,
-            None => totals.push((s.speaker, overlap)),
-        }
-    }
-    for (k, t) in totals {
-        if best.is_none_or(|(_, b)| t > b) {
-            best = Some((k, t));
-        }
-    }
-    best.map(|(k, _)| k)
+    aligner::majority(segs, start, end)
 }
 
-/// What one engine step produced, committed only if the step was not suspect.
-#[cfg_attr(not(any(test, feature = "nemo")), allow(dead_code))]
-#[derive(Debug)]
+/// What one engine step produced, applied only if the step was not suspect.
+/// Times are seconds of the current streams.
+#[derive(Debug, Clone)]
 pub enum Update {
     Partial(String),
-    /// A final line; times are seconds of the current streams.
     Final {
         start: f64,
         end: f64,
-        speaker: Option<u32>,
         text: String,
+        words: Vec<Word>,
+        /// The diarizer's segments when the line was produced.
+        segs: Vec<SpeakerSegment>,
     },
 }
 
+/// Turns committed updates into lines, speakers, events and store writes.
+pub struct Applier {
+    meeting: String,
+    language: Option<String>,
+    tracker: SpeakerTracker,
+    events: EventTx,
+    persist: Sender<PersistMsg>,
+    /// Bumped when the diarizer stream is reopened (its labels restart).
+    generation: u32,
+}
+
+fn speaker_info(t: &SpeakerTracker, id: SpeakerId) -> SpeakerInfo {
+    let s = t.get(id).expect("tracked speaker");
+    SpeakerInfo {
+        id,
+        label: t.label(id),
+        color_slot: s.color_slot,
+        is_me: s.is_me,
+        provisional: s.provisional,
+        not_person: s.not_person,
+        others: s.others,
+    }
+}
+
+fn speaker_out(t: &SpeakerTracker, id: SpeakerId) -> SpeakerOut {
+    let s = t.get(id).expect("tracked speaker");
+    SpeakerOut {
+        id,
+        number: s.number,
+        name: s.name.clone(),
+        color_slot: s.color_slot,
+        is_me: s.is_me,
+    }
+}
+
+fn ms(s: f64) -> i64 {
+    (s * 1000.0).round() as i64
+}
+
+impl Applier {
+    pub fn new(
+        meeting: String,
+        language: Option<String>,
+        events: EventTx,
+        persist: Sender<PersistMsg>,
+    ) -> Applier {
+        Applier {
+            meeting,
+            language,
+            tracker: SpeakerTracker::new(),
+            events,
+            persist,
+            generation: 0,
+        }
+    }
+
+    /// The streams were reopened: the diarizer's labels start over.
+    pub fn streams_reopened(&mut self) {
+        self.generation += 1;
+    }
+
+    /// Applies one step's updates; `offset_samples` is where the streams
+    /// started on the backlog timeline, `now_samples` the read position.
+    pub fn apply(&mut self, updates: Vec<Update>, offset_samples: u64, now_samples: u64) {
+        let offset = offset_samples as f64 / RATE;
+        for u in updates {
+            match u {
+                Update::Partial(text) => self.events.emit(Event::TranscriptPartial {
+                    meeting: self.meeting.clone(),
+                    track: 0,
+                    text,
+                }),
+                Update::Final {
+                    text, words, segs, ..
+                } => self.final_line(&text, words, segs, offset),
+            }
+        }
+        let mut ch = Vec::new();
+        self.tracker.tick(now_samples as f64 / RATE, &mut ch);
+        self.changes(ch);
+    }
+
+    fn final_line(&mut self, text: &str, words: Vec<Word>, segs: Vec<SpeakerSegment>, off: f64) {
+        let words: Vec<Word> = words
+            .into_iter()
+            .map(|w| Word {
+                start: w.start + off,
+                end: w.end + off,
+                ..w
+            })
+            .collect();
+        if words.is_empty() {
+            return;
+        }
+        let segs: Vec<SpeakerSegment> = segs
+            .into_iter()
+            .map(|s| SpeakerSegment {
+                start: s.start + off,
+                end: s.end + off,
+                speaker: s.speaker,
+            })
+            .collect();
+        let _ = text;
+        let mut ch = Vec::new();
+        let lines: Vec<(Option<SpeakerId>, aligner::AlignedLine)> = aligner::align(&words, &segs)
+            .into_iter()
+            .map(|l| {
+                let id = l.speaker.map(|label| {
+                    self.tracker.resolve(
+                        Source {
+                            track: 0,
+                            generation: self.generation,
+                            label,
+                        },
+                        l.start,
+                        &mut ch,
+                    )
+                });
+                (id, l)
+            })
+            .collect();
+        self.changes(ch);
+        let out: Vec<LineOut> = lines
+            .into_iter()
+            .map(|(speaker, l)| {
+                let text = l.text();
+                let n = l.words.len().max(1) as f32;
+                let conf = Some(l.words.iter().map(|w| w.word.confidence).sum::<f32>() / n);
+                LineOut {
+                    gid: ghi_store::new_gid(),
+                    speaker,
+                    track: ghi_audio::Track::Mic,
+                    t0_ms: ms(l.start),
+                    t1_ms: ms(l.end),
+                    lang: line_language(&text, self.language.as_deref()),
+                    confidence: conf,
+                    overlap: l.overlap(),
+                    words: l
+                        .words
+                        .iter()
+                        .map(|w| (ms(w.word.start), ms(w.word.end), Some(w.word.confidence)))
+                        .collect(),
+                    text,
+                }
+            })
+            .collect();
+        for l in &out {
+            self.events.emit(Event::TranscriptFinal {
+                meeting: self.meeting.clone(),
+                line: LineInfo {
+                    gid: l.gid.clone(),
+                    speaker: l.speaker,
+                    t0_ms: l.t0_ms,
+                    t1_ms: l.t1_ms,
+                    text: l.text.clone(),
+                    overlap: l.overlap,
+                    words: l
+                        .text
+                        .split_whitespace()
+                        .zip(&l.words)
+                        .map(|(t, (a, b, c))| WordInfo {
+                            text: t.to_string(),
+                            t0_ms: *a,
+                            t1_ms: *b,
+                            low_confidence: c.is_some_and(|c| c < aligner::LOW_CONFIDENCE),
+                        })
+                        .collect(),
+                },
+            });
+        }
+        if !out.is_empty() {
+            let _ = self.persist.send(PersistMsg::Lines(out));
+        }
+    }
+
+    fn changes(&mut self, changes: Vec<Change>) {
+        for c in changes {
+            let (ev, id) = match &c {
+                Change::Arrived(id) => (
+                    Event::SpeakerArrived {
+                        meeting: self.meeting.clone(),
+                        speaker: speaker_info(&self.tracker, *id),
+                    },
+                    *id,
+                ),
+                Change::Confirmed(id) => (
+                    Event::SpeakerConfirmed {
+                        meeting: self.meeting.clone(),
+                        speaker: speaker_info(&self.tracker, *id),
+                    },
+                    *id,
+                ),
+                // The phone has no live renames, merges or splits.
+                _ => continue,
+            };
+            self.events.emit(ev);
+            let out = speaker_out(&self.tracker, id);
+            let _ = self.persist.send(PersistMsg::Speaker(c, out));
+        }
+    }
+}
+
+/// Everything the engine thread needs.
+pub struct EngineCtx {
+    pub shared: Arc<Shared>,
+    pub backlog: BacklogReader,
+    pub provider: EnginesProvider,
+    pub applier: Applier,
+    pub language: Option<String>,
+    /// True once no job is running (a final pass keeps its own models
+    /// resident); `None`: nothing to wait for. The live models never load
+    /// while this says no.
+    pub runner_idle: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+}
+
+/// How often the engine looks again while it waits for the runner.
+const IDLE_POLL: Duration = Duration::from_millis(100);
+
+/// Waits until the gate lets the engine run, dropping the models once the
+/// app has been inactive for [`UNLOAD_AFTER`] (so a long lock never keeps them
+/// resident, whichever wait it is in).
+fn wait_active(shared: &Shared, engines: &mut Option<Arc<dyn SpeechEngines>>) {
+    while !shared.gate.enter(POLL) {
+        if shared.gate.unload_due(UNLOAD_AFTER) && engines.take().is_some() {
+            shared.models_unloaded();
+        }
+    }
+}
+
 /// Runs the engine until the session stops and the backlog is drained.
-pub fn run(shared: Arc<Shared>, mut backlog: BacklogReader, models_dir: PathBuf) {
+pub fn run(mut ctx: EngineCtx) {
     // Whatever happens (errors, a panic), the session learns the engine is done.
     struct Done(Arc<Shared>);
     impl Drop for Done {
@@ -79,26 +389,75 @@ pub fn run(shared: Arc<Shared>, mut backlog: BacklogReader, models_dir: PathBuf)
             self.0.engine_done();
         }
     }
-    let _done = Done(shared.clone());
-    #[cfg(feature = "nemo")]
-    let result = nemo::run(&shared, &mut backlog, &models_dir);
-    // No engine in this build (host, desktop preview): record only.
-    #[cfg(not(feature = "nemo"))]
-    let result: Result<(), String> = {
-        let _ = &models_dir;
-        Err("this build has no speech engine (feature `nemo`): recording only".into())
-    };
-    if let Err(e) = result {
-        shared.engine_failed(e);
+    let _done = Done(ctx.shared.clone());
+    if let Err(e) = live_loop(&mut ctx) {
+        ctx.shared.engine_failed(e);
         // Record only from here: keep reading so the session can finish
-        // (the audio is in mic.opus).
-        let _ = drain(&shared, &mut backlog);
+        // (the audio is in the store).
+        let _ = drain(&ctx.shared, &mut ctx.backlog);
+    }
+}
+
+fn live_loop(ctx: &mut EngineCtx) -> Result<(), String> {
+    let shared = ctx.shared.clone();
+    let gate = &shared.gate;
+    let mut engines: Option<Arc<dyn SpeechEngines>> = None;
+    loop {
+        // Loading uploads weights to the GPU: only while the app is active.
+        wait_active(&shared, &mut engines);
+        if gate.take_poison() {
+            // A load or step overlapped a move to the background: some of
+            // its GPU work (possibly weight uploads) may have been refused.
+            engines = None;
+            shared.models_unloaded();
+        }
+        if engines.is_none() {
+            if ctx.runner_idle.as_ref().is_some_and(|idle| !idle()) {
+                // A job (the final pass) still has its models loaded: the live
+                // ones wait, the audio keeps filling the backlog.
+                gate.leave();
+                std::thread::sleep(IDLE_POLL);
+                continue;
+            }
+            let loaded = shared.timed_load(|| (ctx.provider)());
+            if gate.leave() {
+                // The load itself may be incomplete: load again when active.
+                continue;
+            }
+            engines = Some(loaded?);
+        } else if gate.leave() {
+            continue;
+        }
+        let e = engines.as_ref().expect("loaded").clone();
+        match live(ctx, &e)? {
+            Flow::Finished => return Ok(()),
+            flow @ (Flow::Reset | Flow::Unload) => {
+                if flow == Flow::Unload {
+                    // Streams went with `live`; the models go now.
+                    engines = None;
+                    shared.models_unloaded();
+                }
+                // Redo from the end of the last committed line; the new
+                // streams start there (and renumber speakers).
+                let from = shared.committed_position();
+                ctx.backlog.rewind(from);
+                shared.engine_reset(from);
+                ctx.applier.streams_reopened();
+            }
+        }
     }
 }
 
 /// Reads and discards the backlog until the session ends.
 fn drain(shared: &Shared, backlog: &mut BacklogReader) -> Result<(), String> {
-    while pump(shared, backlog, |_| Ok(Vec::new()), || Ok(Vec::new()))? != Flow::Finished {}
+    while pump(
+        shared,
+        backlog,
+        |_| Ok(Vec::new()),
+        || Ok(Vec::new()),
+        |_, _, _| {},
+    )? != Flow::Finished
+    {}
     Ok(())
 }
 
@@ -110,21 +469,96 @@ pub enum Flow {
     /// A step was suspect (the app left the foreground while it ran): its
     /// results were dropped; the caller reopens its streams and rewinds.
     Reset,
+    /// Held inactive for [`UNLOAD_AFTER`]: the caller drops streams and models
+    /// (the same rewind as a reset) and waits for the app to return.
+    Unload,
+}
+
+fn live(ctx: &mut EngineCtx, engines: &Arc<dyn SpeechEngines>) -> Result<Flow, String> {
+    use std::cell::RefCell;
+    let shared = ctx.shared.clone();
+    let err = |e: ghi_speech::SpeechError| e.to_string();
+    // Opening streams may touch the GPU too.
+    while !shared.gate.enter(POLL) {
+        if shared.gate.unload_due(UNLOAD_AFTER) {
+            return Ok(Flow::Unload);
+        }
+    }
+    let opened = (|| {
+        Ok::<_, String>((
+            engines.asr(ctx.language.as_deref()).map_err(err)?,
+            engines.diar().map_err(err)?,
+        ))
+    })();
+    if shared.gate.leave() {
+        return Ok(Flow::Reset);
+    }
+    let (asr, diar) = opened?;
+    let (asr, diar) = (RefCell::new(asr), RefCell::new(diar));
+    let collect = || -> Result<Vec<Update>, String> {
+        let mut out = Vec::new();
+        let mut asr = asr.borrow_mut();
+        while let Some(r) = asr.next_result().map_err(err)? {
+            if !r.is_final {
+                out.push(Update::Partial(r.text));
+                continue;
+            }
+            let text = r.text.trim().to_string();
+            if text.is_empty() {
+                continue;
+            }
+            let (start, end) = match (r.words.first(), r.words.last()) {
+                (Some(a), Some(b)) => (a.start, b.end),
+                _ => (r.audio_processed, r.audio_processed),
+            };
+            let segs = diar.borrow().segments().map_err(err)?;
+            out.push(Update::Final {
+                start,
+                end,
+                text,
+                words: r.words,
+                segs,
+            });
+        }
+        Ok(out)
+    };
+    let applier = RefCell::new(&mut ctx.applier);
+    pump(
+        &shared,
+        &mut ctx.backlog,
+        |pcm| {
+            asr.borrow_mut().push(pcm, SAMPLE_RATE).map_err(err)?;
+            diar.borrow_mut().push(pcm, SAMPLE_RATE).map_err(err)?;
+            collect()
+        },
+        || {
+            asr.borrow_mut().finish().map_err(err)?;
+            diar.borrow_mut().finish().map_err(err)?;
+            collect()
+        },
+        |updates, offset, now| applier.borrow_mut().apply(updates, offset, now),
+    )
 }
 
 /// Steps the engine over the backlog; `step` gets each chunk of audio and
 /// `finish` runs once the session stopped and everything was read. Their
-/// updates are committed to the session unless the step was suspect.
+/// updates are committed to the session and handed to `apply` (with the
+/// streams' start and the read position, in samples) unless the step was
+/// suspect.
 pub fn pump(
     shared: &Shared,
     backlog: &mut BacklogReader,
     mut step: impl FnMut(&[f32]) -> Result<Vec<Update>, String>,
     finish: impl FnOnce() -> Result<Vec<Update>, String>,
+    mut apply: impl FnMut(Vec<Update>, u64, u64),
 ) -> Result<Flow, String> {
     let gate = &shared.gate;
     let mut pcm = Vec::new();
     loop {
         if !gate.enter(POLL) {
+            if gate.unload_due(UNLOAD_AFTER) {
+                return Ok(Flow::Unload);
+            }
             continue;
         }
         let behind = backlog.available();
@@ -146,7 +580,9 @@ pub fn pump(
                 if gate.leave() {
                     return Ok(Flow::Reset);
                 }
-                shared.commit(r?, backlog.position(), true);
+                let updates = r?;
+                shared.commit(&updates, backlog.position(), true);
+                apply(updates, shared.stream_offset(), backlog.position());
                 return Ok(Flow::Finished);
             }
             gate.leave();
@@ -160,7 +596,9 @@ pub fn pump(
             return Ok(Flow::Reset);
         }
         shared.engine_progress(n, t.elapsed(), backlog.position());
-        shared.commit(r?, backlog.position(), false);
+        let updates = r?;
+        shared.commit(&updates, backlog.position(), false);
+        apply(updates, shared.stream_offset(), backlog.position());
     }
 }
 
@@ -208,187 +646,37 @@ pub struct SelfTest {
     pub error: Option<String>,
 }
 
+/// Runs `pcm` through fresh ASR + diarization streams as fast as possible
+/// (throughput on this device), with the models in `dir`.
 #[cfg(feature = "nemo")]
-pub use nemo::selftest;
-
-#[cfg(feature = "nemo")]
-mod nemo {
-    use std::cell::RefCell;
-    use std::path::Path;
-    use std::sync::{Arc, Mutex};
-
-    use ghi_speech::nemo::{Asr, AsrConfig, AsrOptions, Device, DiarConfig, Diarizer};
-    use ghi_speech::{AsrStream, DiarStream};
-
-    use super::{Flow, MODELS, POLL, SAMPLE_RATE, Update, majority_speaker, model_file, pump};
-    use crate::backlog::BacklogReader;
-    use crate::session::Shared;
-
-    struct Models {
-        asr: Asr,
-        diar: Diarizer,
-    }
-
-    /// Loaded on the first recording (in the foreground) and kept, unless a
-    /// load or step overlapped a move to the background.
-    static CACHE: Mutex<Option<Arc<Models>>> = Mutex::new(None);
-
-    /// Metal on devices; the simulator runs the CPU backend.
-    const DEVICE: Device = if cfg!(target_abi = "sim") {
-        Device::Cpu
-    } else {
-        Device::Gpu
+pub fn selftest(dir: &Path, file: String, pcm: &[f32]) -> SelfTest {
+    let mut out = SelfTest {
+        file,
+        audio_s: pcm.len() as f64 / RATE,
+        model_load_s: 0.0,
+        compute_s: 0.0,
+        rtf: 0.0,
+        first_final_s: None,
+        lines: Vec::new(),
+        error: None,
     };
-
-    fn models(dir: &Path) -> Result<Arc<Models>, String> {
-        let mut slot = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(m) = slot.as_ref() {
-            return Ok(m.clone());
+    let t = Instant::now();
+    let engines = match nemo_provider(dir)() {
+        Ok(e) => e,
+        Err(e) => {
+            out.error = Some(e);
+            return out;
         }
-        let path = |id: &str| {
-            model_file(dir, id).ok_or_else(|| {
-                format!("model {id} is missing: push it with apps/mobile/scripts/push-models.sh")
-            })
-        };
-        let asr = Asr::new(&AsrConfig {
-            model: path(MODELS[0])?,
-            device: DEVICE,
-            chunk_ms: Some(1120),
-            endpointing: true,
-        })
-        .map_err(|e| e.to_string())?;
-        let diar = Diarizer::new(&DiarConfig {
-            model: path(MODELS[1])?,
-            device: DEVICE,
-            preset: Some("v3-streaming".into()),
-        })
-        .map_err(|e| e.to_string())?;
-        let m = Arc::new(Models { asr, diar });
-        *slot = Some(m.clone());
-        Ok(m)
-    }
-
-    fn forget_models() {
-        CACHE.lock().unwrap_or_else(|e| e.into_inner()).take();
-    }
-
-    pub fn run(shared: &Shared, backlog: &mut BacklogReader, dir: &Path) -> Result<(), String> {
-        loop {
-            // Loading uploads weights to the GPU: only while the app is active.
-            while !shared.gate.enter(POLL) {}
-            if shared.gate.take_poison() {
-                // A load or step overlapped a move to the background: some of
-                // its GPU work (possibly weight uploads) may have been refused.
-                forget_models();
-                shared.models_unloaded();
-            }
-            let loaded = shared.timed_load(|| models(dir));
-            if shared.gate.leave() {
-                // The load itself may be incomplete: load again when active.
-                continue;
-            }
-            let m = loaded?;
-            match live(shared, backlog, &m)? {
-                Flow::Finished => return Ok(()),
-                Flow::Reset => {
-                    // Redo from the end of the last committed line; the new
-                    // streams start there (and renumber speakers).
-                    let from = shared.committed_position();
-                    backlog.rewind(from);
-                    shared.engine_reset(from);
-                }
-            }
-        }
-    }
-
-    fn live(shared: &Shared, backlog: &mut BacklogReader, m: &Models) -> Result<Flow, String> {
-        let err = |e: ghi_speech::SpeechError| e.to_string();
-        // Opening streams may touch the GPU too.
-        while !shared.gate.enter(POLL) {}
-        let opened = (|| {
-            Ok::<_, String>((
-                m.asr.stream(&AsrOptions::default()).map_err(err)?,
-                m.diar.stream().map_err(err)?,
-            ))
-        })();
-        if shared.gate.leave() {
-            return Ok(Flow::Reset);
-        }
-        let (asr, diar) = opened?;
-        let (asr, diar) = (RefCell::new(asr), RefCell::new(diar));
-        let collect = || -> Result<Vec<Update>, String> {
-            let mut out = Vec::new();
-            let mut asr = asr.borrow_mut();
-            while let Some(r) = asr.next_result().map_err(err)? {
-                if !r.is_final {
-                    out.push(Update::Partial(r.text));
-                    continue;
-                }
-                let text = r.text.trim().to_string();
-                if text.is_empty() {
-                    continue;
-                }
-                let (start, end) = match (r.words.first(), r.words.last()) {
-                    (Some(a), Some(b)) => (a.start, b.end),
-                    _ => (r.audio_processed, r.audio_processed),
-                };
-                let segs = diar.borrow().segments().map_err(err)?;
-                let speaker = majority_speaker(&segs, start, end);
-                out.push(Update::Final {
-                    start,
-                    end,
-                    speaker,
-                    text,
-                });
-            }
-            Ok(out)
-        };
-        pump(
-            shared,
-            backlog,
-            |pcm| {
-                asr.borrow_mut().push(pcm, SAMPLE_RATE).map_err(err)?;
-                diar.borrow_mut().push(pcm, SAMPLE_RATE).map_err(err)?;
-                collect()
-            },
-            || {
-                asr.borrow_mut().finish().map_err(err)?;
-                diar.borrow_mut().finish().map_err(err)?;
-                collect()
-            },
-        )
-    }
-
-    /// Runs `pcm` through fresh ASR + diarization streams as fast as possible
-    /// (throughput on this device), with the models in `dir`.
-    pub fn selftest(dir: &Path, file: String, pcm: &[f32]) -> super::SelfTest {
-        use std::time::Instant;
-        let mut out = super::SelfTest {
-            file,
-            audio_s: pcm.len() as f64 / SAMPLE_RATE as f64,
-            model_load_s: 0.0,
-            compute_s: 0.0,
-            rtf: 0.0,
-            first_final_s: None,
-            lines: Vec::new(),
-            error: None,
-        };
+    };
+    out.model_load_s = t.elapsed().as_secs_f64();
+    let err = |e: ghi_speech::SpeechError| e.to_string();
+    let run = |out: &mut SelfTest| -> Result<(), String> {
+        let mut asr = engines.asr(None).map_err(err)?;
+        let mut diar = engines.diar().map_err(err)?;
         let t = Instant::now();
-        let m = match models(dir) {
-            Ok(m) => m,
-            Err(e) => {
-                out.error = Some(e);
-                return out;
-            }
-        };
-        out.model_load_s = t.elapsed().as_secs_f64();
-        let err = |e: ghi_speech::SpeechError| e.to_string();
-        let run = |out: &mut super::SelfTest| -> Result<(), String> {
-            let mut asr = m.asr.stream(&AsrOptions::default()).map_err(err)?;
-            let mut diar = m.diar.stream().map_err(err)?;
-            let t = Instant::now();
-            let mut results = Vec::new();
-            let collect = |asr: &mut dyn AsrStream, results: &mut Vec<_>| -> Result<(), String> {
+        let mut results = Vec::new();
+        let collect =
+            |asr: &mut dyn ghi_speech::AsrStream, results: &mut Vec<_>| -> Result<(), String> {
                 while let Some(r) = asr.next_result().map_err(err)? {
                     if r.is_final && !r.text.trim().is_empty() {
                         results.push((t.elapsed().as_secs_f64(), r));
@@ -396,42 +684,91 @@ mod nemo {
                 }
                 Ok(())
             };
-            for chunk in pcm.chunks(8_000) {
-                asr.push(chunk, SAMPLE_RATE).map_err(err)?;
-                diar.push(chunk, SAMPLE_RATE).map_err(err)?;
-                collect(&mut asr, &mut results)?;
-            }
-            asr.finish().map_err(err)?;
-            diar.finish().map_err(err)?;
-            collect(&mut asr, &mut results)?;
-            out.compute_s = t.elapsed().as_secs_f64();
-            out.rtf = out.compute_s / out.audio_s.max(1e-9);
-            out.first_final_s = results.first().map(|(s, _)| *s);
-            let segs = diar.segments().map_err(err)?;
-            for (_, r) in results {
-                let (start, end) = match (r.words.first(), r.words.last()) {
-                    (Some(a), Some(b)) => (a.start, b.end),
-                    _ => (r.audio_processed, r.audio_processed),
-                };
-                out.lines.push(crate::session::Line {
-                    start,
-                    end,
-                    speaker: majority_speaker(&segs, start, end),
-                    text: r.text.trim().to_string(),
-                });
-            }
-            Ok(())
-        };
-        if let Err(e) = run(&mut out) {
-            out.error = Some(e);
+        for chunk in pcm.chunks(8_000) {
+            asr.push(chunk, SAMPLE_RATE).map_err(err)?;
+            diar.push(chunk, SAMPLE_RATE).map_err(err)?;
+            collect(&mut *asr, &mut results)?;
         }
-        out
+        asr.finish().map_err(err)?;
+        diar.finish().map_err(err)?;
+        collect(&mut *asr, &mut results)?;
+        out.compute_s = t.elapsed().as_secs_f64();
+        out.rtf = out.compute_s / out.audio_s.max(1e-9);
+        out.first_final_s = results.first().map(|(s, _)| *s);
+        let segs = diar.segments().map_err(err)?;
+        for (_, r) in results {
+            let (start, end) = match (r.words.first(), r.words.last()) {
+                (Some(a), Some(b)) => (a.start, b.end),
+                _ => (r.audio_processed, r.audio_processed),
+            };
+            out.lines.push(crate::session::Line {
+                start,
+                end,
+                speaker: majority_speaker(&segs, start, end),
+                text: r.text.trim().to_string(),
+            });
+        }
+        Ok(())
+    };
+    if let Err(e) = run(&mut out) {
+        out.error = Some(e);
     }
+    out
+}
+
+/// The job handlers the phone registers on its [`JobRunner`] (16-G calls this
+/// from the mobile core): the final pass without `notes_final` (the phone has
+/// no local notes; D5) and, because the voice step queues `voice_learn` when
+/// Me is enrolled, the job that learns the voice. Both wait while the models
+/// are missing or the device is below the live tier; the runner itself never
+/// claims while a session exists or the app is inactive.
+///
+/// [`JobRunner`]: ghi_core::jobs::JobRunner
+pub fn job_handlers(
+    models: &Path,
+    store: &Arc<ghi_store::store::Store>,
+    tier_class: crate::cmd::lifecycle::TierClass,
+) -> Vec<Arc<dyn ghi_core::jobs::JobHandler>> {
+    use ghi_core::final_pass::{FinalPassJob, FinalPassNoNotes};
+    use ghi_core::voice_job::VoiceLearnJob;
+    use ghi_core::voice_step::VoiceStep;
+    let tier_ok = tier_class == crate::cmd::lifecycle::TierClass::Live;
+    let voice_ready: ghi_core::jobs::Ready = {
+        let m = models.to_path_buf();
+        Arc::new(move || ghi_app::core::voice_ready(&m))
+    };
+    let third_party = {
+        let store = store.clone();
+        move || -> Option<ghi_store::voice::ThirdPartyApproved> {
+            ghi_app::system::third_party_token(&store)
+        }
+    };
+    let provider = provider(models);
+    let m = models.to_path_buf();
+    vec![
+        Arc::new(FinalPassNoNotes(FinalPassJob {
+            engines: Arc::new(move || provider()),
+            ready: Arc::new(move || tier_ok && engines_available(&m)),
+            // Shorter than the desktop's 10 minutes: a lower peak on the phone.
+            chunk_s: 300.0,
+            voice: Some(VoiceStep {
+                embedder: ghi_app::core::voice_factory(models),
+                ready: voice_ready.clone(),
+                third_party: Arc::new(third_party.clone()),
+            }),
+        })),
+        Arc::new(VoiceLearnJob {
+            embedder: ghi_app::core::voice_factory(models),
+            ready: voice_ready,
+            third_party: Arc::new(third_party),
+        }),
+    ]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     fn seg(speaker: u32, start: f64, end: f64) -> SpeakerSegment {
         SpeakerSegment {
@@ -445,24 +782,45 @@ mod tests {
         Update::Final {
             start,
             end,
-            speaker: Some(1),
             text: text.into(),
+            words: Vec::new(),
+            segs: Vec::new(),
         }
     }
 
     fn setup(name: &str, seconds: usize) -> (Arc<Shared>, BacklogReader, PathBuf) {
         let dir = std::env::temp_dir().join(format!("ghi-engine-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         let shared = crate::session::test_shared(&dir);
-        let (mut w, r, _) = crate::backlog::create(&dir.join("backlog.pcm")).unwrap();
+        let (mut w, r) = crate::backlog::create(&dir.join("t.backlog")).unwrap();
         w.push(&vec![0.1; seconds * SAMPLE_RATE as usize]).unwrap();
         w.publish().unwrap();
         shared.finish_capture_for_test();
         (shared, r, dir)
     }
 
+    fn texts(seen: &Mutex<Vec<(String, u64)>>) -> Vec<String> {
+        seen.lock()
+            .unwrap()
+            .iter()
+            .map(|(t, _)| t.clone())
+            .collect()
+    }
+
+    fn collector(seen: &Mutex<Vec<(String, u64)>>) -> impl FnMut(Vec<Update>, u64, u64) + '_ {
+        move |updates, offset, _| {
+            for u in updates {
+                if let Update::Final { text, .. } = u {
+                    seen.lock().unwrap().push((text, offset));
+                }
+            }
+        }
+    }
+
     #[test]
     fn pump_commits_step_results_and_finishes() {
         let (shared, mut backlog, dir) = setup("commit", 1);
+        let seen = Mutex::new(Vec::new());
         let mut steps = 0;
         let flow = pump(
             &shared,
@@ -476,15 +834,11 @@ mod tests {
                 })
             },
             || Ok(vec![final_line(0.5, 0.9, "tail")]),
+            collector(&seen),
         )
         .unwrap();
         assert_eq!(flow, Flow::Finished);
-        let texts: Vec<_> = shared
-            .lines_for_test()
-            .into_iter()
-            .map(|l| l.text)
-            .collect();
-        assert_eq!(texts, ["hello", "tail"]);
+        assert_eq!(texts(&seen), ["hello", "tail"]);
         assert_eq!(
             shared.committed_position(),
             SAMPLE_RATE as u64,
@@ -496,6 +850,7 @@ mod tests {
     #[test]
     fn a_step_that_ends_while_inactive_is_dropped_and_redone() {
         let (shared, mut backlog, dir) = setup("reset", 2);
+        let seen = Mutex::new(Vec::new());
         // First step: an utterance in progress after a committed line at 0.05 s.
         let mut steps = 0;
         let flow = pump(
@@ -516,15 +871,12 @@ mod tests {
                 }
             },
             || Ok(Vec::new()),
+            collector(&seen),
         )
         .unwrap();
         assert_eq!(flow, Flow::Reset);
-        let texts: Vec<_> = shared
-            .lines_for_test()
-            .into_iter()
-            .map(|l| l.text)
-            .collect();
-        assert_eq!(texts, ["one"], "the suspect step's line was dropped");
+        assert_eq!(texts(&seen), ["one"], "the suspect step's line was dropped");
+        assert_eq!(shared.gate.steps_while_inactive(), 1);
         let from = shared.committed_position();
         assert_eq!(
             from,
@@ -539,15 +891,213 @@ mod tests {
             &mut backlog,
             |_| Ok(Vec::new()),
             || Ok(vec![final_line(0.05, 0.25, "two")]),
+            collector(&seen),
         )
         .unwrap();
         assert_eq!(flow, Flow::Finished);
-        let lines = shared.lines_for_test();
-        assert_eq!(lines[1].text, "two");
-        assert!(
-            (lines[1].start - 0.1).abs() < 1e-6,
-            "offset by the rewind position"
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[1].0, "two");
+        assert_eq!(
+            seen[1].1, from,
+            "offset by the rewind position, for the applier to add"
         );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_suspect_step_is_never_persisted_through_the_applier() {
+        use ghi_core::events::bus;
+        let (shared, mut backlog, dir) = setup("applier", 2);
+        let (tx, _rx) = bus();
+        let (ptx, prx) = crossbeam_channel::unbounded();
+        let mut applier = Applier::new("m".into(), None, tx, ptx);
+        let word = |t: &str, a: f64, b: f64| Word {
+            text: t.into(),
+            start: a,
+            end: b,
+            confidence: 0.9,
+            speaker: None,
+        };
+        let line = |t: &str, a: f64, b: f64| Update::Final {
+            start: a,
+            end: b,
+            text: t.into(),
+            words: vec![word(t, a, b)],
+            segs: vec![seg(1, 0.0, 1.0)],
+        };
+        let mut steps = 0;
+        let flow = pump(
+            &shared,
+            &mut backlog,
+            |_| {
+                steps += 1;
+                if steps == 1 {
+                    Ok(vec![line("one", 0.0, 0.05)])
+                } else {
+                    shared.gate.suspend();
+                    Ok(vec![line("suspect", 0.1, 0.3)])
+                }
+            },
+            || Ok(Vec::new()),
+            |u, off, now| applier.apply(u, off, now),
+        )
+        .unwrap();
+        assert_eq!(flow, Flow::Reset);
+        let lines: Vec<String> = prx
+            .try_iter()
+            .filter_map(|m| match m {
+                PersistMsg::Lines(l) => Some(l.into_iter().map(|l| l.text).collect::<Vec<_>>()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert_eq!(lines, ["one"], "only the validated step reached persist");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Stop while the app is in the background: nothing runs until it
+    /// returns, then the backlog drains and the engine finishes.
+    #[test]
+    fn stop_while_suspended_drains_and_finishes_after_resume() {
+        let (shared, backlog, dir) = setup("suspended", 3);
+        shared.gate.suspend();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let t = {
+            let (shared, seen) = (shared.clone(), seen.clone());
+            let mut backlog = backlog;
+            std::thread::spawn(move || {
+                pump(
+                    &shared,
+                    &mut backlog,
+                    |_| Ok(Vec::new()),
+                    || Ok(vec![final_line(0.0, 0.5, "tail")]),
+                    collector(&seen),
+                )
+            })
+        };
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(!t.is_finished(), "held while inactive");
+        assert!(seen.lock().unwrap().is_empty());
+        shared.gate.resume();
+        assert_eq!(t.join().unwrap().unwrap(), Flow::Finished);
+        assert_eq!(texts(&seen), ["tail"]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn inactive_for_thirty_seconds_unloads() {
+        let (shared, mut backlog, dir) = setup("unload", 1);
+        shared.gate.suspend();
+        shared
+            .gate
+            .pretend_suspended_for(UNLOAD_AFTER + Duration::from_secs(1));
+        let flow = pump(
+            &shared,
+            &mut backlog,
+            |_| Ok(Vec::new()),
+            || Ok(Vec::new()),
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert_eq!(flow, Flow::Unload);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Models that count themselves, and a recognizer that takes the app
+    /// into the background in the middle of its first step.
+    struct Lockable {
+        alive: Arc<std::sync::atomic::AtomicUsize>,
+        shared: Arc<Shared>,
+        /// Only the first step of the first stream takes the app away.
+        locked_once: Arc<std::sync::atomic::AtomicBool>,
+    }
+    struct LockingAsr(Arc<Shared>, Arc<std::sync::atomic::AtomicBool>);
+    impl ghi_speech::AsrStream for LockingAsr {
+        fn push(&mut self, _: &[f32], _: u32) -> ghi_speech::Result<()> {
+            if !self.1.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                self.0.gate.suspend();
+                self.0
+                    .gate
+                    .pretend_suspended_for(UNLOAD_AFTER + Duration::from_secs(1));
+            }
+            Ok(())
+        }
+        fn finish(&mut self) -> ghi_speech::Result<()> {
+            Ok(())
+        }
+        fn next_result(&mut self) -> ghi_speech::Result<Option<ghi_speech::AsrResult>> {
+            Ok(None)
+        }
+    }
+    impl SpeechEngines for Lockable {
+        fn asr(&self, _: Option<&str>) -> ghi_core::engines::Result<ghi_core::engines::BoxAsr> {
+            Ok(Box::new(LockingAsr(
+                self.shared.clone(),
+                self.locked_once.clone(),
+            )))
+        }
+        fn diar(&self) -> ghi_core::engines::Result<ghi_core::engines::BoxDiar> {
+            ghi_core::engines::FakeEngines::new(ghi_core::engines::Script::default()).diar()
+        }
+        fn chunk_ms(&self) -> u32 {
+            1120
+        }
+    }
+    impl Drop for Lockable {
+        fn drop(&mut self) {
+            self.alive.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    /// A lock that lands in a step must not leave the models resident for the
+    /// whole lock: the step is dropped, and the wait that follows unloads them
+    /// after 30 s inactive.
+    #[test]
+    fn a_lock_that_lands_in_a_step_unloads_the_models_while_waiting() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (shared, backlog, dir) = setup("lockunload", 2);
+        // Capture is still running: the engine must wait, not finish.
+        shared.unfinish_capture_for_test();
+        let alive = Arc::new(AtomicUsize::new(0));
+        let once = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let provider: EnginesProvider = {
+            let (alive, shared) = (alive.clone(), shared.clone());
+            Arc::new(move || {
+                alive.fetch_add(1, Ordering::SeqCst);
+                Ok(Arc::new(Lockable {
+                    alive: alive.clone(),
+                    shared: shared.clone(),
+                    locked_once: once.clone(),
+                }) as Arc<dyn SpeechEngines>)
+            })
+        };
+        let (tx, _rx) = ghi_core::events::bus();
+        let (ptx, _prx) = crossbeam_channel::unbounded();
+        let ctx = EngineCtx {
+            shared: shared.clone(),
+            backlog,
+            provider,
+            applier: Applier::new("m".into(), None, tx, ptx),
+            language: None,
+            runner_idle: None,
+        };
+        let t = std::thread::spawn(move || run(ctx));
+        let start = Instant::now();
+        while alive.load(Ordering::SeqCst) != 0 || start.elapsed() < Duration::from_millis(100) {
+            assert!(start.elapsed() < Duration::from_secs(10), "never unloaded");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(shared.gate.suspended_for().is_some(), "still locked");
+        // Back in the foreground the models load again.
+        shared.gate.resume();
+        let start = Instant::now();
+        while alive.load(Ordering::SeqCst) != 1 {
+            assert!(start.elapsed() < Duration::from_secs(10), "never reloaded");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        shared.finish_capture_for_test();
+        t.join().unwrap();
+        assert_eq!(alive.load(Ordering::SeqCst), 0, "dropped with the thread");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

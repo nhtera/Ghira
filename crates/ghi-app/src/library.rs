@@ -126,10 +126,30 @@ fn summary_of(body: &str) -> Option<String> {
 
 fn rows(core: &Core, limit: u32, offset: u32) -> Result<Vec<MeetingRow>, String> {
     let store = core.store()?;
-    let mut active = active_jobs(core, &store)?;
     let meetings = store
         .list_meetings(limit.min(500) as usize, offset as usize)
         .map_err(|e| e.to_string())?;
+    rows_of(core, &store, meetings)
+}
+
+/// The rows of these meetings, in the order given; unknown gids are left out
+/// (the phone's status chips ask for the rows on screen).
+pub fn rows_by_gid(core: &Core, gids: &[String]) -> Result<Vec<MeetingRow>, String> {
+    let store = core.store()?;
+    let meetings: Vec<_> = gids
+        .iter()
+        .take(500)
+        .filter_map(|g| store.get_meeting(g).ok())
+        .collect();
+    rows_of(core, &store, meetings)
+}
+
+fn rows_of(
+    core: &Core,
+    store: &ghi_store::store::Store,
+    meetings: Vec<ghi_store::store::Meeting>,
+) -> Result<Vec<MeetingRow>, String> {
+    let mut active = active_jobs(core, store)?;
     let gids: Vec<String> = meetings.iter().map(|m| m.gid.clone()).collect();
     let mut people = store.named_speakers(&gids).map_err(|e| e.to_string())?;
     let mut tags = store.meeting_tags(&gids).map_err(|e| e.to_string())?;

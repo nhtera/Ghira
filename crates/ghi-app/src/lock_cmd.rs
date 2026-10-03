@@ -44,12 +44,29 @@ fn emit<R: tauri::Runtime>(app: &AppHandle<R>, locked: bool) {
 /// Locks now (if the setting is on). Returns whether the app is locked, or
 /// an error when the settings can't be read (the store isn't open yet).
 pub fn lock<R: tauri::Runtime>(app: &AppHandle<R>, core: &Core) -> Result<bool, String> {
-    let on = crate::system::load_settings(core)?.app_lock;
+    // Read through the even-locked door: this is the check that decides
+    // whether content may be served (`Core::mark_launch_checked`).
+    let on = crate::system::from_stored(
+        core.store_even_locked()?
+            .get_setting(crate::system::SETTINGS_KEY)
+            .map_err(|e| e.to_string())?,
+    )
+    .app_lock;
     if on && !core.locked() {
         core.set_locked(true);
         emit(app, true);
     }
+    core.mark_launch_checked();
     Ok(core.locked())
+}
+
+/// Locks now without reading the settings: the caller knows the app lock is
+/// on (the phone's scene hooks keep that cached, since they must not block).
+pub fn engage<R: tauri::Runtime>(app: &AppHandle<R>, core: &Core) {
+    if !core.locked() {
+        core.set_locked(true);
+        emit(app, true);
+    }
 }
 
 impl Lock {
@@ -66,15 +83,15 @@ impl Lock {
 
 /// Error codes the UI turns into words (`system.locked.errors.*`).
 pub const NO_AUTH: &str = "noAuthMethod";
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
 pub const NO_ANSWER: &str = "noAnswer";
 pub const NOT_CONFIRMED: &str = "notConfirmed";
 
 /// One prompt at a time: a second window asking waits for the first answer.
 static PROMPT: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Asks for Touch ID or the Mac's password; blocks until answered.
-#[cfg(target_os = "macos")]
+/// Asks for Touch ID / Face ID or the device passcode; blocks until answered.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn authenticate(reason: &str) -> Result<bool, String> {
     use block2::RcBlock;
     use objc2::runtime::Bool;
@@ -110,7 +127,7 @@ fn authenticate(reason: &str) -> Result<bool, String> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 fn authenticate(_reason: &str) -> Result<bool, String> {
     Err(NO_AUTH.into())
 }

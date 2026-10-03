@@ -48,9 +48,11 @@ const MIN_ANY_SPEECH_S: f32 = 3.0;
 const ABANDONED_AFTER: Duration = Duration::from_secs(60);
 
 /// The consent texts onboarding and People show (`onboarding.voice.consent_*`).
-const CONSENT_KEYS: [&str; 2] = [
+const CONSENT_KEYS: [&str; 3] = [
     "onboarding.voice.consent_mac",
     "onboarding.voice.consent_win",
+    // The phone (iOS) onboarding and Settings.
+    "mobile.voice.consent",
 ];
 
 /// A running enrollment: the capture lives in its thread, the audio in `pcm`.
@@ -65,13 +67,21 @@ pub struct Enrollment {
 }
 
 impl Enrollment {
-    /// Opens the mic and starts buffering.
-    fn start() -> Result<Enrollment, String> {
-        let mut cap = ghi_core::capture::live(false, &[]).map_err(|e| match e {
-            CaptureError::Permission(_) => MIC_PERMISSION.to_string(),
-            CaptureError::Unavailable(_) | CaptureError::Internal(_) => NO_MIC.to_string(),
-        })?;
-        let mut mic = cap.mic.take().ok_or_else(|| NO_MIC.to_string())?;
+    /// Opens the mic and starts buffering. `source` replaces the desktop
+    /// capture where there is none (iOS).
+    fn start(source: Option<crate::core::MicSource>) -> Result<Enrollment, String> {
+        // `cap` keeps the capture (or the app's guard) alive in the thread.
+        let (mut mic, cap): (_, Box<dyn std::any::Any + Send>) = match source {
+            Some(open) => open()?,
+            None => {
+                let mut cap = ghi_core::capture::live(false, &[]).map_err(|e| match e {
+                    CaptureError::Permission(_) => MIC_PERMISSION.to_string(),
+                    CaptureError::Unavailable(_) | CaptureError::Internal(_) => NO_MIC.to_string(),
+                })?;
+                let mic = cap.mic.take().ok_or_else(|| NO_MIC.to_string())?;
+                (mic, Box::new(cap))
+            }
+        };
         let stop = Arc::new(AtomicBool::new(false));
         // Allocated once, so the audio never moves (and is never left behind
         // by a reallocation); wiped when dropped.
@@ -262,33 +272,35 @@ pub async fn enroll_voice_finish(
     core: CoreState<'_>,
     consent_text_key: String,
 ) -> Result<(), String> {
-    blocking(&core, move |c| {
-        // First, so the audio is wiped whatever happens next (a locked app
-        // included).
-        let enrollment = c.take_enrollment().ok_or(NOT_ENROLLING)?;
-        let pcm = enrollment.finish();
-        let store = c.store()?;
-        if c.busy() {
-            return Err(BUSY_RECORDING.into());
-        }
-        if !CONSENT_KEYS.contains(&consent_text_key.as_str()) {
-            return Err(INVALID_CONSENT.into());
-        }
-        if speech_seconds(&pcm) < MIN_ANY_SPEECH_S {
-            return Err(TOO_QUIET.into());
-        }
-        let mut embedder = (crate::core::voice_factory(&c.models()))().map_err(|_| NO_MODEL)?;
-        let consent = ghi_core::voice_job::self_consent(&consent_text_key);
-        ghi_core::voice_job::enroll_from_pcm(&store, embedder.as_mut(), &pcm, &consent)
-            .map(|_| ())
-            .map_err(|e| match e {
-                EnrollError::NoConsent => INVALID_CONSENT.to_string(),
-                EnrollError::TooLittleSpeech => TOO_SHORT.to_string(),
-                EnrollError::Model(_) => NO_MODEL.to_string(),
-                EnrollError::Store(e) => storage(e),
-            })
-    })
-    .await
+    blocking(&core, move |c| finish_enrollment(c, &consent_text_key)).await
+}
+
+/// Ends the enrollment and stores Me's profile (see [`enroll_voice_finish`]).
+pub fn finish_enrollment(c: &Core, consent_text_key: &str) -> Result<(), String> {
+    // First, so the audio is wiped whatever happens next (a locked app
+    // included).
+    let enrollment = c.take_enrollment().ok_or(NOT_ENROLLING)?;
+    let pcm = enrollment.finish();
+    let store = c.store()?;
+    if c.busy() {
+        return Err(BUSY_RECORDING.into());
+    }
+    if !CONSENT_KEYS.contains(&consent_text_key) {
+        return Err(INVALID_CONSENT.into());
+    }
+    if speech_seconds(&pcm) < MIN_ANY_SPEECH_S {
+        return Err(TOO_QUIET.into());
+    }
+    let mut embedder = (crate::core::voice_factory(&c.models()))().map_err(|_| NO_MODEL)?;
+    let consent = ghi_core::voice_job::self_consent(consent_text_key);
+    ghi_core::voice_job::enroll_from_pcm(&store, embedder.as_mut(), &pcm, &consent)
+        .map(|_| ())
+        .map_err(|e| match e {
+            EnrollError::NoConsent => INVALID_CONSENT.to_string(),
+            EnrollError::TooLittleSpeech => TOO_SHORT.to_string(),
+            EnrollError::Model(_) => NO_MODEL.to_string(),
+            EnrollError::Store(e) => storage(e),
+        })
 }
 
 /// Stops the recording and wipes the audio. Never an error.
@@ -342,7 +354,7 @@ impl Core {
         // One at a time: an earlier one (a reopened dialog) is dropped first.
         drop(self.take_enrollment());
         // The mic opens (and may ask permission) without the lifecycle lock.
-        let e = Enrollment::start()?;
+        let e = Enrollment::start(self.mic_source())?;
         // Then, under it, a recording that began meanwhile wins.
         let _lifecycle = self.lifecycle_guard();
         place_enrollment(self.enrollment_mutex(), self.recording(), e)

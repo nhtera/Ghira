@@ -1,12 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Recording (M2). Contracts only: the bodies arrive with slice 16-D, which
-//! drives them from `ghi-core` building blocks.
+//! Recording (M2), driven by the [`Recorder`] (`session.rs`) over `ghi-core`
+//! building blocks. The recorder is Tauri state the mobile core manages
+//! (`app.manage(Arc<Recorder>)`); a command before that answers `not ready`.
+//!
+//! ## Lifecycle contract for the shell (16-E / 16-G)
+//!
+//! See `lifecycle.rs` for the table. In short: `willResignActive` closes the
+//! engine gate, `didEnterBackground` also calls `JobRunner::app_inactive`,
+//! `didBecomeActive` opens the gate and calls `app_active`; uninterruptible
+//! native calls (diarizer `finish`, a 10 s block push) run inside the engine
+//! gate; a launch in the background syncs the runner before `spawn`.
+//!
+//! ## What the UI can rely on
+//!
+//! - `record_start` is refused while a call is active (error `call_active`)
+//!   until the user acknowledged M6 (`call_acknowledged`), with
+//!   `microphone_denied`, with `disk_low` (< 500 MB free), for the `Desktop`
+//!   target, and for the `Phone` target on a device below the live tier. A
+//!   previous recording still being transcribed is waited for (up to a minute).
+//! - A below-tier device records only (`DeviceTier`): no job is queued, the
+//!   meeting stays `done` (recorded; the chip is "Recorded") and the session
+//!   goes `idle`, never `ready`. Missing models also record only
+//!   (`ModelsMissing`), but the final pass is queued and waits for them.
+//! - An interruption pauses the recording (`MobileEvent::Interruption`);
+//!   when it ends `record_resume_prompt` answers `pending`. Recording never
+//!   resumes by itself: `record_resume` restarts the audio engine.
+//! - The meeting is `processing` with a `final_pass` job once the engine has
+//!   drained; a final pass on the phone queues no notes, so the meeting
+//!   becomes `ready` (with `StateChanged { ready }`) when the pass ends.
+//! - The phone registers `VoiceLearnJob` whenever Me is enrolled
+//!   (`engine::job_handlers`); the voice step queues `voice_learn`.
+
+use std::sync::Arc;
 
 use ghi_core::events::SessionSnapshot;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use tauri::Manager;
 
 use super::types::{ProcessingTarget, RecordPhase};
+use crate::platform;
+use crate::session::Recorder;
 use ghi_app::system::MeetingLanguage;
 
 /// v1 records in a room (the phone's microphone). Calls are not captured; M6
@@ -25,8 +59,12 @@ pub struct RecordStart {
     /// A title, or `None` for the generated one.
     pub title: Option<String>,
     pub target: ProcessingTarget,
-    /// The user agreed that everyone being recorded knows (M2 / M6 reminder).
+    /// The user agreed that everyone being recorded knows (M2 reminder).
     pub consent_acknowledged: bool,
+    /// The user saw the M6 notice (use speakerphone and Room mode) while a
+    /// phone call is active. Only this lifts the call block; the consent flag
+    /// above never does.
+    pub call_acknowledged: bool,
 }
 
 /// The recording as it stands now, for a reloaded webview: apply `coreEvent`s
@@ -88,67 +126,89 @@ pub struct ResumePrompt {
     pub call: bool,
 }
 
-fn not_yet<T>() -> Result<T, String> {
-    Err("not yet".into())
+fn recorder(app: &tauri::AppHandle) -> Result<Arc<Recorder>, String> {
+    app.try_state::<Arc<Recorder>>()
+        .map(|r| r.inner().clone())
+        .ok_or_else(|| "not ready".to_owned())
+}
+
+/// Runs blocking recorder work off the async runtime's threads.
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Starts a recording; returns the meeting id. Refused while a call is active
-/// (`record_call_active`) until the user has acknowledged M6.
+/// (`call_active`) until the user has acknowledged M6.
 #[tauri::command]
 #[specta::specta]
-pub async fn record_start(_start: RecordStart) -> Result<String, String> {
-    not_yet()
+pub async fn record_start(app: tauri::AppHandle, start: RecordStart) -> Result<String, String> {
+    let rec = recorder(&app)?;
+    blocking(move || {
+        // A "delete everything" cannot begin while a start is under way.
+        let _guard = crate::privacy_cmd::DATA_GUARD
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        rec.start(&start)
+    })
+    .await
 }
 
 /// Stops and saves. Safe to call from the Live Activity while locked.
 #[tauri::command]
 #[specta::specta]
-pub async fn record_stop() -> Result<(), String> {
-    not_yet()
+pub async fn record_stop(app: tauri::AppHandle) -> Result<(), String> {
+    let rec = recorder(&app)?;
+    blocking(move || rec.stop()).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn record_pause() -> Result<(), String> {
-    not_yet()
+pub async fn record_pause(app: tauri::AppHandle) -> Result<(), String> {
+    recorder(&app)?.pause()
 }
 
 /// Resumes after a user pause or an interruption (restarts the audio engine).
 #[tauri::command]
 #[specta::specta]
-pub async fn record_resume() -> Result<(), String> {
-    not_yet()
+pub async fn record_resume(app: tauri::AppHandle) -> Result<(), String> {
+    let rec = recorder(&app)?;
+    blocking(move || rec.resume()).await
 }
 
 /// Marks the current moment.
 #[tauri::command]
 #[specta::specta]
-pub async fn record_mark() -> Result<(), String> {
-    not_yet()
+pub async fn record_mark(app: tauri::AppHandle) -> Result<(), String> {
+    recorder(&app)?.mark()
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn record_snapshot() -> Result<RecordState, String> {
-    not_yet()
+pub async fn record_snapshot(app: tauri::AppHandle) -> Result<RecordState, String> {
+    let rec = recorder(&app)?;
+    blocking(move || Ok(rec.snapshot())).await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn record_consent_message() -> Result<ConsentMessage, String> {
-    not_yet()
+    Ok(Recorder::consent_message())
 }
 
 /// A phone call is active right now (CXCallObserver).
 #[tauri::command]
 #[specta::specta]
 pub async fn record_call_active() -> Result<bool, String> {
-    not_yet()
+    Ok(platform::call_active())
 }
 
 /// The pending "Resume or stop and save?" question after an interruption.
 #[tauri::command]
 #[specta::specta]
-pub async fn record_resume_prompt() -> Result<ResumePrompt, String> {
-    not_yet()
+pub async fn record_resume_prompt(app: tauri::AppHandle) -> Result<ResumePrompt, String> {
+    Ok(recorder(&app)?.resume_prompt())
 }

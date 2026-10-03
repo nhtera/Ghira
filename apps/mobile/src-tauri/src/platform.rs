@@ -79,6 +79,9 @@ mod swift {
         pub fn ghi_swift_mic_permission() -> i32;
         /// Shows the system prompt (first time only); poll `mic_permission`.
         pub fn ghi_swift_request_mic_permission();
+        /// `volumeAvailableCapacityForImportantUsage` of the app's volume in
+        /// bytes (counts purgeable space); < 0 when unknown.
+        pub fn ghi_swift_available_capacity() -> i64;
     }
 }
 
@@ -201,67 +204,53 @@ pub unsafe extern "C" fn ghi_ios_push_pcm(
 /// The app will resign active: no new engine steps (no new GPU work).
 #[unsafe(no_mangle)]
 pub extern "C" fn ghi_ios_suspend() {
-    if let Some(s) = session::current() {
-        s.shared.gate.suspend();
-        s.activity_update();
-    }
+    crate::lifecycle::resign_active();
 }
 
 /// The app entered the background (main thread, never blocks). Returns
 /// `false` if an engine step overlapped the transition: the engine drops its
-/// results, reloads the models and redoes that audio.
+/// results, reloads the models and redoes that audio. Also tells the job
+/// runner (`JobRunner::app_inactive`).
 #[unsafe(no_mangle)]
 pub extern "C" fn ghi_ios_entered_background() -> bool {
-    match session::current() {
-        Some(s) => s.shared.gate.entered_background(),
-        None => true,
-    }
+    crate::lifecycle::entered_background()
 }
 
-/// The app is active again: the engine may use the GPU and catches up.
+/// The app is active again (`didBecomeActive`): the engine may use the GPU and
+/// catches up; jobs may run.
 #[unsafe(no_mangle)]
 pub extern "C" fn ghi_ios_resume() {
-    if let Some(s) = session::current() {
-        s.shared.gate.resume();
-        s.activity_update();
-    }
+    crate::lifecycle::become_active();
 }
 
 /// `ProcessInfo.thermalState` changed (0 nominal … 3 critical).
 #[unsafe(no_mangle)]
 pub extern "C" fn ghi_ios_thermal_changed(state: i32) {
-    if let Some(s) = session::current() {
-        s.shared.set_thermal(state);
-        s.activity_update();
-    }
+    crate::lifecycle::thermal_changed(state);
 }
 
 /// An audio interruption began (`true`) or ended (`false`).
 #[unsafe(no_mangle)]
 pub extern "C" fn ghi_ios_interruption(began: bool) {
-    if let Some(s) = session::current()
-        && !s.shared.capture_done()
-    {
-        s.interrupted(began);
-    }
+    crate::lifecycle::interruption(began);
 }
 
 /// The Live Activity's Stop intent.
 #[unsafe(no_mangle)]
 pub extern "C" fn ghi_ios_stop_requested() {
-    if let Some(s) = session::current() {
-        s.stop();
-    }
+    crate::lifecycle::stop_requested();
 }
 
 /// The Live Activity's Mark intent.
 #[unsafe(no_mangle)]
 pub extern "C" fn ghi_ios_mark_requested() {
-    if let Some(s) = session::current()
-        && !s.shared.capture_done()
-    {
-        s.mark();
-    }
+    crate::lifecycle::mark_requested();
+}
+
+/// A phone call started or ended (`CXCallObserver`).
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_ios_call_active_changed(active: bool) {
+    crate::lifecycle::call_active_changed(active);
 }
 
 // --- Rust → Swift wrappers (no-ops off iOS) ---------------------------------
@@ -389,6 +378,16 @@ mod wrappers {
         MicPermission::Granted
     }
 
+    /// Free space for important usage, counting what iOS can purge; `None`
+    /// off iOS or when Swift cannot tell (callers fall back to `statvfs`).
+    pub fn available_capacity() -> Option<u64> {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        return u64::try_from(unsafe { swift::ghi_swift_available_capacity() }).ok();
+        #[cfg(not(target_os = "ios"))]
+        None
+    }
+
     pub fn request_mic_permission() {
         // SAFETY: plain C call into Swift.
         #[cfg(target_os = "ios")]
@@ -417,7 +416,7 @@ pub extern "C" fn ghi_ios_route_changed(reason: i32) {
 /// The system sent a memory warning.
 #[unsafe(no_mangle)]
 pub extern "C" fn ghi_ios_memory_warning() {
-    crate::cmd::events::emit(crate::cmd::MobileEvent::MemoryWarning);
+    crate::lifecycle::memory_warning();
 }
 
 /// The share extension put files in the App Group inbox.

@@ -23,6 +23,9 @@ void ghi_ios_resume(void);
 void ghi_ios_thermal_changed(int32_t state);
 // An audio interruption began (true) or ended (false).
 void ghi_ios_interruption(bool began);
+// A phone call started or ended (CXCallObserver); an ended call that
+// interrupted a recording asks to resume, it never resumes by itself.
+void ghi_ios_call_active_changed(bool active);
 // Live Activity intents.
 void ghi_ios_stop_requested(void);
 void ghi_ios_mark_requested(void);
@@ -46,6 +49,8 @@ bool ghi_swift_call_active(void);
 size_t ghi_swift_device_model(char *buf, size_t cap);
 // ProcessInfo.physicalMemory, bytes.
 uint64_t ghi_swift_physical_memory(void);
+// Free space for important data on the app volume, bytes; negative if unknown.
+int64_t ghi_swift_available_capacity(void);
 // Dynamic Type multiplier (1.0 = Large), capped at 2.0.
 float ghi_swift_text_scale(void);
 // Presents the share sheet for the file at path; false if it could not be shown.
