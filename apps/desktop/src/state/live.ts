@@ -188,9 +188,9 @@ export function reduce(s: LiveState, env: CoreEvent): LiveState {
       return { ...s, capture: { ...s.capture, lostTracks: [...new Set([...s.capture.lostTracks, e.track])] }, seq };
     case "routeChanged":
       return { ...s, capture: { ...s.capture, bluetoothHfp: e.bluetoothHfp }, seq };
+    // appAudioFallback / capture retry events: shown by the system banners, not the live state.
     case "jobProgress":
     case "notesReady":
-    // Shown by the system banners, not the live state.
     case "appAudioFallback":
     case "captureRecovered":
     case "captureRetryFailed":

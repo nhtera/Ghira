@@ -94,7 +94,7 @@ function cite(segs: SegmentView[], ids: number[]): Citation[] {
   });
 }
 
-type Item = { en?: string; vi?: string; c?: number[]; edited?: boolean; me?: string; miss?: boolean; owner?: number; due?: string; done?: boolean };
+type Item = { en?: string; vi?: string; c?: number[]; edited?: boolean; me?: string; miss?: boolean; owner?: number; due?: string | [string, string]; done?: boolean };
 
 function build(lang: "en" | "vi"): Detail {
   const segs = segments();
@@ -143,7 +143,8 @@ function build(lang: "en" | "vi"): Detail {
     gid: gid("act"),
     text: text(x),
     ownerSpeakerGid: x.owner != null ? `spk-${x.owner}` : null,
-    dueText: x.due ?? null,
+    // The sample stores the due words as [English, Vietnamese]: only the interface language is shown, none if empty.
+    dueText: (Array.isArray(x.due) ? x.due[lang === "vi" ? 1 : 0] : x.due) || null,
     done: !!x.done,
     origin: x.edited ? "aiEdited" : "ai",
     citations: cite(segs, x.c ?? []),
