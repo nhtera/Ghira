@@ -227,6 +227,8 @@ export function AskPanel({
         />
         <div className="flex items-center gap-2">
           <input
+            // Opened on purpose (toolbar or menu): ready to type.
+            autoFocus
             value={question}
             aria-label={t("ask.meeting.label")}
             placeholder={t("ask.meeting.placeholder")}

@@ -132,7 +132,7 @@ export function MeetingToolbar({
       icon: "inbox",
       onSelect: () => setEmailing(true),
     },
-    ...(onAsk ? [{ label: t("ask.meeting.open"), icon: "forum", onSelect: onAsk } satisfies MenuItem] : []),
+    ...(onAsk ? [{ label: t("ask.meeting.open"), icon: "forum", onSelect: onAsk, movesFocus: true } satisfies MenuItem] : []),
     { kind: "separator" },
     {
       label: t("detail.more.regenerate"),
