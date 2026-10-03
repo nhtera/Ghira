@@ -206,7 +206,7 @@ export function TranscriptPanel({
                         onClick={() => onPlay(s.t0Ms ?? 0)}
                       >
                         {t("mobile.detail.playFrom", {
-                          time: formatClock(s.t0Ms),
+                          time: formatClock(s.t0Ms, { pad: true }),
                         })}
                       </Button>
                     )}

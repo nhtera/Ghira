@@ -143,6 +143,14 @@ let appSettings = {
   appLock: false,
   lockAfterMinutes: 0,
   liveMode: "auto",
+  openAtLogin: false,
+  showInMenuBar: false,
+  notesLanguage: "meeting",
+  detectApps: [],
+  echoCancellation: true,
+  appAudioOnly: false,
+  // The user has not chosen to offer cloud notes yet: the core refuses cloud_preview/cloud_send ("cloudOff").
+  cloudOffered: false,
 } satisfies AppSettings as AppSettings;
 
 let models: MobileModelItem[] = [

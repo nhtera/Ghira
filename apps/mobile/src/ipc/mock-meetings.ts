@@ -142,11 +142,12 @@ function build(
     cloudUsed: false,
     consentConfirmed: true,
     template: null,
-    people: (o.people ?? []).map(([name, colorSlot]) => ({ name, colorSlot })),
+    people: (o.people ?? []).map(([name, colorSlot]) => ({ name, colorSlot, isMe: false })),
     job: o.job ?? null,
     folder: null,
     tags: [],
     sourceApp: null,
+    unnamedVoices: 0,
     summary: o.summary ?? null,
   };
   return {
@@ -167,6 +168,8 @@ function build(
       cloudUsed: false,
       consentConfirmed: true,
       transcriptVersion: 2,
+      notesModel: null,
+      sourceApp: null,
       audioAvailable: true,
       speakers,
       job: o.job ?? null,

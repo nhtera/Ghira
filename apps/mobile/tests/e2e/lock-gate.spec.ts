@@ -61,6 +61,7 @@ test.describe("the gate is the top layer", () => {
     await openApp(page, "/settings");
     await page.evaluate(() => {
       window.__ghiSettingsMock!.keys.anthropic = true;
+      window.__ghiSettingsMock!.offerCloud(true);
       window.__ghiSettingsMock!.faceIdOk = false;
       window.dispatchEvent(new CustomEvent("ghi:open-cloud-sheet", { detail: { meetingId: "m-1" } }));
     });

@@ -117,7 +117,9 @@
         "keyDelete": "Remove key",
         "keySaved": "Key saved to the Keychain.",
         "none": "None",
-        "noProviders": "No cloud providers are available."
+        "noProviders": "No cloud providers are available.",
+        "offer": "Offer cloud notes",
+        "offerFooter": "Off by default. When on, “Improve with cloud” appears in a meeting. Each send is still your choice per meeting, previewed first, and audio never leaves."
       },
       "about": {
         "title": "About",
@@ -229,7 +231,9 @@
         "person": "People",
         "org": "Organizations",
         "term": "Terms"
-      }
+      },
+      "cloudOff": "Cloud notes are off. Turn on “Offer cloud notes” in Settings → Cloud notes first.",
+      "openSettings": "Open Cloud notes"
     }
   }
 }

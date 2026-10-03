@@ -38,6 +38,7 @@ describe("CloudSheet", () => {
     await import("../../ipc");
     window.__ghiSettingsMock!.reset();
     window.__ghiSettingsMock!.keys.anthropic = true;
+    window.__ghiSettingsMock!.offerCloud(true);
   });
   afterEach(cleanup);
 

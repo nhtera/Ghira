@@ -117,7 +117,9 @@
         "keyDelete": "Xoá khoá",
         "keySaved": "Đã lưu khoá vào Keychain.",
         "none": "Không",
-        "noProviders": "Chưa có nhà cung cấp đám mây nào."
+        "noProviders": "Chưa có nhà cung cấp đám mây nào.",
+        "offer": "Cho phép ghi chú qua đám mây",
+        "offerFooter": "Mặc định tắt. Khi bật, mục “Cải thiện bằng đám mây” xuất hiện trong cuộc họp. Mỗi lần gửi vẫn do bạn chọn cho từng cuộc họp, xem trước rồi mới gửi, và âm thanh không bao giờ rời khỏi máy."
       },
       "about": {
         "title": "Giới thiệu",
@@ -227,7 +229,9 @@
         "person": "Người",
         "org": "Tổ chức",
         "term": "Thuật ngữ"
-      }
+      },
+      "cloudOff": "Ghi chú qua đám mây đang tắt. Hãy bật “Cho phép ghi chú qua đám mây” trong Cài đặt → Ghi chú qua đám mây trước.",
+      "openSettings": "Mở Ghi chú qua đám mây"
     }
   }
 }

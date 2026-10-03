@@ -6,6 +6,7 @@ import { visualMatrix } from "./settings-matrix";
 const open = (p: Page, meetingId: string) =>
   p.evaluate((id) => {
     window.__ghiSettingsMock!.keys.anthropic = true;
+    window.__ghiSettingsMock!.offerCloud(true);
     window.dispatchEvent(new CustomEvent("ghi:open-cloud-sheet", { detail: { meetingId: id } }));
   }, meetingId);
 

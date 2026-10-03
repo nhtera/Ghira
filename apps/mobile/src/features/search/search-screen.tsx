@@ -194,7 +194,7 @@ export function SearchScreen() {
                           ? t("mobile.search.inNotes")
                           : t("mobile.search.inTranscript"),
                         hit.kind === "segment" && hit.t0Ms !== null
-                          ? formatClock(hit.t0Ms)
+                          ? formatClock(hit.t0Ms, { pad: true })
                           : null,
                       ]
                         .filter(Boolean)

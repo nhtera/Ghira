@@ -15,7 +15,10 @@ visualMatrix("settings", [
     name: "cloud",
     route: "/settings/cloud",
     setup: async (p) => {
-      await p.evaluate(() => (window.__ghiSettingsMock!.keys.anthropic = true));
+      await p.evaluate(() => {
+        window.__ghiSettingsMock!.keys.anthropic = true;
+        window.__ghiSettingsMock!.offerCloud(true);
+      });
     },
     ready: async (p) => {
       // Pick the provider so the model, redaction and key sections show.

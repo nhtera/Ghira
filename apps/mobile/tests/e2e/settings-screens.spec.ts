@@ -141,7 +141,15 @@ test.describe("consent message", () => {
 
 test.describe("cloud notes", () => {
   test("picks a provider and keeps the API key out of sight", async ({ page }) => {
+    // The long page collapses its title bar; without motion axe never sees it mid-fade.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await openApp(page, "/settings/cloud");
+    // Off by default: only the choice to offer cloud notes shows.
+    const offer = page.getByRole("switch", { name: "Offer cloud notes" });
+    await expect(offer).not.toBeChecked();
+    await expect(row(page, /^Anthropic/)).toHaveCount(0);
+    await offer.click();
+    await expect(offer).toBeChecked();
     await expect(page.getByText("No key")).toHaveCount(0);
     await row(page, /^Anthropic/).click();
     await expect(row(page, /^Anthropic/).getByText("Selected")).toBeVisible();
@@ -169,7 +177,9 @@ test.describe("cloud notes", () => {
   });
 
   test("no provider means cloud notes are off", async ({ page }) => {
-    await openApp(page, "/settings/cloud");
+    await openApp(page, "/settings");
+    await page.evaluate(() => window.__ghiSettingsMock!.offerCloud(true));
+    await go(page, "/settings/cloud");
     await expect(row(page, /^None/).getByText("Selected")).toBeVisible();
     await expect(page.getByLabel(/API key/)).toHaveCount(0);
   });

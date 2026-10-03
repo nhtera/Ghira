@@ -6,6 +6,7 @@ import { Button, Icon, ListRow, ListSection, NoteBlock } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
 import type { Citation, MeetingNotes } from "../../bindings";
 import { openCloudSheet } from "./handoff";
+import { useCloudOffered } from "../settings/use-cloud-offered";
 import { groupBlocks, noteKind, toNoteCitation } from "./notes-model";
 
 export type NotesPanelProps = {
@@ -26,6 +27,8 @@ export function NotesPanel({
   onCite,
 }: NotesPanelProps) {
   const { t } = useTranslation();
+  // The cloud entry only exists once the user offered cloud notes in Settings.
+  const cloudOffered = useCloudOffered();
   const groups = groupBlocks(notes.blocks);
   if (groups.length === 0) {
     return (
@@ -40,14 +43,16 @@ export function NotesPanel({
         <p className="text-ios-subhead m-0 max-w-sm text-muted">
           {t("mobile.detail.notesEmpty.body")}
         </p>
-        <Button
-          variant="primary"
-          icon="cloud"
-          className="min-h-ios-target px-5"
-          onClick={() => openCloudSheet(meeting, cloudLocked, onSent)}
-        >
-          {t("mobile.detail.improveWithCloud")}
-        </Button>
+        {cloudOffered && (
+          <Button
+            variant="primary"
+            icon="cloud"
+            className="min-h-ios-target px-5"
+            onClick={() => openCloudSheet(meeting, cloudLocked, onSent)}
+          >
+            {t("mobile.detail.improveWithCloud")}
+          </Button>
+        )}
       </div>
     );
   }
@@ -80,14 +85,16 @@ export function NotesPanel({
           </div>
         </section>
       ))}
-      <ListSection className="mt-6">
-        <ListRow
-          icon="cloud"
-          title={t("mobile.detail.improveWithCloud")}
-          onPress={() => openCloudSheet(meeting, cloudLocked, onSent)}
-          chevron
-        />
-      </ListSection>
+      {cloudOffered && (
+        <ListSection className="mt-6">
+          <ListRow
+            icon="cloud"
+            title={t("mobile.detail.improveWithCloud")}
+            onPress={() => openCloudSheet(meeting, cloudLocked, onSent)}
+            chevron
+          />
+        </ListSection>
+      )}
     </div>
   );
 }

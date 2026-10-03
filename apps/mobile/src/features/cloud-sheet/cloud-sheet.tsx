@@ -48,7 +48,7 @@ const loadSetup = async () => {
 };
 
 /** Rust's refusal text for a meeting with cloud AI off (cloud_preview / cloud_send). */
-const isCloudOff = (error: string) => /off for this meeting/i.test(error);
+const isMeetingOff = (error: string) => /off for this meeting/i.test(error);
 
 type Preview =
   | { kind: "ready"; preview: CloudPreview }
@@ -95,7 +95,11 @@ function CloudFlow({
   const hasKey = stored.has(provider);
   const redact = redactChoice ?? data?.settings.cloudRedact ?? true;
   const locked = cloudLocked === true;
-  const wantsPreview = Boolean(data) && hasKey && Boolean(model) && !locked;
+  // Cloud notes are not offered (Settings -> Cloud notes): the core refuses with "cloudOff".
+  const [refused, setRefused] = useState(false);
+  const notOffered = refused || (data ? !data.settings.cloudOffered : false);
+  const wantsPreview =
+    Boolean(data) && !notOffered && hasKey && Boolean(model) && !locked;
   // A caller may pass a fresh task object every render: compare by value.
   const taskKey = JSON.stringify(task);
   const key = `${provider}|${model}|${redact}|${taskKey}`;
@@ -117,8 +121,11 @@ function CloudFlow({
           let value: Preview;
           if (r.status === "ok" && r.data.kind === "preview")
             value = { kind: "ready", preview: r.data };
-          else if (r.status === "error")
-            value = isCloudOff(r.error)
+          else if (r.status === "error" && r.error === "cloudOff") {
+            setRefused(true);
+            value = { kind: "error", code: "cloudOff" };
+          } else if (r.status === "error")
+            value = isMeetingOff(r.error)
               ? { kind: "locked" }
               : { kind: "error", code: r.error };
           else value = { kind: "error", code: "noPreview" };
@@ -152,7 +159,8 @@ function CloudFlow({
     } catch (e) {
       // Refused before leaving (changed transcript, cloud turned off): nothing left the phone.
       setSend({ kind: "failed", leftDevice: false });
-      if (isCloudOff(String(e instanceof Error ? e.message : e)))
+      if (e instanceof Error && e.message === "cloudOff") setRefused(true);
+      if (isMeetingOff(String(e instanceof Error ? e.message : e)))
         setResult({ key, value: { kind: "locked" } });
     }
   };
@@ -243,6 +251,25 @@ function CloudFlow({
             {t("mobile.cloudSheet.previewFailed")}
           </p>
         )}
+        {notOffered && !blocked && (
+          <div className="flex flex-col items-start gap-2">
+            <p
+              role="status"
+              className="text-ios-subhead m-0 flex items-start gap-2 text-warn"
+            >
+              <Icon name="cloud_off" size={20} className="mt-0.5 shrink-0" />
+              {t("mobile.cloudSheet.cloudOff")}
+            </p>
+            <Btn
+              onClick={() => {
+                onOpenChange(false);
+                go("/settings/cloud");
+              }}
+            >
+              {t("mobile.cloudSheet.openSettings")}
+            </Btn>
+          </div>
+        )}
         {blocked && (
           <p
             role="status"
@@ -252,7 +279,7 @@ function CloudFlow({
             {t("mobile.cloudSheet.locked")}
           </p>
         )}
-        {data && !hasKey && !blocked && (
+        {data && !hasKey && !blocked && !notOffered && (
           <div className="flex flex-col items-start gap-2">
             <p className="text-ios-subhead m-0 text-muted">
               {t("mobile.cloudSheet.noKey")}
@@ -268,7 +295,7 @@ function CloudFlow({
           </div>
         )}
 
-        {hasKey && !blocked && (
+        {hasKey && !blocked && !notOffered && (
           <>
             <p className="text-ios-subhead m-0 text-muted">
               {t("mobile.cloudSheet.provider", {

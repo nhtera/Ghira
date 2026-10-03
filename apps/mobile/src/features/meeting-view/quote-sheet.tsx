@@ -21,7 +21,7 @@ export function QuoteSheet({
 }: QuoteSheetProps) {
   const { t } = useTranslation();
   const at = citation?.t0Ms ?? null;
-  const time = at === null ? null : formatClock(at);
+  const time = at === null ? null : formatClock(at, { pad: true });
   const canPlay = at !== null && !citation?.missing;
   return (
     <Sheet

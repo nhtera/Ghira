@@ -291,6 +291,31 @@ export type AppSettings = {
 	 *  recording. 8 GB Macs always use Fast.
 	 */
 	liveMode: LiveMode,
+	/**  Start Ghira when the user logs in (macOS login item, Windows Run key). */
+	openAtLogin: boolean,
+	/**  Show the menu-bar / tray icon. */
+	showInMenuBar: boolean,
+	/**
+	 *  The language notes are written in by default (`meeting`: the
+	 *  transcript's own).
+	 */
+	notesLanguage: NotesLanguage,
+	/**
+	 *  Meeting apps to detect (`zoom`, `teams`, `meet` for browsers, `slack`,
+	 *  `zalo`, `webex`, `facetime`); default all. Discord is not on the list:
+	 *  it is always detected while `detect_meetings` is on.
+	 */
+	detectApps: string[],
+	/**  Cancel the Mac's speaker output from the mic in call mode. */
+	echoCancellation: boolean,
+	/**  Capture only the detected meeting app's audio, not the whole system's. */
+	appAudioOnly: boolean,
+	/**
+	 *  Cloud AI is offered ("Cloud, only when you ask"): the per-meeting
+	 *  cloud actions appear, each still opt-in and previewed. Off: "On this
+	 *  device", and the cloud commands refuse ([`CLOUD_OFF`]).
+	 */
+	cloudOffered: boolean,
 };
 
 /**  An answer to "Ask this meeting". */
@@ -366,6 +391,13 @@ export type CloudPreview = {
 	/**  Things in the text that still look like personal data. */
 	warnings: string[],
 	redactions: Redaction[],
+	/**
+	 *  The request's text as it is on this Mac (names and personal data
+	 *  restored), shortened; `None` when it has no user text.
+	 */
+	excerptBefore: string | null,
+	/**  The same text as sent (placeholders for what is hidden). */
+	excerptAfter: string | null,
 };
 
 export type CloudPreviewResult = {
@@ -469,6 +501,18 @@ track: number; text: string } | { type: "transcriptFinal"; meeting: string; line
 { type: "silentSystemTrack"; meeting: string; silentS: number | null } | { type: "diskLow"; meeting: string; freeBytes: number | null } | { type: "diskFull"; meeting: string } | 
 /**  A capture device vanished (0 = mic, 1 = system). */
 { type: "trackLost"; meeting: string; track: number } | 
+/**
+ *  "Only the meeting app's audio" was on but no meeting app was in a call
+ *  when recording started: all system audio is recorded instead.
+ */
+{ type: "appAudioFallback"; meeting: string } | 
+/**
+ *  After `retry_capture`: the devices are back (also when nothing had
+ *  been lost).
+ */
+{ type: "captureRecovered"; meeting: string } | 
+/**  After `retry_capture`: the devices could not be rebuilt. */
+{ type: "captureRetryFailed"; meeting: string; message: string } | 
 /**
  *  The audio route changed; `bluetooth_hfp`: the input is a Bluetooth
  *  headset, whose mic drops the whole link to call quality.
@@ -597,6 +641,16 @@ export type MeetingDetail = {
 	audioAvailable: boolean,
 	speakers: MeetingSpeaker[],
 	job: MeetingJob | null,
+	/**
+	 *  The model that wrote the current notes (`None`: no notes, or written
+	 *  before this was recorded).
+	 */
+	notesModel: string | null,
+	/**
+	 *  Where an imported file came from: `zoom`, `teams`, `meet`, `plaud`,
+	 *  `voice_memos`.
+	 */
+	sourceApp: string | null,
 };
 
 /**  What the library shows about a meeting's processing. */
@@ -652,6 +706,8 @@ export type MeetingRow = {
 	 *  while the meeting has no notes.
 	 */
 	summary: string | null,
+	/**  Speakers still without a name (not Me, not "not a person"). */
+	unnamedVoices: number,
 };
 
 export type MeetingSpeaker = {
@@ -787,6 +843,8 @@ export type PersonChip = {
 	name: string,
 	/**  Palette slot 1..8 (0: Others). */
 	colorSlot: number,
+	/**  The user ("Me"): shown as "Me" in the app's language, whatever `name`. */
+	isMe: boolean,
 };
 
 /**  Where a recording is processed after it stops. */
@@ -1025,6 +1083,13 @@ export type SettingsPatch = {
 	consentMessageVi?: string | null,
 	updateCheck?: boolean | null,
 	liveMode?: LiveMode | null,
+	openAtLogin?: boolean | null,
+	showInMenuBar?: boolean | null,
+	notesLanguage?: NotesLanguage | null,
+	detectApps?: string[] | null,
+	echoCancellation?: boolean | null,
+	appAudioOnly?: boolean | null,
+	cloudOffered?: boolean | null,
 };
 
 /**  The file kinds the share sheet offers for a meeting. */

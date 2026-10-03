@@ -66,20 +66,22 @@ test.describe("meeting view", () => {
     page,
   }) => {
     await openMeetings(page, "/meetings/m-notes");
-    await page.getByRole("button", { name: "Show in transcript 1:30" }).click();
+    await page
+      .getByRole("button", { name: "Show in transcript 01:30" })
+      .click();
     const sheet = page.getByRole("dialog", { name: "From the transcript" });
     await expect(sheet).toContainText(
       "We can ship the beta on the fifteenth if QA signs off by Friday.",
     );
-    await expect(sheet).toContainText("Linh · 1:30");
-    await sheet.getByRole("button", { name: "Play from 1:30" }).click();
+    await expect(sheet).toContainText("Linh · 01:30");
+    await sheet.getByRole("button", { name: "Play from 01:30" }).click();
     await expect(sheet).toHaveCount(0);
     await expect
       .poll(async () => (await recorded(page)).audio.at(-1))
       .toEqual({ op: "play", t: 90 });
     // The chip remembers it was followed.
     await expect(
-      page.getByRole("button", { name: "Show in transcript 1:30" }),
+      page.getByRole("button", { name: "Show in transcript 01:30" }),
     ).toHaveAttribute("data-state", "visited");
   });
 
@@ -87,7 +89,9 @@ test.describe("meeting view", () => {
     page,
   }) => {
     await openMeetings(page, "/meetings/m-notes");
-    await page.getByRole("button", { name: /Show in transcript 3:20/ }).click();
+    await page
+      .getByRole("button", { name: /Show in transcript 03:20/ })
+      .click();
     const sheet = page.getByRole("dialog", { name: "From the transcript" });
     await expect(sheet).toContainText(
       "No matching words were found at that moment.",
@@ -99,10 +103,12 @@ test.describe("meeting view", () => {
 
   test("an action's citation plays too", async ({ page }) => {
     await openMeetings(page, "/meetings/m-notes?tab=actions");
-    await page.getByRole("button", { name: "Show in transcript 1:45" }).click();
+    await page
+      .getByRole("button", { name: "Show in transcript 01:45" })
+      .click();
     await page
       .getByRole("dialog")
-      .getByRole("button", { name: "Play from 1:45" })
+      .getByRole("button", { name: "Play from 01:45" })
       .click();
     await expect
       .poll(async () => (await recorded(page)).audio.at(-1))
@@ -133,7 +139,7 @@ test.describe("meeting view", () => {
     await openMeetings(page, "/meetings/m-nonotes?tab=transcript");
     const line = page.locator('[data-segment="s2"]');
     await line.getByText("Ngân sách dự kiến").click();
-    await line.getByRole("button", { name: "Play from 0:12" }).click();
+    await line.getByRole("button", { name: "Play from 00:12" }).click();
     await expect
       .poll(async () => (await recorded(page)).audio.at(-1))
       .toEqual({ op: "play", t: 12.5 });
@@ -169,6 +175,10 @@ test.describe("meeting view", () => {
     page,
   }) => {
     await openMeetings(page, "/meetings/m-nonotes");
+    // The cloud entry exists once cloud notes are offered in Settings.
+    await page.evaluate(() => window.__ghiSettingsMock!.offerCloud(true));
+    await page.evaluate(() => (location.hash = "#/meetings"));
+    await page.evaluate(() => (location.hash = "#/meetings/m-nonotes"));
     await expect(
       page.getByRole("heading", { name: "Notes: not generated on this phone" }),
     ).toBeVisible();
@@ -227,7 +237,9 @@ test.describe("meeting view", () => {
     await openMeetings(page, "/meetings/m-notes");
     const lock = () =>
       page.evaluate(() => window.dispatchEvent(new Event("ghi-locked")));
-    await page.getByRole("button", { name: "Show in transcript 1:30" }).click();
+    await page
+      .getByRole("button", { name: "Show in transcript 01:30" })
+      .click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await lock();
     await expect(page.getByRole("dialog")).toHaveCount(0);

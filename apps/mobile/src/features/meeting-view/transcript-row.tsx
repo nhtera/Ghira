@@ -60,7 +60,7 @@ export function TranscriptRow({
     >
       <span className="flex flex-col items-start gap-1">
         <span className="text-ios-caption1 text-mono text-muted">
-          {formatClock(startMs)}
+          {formatClock(startMs, { pad: true })}
         </span>
         {speaker ? (
           <Avatar

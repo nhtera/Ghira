@@ -11,7 +11,46 @@ const sheet = (page: Page) => page.getByRole("dialog", { name: "Improve with clo
 
 test.beforeEach(async ({ page }) => {
   await openApp(page, "/settings");
-  await page.evaluate(() => (window.__ghiSettingsMock!.keys.anthropic = true));
+  await page.evaluate(() => {
+    window.__ghiSettingsMock!.keys.anthropic = true;
+    window.__ghiSettingsMock!.offerCloud(true);
+  });
+});
+
+test("until cloud notes are offered the sheet points to the setting and calls nothing", async ({ page }) => {
+  await page.evaluate(() => window.__ghiSettingsMock!.offerCloud(false));
+  await openSheet(page);
+  const dialog = sheet(page);
+  await expect(dialog.getByText(/Cloud notes are off\./)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Send" })).toBeDisabled();
+  expect(await page.evaluate(() => window.__ghiSettingsMock!.calls.cloudPreview ?? 0)).toBe(0);
+  await dialog.getByRole("button", { name: "Open Cloud notes" }).click();
+  await expect(page.getByRole("heading", { name: "Cloud notes", level: 1 })).toBeVisible();
+  await page.getByRole("switch", { name: "Offer cloud notes" }).click();
+  await openSheet(page);
+  await expect(sheet(page).locator("pre")).toBeVisible();
+});
+
+test("the core refusing with cloudOff shows the same pointer", async ({ page }) => {
+  // The setting looked on when the sheet loaded, then the core says it is off.
+  await page.evaluate(() => window.__ghiSettingsMock!.offerCloud(true));
+  await openSheet(page);
+  await expect(sheet(page).locator("pre")).toBeVisible();
+  await page.evaluate(() => window.__ghiSettingsMock!.offerCloud(false));
+  await sheet(page).getByRole("button", { name: "Send" }).click();
+  await expect(sheet(page).getByText(/Cloud notes are off\./)).toBeVisible();
+  expect(await cloudSends(page)).toBe(1);
+});
+
+test("the meeting view offers cloud notes only after the setting is on", async ({ page }) => {
+  await page.evaluate(() => window.__ghiSettingsMock!.offerCloud(false));
+  await page.evaluate(() => (location.hash = "#/meetings/m-notes"));
+  await expect(page.getByRole("heading", { level: 1, name: "Product sync tuần 39" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Improve with cloud" })).toHaveCount(0);
+  await page.evaluate(() => window.__ghiSettingsMock!.offerCloud(true));
+  await page.evaluate(() => (location.hash = "#/meetings"));
+  await page.evaluate(() => (location.hash = "#/meetings/m-notes"));
+  await expect(page.getByRole("button", { name: "Improve with cloud" })).toBeVisible();
 });
 
 test("previews the exact text and sends nothing until the click", async ({ page }) => {

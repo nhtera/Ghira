@@ -50,6 +50,8 @@ export interface GhiSettingsMock {
   wiped: boolean;
   /** Replaces the inbox and tells the UI the extension added files. */
   setInbox(items: InboxItem[]): void;
+  /** The user chose to offer cloud notes (Settings -> Cloud notes). */
+  offerCloud(on: boolean): void;
   /** The core locks or unlocks by itself (background delay, return): sets the state and sends the event. */
   setLocked(locked: boolean): void;
   /** Back to a fresh phone. */
@@ -81,6 +83,14 @@ const freshApp = (): AppSettings => ({
   appLock: false,
   lockAfterMinutes: 0,
   liveMode: "auto",
+  openAtLogin: false,
+  showInMenuBar: false,
+  notesLanguage: "meeting",
+  detectApps: [],
+  echoCancellation: true,
+  appAudioOnly: false,
+  // The user has not chosen to offer cloud notes yet: the core refuses cloud_preview/cloud_send ("cloudOff").
+  cloudOffered: false,
 });
 const freshMobile = (): MobileSettings => ({ defaultTarget: "phone", modelsWifiOnly: true });
 
@@ -114,6 +124,9 @@ const hooks: GhiSettingsMock = {
   setInbox(items) {
     hooks.inbox = items;
     window.__ghiMock?.simulateMobileEvent({ type: "inboxChanged" });
+  },
+  offerCloud(on) {
+    app = { ...app, cloudOffered: on };
   },
   setLocked(locked) {
     hooks.locked = locked;
@@ -253,6 +266,7 @@ const scripted: Partial<Commands> = {
   },
   cloudRequestLog: async () => ok(Array.from({ length: hooks.cloudRequests }, () => ({ meeting: "m-1", meetingTitle: "", provider: "anthropic", model: "claude-sonnet-5-5", tokensIn: 900, tokensOut: 300, at: Date.now() }))),
   cloudPreview: async (meeting, ask) => {
+    if (!app.cloudOffered) return fail("cloudOff");
     if (hooks.cloudLocked.includes(meeting)) return fail("cloud AI is off for this meeting");
     const id = `plan-${plans.size + 1}`;
     plans.set(id, meeting);
@@ -269,9 +283,12 @@ const scripted: Partial<Commands> = {
       retentionNote: hooks.retentionNote,
       warnings: hooks.warnings,
       redactions: ask.redact ? [{ kind: "PERSON", count: 2 }] : [],
+      excerptBefore: RAW_TEXT,
+      excerptAfter: ask.redact ? REDACTED_TEXT : RAW_TEXT,
     });
   },
   cloudSend: async (id) => {
+    if (!app.cloudOffered) return fail("cloudOff");
     const meeting = plans.get(id) ?? "";
     if (hooks.failSend.includes(meeting)) return ok<CloudSendResult>({ kind: "failed", reason: "timeout", leftDevice: false });
     hooks.cloudRequests += 1;
