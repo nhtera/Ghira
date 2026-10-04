@@ -16,6 +16,10 @@ fn main() {
             "record_set_sensitive",
             "record_discard_preview",
             "record_discard_from",
+            "calendar_status",
+            "calendar_connect",
+            "calendar_disconnect",
+            "calendar_current_event",
             "app_version",
             "lifecycle_state",
             "device_tier",
@@ -90,6 +94,8 @@ fn main() {
             "unlock",
             "set_app_lock",
             "voice_status",
+            "meeting_attendees",
+            "meeting_contacts",
         ]),
     ))
     .expect("failed to run tauri-build");

@@ -104,6 +104,14 @@ mod swift {
         pub fn ghi_swift_mic_permission() -> i32;
         /// Shows the system prompt (first time only); poll `mic_permission`.
         pub fn ghi_swift_request_mic_permission();
+        /// 0 not determined, 1 full access, 2 denied (or restricted, or write-only).
+        pub fn ghi_swift_calendar_access() -> i32;
+        /// Shows the system prompt (first time only); poll `calendar_access`.
+        pub fn ghi_swift_request_calendar_access();
+        /// The events starting in `[from_ms, to_ms)` as a JSON array in a heap
+        /// string (free it with `ghi_swift_string_free`); NULL without access.
+        pub fn ghi_swift_calendar_events(from_ms: i64, to_ms: i64) -> *mut std::ffi::c_char;
+        pub fn ghi_swift_string_free(s: *mut std::ffi::c_char);
         /// `volumeAvailableCapacityForImportantUsage` of the app's volume in
         /// bytes (counts purgeable space); < 0 when unknown.
         pub fn ghi_swift_available_capacity() -> i64;
@@ -293,6 +301,7 @@ pub extern "C" fn ghi_ios_call_active_changed(active: bool) {
 /// Wrappers that later slices wire up (16-D session, 16-E native, 16-G services).
 #[allow(dead_code)]
 mod wrappers {
+    use crate::cmd::calendar::CalendarAccess;
     use crate::cmd::onboarding::MicPermission;
 
     #[cfg(target_os = "ios")]
@@ -441,6 +450,52 @@ mod wrappers {
         return u64::try_from(unsafe { swift::ghi_swift_available_capacity() }).ok();
         #[cfg(not(target_os = "ios"))]
         None
+    }
+
+    /// Calendar access (EventKit); never prompts. `Unavailable` off iOS.
+    pub fn calendar_access() -> CalendarAccess {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        return match unsafe { swift::ghi_swift_calendar_access() } {
+            0 => CalendarAccess::NotDetermined,
+            1 => CalendarAccess::Authorized,
+            _ => CalendarAccess::Denied,
+        };
+        #[cfg(not(target_os = "ios"))]
+        CalendarAccess::Unavailable
+    }
+
+    /// Shows the calendar prompt (only the first time); poll `calendar_access`.
+    pub fn request_calendar_access() {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        unsafe {
+            swift::ghi_swift_request_calendar_access()
+        }
+    }
+
+    /// The raw events starting in `[from_ms, to_ms)` as JSON; `None` without
+    /// access (and off iOS).
+    pub fn calendar_events_json(from_ms: i64, to_ms: i64) -> Option<String> {
+        #[cfg(target_os = "ios")]
+        {
+            // SAFETY: Swift returns NULL or a NUL-terminated heap string that
+            // is read once and handed back to Swift to free.
+            unsafe {
+                let p = swift::ghi_swift_calendar_events(from_ms, to_ms);
+                if p.is_null() {
+                    return None;
+                }
+                let s = std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned();
+                swift::ghi_swift_string_free(p);
+                Some(s)
+            }
+        }
+        #[cfg(not(target_os = "ios"))]
+        {
+            let _ = (from_ms, to_ms);
+            None
+        }
     }
 
     pub fn request_mic_permission() {

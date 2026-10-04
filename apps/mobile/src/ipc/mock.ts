@@ -5,6 +5,7 @@
 // Tests drive events through `window.__ghiMock`.
 import type { CoreEvent, MobileEvent } from "../bindings";
 import type { Commands, Ipc } from "./ipc";
+import { calendarCommands } from "./mock-calendar";
 import { meetingCommands } from "./mock-meetings";
 import { recordCommands } from "./mock-record";
 import { gateContent, lockListeners, settingsCommands } from "./mock-settings";
@@ -19,6 +20,7 @@ const scripted: Partial<Commands> = {
   ...recordCommands,
   ...meetingCommands,
   ...settingsCommands,
+  ...calendarCommands,
 };
 
 /**

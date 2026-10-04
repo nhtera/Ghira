@@ -1,3 +1,4 @@
 "CFBundleDisplayName" = "Ghira";
 "NSMicrophoneUsageDescription" = "Ghira records meetings on this phone. Audio stays on the device.";
+"NSCalendarsFullAccessUsageDescription" = "Ghira reads your calendar to name a meeting after the event you are in and to know who is attending. Events stay on this phone; only a meeting you record keeps its title and attendee names.";
 "NSFaceIDUsageDescription" = "Ghira uses Face ID to unlock your meetings when app lock is on.";

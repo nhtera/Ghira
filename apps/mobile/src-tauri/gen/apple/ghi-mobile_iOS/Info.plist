@@ -27,6 +27,8 @@
 	<string>0.1.0</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Ghira reads your calendar to name a meeting after the event you are in and to know who is attending. Events stay on this phone; only a meeting you record keeps its title and attendee names.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Ghira uses Face ID to unlock your meetings when app lock is on.</string>
 	<key>NSMicrophoneUsageDescription</key>

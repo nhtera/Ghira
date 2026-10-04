@@ -7,12 +7,14 @@
 //! Left out on purpose: `regenerate_notes` and `list_templates` (the phone never
 //! runs local notes, D5: regenerating would leave a meeting stuck in
 //! processing; cloud notes go through the cloud send sheet), `ask_*`, people,
-//! folders, tags, calendar and the desktop import queue (the phone imports
+//! folders, tags, the calendar's ICS file and ticker (EventKit only, see
+//! `calendar`) and the desktop import queue (the phone imports
 //! through the share inbox).
 //!
 //! The list in [`builder`] must match `build.rs` (`.commands(..)`) and
 //! `capabilities/default.json`; `commands_are_granted` in `lib.rs` checks it.
 
+pub mod calendar;
 pub mod events;
 pub mod import;
 pub mod lifecycle;
@@ -46,6 +48,10 @@ pub fn builder() -> Builder<tauri::Wry> {
             record::record_set_sensitive,
             record::record_discard_preview,
             record::record_discard_from,
+            calendar::calendar_status,
+            calendar::calendar_connect,
+            calendar::calendar_disconnect,
+            calendar::calendar_current_event,
             lifecycle::app_version,
             lifecycle::lifecycle_state,
             lifecycle::device_tier,
@@ -121,6 +127,8 @@ pub fn builder() -> Builder<tauri::Wry> {
             ghi_app::lock_cmd::unlock,
             ghi_app::lock_cmd::set_app_lock,
             ghi_app::voice_cmd::voice_status,
+            ghi_app::calendar_cmd::meeting_attendees,
+            ghi_app::calendar_cmd::meeting_contacts,
         ])
         .events(collect_events![
             CoreEvent,

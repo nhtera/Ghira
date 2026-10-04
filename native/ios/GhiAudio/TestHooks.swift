@@ -142,6 +142,52 @@ enum GhiTestHooks {
         NSLog("ghira: spike b: \(result)")
     }
 
+    // Fake calendar: GHI_FAKE_CALENDAR=authorized | denied | prompt (not
+    // determined until the app asks, then authorized). When authorized, one
+    // event is in progress ("Weekly sync", two attendees, a Zoom link).
+    private static var calendarGranted = false
+
+    private static var fakeCalendar: String? {
+        ProcessInfo.processInfo.environment["GHI_FAKE_CALENDAR"]
+    }
+
+    static func fakeCalendarAccess() -> Int32? {
+        guard let mode = fakeCalendar else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        switch mode {
+        case "denied": return 2
+        case "prompt": return calendarGranted ? 1 : 0
+        default: return 1
+        }
+    }
+
+    /// True when the fake answered the request (the real prompt is not shown).
+    static func fakeCalendarRequest() -> Bool {
+        guard fakeCalendar != nil else { return false }
+        lock.lock()
+        calendarGranted = true
+        lock.unlock()
+        return true
+    }
+
+    static func fakeCalendarEvents(_ from: Int64, _ to: Int64) -> String? {
+        guard fakeCalendarAccess() == 1 else { return nil }
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let event: [String: Any] = [
+            "id": "fake-weekly-sync", "title": "Weekly sync",
+            "startMs": now - 5 * 60_000, "endMs": now + 25 * 60_000,
+            "allDay": false, "canceled": false,
+            "people": [
+                ["name": "Lan Nguyen", "address": "mailto:lan@example.com"],
+                ["name": "Minh Tran", "address": "mailto:minh@example.com"],
+            ],
+            "location": "https://zoom.us/j/123456789",
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: [event]) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
     /// Pushes fake samples for one tap block (`frames` at the hardware `rate`).
     /// False when no fake mic is loaded: the caller pushes the real samples.
     static func pushFakeMic(frames: Int, rate: Double, hostNs: UInt64) -> Bool {

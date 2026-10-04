@@ -82,6 +82,10 @@
     "allow-record-set-sensitive",
     "allow-record-discard-preview",
     "allow-record-discard-from",
+    "allow-calendar-status",
+    "allow-calendar-connect",
+    "allow-calendar-disconnect",
+    "allow-calendar-current-event",
     "allow-cloud-request-log",
     "allow-get-settings",
     "allow-update-settings",
@@ -92,6 +96,8 @@
     "allow-lock-now",
     "allow-unlock",
     "allow-set-app-lock",
-    "allow-voice-status"
+    "allow-voice-status",
+    "allow-meeting-attendees",
+    "allow-meeting-contacts"
   ]
 }

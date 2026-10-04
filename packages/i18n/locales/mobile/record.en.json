@@ -127,6 +127,10 @@
         "marks_other": "{{count}} marks",
         "confirm": "Discard",
         "behind": "Text still being transcribed for this stretch is dropped too."
+      },
+      "calendar": {
+        "label": "From your calendar",
+        "hint": "This recording will be named after it."
       }
     },
     "voice": {

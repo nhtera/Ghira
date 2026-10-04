@@ -543,6 +543,124 @@ pub fn current_event(events: &[CalEvent], now_ms: i64) -> Option<&CalEvent> {
         })
 }
 
+/// Most of an event's notes looked at for a call link.
+const NOTES_CHARS: usize = 20_000;
+
+/// One attendee as the OS calendar (EventKit) gives it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RawPerson {
+    pub name: Option<String>,
+    /// The participant's URL (`mailto:...`), or empty.
+    pub address: String,
+}
+
+/// One event as the OS calendar gives it (EventKit on macOS and iOS), before
+/// names, addresses and the call link are worked out. The user themself is
+/// left out of `people` by the reader; the organizer comes first.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RawEvent {
+    /// The invite's own id, so a calendar both subscribed and imported gives
+    /// the same key.
+    pub id: String,
+    pub title: String,
+    pub start_ms: i64,
+    pub end_ms: Option<i64>,
+    pub all_day: bool,
+    pub canceled: bool,
+    pub people: Vec<RawPerson>,
+    pub location: Option<String>,
+    pub url: Option<String>,
+    /// Read only to find a call link; never stored or logged.
+    pub notes: Option<String>,
+}
+
+/// The in-memory event for an OS calendar's, or `None` for a canceled one.
+pub fn from_raw(r: RawEvent) -> Option<CalEvent> {
+    if r.canceled {
+        return None;
+    }
+    let mut attendees: Vec<String> = Vec::new();
+    let mut emails: Vec<String> = Vec::new();
+    for p in &r.people {
+        let name = person_name(p.name.as_deref(), &p.address);
+        if name.trim().chars().count() < 2 {
+            continue;
+        }
+        let folded = ghi_text::fold(&name);
+        if !attendees.iter().any(|a| ghi_text::fold(a) == folded) {
+            attendees.push(name);
+            emails.push(email_of(&p.address).unwrap_or_default());
+        }
+    }
+    let text = [
+        Some(r.title.clone()),
+        r.location.clone(),
+        r.url.clone(),
+        r.notes
+            .as_ref()
+            .map(|n| n.chars().take(NOTES_CHARS).collect()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<String>>()
+    .join("\n");
+    let end_ms = r.end_ms.unwrap_or(r.start_ms).max(r.start_ms);
+    Some(CalEvent {
+        key: format!("{}@{}", r.id, r.start_ms),
+        title: r.title.trim().chars().take(200).collect(),
+        start_ms: r.start_ms,
+        end_ms,
+        all_day: r.all_day,
+        attendees,
+        emails,
+        join_app: join_app(&text).map(str::to_string),
+        from_ics: false,
+    })
+}
+
+/// A prompted event names a recording started within this long (D4).
+pub const PROMPT_LINGER_MS: i64 = 15 * 60 * 1000;
+
+/// The event that names a recording started at `now_ms`: the one just prompted
+/// and answered with Start (while it is on), else the meeting-like one in
+/// progress (D4). A recording started by hand during such an event is named
+/// after it too: the facts stay local and sealed.
+pub fn event_for_recording<'a>(
+    events: &'a [CalEvent],
+    prompted: Option<&(String, i64)>,
+    now_ms: i64,
+) -> Option<&'a CalEvent> {
+    prompted
+        .filter(|(_, at)| (0..=PROMPT_LINGER_MS).contains(&(now_ms - at)))
+        .and_then(|(key, _)| events.iter().find(|e| &e.key == key))
+        .filter(|e| now_ms < e.end_ms.max(e.start_ms + MIN_MS))
+        .or_else(|| current_event(events, now_ms))
+}
+
+/// Gives a recording the event's title (when it has none) and keeps the
+/// event's sealed facts with it (`calendar_ct`). Best effort: a store error
+/// leaves the recording as it is.
+pub fn name_meeting(store: &ghi_store::store::Store, meeting: &str, e: &CalEvent) {
+    if store
+        .get_meeting(meeting)
+        .is_ok_and(|m| m.title.trim().is_empty())
+    {
+        let _ = store.set_meeting_title(meeting, &e.title);
+    }
+    let info = CalendarInfo {
+        event: e.key.clone(),
+        title: e.title.clone(),
+        attendees: e.attendees.clone(),
+        emails: e.emails.clone(),
+        calendar: None,
+    };
+    if let Ok(v) = serde_json::to_value(&info) {
+        let _ = store.set_calendar_info(meeting, Some(&v));
+    }
+}
+
 /// Events to ask about now: starting within [-1 min, +5 min] of `now_ms`,
 /// armed (`overrides` else [`meeting_like`]) and not in `asked`.
 pub fn due_prompts<'a>(
@@ -1156,6 +1274,83 @@ ATTENDEE;CN=Me Myself:mailto:me@acme.com\r\nATTENDEE;CN={other}:mailto:{other}@a
             ev("b", now - 2 * MIN_MS, &["x"], None),
         ];
         assert_eq!(current_event(&both, now).unwrap().title, "b");
+    }
+
+    #[test]
+    fn the_prompted_event_names_the_recording_first() {
+        let now = 5_000_000;
+        let events = vec![
+            ev("now", now - 60_000, &["x"], None),
+            ev("next", now + 120_000, &["x"], None),
+        ];
+        let name = |p: Option<&(String, i64)>, at: i64| {
+            event_for_recording(&events, p, at).map(|e| e.title.clone())
+        };
+        // No prompt: the one in progress.
+        assert_eq!(name(None, now).as_deref(), Some("now"));
+        // The prompted one wins while the prompt is fresh.
+        let p = (events[1].key.clone(), now - 1000);
+        assert_eq!(name(Some(&p), now).as_deref(), Some("next"));
+        // A stale prompt does not.
+        let stale = (events[1].key.clone(), now - PROMPT_LINGER_MS - 1);
+        assert_eq!(name(Some(&stale), now).as_deref(), Some("now"));
+        // Once the events are over nothing names the recording, prompted or not.
+        let late = now + 3_600_000;
+        assert_eq!(name(None, late), None);
+        let p = (events[1].key.clone(), late - 1000);
+        assert_eq!(name(Some(&p), late), None);
+    }
+
+    #[test]
+    fn naming_keeps_a_given_title_and_always_seals_the_facts() {
+        let (_tmp, store) = store();
+        let new = |title: &str| {
+            store
+                .create_meeting(ghi_store::store::NewMeeting {
+                    title: title.into(),
+                    ..Default::default()
+                })
+                .unwrap()
+                .gid
+        };
+        let mut e = ev("Standup", 1_000, &["Lan", "Minh"], None);
+        e.emails = vec!["lan@x.vn".into(), String::new()];
+        let (blank, named) = (new(""), new("My title"));
+        name_meeting(&store, &blank, &e);
+        name_meeting(&store, &named, &e);
+        assert_eq!(store.get_meeting(&blank).unwrap().title, "Standup");
+        assert_eq!(store.get_meeting(&named).unwrap().title, "My title");
+        for m in [&blank, &named] {
+            let i = info(&store, m).unwrap();
+            assert_eq!((i.title.as_str(), i.attendees.len()), ("Standup", 2));
+            assert_eq!(i.emails[0], "lan@x.vn");
+        }
+    }
+
+    #[test]
+    fn native_events_get_names_addresses_and_a_call_link() {
+        let raw: RawEvent = serde_json::from_value(serde_json::json!({
+            "id": "abc", "title": "  Sprint review  ", "startMs": 1000, "endMs": 500,
+            "people": [
+                {"name": "Lê Minh Anh", "address": "mailto:minh@x.vn"},
+                {"name": null, "address": "mailto:sarah.k@x.com"},
+                {"name": "le minh anh", "address": ""},
+                {"name": "X", "address": ""}
+            ],
+            "location": "https://zoom.us/j/123456789"
+        }))
+        .unwrap();
+        let e = from_raw(raw).unwrap();
+        assert_eq!(e.key, "abc@1000");
+        assert_eq!(e.title, "Sprint review");
+        assert_eq!(e.end_ms, 1000, "an end before the start is the start");
+        assert_eq!(e.attendees, ["Lê Minh Anh", "sarah k"]);
+        assert_eq!(e.emails, ["minh@x.vn", "sarah.k@x.com"]);
+        assert_eq!(e.join_app.as_deref(), Some("zoom"));
+        assert!(!e.from_ics && !e.all_day);
+        let canceled: RawEvent =
+            serde_json::from_value(serde_json::json!({"id": "c", "canceled": true})).unwrap();
+        assert!(from_raw(canceled).is_none());
     }
 
     fn store() -> (tempfile::TempDir, ghi_store::store::Store) {

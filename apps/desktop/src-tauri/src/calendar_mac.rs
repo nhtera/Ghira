@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use block2::RcBlock;
-use ghi_core::calendar::{CalEvent, email_of, join_app, person_name};
+use ghi_core::calendar::{self, CalEvent, RawEvent, RawPerson};
 use objc2::msg_send;
 use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::Bool;
@@ -19,8 +19,6 @@ use objc2_foundation::{NSDate, NSError, NSString, NSURL};
 
 /// Most events read in one call.
 const MAX_EVENTS: usize = 2_000;
-/// Most of an event's notes looked at for a call link.
-const NOTES_CHARS: usize = 20_000;
 
 /// The one event store, made on first use. objc2 objects are not `Send`;
 /// every use is under the mutex, one thread at a time.
@@ -101,22 +99,21 @@ fn ms(d: &NSDate) -> i64 {
     (d.timeIntervalSince1970() * 1000.0).round() as i64
 }
 
-/// A participant's display name; `None` for the user themself.
-fn participant(p: &EKParticipant) -> Option<(String, String)> {
+/// A participant; `None` for the user themself.
+fn participant(p: &EKParticipant) -> Option<RawPerson> {
     // SAFETY: plain getters on a live participant; nil is handled.
     unsafe {
         if p.isCurrentUser() {
             return None;
         }
-        let name = p.name().map(|n| n.to_string());
         let url: Option<Retained<NSURL>> = msg_send![p, URL];
-        let addr = url
-            .and_then(|u| u.absoluteString())
-            .map(|s| s.to_string())
-            .unwrap_or_default();
-        Some(person_name(name.as_deref(), &addr))
-            .filter(|n| n.trim().chars().count() >= 2)
-            .map(|n| (n, email_of(&addr).unwrap_or_default()))
+        Some(RawPerson {
+            name: p.name().map(|n| n.to_string()),
+            address: url
+                .and_then(|u| u.absoluteString())
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
+        })
     }
 }
 
@@ -124,58 +121,33 @@ fn convert(e: &EKEvent) -> Option<CalEvent> {
     // SAFETY: plain getters on a live event; the ones that could be nil are
     // read as options.
     unsafe {
-        if e.status() == EKEventStatus::Canceled {
-            return None;
-        }
         let start: Option<Retained<NSDate>> = msg_send![e, startDate];
-        let end: Option<Retained<NSDate>> = msg_send![e, endDate];
         let start = start?;
-        let start_ms = ms(&start);
-        let end_ms = end.map_or(start_ms, |d| ms(&d)).max(start_ms);
+        let end: Option<Retained<NSDate>> = msg_send![e, endDate];
         let title: Option<Retained<NSString>> = msg_send![e, title];
-        let title = title.map(|t| t.to_string()).unwrap_or_default();
-        // The invite's own id, so a calendar both subscribed and imported
-        // gives the same key; else the store's.
-        let id = e
-            .calendarItemExternalIdentifier()
-            .or_else(|| e.eventIdentifier())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| e.calendarItemIdentifier().to_string());
-        let mut attendees: Vec<String> = Vec::new();
-        let mut emails: Vec<String> = Vec::new();
-        let people = e
-            .organizer()
-            .into_iter()
-            .chain(e.attendees().into_iter().flat_map(|a| a.to_vec()));
-        for (name, email) in people.filter_map(|p| participant(&p)) {
-            let folded = ghi_text::fold(&name);
-            if !attendees.iter().any(|a| ghi_text::fold(a) == folded) {
-                attendees.push(name);
-                emails.push(email);
-            }
-        }
         let url: Option<Retained<NSURL>> = msg_send![e, URL];
-        let text = [
-            Some(title.clone()),
-            e.location().map(|s| s.to_string()),
-            url.and_then(|u| u.absoluteString()).map(|s| s.to_string()),
-            e.notes()
-                .map(|s| s.to_string().chars().take(NOTES_CHARS).collect()),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<String>>()
-        .join("\n");
-        Some(CalEvent {
-            key: format!("{id}@{start_ms}"),
-            title: title.trim().chars().take(200).collect(),
-            start_ms,
-            end_ms,
+        calendar::from_raw(RawEvent {
+            // The invite's own id, so a calendar both subscribed and imported
+            // gives the same key; else the store's.
+            id: e
+                .calendarItemExternalIdentifier()
+                .or_else(|| e.eventIdentifier())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| e.calendarItemIdentifier().to_string()),
+            title: title.map(|t| t.to_string()).unwrap_or_default(),
+            start_ms: ms(&start),
+            end_ms: end.map(|d| ms(&d)),
             all_day: e.isAllDay(),
-            attendees,
-            emails,
-            join_app: join_app(&text).map(str::to_string),
-            from_ics: false,
+            canceled: e.status() == EKEventStatus::Canceled,
+            people: e
+                .organizer()
+                .into_iter()
+                .chain(e.attendees().into_iter().flat_map(|a| a.to_vec()))
+                .filter_map(|p| participant(&p))
+                .collect(),
+            location: e.location().map(|s| s.to_string()),
+            url: url.and_then(|u| u.absoluteString()).map(|s| s.to_string()),
+            notes: e.notes().map(|s| s.to_string()),
         })
     }
 }

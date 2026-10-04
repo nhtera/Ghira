@@ -172,6 +172,15 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     core.init_in_background();
     crate::privacy_cmd::spawn_maintenance(core.clone());
     spawn_inbox_watch(core.clone(), recorder.clone(), inbox, lifecycle);
+    // Calendar events don't stay in memory behind the lock screen.
+    {
+        use tauri_specta::Event;
+        ghi_app::lock_cmd::LockChanged::listen(app, |e| {
+            if e.payload.locked {
+                crate::cmd::calendar::forget();
+            }
+        });
+    }
     wire_app_lock(app.clone(), core, recorder, lifecycle);
     Ok(())
 }

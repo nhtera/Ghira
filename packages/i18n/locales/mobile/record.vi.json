@@ -121,6 +121,10 @@
         "marks_other": "{{count}} đánh dấu",
         "confirm": "Bỏ đoạn này",
         "behind": "Phần chữ đang được chuyển thành bản ghi cho đoạn này cũng sẽ bị bỏ."
+      },
+      "calendar": {
+        "label": "Từ lịch của bạn",
+        "hint": "Bản ghi này sẽ được đặt tên theo sự kiện đó."
       }
     },
     "voice": {

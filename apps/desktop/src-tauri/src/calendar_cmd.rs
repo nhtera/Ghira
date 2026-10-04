@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use ghi_core::calendar::{self, CalEvent, CalendarInfo, MAX_ICS_BYTES};
+use ghi_core::calendar::{self, CalEvent, MAX_ICS_BYTES};
 use ghi_store::store::Store;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -90,8 +90,6 @@ const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 const FETCH_AHEAD_MS: i64 = 14 * DAY_MS;
 const MAX_OVERRIDES: usize = 500;
 const MAX_VIEWS: u32 = 50;
-/// A prompted event names a recording started within this long (D4).
-const PROMPT_LINGER_MS: i64 = 15 * 60 * 1000;
 const TICK: Duration = Duration::from_secs(30);
 /// The `app` of a prompt that came from the calendar alone.
 pub(crate) const CALENDAR_APP: &str = "calendar";
@@ -460,74 +458,6 @@ pub async fn set_event_ask(core: CoreState<'_>, key: String, ask: bool) -> Resul
     .await
 }
 
-/// The attendees of the calendar event a recorded meeting was named after
-/// (rename suggestions list them first). Empty if none. Errors: `storage`.
-#[tauri::command]
-#[specta::specta]
-pub async fn meeting_attendees(
-    core: CoreState<'_>,
-    meeting: String,
-) -> Result<Vec<String>, String> {
-    blocking(&core, move |c| {
-        let store = c.store()?;
-        Ok(calendar::info(&store, &meeting)
-            .map(|i| i.attendees)
-            .unwrap_or_default())
-    })
-    .await
-}
-
-/// An attendee of the calendar event a meeting was recorded in.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct MeetingContact {
-    pub name: String,
-    /// `None` when the invite had no address.
-    pub email: Option<String>,
-}
-
-/// The attendees of the meeting's calendar event with their addresses (for
-/// the follow-up email's "To"). Empty if none. Errors: `storage`.
-#[tauri::command]
-#[specta::specta]
-pub async fn meeting_contacts(
-    core: CoreState<'_>,
-    meeting: String,
-) -> Result<Vec<MeetingContact>, String> {
-    blocking(&core, move |c| {
-        let store = c.store()?;
-        Ok(calendar::info(&store, &meeting)
-            .map(|i| {
-                i.attendees
-                    .into_iter()
-                    .enumerate()
-                    .map(|(n, name)| MeetingContact {
-                        name,
-                        email: i.emails.get(n).filter(|e| !e.is_empty()).cloned(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default())
-    })
-    .await
-}
-
-/// The event that names a recording started at `now`: the one just prompted
-/// and answered with Start (while it is on), else the meeting-like one in
-/// progress (D4). A recording started by hand during such an event is named
-/// after it too: the facts stay local and sealed.
-fn event_for_recording<'a>(
-    events: &'a [CalEvent],
-    prompted: Option<&(String, i64)>,
-    now: i64,
-) -> Option<&'a CalEvent> {
-    prompted
-        .filter(|(_, at)| (0..=PROMPT_LINGER_MS).contains(&(now - at)))
-        .and_then(|(key, _)| events.iter().find(|e| &e.key == key))
-        .filter(|e| now < e.end_ms.max(e.start_ms + 60_000))
-        .or_else(|| calendar::current_event(events, now))
-}
-
 /// The user answered a calendar prompt (of the ticker or the app detector). Any
 /// answer but Start forgets which event it was about, so a dismissed prompt
 /// never names a recording started later.
@@ -559,27 +489,12 @@ pub(crate) fn on_recording_started(core: &Core, meeting: &str) {
 fn name_recording(store: &Store, meeting: &str, prompted: Option<(String, i64)>) {
     let now = now_ms();
     let events = fetch(store);
-    let Some(e) = event_for_recording(&events, prompted.as_ref(), now) else {
+    let Some(e) = calendar::event_for_recording(&events, prompted.as_ref(), now) else {
         return;
     };
     // Recording it already: no prompt for this event when it is stopped.
     rt().asked.insert(e.key.clone());
-    if store
-        .get_meeting(meeting)
-        .is_ok_and(|m| m.title.trim().is_empty())
-    {
-        let _ = store.set_meeting_title(meeting, &e.title);
-    }
-    let info = CalendarInfo {
-        event: e.key.clone(),
-        title: e.title.clone(),
-        attendees: e.attendees.clone(),
-        emails: e.emails.clone(),
-        calendar: None,
-    };
-    if let Ok(v) = serde_json::to_value(&info) {
-        let _ = store.set_calendar_info(meeting, Some(&v));
-    }
+    calendar::name_meeting(store, meeting, e);
 }
 
 /// What the app detector does with a calendar event in progress.
@@ -751,38 +666,6 @@ mod tests {
             claim(&events, &off, &mut HashSet::new(), t).unwrap().key,
             "b@2"
         );
-    }
-
-    #[test]
-    fn the_prompted_event_names_the_recording_first() {
-        let now = 5_000_000;
-        let events = vec![ev("now@1", now - 60_000, 1), ev("next@2", now + 120_000, 1)];
-        // No prompt: the one in progress.
-        assert_eq!(
-            event_for_recording(&events, None, now).unwrap().key,
-            "now@1"
-        );
-        // The prompted one wins while the prompt is fresh.
-        let p = ("next@2".to_string(), now - 1000);
-        assert_eq!(
-            event_for_recording(&events, Some(&p), now).unwrap().key,
-            "next@2"
-        );
-        // A stale prompt does not.
-        let stale = ("next@2".to_string(), now - PROMPT_LINGER_MS - 1);
-        assert_eq!(
-            event_for_recording(&events, Some(&stale), now).unwrap().key,
-            "now@1"
-        );
-        // Nothing in progress, nothing prompted.
-        assert!(event_for_recording(&events, None, now + 3_600_000).is_none());
-        // A dismissed prompt is forgotten, so a recording started after the
-        // event is over is not named after it.
-        let late = now + 3_600_000;
-        assert!(event_for_recording(&events, None, late).is_none());
-        // And one still remembered does not outlive its event.
-        let p = ("next@2".to_string(), late - 1000);
-        assert!(event_for_recording(&events, Some(&p), late).is_none());
     }
 
     #[test]

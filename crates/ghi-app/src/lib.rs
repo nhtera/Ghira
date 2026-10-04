@@ -9,6 +9,7 @@
 //! updater, EventKit) stays in the desktop crate.
 
 pub mod audio_protocol;
+pub mod calendar_cmd;
 pub mod cloud_cmd;
 pub mod core;
 pub mod detail;

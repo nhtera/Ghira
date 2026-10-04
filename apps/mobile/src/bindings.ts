@@ -48,6 +48,26 @@ export const commands = {
 	 *  the cut landed (ms).
 	 */
 	recordDiscardFrom: (fromMs: number | null) => typedError<number | null, string>(__TAURI_INVOKE("record_discard_from", { fromMs })),
+	/**  Where calendar access and the setting stand. Errors: `locked`, `storage`. */
+	calendarStatus: () => typedError<CalendarStatus, string>(__TAURI_INVOKE("calendar_status")),
+	/**
+	 *  Turns the calendar on: shows the system prompt the first time (resolves
+	 *  with the answer), then keeps the setting if iOS allows reading events. A
+	 *  denied answer leaves it off (`access` says `denied`: the UI points to
+	 *  Settings). Errors: `locked`, `storage`.
+	 */
+	calendarConnect: () => typedError<CalendarStatus, string>(__TAURI_INVOKE("calendar_connect")),
+	/**
+	 *  Turns the calendar off. iOS keeps the permission (only Settings → Ghira
+	 *  takes it back); nothing is read until it is turned on again. Errors:
+	 *  `locked`, `storage`.
+	 */
+	calendarDisconnect: () => typedError<CalendarStatus, string>(__TAURI_INVOKE("calendar_disconnect")),
+	/**
+	 *  The event in progress (or starting within ten minutes) when the calendar
+	 *  is connected; `event` is `null` otherwise. Errors: `locked`, `storage`.
+	 */
+	calendarCurrentEvent: () => typedError<CurrentEvent, string>(__TAURI_INVOKE("calendar_current_event")),
 	appVersion: () => __TAURI_INVOKE<MobileAppVersion>("app_version"),
 	lifecycleState: () => typedError<LifecycleState, string>(__TAURI_INVOKE("lifecycle_state")),
 	deviceTier: () => typedError<DeviceTier, string>(__TAURI_INVOKE("device_tier")),
@@ -262,6 +282,16 @@ export const commands = {
 	setAppLock: (on: boolean, afterMinutes: number, reason: string) => typedError<AppSettings, string>(__TAURI_INVOKE("set_app_lock", { on, afterMinutes, reason })),
 	/**  Where the model and Me's profile stand. Errors: `storage`. */
 	voiceStatus: () => typedError<VoiceStatus, string>(__TAURI_INVOKE("voice_status")),
+	/**
+	 *  The attendees of the calendar event a recorded meeting was named after
+	 *  (rename suggestions list them first). Empty if none. Errors: `storage`.
+	 */
+	meetingAttendees: (meeting: string) => typedError<string[], string>(__TAURI_INVOKE("meeting_attendees", { meeting })),
+	/**
+	 *  The attendees of the meeting's calendar event with their addresses (for
+	 *  the follow-up email's "To"). Empty if none. Errors: `storage`.
+	 */
+	meetingContacts: (meeting: string) => typedError<MeetingContact[], string>(__TAURI_INVOKE("meeting_contacts", { meeting })),
 };
 
 /** Events */
@@ -385,6 +415,33 @@ export type AudioPlay = {
 	durationMs: number | null,
 };
 
+/**  What iOS says about calendar access. */
+export type CalendarAccess = 
+/**  Not on an iPhone (a browser, host tests). */
+"unavailable" | "notDetermined" | 
+/**  Denied, restricted, or write-only (which cannot read events). */
+"denied" | "authorized";
+
+/**
+ *  The calendar event in progress (or about to start), as the record screen
+ *  shows it. Names only inside a recorded meeting: here a count.
+ */
+export type CalendarEvent = {
+	title: string,
+	startMs: number | null,
+	endMs: number | null,
+	/**  Other attendees. */
+	attendees: number,
+	/**  `zoom`, `teams`, `meet` or `null`. */
+	joinApp: string | null,
+};
+
+export type CalendarStatus = {
+	access: CalendarAccess,
+	/**  The user turned it on and iOS lets the app read events. */
+	connected: boolean,
+};
+
 /**  A citation resolved against the current transcript. */
 export type Citation = {
 	t0Ms: number | null,
@@ -489,6 +546,14 @@ export type ConsentMessage = {
 
 /**  Every core event, in order (`seq` is gap-free; on a gap, re-read state). */
 export type CoreEvent = Envelope;
+
+/**
+ *  The answer of `calendar_current_event` (a wrapper: a bare nullable struct
+ *  is inlined into the bindings' command line, which the grant check reads).
+ */
+export type CurrentEvent = {
+	event: CalendarEvent | null,
+};
 
 export type DeviceTier = {
 	/**  `iPhone16,1` style machine identifier (`SIMULATOR_MODEL_IDENTIFIER` on the simulator). */
@@ -681,6 +746,13 @@ export type MeetingChip = { kind: "recorded" } | { kind: "processingOnPhone"; pe
 export type MeetingChipRow = {
 	gid: string,
 	chip: MeetingChip,
+};
+
+/**  An attendee of the calendar event a meeting was recorded in. */
+export type MeetingContact = {
+	name: string,
+	/**  `None` when the invite had no address. */
+	email: string | null,
 };
 
 export type MeetingDetail = {

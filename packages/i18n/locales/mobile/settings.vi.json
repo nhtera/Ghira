@@ -17,7 +17,8 @@
         "cloud": "Ghi chú qua đám mây",
         "consent": "Lời thông báo ghi âm",
         "about": "Giới thiệu",
-        "vocab": "Từ vựng riêng"
+        "vocab": "Từ vựng riêng",
+        "calendar": "Lịch"
       },
       "status": {
         "ready": "Sẵn sàng",
@@ -158,6 +159,21 @@
         "learnedHeader": "Học từ tên bạn đặt cho người nói",
         "learnedFooter": "Các tên này cũng được dùng. Xoá để ngừng sửa theo tên đó.",
         "learnedEmpty": "Chưa có. Tên bạn đặt cho người nói sẽ hiện ở đây."
+      },
+      "calendar": {
+        "title": "Lịch",
+        "header": "Tiêu đề và người tham dự cuộc họp",
+        "footer": "Khi bạn bắt đầu ghi âm trong lúc có một sự kiện trong lịch, {{app}} đặt tên cuộc họp theo sự kiện đó và giữ tên người tham dự cùng cuộc họp, được mã hoá trên điện thoại này. Sự kiện chỉ được đọc khi cần và không bao giờ được lưu.",
+        "connected": "Đã kết nối",
+        "off": "Đang tắt",
+        "statusConnected": "Đang đọc lịch của bạn trên điện thoại này.",
+        "statusOff": "Lịch đang tắt.",
+        "connect": "Kết nối lịch",
+        "disconnect": "Tắt lịch",
+        "denied": "{{app}} không đọc được lịch của bạn. Hãy bật Lịch → Toàn quyền truy cập cho {{app}} trong Cài đặt, rồi quay lại.",
+        "openSettings": "Mở Cài đặt",
+        "unavailable": "Lịch không khả dụng ở đây.",
+        "disconnected": "Đã tắt lịch. Để thu hồi cả quyền truy cập, hãy dùng Cài đặt → {{app}}."
       }
     },
     "privacy": {

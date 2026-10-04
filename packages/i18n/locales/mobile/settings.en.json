@@ -17,7 +17,8 @@
         "cloud": "Cloud notes",
         "consent": "Consent message",
         "about": "About",
-        "vocab": "Custom vocabulary"
+        "vocab": "Custom vocabulary",
+        "calendar": "Calendar"
       },
       "status": {
         "ready": "Ready",
@@ -159,6 +160,21 @@
         "learnedHeader": "Learned from names you gave speakers",
         "learnedFooter": "These are used too. Remove one to stop correcting towards it.",
         "learnedEmpty": "Nothing yet. Names you give speakers appear here."
+      },
+      "calendar": {
+        "title": "Calendar",
+        "header": "Meeting titles and attendees",
+        "footer": "Start a recording during a calendar event and {{app}} names the meeting after it and keeps the attendees’ names with that meeting, encrypted on this phone. Events are read only when needed and are never stored.",
+        "connected": "Connected",
+        "off": "Off",
+        "statusConnected": "Reading your calendar on this phone.",
+        "statusOff": "Calendar is off.",
+        "connect": "Connect calendar",
+        "disconnect": "Turn off calendar",
+        "denied": "{{app}} can’t read your calendar. Turn on Calendars → Full Access for {{app}} in Settings, then come back.",
+        "openSettings": "Open Settings",
+        "unavailable": "The calendar isn’t available here.",
+        "disconnected": "Calendar turned off. To take back the permission too, use Settings → {{app}}."
       }
     },
     "privacy": {

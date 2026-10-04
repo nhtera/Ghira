@@ -12,7 +12,7 @@
 #             marker is missing, which proves the check still detects them (CI).
 set -euo pipefail
 
-markers=("GHI_FAKE_MIC" "GHI_FAKE_ENGINES" "com.nhtera.ghira.test.")
+markers=("GHI_FAKE_MIC" "GHI_FAKE_ENGINES" "GHI_FAKE_CALENDAR" "com.nhtera.ghira.test.")
 expect=0
 if [[ "${1:-}" == --expect-hooks ]]; then expect=1; shift; fi
 [[ $# -gt 0 ]] || { echo "usage: $0 [--expect-hooks] <artifact>..." >&2; exit 2; }

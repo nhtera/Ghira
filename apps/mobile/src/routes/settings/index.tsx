@@ -5,6 +5,7 @@
 import { createRoute, Outlet, type AnyRoute } from "@tanstack/react-router";
 import { ModelsScreen } from "../../features/models";
 import { AboutScreen } from "./about";
+import { CalendarScreen } from "./calendar";
 import { CloudScreen } from "./cloud";
 import { ConsentScreen } from "./consent";
 import { SettingsHome } from "./home";
@@ -21,6 +22,7 @@ export function settingsRoutes(parent: AnyRoute) {
     at("/", SettingsHome),
     at("/models", ModelsScreen),
     at("/voice", VoiceScreen),
+    at("/calendar", CalendarScreen),
     at("/privacy", PrivacyScreen),
     at("/privacy/log", RequestLogScreen),
     at("/vocabulary", VocabularyScreen),

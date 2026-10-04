@@ -177,6 +177,10 @@ scripted mock `ipc/mock*.ts` outside Tauri). `native/ios`: `GhiAudio` (Swift aud
 lifecycle, Live Activity, C ABI in `include/ghi_ios.h`), `GhiLiveActivity`,
 `GhiShareExtension` (inbox in the App Group), `GhiUITests` (XCUITest). Data is
 Application Support, encrypted store + bundles; no `UIFileSharingEnabled`.
+Calendar on iOS: `native/ios/GhiAudio/GhiCalendar.swift` (EventKit, JSON over the C ABI) and
+`src-tauri/src/cmd/calendar.rs` (setting `calendar_phone`, read on demand, 60 s memory
+cache, names a meeting at record start; the EventKit → event conversion is shared in
+`ghi-core` `calendar::from_raw`, `meeting_attendees`/`meeting_contacts` in `ghi-app`).
 Test hooks (`GHI_FAKE_MIC`, `GHI_FAKE_ENGINES`, `com.nhtera.ghira.test.*` Darwin
 notifications) exist only with the cargo feature `test-hooks` + Swift `GHI_TEST_HOOKS`
 (`build-ios.sh --sim --test-hooks`); `tools/scripts/check-no-test-hooks.sh` guards

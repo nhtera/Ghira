@@ -14,6 +14,7 @@ import { useAppSettings, useMobileSettings } from "../../features/settings/use-s
 const LANGUAGES: MeetingLanguage[] = ["auto", "en", "vi"];
 const loadModels = async () => unwrap(await ipc.commands.modelsStatus());
 const loadVoice = async () => unwrap(await ipc.commands.voiceStatus());
+const loadCalendar = async () => unwrap(await ipc.commands.calendarStatus());
 
 export function SettingsHome() {
   const { t } = useTranslation();
@@ -22,10 +23,12 @@ export function SettingsHome() {
   const mobile = useMobileSettings();
   const models = useResource(loadModels);
   const voice = useResource(loadVoice);
+  const calendar = useResource(loadCalendar);
 
   const allReady = models.data ? models.data.items.every((m) => m.state === "ready") : undefined;
   const modelsValue = allReady === undefined ? undefined : allReady ? t("mobile.settings.status.ready") : t("mobile.settings.status.needsDownload");
   const voiceValue = voice.data ? (voice.data.meProfile ? t("mobile.settings.status.set") : t("mobile.settings.status.notSet")) : undefined;
+  const calendarValue = calendar.data ? (calendar.data.connected ? t("mobile.settings.calendar.connected") : t("mobile.settings.calendar.off")) : undefined;
   const failed = app.loadError ?? mobile.loadError;
 
   return (
@@ -50,6 +53,7 @@ export function SettingsHome() {
             <ListRow title={t("mobile.settings.rows.models")} value={modelsValue} chevron onPress={() => go("/settings/models")} />
             <ListRow title={t("mobile.settings.rows.vocab")} chevron onPress={() => go("/settings/vocabulary")} />
             <ListRow title={t("mobile.settings.rows.voice")} value={voiceValue} chevron onPress={() => go("/settings/voice")} />
+            <ListRow title={t("mobile.settings.rows.calendar")} value={calendarValue} chevron onPress={() => go("/settings/calendar")} />
           </ListSection>
           <ListSection header={t("mobile.settings.section.privacy")}>
             <ListRow title={t("mobile.settings.rows.privacy")} value={app.settings.appLock ? t("mobile.settings.status.on") : undefined} chevron onPress={() => go("/settings/privacy")} />

@@ -81,4 +81,15 @@ int32_t ghi_swift_mic_permission(void);
 // Shows the system prompt (first time only); poll ghi_swift_mic_permission.
 void ghi_swift_request_mic_permission(void);
 
+// Calendar (EventKit): 0 not determined, 1 full access, 2 denied (or
+// restricted, or write-only). Never prompts.
+int32_t ghi_swift_calendar_access(void);
+// Shows the system prompt (first time only); poll ghi_swift_calendar_access.
+void ghi_swift_request_calendar_access(void);
+// The events starting in [from_ms, to_ms) (unix ms) as a JSON array of the raw
+// events (ghi-core calendar::RawEvent), in a heap string freed with
+// ghi_swift_string_free; NULL without full access.
+char *ghi_swift_calendar_events(int64_t from_ms, int64_t to_ms);
+void ghi_swift_string_free(char *s);
+
 #endif

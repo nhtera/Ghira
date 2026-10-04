@@ -11,6 +11,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { RecordPhase } from "../../bindings";
 import { ipc } from "../../ipc";
+import { CalendarCard, useCurrentEvent } from "../calendar";
 import { CallNoticeSheet } from "../consent/call-notice-sheet";
 import { ConsentSheet } from "../consent/consent-sheet";
 import { SensitiveBadge, SensitiveSheet } from "../sensitive";
@@ -54,6 +55,8 @@ export function RecordScreen() {
   const [discard, setDiscard] = useState<number | null>(null);
   const active = hasSession(model);
   const capturing = isCapturing(model);
+  // The event the next recording will be named after (idle only: a recording already has its name).
+  const calendarEvent = useCurrentEvent(!active);
 
   const confirm = async () => {
     const call = sheet === "call";
@@ -102,6 +105,8 @@ export function RecordScreen() {
 
       {/* Pinned: the transcript above is what shrinks, at any text size. */}
       <div className="flex shrink-0 flex-col gap-3">
+        {calendarEvent && <CalendarCard event={calendarEvent} />}
+
         {!active && !setup.recordOnlyDevice && <TargetPicker value={setup.target} onChange={(target) => patch({ target })} disabled={["desktop", "cloud"]} />}
 
         {active && (

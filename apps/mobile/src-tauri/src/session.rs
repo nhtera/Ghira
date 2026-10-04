@@ -822,6 +822,9 @@ impl Recorder {
         let id = session.id.clone();
         *self.slot() = Some(session.clone());
         *CURRENT.lock().unwrap_or_else(|e| e.into_inner()) = Some(session);
+        // A calendar meeting in progress names the new meeting (D4); inert
+        // until the calendar is connected, and never slows the recording.
+        crate::cmd::calendar::on_recording_started(store, &id);
         Ok(id)
     }
 

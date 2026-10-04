@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-calendar-current-event"
+description = "Enables the calendar_current_event command without any pre-configured scope."
+commands.allow = ["calendar_current_event"]
+
+[[permission]]
+identifier = "deny-calendar-current-event"
+description = "Denies the calendar_current_event command without any pre-configured scope."
+commands.deny = ["calendar_current_event"]
