@@ -296,6 +296,32 @@ fn scale_bench() {
         }),
     );
     let scope = Scope::default();
+    // First query after a launch or unlock: the cache is empty, then the app
+    // warms it off the UI path (`Core::warm_vectors`) and the user searches.
+    store.clear_embedding_cache();
+    let t = Instant::now();
+    let cold = {
+        let mut e = FixedEmbedder(probe.clone());
+        retrieve(&store, Some(&mut e), queries[0], &scope, 12).unwrap();
+        t.elapsed()
+    };
+    store.clear_embedding_cache();
+    let t = Instant::now();
+    let warmed = store
+        .warm_embedding_index(MODEL, &|| true, &|| true)
+        .unwrap();
+    let warm_took = t.elapsed();
+    let t = Instant::now();
+    {
+        let mut e = FixedEmbedder(probe.clone());
+        retrieve(&store, Some(&mut e), queries[0], &scope, 12).unwrap();
+    }
+    println!(
+        "BENCH first hybrid query, cold cache: {:.0} ms; warm call ({warmed} meetings): {:.0} ms, then first query: {:.0} ms",
+        cold.as_secs_f64() * 1e3,
+        warm_took.as_secs_f64() * 1e3,
+        t.elapsed().as_secs_f64() * 1e3,
+    );
     report(
         "  embedding_index (stamp, warm)",
         time(6, |_| store.embedding_index(MODEL).unwrap()),

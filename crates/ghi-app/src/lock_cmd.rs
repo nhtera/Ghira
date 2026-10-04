@@ -43,7 +43,7 @@ fn emit<R: tauri::Runtime>(app: &AppHandle<R>, locked: bool) {
 
 /// Locks now (if the setting is on). Returns whether the app is locked, or
 /// an error when the settings can't be read (the store isn't open yet).
-pub fn lock<R: tauri::Runtime>(app: &AppHandle<R>, core: &Core) -> Result<bool, String> {
+pub fn lock<R: tauri::Runtime>(app: &AppHandle<R>, core: &Arc<Core>) -> Result<bool, String> {
     // Read through the even-locked door: this is the check that decides
     // whether content may be served (`Core::mark_launch_checked`).
     let on = crate::system::from_stored(
@@ -58,6 +58,10 @@ pub fn lock<R: tauri::Runtime>(app: &AppHandle<R>, core: &Core) -> Result<bool, 
         emit(app, true);
     }
     core.mark_launch_checked();
+    if !core.locked() {
+        // Launch with no lock: the search vectors load behind the first paint.
+        core.warm_vectors();
+    }
     Ok(core.locked())
 }
 
@@ -72,15 +76,22 @@ pub fn engage<R: tauri::Runtime>(app: &AppHandle<R>, core: &Core) {
 }
 
 /// Decrypted search vectors don't stay in memory behind the lock screen.
+/// Never blocks: the phone calls this from its main thread. Returning SQLite's
+/// page cache needs the store's connection, so it runs on its own short-lived
+/// thread (desktop only: the phone's cache is small).
 fn drop_cached_vectors(core: &Core) {
     if let Ok(store) = core.store_even_locked() {
         store.clear_embedding_cache();
+        #[cfg(not(target_os = "ios"))]
+        let _ = std::thread::Builder::new()
+            .name("ghi-shrink".into())
+            .spawn(move || store.release_page_cache());
     }
 }
 
 impl Lock {
     /// The launch lock, once the settings can be read (retried until then).
-    fn launch(&self, app: &AppHandle, core: &Core) -> Result<bool, String> {
+    fn launch(&self, app: &AppHandle, core: &Arc<Core>) -> Result<bool, String> {
         if self.checked.load(Ordering::Acquire) {
             return Ok(core.locked());
         }
@@ -299,6 +310,7 @@ pub async fn unlock(
         if ok {
             core.set_locked(false);
             emit(&app, false);
+            core.warm_vectors();
             Ok(true)
         } else {
             Ok(false)

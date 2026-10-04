@@ -12,6 +12,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use rusqlite::{OptionalExtension, params};
 use zeroize::Zeroize;
@@ -299,6 +300,43 @@ impl Store {
     /// [`Store::clear_embedding_cache`] (the app lock).
     pub fn embedding_index(&self, model: &str) -> Result<Vec<Arc<CachedRows>>> {
         let conn = self.conn();
+        let metas = Self::embedding_stamps(&conn, model)?;
+        let live: HashSet<i64> = metas.iter().map(|m| m.0).collect();
+        let mut cache = self.emb_cache.lock().unwrap_or_else(|p| p.into_inner());
+        let epoch = self.emb_epoch.load(Ordering::SeqCst);
+        cache.retain(|(id, m), _| m == model && live.contains(id));
+        let mut used: usize = cache.values().map(|(_, r)| r.bytes()).sum();
+        let mut out = Vec::with_capacity(metas.len());
+        for (id, gid, stamp) in metas {
+            let key = (id, model.to_string());
+            if let Some((at, rows)) = cache.get(&key)
+                && *at == stamp
+            {
+                out.push(rows.clone());
+                continue;
+            }
+            cache.remove(&key);
+            let Some(rows) = self.read_rows(&conn, id, &gid, &stamp, model)? else {
+                continue;
+            };
+            if used + rows.bytes() <= CACHE_BUDGET_BYTES {
+                used += rows.bytes();
+                cache.insert(key, (stamp, rows.clone()));
+            }
+            out.push(rows);
+        }
+        // The app locked while this read: the query keeps its rows, nothing stays.
+        if self.emb_epoch.load(Ordering::SeqCst) != epoch {
+            cache.clear();
+        }
+        Ok(out)
+    }
+
+    /// Each meeting with vectors of `model`, with what they were read at.
+    fn embedding_stamps(
+        conn: &rusqlite::Connection,
+        model: &str,
+    ) -> Result<Vec<(i64, String, Stamp)>> {
         let mut stmt = conn.prepare_cached(
             "SELECT m.id, m.gid, m.transcript_version, m.index_gen, e.n, e.s
              FROM (SELECT meeting_id, count(*) AS n, sum(chunk) AS s
@@ -318,62 +356,132 @@ impl Store {
         for m in &mut metas {
             m.2.0 = m.1.clone();
         }
-        let live: HashSet<i64> = metas.iter().map(|m| m.0).collect();
-        let mut cache = self.emb_cache.lock().unwrap_or_else(|p| p.into_inner());
-        cache.retain(|(id, m), _| m == model && live.contains(id));
-        let mut used: usize = cache.values().map(|(_, r)| r.bytes()).sum();
-        let mut out = Vec::with_capacity(metas.len());
-        for (id, gid, stamp) in metas {
-            let key = (id, model.to_string());
-            if let Some((at, rows)) = cache.get(&key)
-                && *at == stamp
-            {
-                out.push(rows.clone());
-                continue;
-            }
-            cache.remove(&key);
-            let Ok(dek) = self.dek(&conn, id) else {
-                continue;
-            };
-            let mut rows_stmt = conn.prepare_cached(
-                "SELECT chunk, t0_ms, t1_ms, dim, vec_ct FROM embeddings
-                 WHERE meeting_id = ?1 AND model = ?2 AND transcript_version = ?3
-                 ORDER BY chunk",
-            )?;
-            let raw: Vec<(u32, i64, i64, i64, Vec<u8>)> = rows_stmt
-                .query_map(params![id, model, stamp.1], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-                })?
-                .collect::<rusqlite::Result<_>>()?;
-            let rows: Vec<StoredEmbedding> = raw
-                .into_iter()
-                .filter_map(|(chunk, t0_ms, t1_ms, dim, ct)| {
-                    Some(StoredEmbedding {
-                        meeting_gid: gid.clone(),
-                        chunk,
-                        t0_ms,
-                        t1_ms,
-                        vec: open_vec(&dek, &gid, chunk, model, dim, &ct).ok()?,
-                    })
-                })
-                .collect();
-            let rows = Arc::new(CachedRows(rows));
-            if used + rows.bytes() <= CACHE_BUDGET_BYTES {
-                used += rows.bytes();
-                cache.insert(key, (stamp, rows.clone()));
-            }
-            out.push(rows);
-        }
-        Ok(out)
+        Ok(metas)
     }
 
-    /// Empties the decrypted-vector cache (the app locks). A query already
-    /// running keeps the `Arc`s it holds until it finishes.
-    pub fn clear_embedding_cache(&self) {
+    /// One meeting's decrypted rows at `stamp`; `None` when its key is gone.
+    fn read_rows(
+        &self,
+        conn: &rusqlite::Connection,
+        id: i64,
+        gid: &str,
+        stamp: &Stamp,
+        model: &str,
+    ) -> Result<Option<Arc<CachedRows>>> {
+        let Ok(dek) = self.dek(conn, id) else {
+            return Ok(None);
+        };
+        let mut rows_stmt = conn.prepare_cached(
+            "SELECT chunk, t0_ms, t1_ms, dim, vec_ct FROM embeddings
+             WHERE meeting_id = ?1 AND model = ?2 AND transcript_version = ?3
+             ORDER BY chunk",
+        )?;
+        let raw: Vec<(u32, i64, i64, i64, Vec<u8>)> = rows_stmt
+            .query_map(params![id, model, stamp.1], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        let rows: Vec<StoredEmbedding> = raw
+            .into_iter()
+            .filter_map(|(chunk, t0_ms, t1_ms, dim, ct)| {
+                Some(StoredEmbedding {
+                    meeting_gid: gid.to_string(),
+                    chunk,
+                    t0_ms,
+                    t1_ms,
+                    vec: open_vec(&dek, gid, chunk, model, dim, &ct).ok()?,
+                })
+            })
+            .collect();
+        Ok(Some(Arc::new(CachedRows(rows))))
+    }
+
+    /// Fills the cache [`Store::embedding_index`] serves from, off the query
+    /// path: the connection is taken per meeting, never held across the
+    /// whole read, so a recording's writes and a search interleave with it.
+    /// Stops (cache kept as far as it got) once `keep_going` is false; that
+    /// runs without the connection, so it may look at anything. `allowed`
+    /// runs after the connection and the cache are taken, right before each
+    /// meeting is read: it must only read a flag (the app lock), never take a
+    /// lock of its own. A [`Store::clear_embedding_cache`] that lands
+    /// meanwhile empties what this call put in. Returns how many meetings it
+    /// read.
+    pub fn warm_embedding_index(
+        &self,
+        model: &str,
+        keep_going: &dyn Fn() -> bool,
+        allowed: &dyn Fn() -> bool,
+    ) -> Result<usize> {
+        let metas = Self::embedding_stamps(&self.conn(), model)?;
+        let live: HashSet<i64> = metas.iter().map(|m| m.0).collect();
+        // Entries of other models and gone meetings don't count against the budget.
+        let mut used: usize = {
+            let mut cache = self.emb_cache.lock().unwrap_or_else(|p| p.into_inner());
+            cache.retain(|(id, m), _| m == model && live.contains(id));
+            cache.values().map(|(_, r)| r.bytes()).sum()
+        };
+        let mut read = 0;
+        for (id, gid, stamp) in metas {
+            if !keep_going() {
+                break;
+            }
+            let conn = self.conn();
+            let mut cache = self.emb_cache.lock().unwrap_or_else(|p| p.into_inner());
+            let epoch = self.emb_epoch.load(Ordering::SeqCst);
+            if !allowed() {
+                break;
+            }
+            let key = (id, model.to_string());
+            if cache.get(&key).is_some_and(|(at, _)| *at == stamp) {
+                continue;
+            }
+            if let Some((_, old)) = cache.remove(&key) {
+                used -= old.bytes();
+            }
+            let Some(rows) = self.read_rows(&conn, id, &gid, &stamp, model)? else {
+                continue;
+            };
+            read += 1;
+            if self.emb_epoch.load(Ordering::SeqCst) != epoch {
+                cache.clear();
+                break;
+            }
+            if used + rows.bytes() <= CACHE_BUDGET_BYTES {
+                used += rows.bytes();
+                cache.insert(key, (stamp, rows));
+            }
+        }
+        Ok(read)
+    }
+
+    /// How many meetings' vectors are cached right now.
+    pub fn cached_embedding_meetings(&self) -> usize {
         self.emb_cache
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .clear();
+            .len()
+    }
+
+    /// Empties the decrypted-vector cache (the app locks). Never waits for
+    /// the connection, and waits for the cache only if it is free: a read
+    /// that holds it empties it again when it finishes (see `emb_epoch`), so
+    /// this is safe on the phone's main thread. A query already running
+    /// keeps the `Arc`s it holds until it finishes.
+    pub fn clear_embedding_cache(&self) {
+        self.emb_epoch.fetch_add(1, Ordering::SeqCst);
+        match self.emb_cache.try_lock() {
+            Ok(mut c) => c.clear(),
+            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner().clear(),
+            Err(std::sync::TryLockError::WouldBlock) => {}
+        }
+    }
+
+    /// Returns SQLite's page cache (decrypted pages) to the allocator. Takes
+    /// the connection, so call it off the UI thread. The pages are wiped as
+    /// they are freed (`cipher_memory_security`, set in `db.rs`).
+    pub fn release_page_cache(&self) {
+        let conn = self.conn();
+        let _ = conn.execute_batch("PRAGMA shrink_memory;");
     }
 
     /// Gids of finished meetings with a transcript but no embeddings of

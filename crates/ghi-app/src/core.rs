@@ -41,6 +41,9 @@ pub struct Core {
     /// The app lock is on: commands get no store, and transcript events
     /// don't reach the webview (lock_cmd.rs).
     locked: Arc<std::sync::atomic::AtomicBool>,
+    /// A warm of the search vectors runs, and another was asked for meanwhile.
+    warming: std::sync::atomic::AtomicBool,
+    warm_again: std::sync::atomic::AtomicBool,
     runner: Mutex<Option<Arc<JobRunner>>>,
     /// Meetings closed by crash recovery at this launch (D12 "recovered"),
     /// until the user dismisses the notice.
@@ -416,6 +419,8 @@ impl Core {
             lifecycle: Mutex::new(()),
             deleting: std::sync::atomic::AtomicBool::new(false),
             locked,
+            warming: std::sync::atomic::AtomicBool::new(false),
+            warm_again: std::sync::atomic::AtomicBool::new(false),
             runner: Mutex::new(None),
             runner_thread: Mutex::new(None),
             enrollment: Mutex::new(None),
@@ -463,6 +468,8 @@ impl Core {
                         kind: ErrorKind::Storage,
                         message: format!("opening the store: {e}"),
                     });
+                } else {
+                    me.warm_now();
                 }
             });
     }
@@ -600,6 +607,91 @@ impl Core {
                     }
                 }
             });
+    }
+
+    /// Reads the search vectors into memory on a background thread, so the
+    /// first search after launch or unlock doesn't decrypt them. Never while
+    /// locked (or before the launch lock check), on machines without meaning
+    /// search, or during a recording; a recording that starts meanwhile stops
+    /// it. Meetings indexed later are warmed by the index job itself. One
+    /// warm runs at a time: a request that arrives meanwhile makes it go
+    /// round once more.
+    pub fn warm_vectors(self: &Arc<Self>) {
+        if !self.claim_warm() {
+            return;
+        }
+        let me = self.clone();
+        let spawned = std::thread::Builder::new()
+            .name("ghi-warm".into())
+            .spawn(move || me.warm_claimed());
+        if spawned.is_err() {
+            self.warming
+                .store(false, std::sync::atomic::Ordering::Release);
+        }
+    }
+
+    /// Takes the one warming slot; `false` (and a note to go round again)
+    /// when someone holds it.
+    fn claim_warm(&self) -> bool {
+        use std::sync::atomic::Ordering::{AcqRel, Release};
+        if self.warming.swap(true, AcqRel) {
+            self.warm_again.store(true, Release);
+            return false;
+        }
+        true
+    }
+
+    /// [`Core::warm_vectors`] on this thread (the launch thread, after the
+    /// store opened).
+    fn warm_now(&self) {
+        if self.claim_warm() {
+            self.warm_claimed();
+        }
+    }
+
+    /// Warms while holding the slot, once more for each request that came in
+    /// meanwhile, then gives the slot back.
+    fn warm_claimed(&self) {
+        use std::sync::atomic::Ordering::{AcqRel, Release};
+        loop {
+            self.warm_again.store(false, Release);
+            self.warm_vectors_now();
+            self.warming.store(false, Release);
+            // A request that came in during the run: take the slot back.
+            if !self.warm_again.load(std::sync::atomic::Ordering::Acquire)
+                || self.warming.swap(true, AcqRel)
+            {
+                return;
+            }
+        }
+    }
+
+    fn warm_vectors_now(&self) {
+        // Looks at the session: only ever called without the store's connection.
+        let keep_going = |c: &Core| {
+            !c.locked()
+                && !c.recording()
+                && (!c.hooks.gate_launch
+                    || c.launch_checked.load(std::sync::atomic::Ordering::Acquire))
+        };
+        if !keep_going(self) {
+            return;
+        }
+        let Ok(store) = self.store_even_locked() else {
+            return;
+        };
+        if !ghi_core::index_job::enabled(&store) || !embed_ready(&self.models()) {
+            return;
+        }
+        // With the connection held only the lock flag is read (never the
+        // session), and it is set before `lock()` takes the connection.
+        let locked = self.locked.clone();
+        ghi_core::index_job::warm_vectors(
+            &store,
+            ghi_core::index_job::MODEL_ID,
+            &|| keep_going(self),
+            &|| !locked.load(std::sync::atomic::Ordering::Acquire),
+        );
     }
 
     /// The app lock is on (lock_cmd.rs).
@@ -773,6 +865,12 @@ impl Core {
             ready: {
                 let dir = embed_dir;
                 Arc::new(move || embed_ready(&dir))
+            },
+            warm_gate: {
+                let locked = self.locked.clone();
+                Some(Arc::new(move || {
+                    !locked.load(std::sync::atomic::Ordering::Acquire)
+                }))
             },
         }));
         Ok(handlers)
@@ -1143,5 +1241,45 @@ impl Core {
             runner.notify();
         }
         Ok(r)
+    }
+}
+
+#[cfg(test)]
+mod warm_tests {
+    use super::*;
+
+    #[test]
+    fn warming_never_touches_the_store_while_locked_or_before_the_launch_check() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (core, _rx) = Core::for_test(tmp.path().to_path_buf());
+        core.set_locked(true);
+        core.warm_vectors_now();
+        assert!(lock(&core.store).is_none(), "locked: store not even opened");
+
+        let (core, _rx) = Core::for_test_with(
+            tmp.path().to_path_buf(),
+            CoreHooks {
+                gate_launch: true,
+                ..CoreHooks::default()
+            },
+        );
+        core.warm_vectors_now();
+        assert!(lock(&core.store).is_none(), "before the launch lock check");
+    }
+
+    #[test]
+    fn one_warm_runs_at_a_time_and_a_request_meanwhile_goes_round_once_more() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let tmp = tempfile::tempdir().unwrap();
+        let (core, _rx) = Core::for_test(tmp.path().to_path_buf());
+        assert!(core.claim_warm());
+        assert!(!core.claim_warm(), "second lock/unlock doesn't stack");
+        assert!(core.warm_again.load(SeqCst));
+        // The runner finishes its pass, sees the request and keeps the slot.
+        core.set_locked(true);
+        core.warm_claimed();
+        assert!(!core.warming.load(SeqCst), "slot given back");
+        assert!(!core.warm_again.load(SeqCst));
+        assert!(core.claim_warm());
     }
 }

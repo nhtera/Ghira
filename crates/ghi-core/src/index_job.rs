@@ -145,6 +145,45 @@ pub struct IndexJob {
     pub embedder: EmbedderFactory,
     /// The embedding model is installed (else the job waits for it).
     pub ready: Ready,
+    /// Whether the decrypted-vector cache may be warmed after the last queued
+    /// meeting is indexed (the app says no while it is locked). `None`: never.
+    pub warm_gate: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+}
+
+/// Reads the vectors of `model` into the store's cache ([`Store::embedding_index`]
+/// then serves a query without decrypting), meeting by meeting, until
+/// `keep_going` says stop. `allowed` is checked with the store's connection
+/// held, so it may only read a flag ([`Store::warm_embedding_index`]).
+/// Returns how many meetings it read.
+pub fn warm_vectors(
+    store: &Store,
+    model: &str,
+    keep_going: &dyn Fn() -> bool,
+    allowed: &dyn Fn() -> bool,
+) -> usize {
+    store
+        .warm_embedding_index(model, keep_going, allowed)
+        .unwrap_or_else(|e| {
+            log::warn!("warming search vectors: {e}");
+            0
+        })
+}
+
+impl IndexJob {
+    /// The tail of a finished job: when no other index job waits, warms the
+    /// cache on this (jobs) thread. A recording preempts it like the job.
+    fn warm_after(&self, ctx: &JobCtx, model: &str) {
+        let Some(gate) = &self.warm_gate else {
+            return;
+        };
+        let more = ctx.store.active_jobs().map_or(true, |jobs| {
+            jobs.iter()
+                .any(|j| j.kind == EMBED_INDEX_JOB && j.id != ctx.job.id)
+        });
+        if !more && gate() {
+            warm_vectors(ctx.store, model, &|| !ctx.preempted(), &|| gate());
+        }
+    }
 }
 
 impl JobHandler for IndexJob {
@@ -198,7 +237,10 @@ impl JobHandler for IndexJob {
             .store
             .put_embeddings(meeting, &model, version, index_gen, rows)
         {
-            Ok(()) => Ok(Outcome::Done),
+            Ok(()) => {
+                self.warm_after(ctx, &model);
+                Ok(Outcome::Done)
+            }
             // The meeting changed meanwhile: nothing was stored; run again.
             Err(ghi_store::StoreError::IndexStale) => Ok(Outcome::Yield(ctx.job.payload.clone())),
             Err(e) => Err(store_err(e)),
@@ -389,6 +431,7 @@ mod tests {
         IndexJob {
             embedder: Arc::new(|| Ok(Box::new(FakeEmbedder::new()) as Box<dyn Embedder + Send>)),
             ready: always_ready(),
+            warm_gate: None,
         }
     }
 
@@ -477,6 +520,7 @@ mod tests {
                 }) as Box<dyn Embedder + Send>)
             }),
             ready: always_ready(),
+            warm_gate: None,
         };
         let r2 = runner(&store, failing);
         queue_one(&store, &m).unwrap();
@@ -507,6 +551,7 @@ mod tests {
                 Ok(Box::new(FakeEmbedder::new()) as Box<dyn Embedder + Send>)
             }),
             ready: always_ready(),
+            warm_gate: None,
         };
         let r = runner(&store, job);
         queue_one(&store, &m).unwrap();
@@ -591,5 +636,44 @@ mod tests {
         // Turning it off cancels what was queued.
         set_enabled(&store, false).unwrap();
         assert!(store.active_job(&m, EMBED_INDEX_JOB).unwrap().is_none());
+    }
+
+    #[test]
+    fn the_vector_cache_is_warmed_after_the_last_index_job_unless_locked() {
+        let (_tmp, store, m) = setup();
+        queue_missing_for(&store, FakeEmbedder::MODEL).unwrap();
+        let locked = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let gate = locked.clone();
+        let job = || IndexJob {
+            warm_gate: Some({
+                let gate = gate.clone();
+                Arc::new(move || !gate.load(std::sync::atomic::Ordering::SeqCst))
+            }),
+            ..fake_job()
+        };
+
+        // Locked: indexed, but nothing decrypted into memory.
+        assert_eq!(runner(&store, job()).run_pending(), 1);
+        assert_eq!(store.cached_embedding_meetings(), 0);
+
+        // Unlocked: the next index job warms the cache on its way out.
+        locked.store(false, std::sync::atomic::Ordering::SeqCst);
+        queue_one(&store, &m).unwrap();
+        assert_eq!(runner(&store, job()).run_pending(), 1);
+        assert_eq!(store.cached_embedding_meetings(), 1);
+
+        // Locking drops it, and a warm call while locked reads nothing.
+        store.clear_embedding_cache();
+        assert_eq!(store.cached_embedding_meetings(), 0);
+        assert_eq!(
+            warm_vectors(&store, FakeEmbedder::MODEL, &|| false, &|| true),
+            0
+        );
+        assert_eq!(store.cached_embedding_meetings(), 0);
+        assert_eq!(
+            warm_vectors(&store, FakeEmbedder::MODEL, &|| true, &|| true),
+            1
+        );
+        assert_eq!(store.cached_embedding_meetings(), 1);
     }
 }

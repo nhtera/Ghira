@@ -26,6 +26,13 @@ pub fn open(path: &Path, key: &Dek) -> Result<Connection> {
     let conn = Connection::open(path)?;
     apply_key(&conn, key)?;
     conn.execute_batch("PRAGMA cipher_compatibility = 4;")?;
+    // Freed pages are wiped, not just returned (measured on the Mac: hybrid
+    // search p95 218 -> 246 ms at 1,000 meetings). Not on iOS yet: its page
+    // cache is small (8 MB) and the cost (every free, recording included) is
+    // unmeasured on a phone.
+    if !cfg!(target_os = "ios") {
+        conn.execute_batch("PRAGMA cipher_memory_security = ON;")?;
+    }
     let fresh = conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| {
         r.get::<_, i64>(0)
     })? == 0;
@@ -44,6 +51,16 @@ pub fn open(path: &Path, key: &Dek) -> Result<Connection> {
             "database was not created with auto_vacuum=INCREMENTAL".into(),
         ));
     }
+    // Pages are decrypted on every cache miss, and a keyword search reads
+    // thousands of them (about half of a 1,000-meeting hybrid search), so the
+    // page cache is raised from the 2 MB default. iOS keeps it small: the
+    // memory limit (jetsam) is far lower there. The app lock
+    // gives the pages back (`Store::release_page_cache`).
+    conn.execute_batch(if cfg!(target_os = "ios") {
+        "PRAGMA cache_size = -8192;"
+    } else {
+        "PRAGMA cache_size = -65536;"
+    })?;
     conn.execute_batch(
         "PRAGMA secure_delete = ON;
          PRAGMA foreign_keys = ON;
@@ -117,4 +134,34 @@ pub fn backup_to(conn: &Connection, dest: &Path, key: &Dek) -> Result<()> {
 pub fn incremental_vacuum(conn: &Connection) -> Result<()> {
     conn.execute_batch("PRAGMA incremental_vacuum;")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decrypted_pages_are_wiped_when_freed_and_the_cache_is_sized() {
+        let tmp = tempfile::tempdir().unwrap();
+        let conn = open(&tmp.path().join("t.db"), &Dek::generate()).unwrap();
+        let sec: String = conn
+            .query_row("PRAGMA cipher_memory_security", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            matches!(sec.as_str(), "1" | "ON"),
+            !cfg!(target_os = "ios"),
+            "{sec}"
+        );
+        let cache: i64 = conn
+            .query_row("PRAGMA cache_size", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            cache,
+            if cfg!(target_os = "ios") {
+                -8192
+            } else {
+                -65536
+            }
+        );
+    }
 }

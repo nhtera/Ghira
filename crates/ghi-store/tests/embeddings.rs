@@ -522,3 +522,98 @@ fn clearing_the_embedding_cache_drops_it_but_not_the_data() {
     // The query that held the old rows still reads them.
     assert_eq!(first[0][0].vec, second[0][0].vec);
 }
+
+#[test]
+fn clearing_the_cache_does_not_deadlock_with_searches_and_warming() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _) = common::open(tmp.path());
+    for (i, name) in ["A", "B", "C"].iter().enumerate() {
+        let g = ready_meeting(&store, name);
+        put(&store, &g, MODEL, i as f32 + 1.0);
+    }
+    let store = Arc::new(store);
+    let stop = Arc::new(AtomicBool::new(false));
+    let workers: Vec<_> = (0..3)
+        .map(|n| {
+            let (store, stop) = (store.clone(), stop.clone());
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    if n == 0 {
+                        store
+                            .warm_embedding_index(MODEL, &|| true, &|| true)
+                            .unwrap();
+                    } else {
+                        assert_eq!(store.embedding_index(MODEL).unwrap().len(), 3);
+                    }
+                }
+            })
+        })
+        .collect();
+    for i in 0..200 {
+        store.clear_embedding_cache();
+        if i % 20 == 0 {
+            store.release_page_cache();
+        }
+    }
+    stop.store(true, Ordering::Relaxed);
+    for w in workers {
+        w.join().unwrap();
+    }
+    store.clear_embedding_cache();
+    assert_eq!(store.cached_embedding_meetings(), 0);
+    assert_eq!(store.embedding_index(MODEL).unwrap().len(), 3);
+}
+
+#[test]
+fn a_clear_that_lands_mid_warm_leaves_nothing_cached() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _) = common::open(tmp.path());
+    for (i, name) in ["A", "B", "C"].iter().enumerate() {
+        let g = ready_meeting(&store, name);
+        put(&store, &g, MODEL, i as f32 + 1.0);
+    }
+    // The lock lands after the keep-going check, with the connection held,
+    // right before the first meeting is read: `allowed` runs there.
+    let fired = std::cell::Cell::new(false);
+    store
+        .warm_embedding_index(MODEL, &|| true, &|| {
+            if !fired.replace(true) {
+                store.clear_embedding_cache();
+            }
+            true
+        })
+        .unwrap();
+    assert!(fired.get());
+    assert_eq!(store.cached_embedding_meetings(), 0);
+
+    // The same landing during a query's cold read.
+    store.embedding_index(MODEL).unwrap();
+    assert_eq!(store.cached_embedding_meetings(), 3);
+    store.clear_embedding_cache();
+    assert_eq!(store.cached_embedding_meetings(), 0);
+
+    // A flag set before the connection is taken stops the warm at once.
+    let n = store
+        .warm_embedding_index(MODEL, &|| true, &|| false)
+        .unwrap();
+    assert_eq!((n, store.cached_embedding_meetings()), (0, 0));
+}
+
+#[test]
+fn warming_counts_only_live_entries_of_its_model_against_the_budget() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _) = common::open(tmp.path());
+    let a = ready_meeting(&store, "A");
+    put(&store, &a, MODEL, 1.0);
+    put(&store, &a, "other", 2.0);
+    store.embedding_index("other").unwrap();
+    assert_eq!(store.cached_embedding_meetings(), 1);
+    store
+        .warm_embedding_index(MODEL, &|| true, &|| true)
+        .unwrap();
+    // The other model's entry went; only this model's is cached.
+    assert_eq!(store.cached_embedding_meetings(), 1);
+    let first = store.embedding_index(MODEL).unwrap();
+    assert_eq!(first[0][0].vec, store.embeddings(&a, MODEL).unwrap()[0].vec);
+}

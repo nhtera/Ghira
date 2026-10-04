@@ -345,6 +345,9 @@ pub struct Store {
     /// Decrypted chunk vectors for query-time search, by meeting rowid and
     /// model; dropped with the meeting's key ([`Store::embedding_index`]).
     pub(crate) emb_cache: Mutex<crate::embeddings::EmbeddingCache>,
+    /// Bumped by every [`Store::clear_embedding_cache`]; a reader that held the
+    /// cache while it ran empties it again before letting go.
+    pub(crate) emb_epoch: std::sync::atomic::AtomicU64,
     /// Exclusive lock on `<dir>/.lock`, held for the store's lifetime.
     _lock: File,
 }
@@ -425,6 +428,7 @@ impl Store {
             deks: Mutex::new(HashMap::new()),
             voice_keys: Mutex::new(HashMap::new()),
             emb_cache: Mutex::default(),
+            emb_epoch: std::sync::atomic::AtomicU64::new(0),
             _lock: lock,
         };
         let include = matches!(
