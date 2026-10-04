@@ -17,10 +17,12 @@ export type NoteBlockProps = {
   citations?: NoteCitation[];
   /** A citation chip was activated (index into `citations`). */
   onCite?: (index: number, citation: NoteCitation) => void;
+  /** false: the page already says who wrote it (the phone's "Written by" legend), so the line is for screen readers only; default true. */
+  showProvenance?: boolean;
   className?: string;
 };
 
-export function NoteBlock({ kind, text, citations = [], onCite, className }: NoteBlockProps) {
+export function NoteBlock({ kind, text, citations = [], onCite, showProvenance = true, className }: NoteBlockProps) {
   const { t } = useTranslation();
   const missing = kind === "missing";
   const provenance =
@@ -56,7 +58,7 @@ export function NoteBlock({ kind, text, citations = [], onCite, className }: Not
           </span>
         ))}
       </p>
-      <span className={cn("inline-flex items-center gap-1 text-[11.5px] leading-4", missing ? "text-[12.5px] text-warn" : "text-muted")}>{provenance}</span>
+      <span className={cn(showProvenance ? "inline-flex items-center gap-1 text-[11.5px] leading-4" : "sr-only", showProvenance && (missing ? "text-[12.5px] text-warn" : "text-muted"))}>{provenance}</span>
     </div>
   );
 }

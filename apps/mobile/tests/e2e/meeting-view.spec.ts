@@ -31,7 +31,7 @@ test.describe("meeting view", () => {
     await expect(
       page.getByText("The team will ship the beta on 15 October"),
     ).toBeVisible();
-    await expect(page.getByText("You wrote")).toBeVisible();
+    await expect(page.getByText("You wrote").first()).toBeVisible();
     await expect(
       page.getByText(/^Written by .* from the transcript$/).first(),
     ).toBeVisible();
@@ -58,7 +58,8 @@ test.describe("meeting view", () => {
     ).toBeChecked();
 
     await page.getByRole("tab", { name: "Transcript" }).click();
-    await expect(page.locator("[data-segment]")).toHaveCount(3);
+    // Three lines around 1:30, six more across the half hour (the waveform's colours).
+    await expect(page.locator("[data-segment]")).toHaveCount(9);
     await expect(page.getByText("Chốt scope cho bản beta")).toBeVisible();
   });
 
@@ -73,7 +74,8 @@ test.describe("meeting view", () => {
     await expect(sheet).toContainText(
       "We can ship the beta on the fifteenth if QA signs off by Friday.",
     );
-    await expect(sheet).toContainText("Linh · 01:30");
+    await expect(sheet).toContainText("Linh");
+    await expect(sheet).toContainText("01:30");
     await sheet.getByRole("button", { name: "Play from 01:30" }).click();
     await expect(sheet).toHaveCount(0);
     await expect
@@ -133,6 +135,22 @@ test.describe("meeting view", () => {
     await expect(
       page.getByRole("slider", { name: "Position" }),
     ).toHaveAttribute("aria-valuetext", "0:00 / 31:00");
+  });
+
+  test("tapping and dragging the waveform seeks", async ({ page }) => {
+    await openMeetings(page, "/meetings/m-notes");
+    const seek = page.getByTestId("audio-seek");
+    const box = (await seek.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    const slider = page.getByRole("slider", { name: "Position" });
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(slider).toHaveAttribute("aria-valuetext", /^15:/);
+    // Drag to the start: it scrubs.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 2, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await expect(slider).toHaveAttribute("aria-valuetext", /^0:\d\d \/ 31:00$/);
   });
 
   test("a transcript line edit persists", async ({ page }) => {

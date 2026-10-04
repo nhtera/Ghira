@@ -131,13 +131,11 @@ export function MeetingRowView({
           onClick={onOpen}
           className="block min-h-ios-target w-full px-4 pt-3 text-start"
         >
-          <span className="flex flex-wrap items-baseline justify-between gap-x-3">
-            <span className="text-ios-body min-w-[10rem] flex-1 font-semibold break-words">
-              {title}
-            </span>
-            <span className="text-ios-footnote shrink-0 text-end text-muted">
-              {when(row.startedAt, row.durationMs)}
-            </span>
+          <span className="text-ios-body block font-bold break-words">
+            {title}
+          </span>
+          <span className="text-ios-footnote mt-0.5 block text-muted">
+            {when(row.startedAt, row.durationMs)}
           </span>
           {row.summary && (
             <span className="text-ios-subhead mt-0.5 block text-muted [display:-webkit-box] overflow-hidden [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">

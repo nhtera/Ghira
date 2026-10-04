@@ -23,19 +23,22 @@ export type NavBarProps = Back & {
 };
 
 /** `collapsed` for a scroll container: put `scrollRef` on it and `titleRef` on its `LargeTitle`. */
-export function useLargeTitleCollapse<T extends HTMLElement = HTMLDivElement>() {
+export function useLargeTitleCollapse<T extends HTMLElement = HTMLDivElement>(
+  /** false while the title is not rendered yet (a screen that loads first); the observer starts when it turns true. */
+  ready = true,
+) {
   const [collapsed, setCollapsed] = useState(false);
   const scrollRef = useRef<T>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     const scroller = scrollRef.current;
     const title = titleRef.current;
-    if (!scroller || !title || typeof IntersectionObserver === "undefined") return;
+    if (!ready || !scroller || !title || typeof IntersectionObserver === "undefined") return;
     // Collapsed once the title has left the scroller (the bar sits above it).
     const io = new IntersectionObserver(([entry]) => setCollapsed(!entry.isIntersecting), { root: scroller, threshold: 0 });
     io.observe(title);
     return () => io.disconnect();
-  }, []);
+  }, [ready]);
   return { collapsed, scrollRef, titleRef };
 }
 

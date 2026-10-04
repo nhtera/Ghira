@@ -22,7 +22,7 @@ test("start -> lines -> mark -> pause -> resume -> stop", async ({ page }) => {
   await openRecord(page);
 
   // Idle: Phone is the target, the rest wait for pairing / the meeting view.
-  await expect(page.getByRole("heading", { name: "Room recording" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Record", exact: true })).toBeVisible();
   await expect(page.getByRole("radio", { name: "This phone" })).toBeChecked();
   await expect(page.getByRole("radio", { name: "My computer" })).toBeDisabled();
   await expect(page.getByText("Audio stays on your devices.")).toBeVisible();
@@ -60,7 +60,7 @@ test("start -> lines -> mark -> pause -> resume -> stop", async ({ page }) => {
   await expect(page.getByTestId("partial")).toHaveText("chốt scope cho");
 
   await page.getByRole("button", { name: "Mark" }).click();
-  await expect(page.getByText("1 mark", { exact: true })).toBeVisible();
+  // The star carries the count as a badge; its name says it in words.
   await expect(page.getByRole("button", { name: "Mark, 1 mark" })).toBeVisible();
   // The star lands on the line the mark fell on.
   await expect(lines(page).first().locator("[data-icon=star]")).toHaveCount(1);
@@ -102,6 +102,31 @@ test("the timer counts recorded seconds", async ({ page }) => {
   await expect(page.getByText("0:05")).toBeVisible();
 });
 
+test("an hour-plus timer at 200% stays clear of the More button and is read out", async ({ page }) => {
+  await openRecord(page, { scale: 2 });
+  await live(page);
+  // A reloaded webview picks the session up where it is: make it an hour and two minutes in.
+  await page.evaluate(() => {
+    const saved = JSON.parse(sessionStorage.getItem("ghi-record-mock")!);
+    saved.session.elapsedS = 3753;
+    sessionStorage.setItem("ghi-record-mock", JSON.stringify(saved));
+  });
+  await page.reload();
+  const timer = page.getByRole("timer");
+  await expect(timer).toContainText("1:02:33");
+  // The visible digits are the accessible name (plus a short label), not an aria-label that hides them.
+  await expect(timer).not.toHaveAttribute("aria-label", /.+/);
+  const gap = await page.evaluate(() => {
+    const p = document.querySelector("[role=timer]")!;
+    const r = document.createRange();
+    r.selectNodeContents(p.lastChild!);
+    const text = r.getBoundingClientRect();
+    const m = [...document.querySelectorAll("[data-screen=record] button")].find((b) => b.getAttribute("aria-label") === "More actions")!;
+    return m.getBoundingClientRect().left - text.right;
+  });
+  expect(gap).toBeGreaterThanOrEqual(0);
+});
+
 test("loading with a session is recording: the clock runs, Mark and Stop work", async ({ page }) => {
   await page.clock.install();
   await openRecord(page, { knobs: { holdLoading: true } });
@@ -116,7 +141,7 @@ test("loading with a session is recording: the clock runs, Mark and Stop work", 
   await page.clock.runFor(4000);
   await expect(page.getByText("0:04")).toBeVisible();
   await page.getByRole("button", { name: "Mark" }).click();
-  await expect(page.getByText("1 mark", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mark, 1 mark" })).toBeVisible();
   await page.evaluate(() => window.__ghiRecord!.release());
   await expect(page.getByText("Getting ready")).toHaveCount(0);
   await page.clock.runFor(1000);
@@ -506,7 +531,7 @@ test("speakers are color + initial, never color alone", async ({ page }) => {
 
 test("Vietnamese copy", async ({ page }) => {
   await openRecord(page, { lang: "vi" });
-  await expect(page.getByRole("heading", { name: "Ghi âm phòng họp" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ghi âm", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Ghi phòng họp" }).click();
   await expect(page.getByRole("dialog", { name: "Hãy báo cho mọi người biết bạn đang ghi âm" })).toBeVisible();
 });

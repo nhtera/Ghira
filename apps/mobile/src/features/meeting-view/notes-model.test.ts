@@ -118,6 +118,15 @@ describe("transcriptSpeaker", () => {
     });
     expect(transcriptSpeaker(undefined, () => "")).toBeNull();
   });
+  it("calls the phone's owner Me until they are named", () => {
+    const me = { ...sp(null), isMe: true };
+    expect(transcriptSpeaker(me, (n) => `Speaker ${n}`, "Me")).toEqual({
+      label: "Me",
+      colorSlot: 4,
+      isMe: true,
+    });
+    expect(transcriptSpeaker({ ...me, name: "An" }, () => "", "Me")).toMatchObject({ label: "An" });
+  });
 });
 
 describe("transcript timing", () => {

@@ -1,21 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
-// M4: one meeting, read first. Notes, Actions and Transcript tabs over an
-// audio bar; share, privacy and the sync chip in the header.
+// M4: one meeting, read first, laid out like the design: back and share on the
+// bar, the title below it (it collapses into the bar on scroll), a segmented
+// Notes / Actions / Transcript control, and the audio bar with its
+// speaker-coloured waveform. Privacy and the sync chip sit under the title.
 import { formatDate } from "@ghi/i18n";
-import { Button, Icon, NavBar, PrivacyIndicator, SyncChip } from "@ghi/ui";
+import { Button, cn, Icon, NavBar, PrivacyIndicator, SyncChip, useLargeTitleCollapse } from "@ghi/ui";
 import { useNavigate } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Citation } from "../../bindings";
 import { useLocale, useMeetingWhen } from "../meeting-list/format";
 import { ActionsPanel } from "./actions-panel";
 import { AudioBar } from "./audio-bar";
 import { NotesPanel } from "./notes-panel";
-import { speakerOf } from "./notes-model";
+import { speakerOf, transcriptSpeaker } from "./notes-model";
 import { QuoteSheet } from "./quote-sheet";
 import { ShareSheet } from "./share-sheet";
 import { TranscriptPanel } from "./transcript-panel";
 import { useAudio } from "./use-audio";
+import { useWaveform } from "./use-waveform";
 import { LOCKED_EVENT } from "../app-lock/events";
 import { useWindowEvent } from "./use-window-event";
 import { useMeeting } from "./use-meeting";
@@ -38,7 +41,9 @@ export function MeetingView({
   const navigate = useNavigate();
   const m = useMeeting(id);
   const audio = useAudio(id, m.detail?.durationMs ?? null);
-  const scroller = useRef<HTMLDivElement>(null);
+  const wave = useWaveform(id, Boolean(m.detail?.audioAvailable));
+  const ready = m.status === "ready" && Boolean(m.detail);
+  const { collapsed, scrollRef: scroller, titleRef } = useLargeTitleCollapse(ready);
   const [tab, setTab] = useState<MeetingTab>(initial);
   const [quote, setQuote] = useState<{
     citation: Citation;
@@ -99,19 +104,20 @@ export function MeetingView({
 
   const { detail } = m;
   const title = detail.title || t("mobile.meetings.untitled");
-  const quoteSpeaker = (() => {
-    const s = speakerOf(detail.speakers, quote?.citation.speakerGid ?? null);
-    return s
-      ? (s.name ?? t("speakers.numbered", { number: s.number }))
-      : undefined;
-  })();
+  const quoteSpeaker =
+    transcriptSpeaker(
+      speakerOf(detail.speakers, quote?.citation.speakerGid ?? null),
+      (number) => t("speakers.numbered", { number }),
+      t("speakers.me"),
+    ) ?? undefined;
   const cite = (citation: Citation, key: string) => setQuote({ citation, key });
 
   return (
     <section data-screen="meeting" className="flex h-full flex-col">
       <NavBar
-        large={false}
-        title={title}
+        // Empty until the heading below has scrolled away: the hidden copy would take the back label's room.
+        title={collapsed ? title : ""}
+        collapsed={collapsed}
         onBack={back}
         backLabel={t("mobile.meetings.title")}
         trailing={
@@ -126,7 +132,10 @@ export function MeetingView({
         }
       />
       <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto">
-        <div className="flex flex-col gap-2 px-4 pt-2 pb-3">
+        <div className="flex flex-col gap-1.5 px-4 pt-1 pb-2">
+          <h1 ref={titleRef} className="text-ios-title1 m-0 break-words">
+            {title}
+          </h1>
           <p className="text-ios-subhead m-0 text-muted">
             {[
               detail.startedAt === null
@@ -145,61 +154,34 @@ export function MeetingView({
             {detail.sensitive && <SensitiveBadge />}
           </div>
         </div>
-        <div
-          role="tablist"
-          aria-label={t("mobile.detail.tabs")}
-          className="sticky top-0 z-10 flex border-b border-line bg-bg"
-        >
-          {TABS.map((k) => (
-            <button
-              key={k}
-              type="button"
-              role="tab"
-              id={`tab-${k}`}
-              aria-selected={tab === k}
-              aria-controls={tab === k ? `panel-${k}` : undefined}
-              onClick={() => setTab(k)}
-              className={`text-ios-subhead min-h-ios-target flex-1 border-b-2 px-2 font-semibold ${tab === k ? "border-accent text-accent" : "border-transparent text-muted"}`}
-            >
-              {label[k]}
-            </button>
-          ))}
+        <div className="sticky top-0 z-10 bg-bg px-4 pt-1 pb-2">
+          <div
+            role="tablist"
+            aria-label={t("mobile.detail.tabs")}
+            className="flex gap-0.5 rounded-(--ios-radius-group) bg-sunk p-0.5"
+          >
+            {TABS.map((k) => (
+              <button
+                key={k}
+                type="button"
+                role="tab"
+                id={`tab-${k}`}
+                aria-selected={tab === k}
+                aria-controls={tab === k ? `panel-${k}` : undefined}
+                onClick={() => setTab(k)}
+                className={cn(
+                  "text-ios-subhead min-h-ios-target flex-1 rounded-[10px] px-2 font-semibold",
+                  tab === k ? "bg-surface text-ink shadow-sm" : "text-muted",
+                )}
+              >
+                {label[k]}
+              </button>
+            ))}
+          </div>
         </div>
         <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
           {tab === "notes" && (
             <>
-              <div className="flex items-center justify-between gap-3 px-4 pt-3">
-                <div className="min-w-0">
-                  <p id="cloud-never" className="text-ios-subhead m-0">
-                    {t("mobile.detail.cloudNever")}
-                  </p>
-                  <p className="text-ios-footnote m-0 text-muted">
-                    {t("mobile.detail.cloudNeverHint")}
-                  </p>
-                </div>
-                <Switch
-                  checked={detail.cloudLocked || detail.sensitive}
-                  disabled={detail.sensitive}
-                  onChange={(on) => void m.setCloudLocked(on)}
-                  labelledBy="cloud-never"
-                />
-              </div>
-              <div className="px-4 pt-3">
-                <SensitiveRow
-                  checked={detail.sensitive}
-                  // On asks first (the audio is deleted now); off needs no question.
-                  onChange={(on) => {
-                    setFailed(null);
-                    if (on) setAsking(true);
-                    else void m.setSensitive(false).then(setFailed);
-                  }}
-                />
-                {failed && (
-                  <p role="alert" className="text-ios-footnote m-0 mt-1 text-warn">
-                    {failed === "noTranscript" ? t("mobile.sensitive.noTranscript") : failed === "transcriptPending" ? t("mobile.sensitive.pending") : t("mobile.sensitive.failed")}
-                  </p>
-                )}
-              </div>
               <NotesPanel
                 meeting={id}
                 cloudLocked={detail.cloudLocked || detail.sensitive}
@@ -208,6 +190,40 @@ export function MeetingView({
                 visited={visited}
                 onCite={cite}
               />
+              <div className="mx-4 mt-2 mb-4 flex flex-col gap-3 rounded-(--ios-radius-group) bg-surface2 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p id="cloud-never" className="text-ios-subhead m-0">
+                      {t("mobile.detail.cloudNever")}
+                    </p>
+                    <p className="text-ios-footnote m-0 text-muted">
+                      {t("mobile.detail.cloudNeverHint")}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={detail.cloudLocked || detail.sensitive}
+                    disabled={detail.sensitive}
+                    onChange={(on) => void m.setCloudLocked(on)}
+                    labelledBy="cloud-never"
+                  />
+                </div>
+                <div className="border-t border-line pt-3">
+                  <SensitiveRow
+                    checked={detail.sensitive}
+                    // On asks first (the audio is deleted now); off needs no question.
+                    onChange={(on) => {
+                      setFailed(null);
+                      if (on) setAsking(true);
+                      else void m.setSensitive(false).then(setFailed);
+                    }}
+                  />
+                  {failed && (
+                    <p role="alert" className="text-ios-footnote m-0 mt-1 text-warn">
+                      {failed === "noTranscript" ? t("mobile.sensitive.noTranscript") : failed === "transcriptPending" ? t("mobile.sensitive.pending") : t("mobile.sensitive.failed")}
+                    </p>
+                  )}
+                </div>
+              </div>
             </>
           )}
           {tab === "actions" && (
@@ -239,7 +255,14 @@ export function MeetingView({
           )}
         </div>
       </div>
-      {detail.audioAvailable && <AudioBar audio={audio} />}
+      {detail.audioAvailable && (
+        <AudioBar
+          audio={audio}
+          wave={wave}
+          segments={m.transcript.segments}
+          speakers={detail.speakers}
+        />
+      )}
       <QuoteSheet
         citation={quote?.citation ?? null}
         speaker={quoteSpeaker}

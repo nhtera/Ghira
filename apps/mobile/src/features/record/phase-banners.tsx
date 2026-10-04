@@ -72,7 +72,7 @@ export function PhaseBanners({ model, recordOnlyDevice, saved, error, onDownload
   }
   if (model.pocket && !idle) {
     items.push(
-      <Banner key="pocket" variant="warning" icon="warning" title={t("mobile.record.pocket.title")}>
+      <Banner key="pocket" variant="warning" icon="pan_tool" title={t("mobile.record.pocket.title")}>
         {t("mobile.record.pocket.hint")}
       </Banner>,
     );

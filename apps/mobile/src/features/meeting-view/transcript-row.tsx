@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// One transcript line for the phone: a single button (VoiceOver and keyboard
-// reach it) that selects the line; sizes in rem, so time, name and text grow
-// with Dynamic Type. The speaker is color + initial, never color alone.
+// One transcript line for the phone, as in the design: the avatar on the left,
+// the coloured name and the time on one line, the words in serif below. A
+// single button (VoiceOver and keyboard reach it) that selects the line; sizes
+// in rem, so time, name and text grow with Dynamic Type. The speaker is color +
+// initial, never color alone.
 import { formatClock } from "@ghi/i18n";
 import {
   Avatar,
@@ -50,7 +52,7 @@ export function TranscriptRow({
       data-selected={selected ? "true" : undefined}
       aria-current={playing ? "true" : undefined}
       className={cn(
-        "grid min-h-ios-target w-full grid-cols-[3.5rem_minmax(0,1fr)] gap-x-2 rounded-ctl border-[1.5px] p-2 text-start",
+        "grid min-h-ios-target w-full grid-cols-[1.5rem_minmax(0,1fr)] gap-x-2.5 rounded-ctl border-[1.5px] px-2 py-2.5 text-start",
         playing
           ? "border-transparent bg-accent-soft"
           : selected
@@ -58,10 +60,7 @@ export function TranscriptRow({
             : "border-transparent",
       )}
     >
-      <span className="flex flex-col items-start gap-1">
-        <span className="text-ios-caption1 text-mono text-muted">
-          {formatClock(startMs, { pad: true })}
-        </span>
+      <span className="flex flex-col items-start">
         {speaker ? (
           <Avatar
             kind={speaker.isMe ? "me" : "person"}
@@ -75,16 +74,19 @@ export function TranscriptRow({
         )}
       </span>
       <span className="min-w-0">
-        <span className="flex flex-wrap items-center gap-x-2">
+        <span className="flex flex-wrap items-baseline gap-x-1.5">
           <b
             className={cn(
-              "text-ios-subhead",
-              !speaker && "font-semibold text-muted italic",
+              "text-ios-footnote font-bold",
+              !speaker && "text-muted italic",
             )}
             style={color && !playing ? { color } : undefined}
           >
             {speaker ? speaker.label : t("speakers.identifying")}
           </b>
+          <span className="text-ios-caption1 font-mono text-muted tabular-nums">
+            {formatClock(startMs, { pad: true })}
+          </span>
           {overlap && (
             <span className="text-ios-caption1 inline-flex items-center gap-0.5 text-muted">
               <Icon name="forum" size={13} />

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // M1 step 2: say why the microphone is needed before the system asks (priming),
-// then handle the answer. Denied is a state with a way out: Settings, or on
+// then handle the answer. Denied is a state with a way out: Settings (pinned
+// in the footer so it is in reach at any text size), or on
 // without it (recording stays off until it is allowed).
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MicPermission } from "../../bindings";
 import { ipc } from "../../ipc";
-import { PhoneButton } from "@ghi/ui";
+import { Icon, PhoneButton } from "@ghi/ui";
 import { StepLayout } from "./step-layout";
 
 export function MicStep({ onNext }: { onNext: () => void }) {
@@ -49,20 +50,31 @@ export function MicStep({ onNext }: { onNext: () => void }) {
   if (mic === "denied") {
     return (
       <StepLayout
-        icon="mic_off"
+        icon="mic"
         title={t("mobile.onboarding.mic.title")}
-        subtitle={t("mobile.onboarding.mic.denied")}
+        subtitle={t("mobile.onboarding.mic.body")}
         footer={
           <>
-            <PhoneButton onClick={() => void ipc.commands.openAppSettings()}>
+            <PhoneButton icon="settings" onClick={() => void ipc.commands.openAppSettings()}>
               {t("mobile.common.openSettings")}
             </PhoneButton>
-            <PhoneButton variant="secondary" onClick={onNext}>
+            <PhoneButton variant="ghost" onClick={onNext}>
               {t("mobile.common.notNow")}
             </PhoneButton>
           </>
         }
-      />
+      >
+        <div
+          role="status"
+          data-testid="mic-denied"
+          className="flex rounded-(--ios-radius-group) bg-warn-soft px-4 py-3.5 text-warn"
+        >
+          <p className="text-ios-callout m-0 flex gap-3 font-semibold">
+            <Icon name="mic_off" size={24} className="mt-0.5 size-6 shrink-0" />
+            {t("mobile.onboarding.mic.denied")}
+          </p>
+        </div>
+      </StepLayout>
     );
   }
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// The live transcript: "Speaker N" lines, virtualized (a long meeting is
-// thousands of lines), following the newest line until the user scrolls up.
+// The live transcript: "Speaker N" lines, flat on the page like the design (an
+// avatar on the left, the coloured name and the time on one line, the words in
+// serif below), virtualized (a long meeting is thousands of lines), following
+// the newest line until the user scrolls up.
 // Words are text nodes only (RT-6). The list itself is not a live region: the
 // screen reads out new speaker turns through `TurnAnnouncer` instead.
 import { formatClock } from "@ghi/i18n";
@@ -38,7 +40,7 @@ const Row = memo(function Row({
   const color =
     known && speaker.colorSlot > 0 ? `var(--s${speaker.colorSlot})` : undefined;
   return (
-    <div data-testid="line" className="flex gap-3 px-4 py-2.5">
+    <div data-testid="line" className="flex gap-2.5 py-2.5">
       {known ? (
         <Avatar
           kind={speaker.isMe ? "me" : "person"}
@@ -51,15 +53,15 @@ const Row = memo(function Row({
         <Avatar kind="unknown" size="md" />
       )}
       <div className="min-w-0 flex-1">
-        <div className="text-ios-footnote flex flex-wrap items-center gap-x-2">
+        <div className="text-ios-footnote flex flex-wrap items-baseline gap-x-1.5">
           <b
             style={color ? { color } : undefined}
-            className={cn(!known && "font-semibold text-muted italic")}
+            className={cn("font-bold", !known && "text-muted italic")}
           >
             {label}
           </b>
-          <span className="font-mono text-muted tabular-nums">
-            {formatClock(line.t0Ms)}
+          <span className="text-ios-caption1 font-mono text-muted tabular-nums">
+            {formatClock(line.t0Ms, { pad: true })}
           </span>
           {marked && (
             <Icon
@@ -127,10 +129,10 @@ export const LiveTranscript = memo(function LiveTranscript({ lines, partial, spe
         onTouchMove={touch}
         onWheel={touch}
         onKeyDown={touch}
-        className="h-full overflow-y-auto overscroll-contain rounded-(--ios-radius-group) bg-surface"
+        className="h-full overflow-y-auto overscroll-contain"
       >
         {count === 0 ? (
-          <p className="text-ios-subhead m-0 p-4 text-center text-muted">
+          <p className="text-ios-subhead m-0 py-4 text-center text-muted">
             {t("mobile.record.waiting")}
           </p>
         ) : (
@@ -156,7 +158,7 @@ export const LiveTranscript = memo(function LiveTranscript({ lines, partial, spe
                 ) : (
                   <p
                     data-testid="partial"
-                    className="text-ios-body m-0 px-4 py-2.5 font-serif text-muted italic"
+                    className="text-ios-body m-0 ps-[34px] py-2.5 font-serif text-muted italic"
                   >
                     {partial}
                   </p>

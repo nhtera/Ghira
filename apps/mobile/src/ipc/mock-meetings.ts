@@ -289,6 +289,17 @@ function defaults(): MockMeeting[] {
             112_000,
             "I will send the revised budget in đồng and dollars before the review.",
           ),
+          // The rest of the half hour, so the audio bar's waveform shows who spoke when.
+          ...[
+            [300_000, "sp-me"],
+            [520_000, "sp-linh"],
+            [760_000, "sp-minh"],
+            [980_000, "sp-me"],
+            [1_260_000, "sp-linh"],
+            [1_540_000, "sp-minh"],
+          ].map(([t0, who], i) =>
+            segment(`t${i + 4}`, who as string, t0 as number, (t0 as number) + 150_000, "Noted, moving on to the next item."),
+          ),
         ],
       },
       notes: {
@@ -622,6 +633,20 @@ export const meetingCommands: Partial<Commands> = {
     return m
       ? ok({ token: `mock-audio-${id}`, durationMs: m.row.durationMs })
       : fail("not found");
+  },
+  // Loudness per 100 ms: loud where a line is said, quiet between (stable, no randomness).
+  waveformPeaks: async (id) => {
+    const m = find(id);
+    if (!m) return fail("not found");
+    const n = Math.max(1, Math.round(((m.row.durationMs ?? 60_000) / 1000) * 10));
+    const peaks = Array.from({ length: n }, (_, i) => {
+      const t = i * 100;
+      const speaking = m.transcript.segments.some((s) => (s.t0Ms ?? 0) <= t && (s.t1Ms ?? 0) > t);
+      // Bursts of speech between pauses, so a long meeting looks like one.
+      const burst = i % 70 < 48;
+      return speaking || burst ? 120 + Math.round(110 * Math.abs(Math.sin(i / 5) * Math.cos(i / 17))) : 24;
+    });
+    return ok({ perSecond: 10, peaks });
   },
   shareMeetingExport: async (id, format) => {
     if (failShare) return fail("share sheet unavailable");

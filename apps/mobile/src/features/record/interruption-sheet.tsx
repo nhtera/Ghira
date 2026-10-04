@@ -27,6 +27,7 @@ export function InterruptionSheet({
       open={open}
       onOpenChange={() => {}}
       dismissible={false}
+      icon={call ? "phone_paused" : "mic_off"}
       title={
         call
           ? t("mobile.record.pausedCall.title")
@@ -44,7 +45,7 @@ export function InterruptionSheet({
           <PhoneButton icon="play_arrow" onClick={onResume}>
             {t("mobile.record.resumeRecording")}
           </PhoneButton>
-          <PhoneButton variant="secondary" onClick={onStop}>
+          <PhoneButton variant="danger" icon="stop" onClick={onStop}>
             {t("mobile.record.stopAndSave")}
           </PhoneButton>
         </>

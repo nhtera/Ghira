@@ -125,7 +125,9 @@
       "calendar": {
         "label": "Từ lịch của bạn",
         "hint": "Bản ghi này sẽ được đặt tên theo sự kiện đó."
-      }
+      },
+      "titleIdle": "Ghi âm",
+      "elapsed": "Thời gian ghi âm"
     },
     "voice": {
       "done": "Đọc xong",

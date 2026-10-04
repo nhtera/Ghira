@@ -29,40 +29,35 @@ export function CallNoticeSheet({
     <Sheet
       open={open}
       onOpenChange={(o) => !o && onCancel()}
+      icon="phone_disabled"
       title={t("mobile.callLimit.title")}
       description={t("mobile.callLimit.body")}
       closeLabel={t("mobile.sheet.close")}
       handleLabel={t("mobile.sheet.handle")}
       footer={
         <>
-          <PhoneButton onClick={onConfirm}>
+          <PhoneButton icon="speaker_phone" onClick={onConfirm}>
             {t("mobile.callLimit.useRoom")}
           </PhoneButton>
-          <PhoneButton variant="secondary" onClick={onCancel}>
+          <PhoneButton variant="ghost" onClick={onCancel}>
             {t("mobile.common.cancel")}
           </PhoneButton>
         </>
       }
     >
-      <p className="text-ios-subhead m-0 flex items-start gap-2 text-ink">
-        <Icon
-          name="speaker_phone"
-          size={22}
-          className="mt-0.5 size-[1.375rem] shrink-0 text-accent"
-        />
-        {t("mobile.record.callNotice.steps")}
-      </p>
-      <p className="text-ios-subhead m-0 mt-3 flex items-start gap-2 text-ink">
-        <Icon
-          name="record_voice_over"
-          size={22}
-          className="mt-0.5 size-[1.375rem] shrink-0 text-accent"
-        />
-        {t("mobile.callLimit.consent")}
-      </p>
-      <CopyConsentButton language={language} className="mt-4" />
+      <div className="flex flex-col gap-3 rounded-(--ios-radius-group) bg-sunk px-4 py-3">
+        <p className="text-ios-callout m-0 flex items-start gap-3 text-ink">
+          <Icon name="speaker_phone" size={24} className="mt-0.5 size-6 shrink-0 text-accent" />
+          {t("mobile.record.callNotice.steps")}
+        </p>
+        <p className="text-ios-callout m-0 flex items-start gap-3 text-ink">
+          <Icon name="campaign" size={24} className="mt-0.5 size-6 shrink-0 text-accent" />
+          {t("mobile.callLimit.consent")}
+        </p>
+      </div>
+      <CopyConsentButton language={language} className="mt-3" />
       {sensitive && (
-        <div className="mt-4">
+        <div className="mt-3 rounded-(--ios-radius-group) bg-sunk px-4 py-3">
           <SensitiveRow checked={sensitive.checked} onChange={sensitive.onChange} />
         </div>
       )}

@@ -45,6 +45,13 @@ test.describe("meetings visuals", () => {
       await expect(page).toHaveScreenshot(`transcript-${name}.png`);
     });
 
+    test(`quote sheet ${name}`, async ({ page }) => {
+      await openMeetings(page, "/meetings/m-notes", opts);
+      await page.getByRole("button", { name: /01:30/ }).first().click();
+      await settled(page, () => expect(page.getByRole("dialog")).toBeVisible());
+      await expect(page).toHaveScreenshot(`quote-${name}.png`);
+    });
+
     test(`search ${name}`, async ({ page }) => {
       await openMeetings(page, "/search", opts);
       await page.getByRole("searchbox").fill("dong");

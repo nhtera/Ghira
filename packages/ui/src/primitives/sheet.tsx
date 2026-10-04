@@ -8,7 +8,7 @@
 // reduced motion drops the slide.
 import * as RD from "@radix-ui/react-dialog";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Icon } from "../icons/icon";
+import { Icon, type IconName } from "../icons/icon";
 import { cn } from "../utils/cn";
 
 export type SheetDetent = "medium" | "large";
@@ -17,6 +17,8 @@ export type SheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: ReactNode;
+  /** A glyph above the title (decorative; the title says it). */
+  icon?: IconName;
   description?: ReactNode;
   children?: ReactNode;
   /** Pinned under the scrolling content (primary actions). */
@@ -51,6 +53,7 @@ export function Sheet({ open, onOpenChange, dismissible = true, ...body }: Sheet
 // Mounted per open, so the detent state starts from the prop each time.
 function SheetContent({
   title,
+  icon,
   description,
   children,
   footer,
@@ -90,8 +93,11 @@ function SheetContent({
     };
     measure();
     if (typeof ResizeObserver === "undefined") return;
+    // The box and what is in it: content grows with big text or a late font.
     const ro = new ResizeObserver(measure);
     ro.observe(el);
+    for (const child of Array.from(el.children)) ro.observe(child);
+    void document.fonts?.ready.then(measure);
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -163,12 +169,13 @@ function SheetContent({
         )}
       </div>
       <div ref={scroller} tabIndex={overflows ? 0 : undefined} className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+        {icon && <Icon name={icon} size={32} className="mb-3 size-8 text-muted" />}
         <RD.Title className="text-ios-title3 m-0 pe-8">{title}</RD.Title>
-        {description && <RD.Description className="text-ios-subhead m-0 mt-1 text-muted">{description}</RD.Description>}
+        {description && <RD.Description className="text-ios-callout m-0 mt-2 text-muted">{description}</RD.Description>}
         <div className="mt-3">{children}</div>
       </div>
       {footer && (
-        <div data-sheet-footer className="flex shrink-0 flex-col gap-2 border-t border-line px-5 pt-3 pb-safe">
+        <div data-sheet-footer className="flex shrink-0 flex-col gap-1 px-5 pt-3 pb-safe">
           {footer}
         </div>
       )}

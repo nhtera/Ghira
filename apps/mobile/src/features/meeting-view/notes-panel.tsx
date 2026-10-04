@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // M4 Notes tab: blocks by section with provenance (user / AI / AI-edited) and
-// citation chips. The phone never writes notes, so a meeting without them says
+// citation chips. A legend ("You wrote" / "Written by Ghira") explains the two
+// looks once, the way the design does; AI sections carry the sparkle. The phone never writes notes, so a meeting without them says
 // so and offers the cloud sheet.
 import { Button, Icon, ListRow, ListSection, NoteBlock } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
@@ -58,6 +59,16 @@ export function NotesPanel({
   }
   return (
     <div className="pb-4">
+      <p className="text-ios-footnote m-0 flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pt-1 text-muted">
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className="size-3 rounded-[3px] bg-ink" />
+          {t("notes.youWrote")}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="auto_awesome" size={16} className="size-4" />
+          {t("mobile.detail.writtenBy")}
+        </span>
+      </p>
       {groups.map((g) => (
         <section
           key={g.key}
@@ -66,15 +77,19 @@ export function NotesPanel({
         >
           <h2
             id={`sec-${g.key}`}
-            className="text-ios-footnote m-0 mb-2 font-semibold text-muted uppercase"
+            className="text-ios-footnote m-0 mb-2 flex items-center gap-1.5 font-semibold tracking-[0.07em] text-muted uppercase"
           >
             {t(`mobile.detail.section.${g.key}`)}
+            {g.blocks.some((b) => noteKind(b) === "ai") && (
+              <Icon name="auto_awesome" size={14} className="size-3.5" />
+            )}
           </h2>
           <div className="flex flex-col gap-4">
             {g.blocks.map((b) => (
               <NoteBlock
                 key={b.gid}
                 kind={noteKind(b)}
+                showProvenance={noteKind(b) !== "ai"}
                 text={b.text}
                 citations={b.citations.map((c, i) =>
                   toNoteCitation(c, i, visited, `${b.gid}:${i}`),

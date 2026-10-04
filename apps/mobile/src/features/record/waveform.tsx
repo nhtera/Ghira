@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // The input level as bars, newest on the right. Decorative (the timer and the
 // transcript carry the state). Reduced motion: the bars hold one still shape.
+// Teal while listening, amber while the sound is muffled (the banner says why),
+// and a row of dots while paused.
 import { cn } from "@ghi/ui";
 import { memo, useEffect, useState } from "react";
 import { ipc } from "../../ipc";
@@ -53,7 +55,9 @@ function useLevels(active: boolean): number[] {
   return levels;
 }
 
-export const Waveform = memo(function Waveform({ active, className }: { active: boolean; className?: string }) {
+export type WaveTone = "ok" | "muffled";
+
+export const Waveform = memo(function Waveform({ active, tone = "ok", className }: { active: boolean; tone?: WaveTone; className?: string }) {
   const levels = useLevels(active);
   const reduced = useReducedMotion();
   const moving = active && !reduced;
@@ -63,10 +67,14 @@ export const Waveform = memo(function Waveform({ active, className }: { active: 
     return db === undefined ? 0.06 : Math.min(1, Math.max(0.06, (Math.min(0, db) - FLOOR_DB) / -FLOOR_DB));
   });
   return (
-    <div aria-hidden="true" data-testid="waveform" data-moving={moving ? "true" : "false"} className={cn("flex h-12 shrink-0 items-center justify-between gap-[3px]", className)}>
-      {heights.map((h, i) => (
-        <span key={i} className={cn("w-1 rounded-full", active ? "bg-accent" : "bg-line2", moving && "transition-[height] duration-100 ease-linear")} style={{ height: `${Math.round(h * 100)}%` }} />
-      ))}
+    <div aria-hidden="true" data-testid="waveform" data-moving={moving ? "true" : "false"} data-tone={active ? tone : "paused"} className={cn("flex h-12 shrink-0 items-center justify-between gap-[3px]", className)}>
+      {heights.map((h, i) =>
+        active ? (
+          <span key={i} className={cn("w-[3px] rounded-full", tone === "muffled" ? "bg-warn" : "bg-accent", moving && "transition-[height] duration-100 ease-linear")} style={{ height: `${Math.round(h * 100)}%` }} />
+        ) : (
+          <span key={i} className="size-[3px] rounded-full bg-line2" />
+        ),
+      )}
     </div>
   );
 });

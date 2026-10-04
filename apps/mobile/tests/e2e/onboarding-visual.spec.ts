@@ -7,6 +7,7 @@ import { openOnboarding } from "./record-support";
 const SCREENS: { name: string; completed: string[]; knobs?: Record<string, unknown> }[] = [
   { name: "languages", completed: [] },
   { name: "mic", completed: ["languages"] },
+  { name: "mic-denied", completed: ["languages"], knobs: { mic: "denied" } },
   { name: "models", completed: ["languages", "micPriming", "consent", "processing"] },
   { name: "done", completed: ["languages", "micPriming", "consent", "processing", "models", "voice"], knobs: { modelsReady: true } },
 ];

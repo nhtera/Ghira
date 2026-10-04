@@ -17,8 +17,8 @@ const LOOKS = [
 const phase = (page: Page, p: string) => page.evaluate((x) => window.__ghiMock!.simulateMobileEvent({ type: "phase", phase: x as never }), p);
 const mobile = (page: Page, e: object) => page.evaluate((x) => window.__ghiMock!.simulateMobileEvent(x as never), e);
 
-/** A frozen clock keeps the timer at 0:00 in every shot. */
-async function open(page: Page, look: (typeof LOOKS)[number], knobs: Record<string, unknown> = {}) {
+/** A frozen clock keeps the timer at 0:00 in every shot; the first speaker is Me (a voice profile matched). */
+async function open(page: Page, look: (typeof LOOKS)[number], knobs: Record<string, unknown> = { firstIsMe: true }) {
   await page.clock.install();
   await page.emulateMedia({ colorScheme: look.scheme, reducedMotion: "reduce" });
   await openRecord(page, { lang: look.lang, scale: look.scale, knobs });
@@ -42,6 +42,14 @@ for (const look of LOOKS) {
     await open(page, look);
     await goLive(page);
     await expect(page).toHaveScreenshot(`record-live-${look.id}.png`, { animations: "disabled" });
+  });
+
+  test(`record paused ${look.id}`, async ({ page }) => {
+    await open(page, look);
+    await goLive(page);
+    await page.getByRole("button", { name: /^(Pause|Tạm dừng)$/ }).click();
+    await expect(page.getByRole("button", { name: /^(Resume|Tiếp tục)$/ })).toBeVisible();
+    await expect(page).toHaveScreenshot(`record-paused-${look.id}.png`, { animations: "disabled" });
   });
 
   test(`record catching up ${look.id}`, async ({ page }) => {

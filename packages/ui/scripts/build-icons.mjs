@@ -89,6 +89,7 @@ export const ICONS = {
   lock: ["lock", "lock_closed_20_regular"],
   manage_search: ["manage_search", "search_info_20_regular"],
   menu: ["menu", "navigation_20_regular"],
+  pan_tool: ["pan_tool", "hand_left_20_regular"],
   mic: ["mic", "mic_20_regular"],
   memory: ["memory", "developer_board_20_regular"],
   mic_fill: ["mic-fill", "mic_20_regular"],

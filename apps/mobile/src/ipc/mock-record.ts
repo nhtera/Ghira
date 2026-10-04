@@ -44,6 +44,8 @@ export interface GhiRecordMock {
   failStart: string | null;
   /** The snapshot gives `reason` whatever the session is doing (events alone drive the phase in tests). */
   forceReason: boolean;
+  /** The first speaker is the phone's owner (a voice profile matched): "Me". */
+  firstIsMe: boolean;
   /** Why a record-only session has no transcript (the snapshot says). */
   reason: RecordOnlyReason;
   /** `onboardingState` fails with this message. */
@@ -104,6 +106,7 @@ const defaults: GhiRecordMock = {
   failStart: null,
   reason: "deviceTier",
   forceReason: false,
+  firstIsMe: false,
   failAction: false,
   failOnboarding: null,
   holdLoading: false,
@@ -221,7 +224,8 @@ function setPhase(phase: RecordPhase) {
 }
 
 function speaker(id: number): SpeakerInfo {
-  return { id, label: `Speaker ${id}`, colorSlot: id, isMe: false, provisional: false, notPerson: false, others: false };
+  const me = id === 1 && hooks.firstIsMe;
+  return { id, label: me ? "Me" : `Speaker ${id}`, colorSlot: id, isMe: me, provisional: false, notPerson: false, others: false };
 }
 
 function addLines(n: number) {

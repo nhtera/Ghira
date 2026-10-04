@@ -76,12 +76,18 @@ export function speakerOf(
   return gid === null ? undefined : speakers.find((s) => s.gid === gid);
 }
 
-/** `numbered` is the localized "Speaker N". Color slot plus initial: never color alone. */
+/**
+ * `numbered` is the localized "Speaker N", `me` the localized "Me" (the phone's
+ * owner, until they are given a name). Color slot plus initial: never color alone.
+ */
 export function transcriptSpeaker(
   s: MeetingSpeaker | undefined,
   numbered: (n: number) => string,
+  me?: string,
 ): TranscriptSpeaker | null {
   if (!s) return null;
+  if (!s.name && s.isMe && me)
+    return { label: me, colorSlot: s.colorSlot, isMe: true };
   return s.name
     ? { label: s.name, colorSlot: s.colorSlot, isMe: s.isMe }
     : {

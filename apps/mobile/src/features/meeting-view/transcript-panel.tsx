@@ -123,13 +123,13 @@ export function TranscriptPanel({
     <div
       ref={listRef}
       style={{ height: virtual.getTotalSize(), position: "relative" }}
-      className="bg-surface"
     >
       {virtual.getVirtualItems().map((v) => {
         const s = segments[v.index];
         const speaker = transcriptSpeaker(
           speakerOf(speakers, s.speakerGid),
           numbered,
+          t("speakers.me"),
         );
         return (
           <div

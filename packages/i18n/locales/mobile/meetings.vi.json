@@ -49,7 +49,8 @@
       "shareTitle": "Chia sẻ cuộc họp",
       "tabs": "Các phần của cuộc họp",
       "transcriptEmpty": "Chưa có bản ghi.",
-      "transcriptWaiting": "Bản ghi sẽ xuất hiện khi các mô hình giọng nói được cài đặt."
+      "transcriptWaiting": "Bản ghi sẽ xuất hiện khi các mô hình giọng nói được cài đặt.",
+      "writtenBy": "{{app}} viết"
     },
     "meetings": {
       "delete": {
@@ -71,7 +72,8 @@
       "refreshing": "Đang làm mới…",
       "retry": "Thử lại",
       "title": "Cuộc họp",
-      "untitled": "Cuộc họp chưa đặt tên"
+      "untitled": "Cuộc họp chưa đặt tên",
+      "searchPlaceholder": "Tìm kiếm · không cần dấu"
     },
     "search": {
       "clear": "Xoá tìm kiếm",

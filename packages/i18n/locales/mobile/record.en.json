@@ -131,7 +131,9 @@
       "calendar": {
         "label": "From your calendar",
         "hint": "This recording will be named after it."
-      }
+      },
+      "titleIdle": "Record",
+      "elapsed": "Recording time"
     },
     "voice": {
       "done": "Done reading",

@@ -77,7 +77,7 @@ export function ListRow({ title, subtitle, icon, value, trailing, chevron, expan
           <Icon name={icon} size={18} className="size-[1.125rem]" />
         </span>
       )}
-      <span className="flex min-w-[5rem] flex-1 flex-col text-start">
+      <span className="flex min-w-[5rem] flex-auto flex-col text-start">
         <span id={titleId} className={cn("text-ios-body", destructive && "text-rec-ink", disabled && "text-muted")}>
           {title}
         </span>

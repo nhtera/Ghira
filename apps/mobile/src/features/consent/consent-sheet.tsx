@@ -68,6 +68,7 @@ export function ConsentSheet({ language, open, onCancel, onConfirm, sensitive }:
     <Sheet
       open={open}
       onOpenChange={(o) => !o && onCancel()}
+      icon="campaign"
       title={t("mobile.record.consent.title")}
       description={t("mobile.record.consent.body")}
       closeLabel={t("mobile.sheet.close")}
@@ -77,7 +78,7 @@ export function ConsentSheet({ language, open, onCancel, onConfirm, sensitive }:
           <PhoneButton onClick={onConfirm}>
             {t("mobile.record.consent.confirm")}
           </PhoneButton>
-          <PhoneButton variant="secondary" onClick={onCancel}>
+          <PhoneButton variant="ghost" onClick={onCancel}>
             {t("mobile.common.cancel")}
           </PhoneButton>
         </>
@@ -85,7 +86,7 @@ export function ConsentSheet({ language, open, onCancel, onConfirm, sensitive }:
     >
       <CopyConsentButton language={language} />
       {sensitive && (
-        <div className="mt-4">
+        <div className="mt-3 rounded-(--ios-radius-group) bg-sunk px-4 py-3">
           <SensitiveRow checked={sensitive.checked} onChange={sensitive.onChange} />
         </div>
       )}

@@ -44,7 +44,6 @@ export function LanguagesStep({ onNext }: { onNext: () => void }) {
 
   return (
     <StepLayout
-      icon="language"
       title={t("mobile.onboarding.languages.title")}
       subtitle={t("mobile.onboarding.languages.subtitle")}
       footer={
@@ -53,7 +52,7 @@ export function LanguagesStep({ onNext }: { onNext: () => void }) {
         </PhoneButton>
       }
     >
-      <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+      <fieldset className="m-0 flex min-w-0 flex-col gap-2.5 border-0 p-0">
         <legend className="sr-only">
           {t("mobile.onboarding.languages.title")}
         </legend>
@@ -61,7 +60,7 @@ export function LanguagesStep({ onNext }: { onNext: () => void }) {
           <label
             key={o.value}
             className={cn(
-              "text-ios-body flex min-h-ios-target cursor-pointer items-center gap-3 rounded-(--ios-radius-group) border-2 border-transparent bg-surface px-4 py-3",
+              "text-ios-body flex min-h-ios-row cursor-pointer items-center gap-3 rounded-(--ios-radius-group) border-[1.5px] border-ctl bg-surface px-4 py-3 font-medium",
               "has-checked:border-accent has-checked:bg-accent-soft has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-accent",
             )}
           >
@@ -73,19 +72,19 @@ export function LanguagesStep({ onNext }: { onNext: () => void }) {
               onChange={() => setValue(o.value)}
               className="sr-only"
             />
-            <span className="flex-1">{t(o.label)}</span>
             <Icon
               name={
                 value === o.value
                   ? "radio_button_checked"
                   : "radio_button_unchecked"
               }
-              size={24}
+              size={26}
               className={cn(
-                "size-6 shrink-0",
-                value === o.value ? "text-accent" : "text-faint",
+                "size-[1.625rem] shrink-0",
+                value === o.value ? "text-accent" : "text-muted",
               )}
             />
+            <span className="flex-1">{t(o.label)}</span>
           </label>
         ))}
       </fieldset>

@@ -75,6 +75,29 @@ test("steps back without losing the way forward", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Back" })).toHaveCount(0);
 });
 
+test("a bar per step shows progress; a swipe to the right goes back, a swipe left does nothing", async ({ page }) => {
+  await openOnboarding(page, { completed: ["languages", "micPriming"] });
+  const bars = page.getByTestId("onboarding-progress").locator("span");
+  await expect(bars).toHaveCount(7);
+  await expect(page.getByTestId("onboarding-progress").locator("[data-done=true]")).toHaveCount(3);
+  const swipe = (dx: number) =>
+    page.getByTestId("onboarding-page").evaluate((el, d) => {
+      const fire = (type: string, x: number) => {
+        const e = new Event(type, { bubbles: true });
+        const t = [{ clientX: x, clientY: 300 }];
+        Object.defineProperty(e, "touches", { value: type === "touchend" ? [] : t });
+        Object.defineProperty(e, "changedTouches", { value: t });
+        el.dispatchEvent(e);
+      };
+      fire("touchstart", 100);
+      fire("touchend", 100 + d);
+    }, dx);
+  await swipe(-120);
+  await expect(step(page)).toHaveAttribute("data-step", "consent");
+  await swipe(120);
+  await expect(step(page)).toHaveAttribute("data-step", "micPriming");
+});
+
 test("resumes at the first step not completed", async ({ page }) => {
   await openOnboarding(page, { completed: ["languages", "micPriming"] });
   await expect(step(page)).toHaveAttribute("data-step", "consent");
@@ -92,6 +115,7 @@ test("microphone denied: Settings or on without it", async ({ page }) => {
   await openOnboarding(page, { completed: ["languages"], knobs: { micAnswer: "denied" } });
   await page.getByRole("button", { name: "Allow microphone" }).click();
   await expect(page.getByText(/Microphone is off for .*Settings → .* → Microphone\./)).toBeVisible();
+  await expect(page.getByTestId("mic-denied")).toBeVisible();
   await page.getByRole("button", { name: "Open Settings" }).click();
   expect(await log(page)).toContain("openAppSettings");
 
@@ -148,7 +172,8 @@ test("models: waiting for Wi-Fi offers cellular once; later leaves the models ou
   await page.getByRole("button", { name: "Download over cellular this time" }).click();
   expect(await log(page)).toContain("modelsDownload:false");
 
-  await setKnobs(page, { onCellular: true });
+  // The mock's download finishes at once: start again from the waiting state.
+  await openOnboarding(page, { completed: ["languages", "micPriming", "consent", "processing"], knobs: { onCellular: true } });
   await page.getByRole("button", { name: "Download later" }).click();
   await expect(step(page)).toHaveAttribute("data-step", "voice");
 });

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // One onboarding step: the heading and body scroll, the actions stay at the
-// bottom inside the safe area (thumb reach), at any text size.
+// bottom inside the safe area (thumb reach), at any text size. The icon is
+// the design's plain accent glyph above the title.
 import { Icon, type IconName } from "@ghi/ui";
 import type { ReactNode } from "react";
 
@@ -22,14 +23,9 @@ export function StepLayout({
 }: StepLayoutProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
         {icon && (
-          <span
-            aria-hidden="true"
-            className="mt-2 mb-4 grid size-14 place-items-center rounded-full bg-accent-soft text-accent"
-          >
-            <Icon name={icon} size={30} className="size-[1.875rem]" />
-          </span>
+          <Icon name={icon} size={44} className="mt-1 mb-4 size-11 text-accent" />
         )}
         <h1
           tabIndex={-1}
@@ -39,11 +35,11 @@ export function StepLayout({
           {title}
         </h1>
         {subtitle && (
-          <p className="text-ios-body m-0 mt-2 text-muted">{subtitle}</p>
+          <p className="text-ios-body m-0 mt-3 text-muted">{subtitle}</p>
         )}
-        {children && <div className="mt-5">{children}</div>}
+        {children && <div className="mt-6">{children}</div>}
       </div>
-      <div className="flex flex-col gap-2 px-5 pt-3 pb-safe">{footer}</div>
+      <div className="flex flex-col gap-2 px-6 pt-3 pb-[calc(var(--safe-bottom,0px)+1rem)]">{footer}</div>
     </div>
   );
 }

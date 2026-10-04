@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-// M2: the Record tab. Idle: the processing choice and the thumb-zone record
-// button. Recording: timer, level waveform, the live "Speaker N" transcript,
-// Mark / Pause / Stop, and the banners the phase and shell events ask for.
+// M2: the Record tab, laid out like the design: the title and the privacy pill,
+// the big mono timer, then (while recording) the level waveform, the banners
+// the phase and shell events ask for and the flat live transcript, and the
+// round Mark / Stop / Pause controls pinned at the bottom. Idle: the processing
+// choice above the record ring.
 // Starting goes through the consent reminder (M2) or, while a phone call is
 // active, the call notice (M6). The controls are pinned at the bottom; the
 // transcript is what gives way at big text sizes.
-import { Icon, PhoneButton, PrivacyIndicator, type PrivacyState, RecordControl } from "@ghi/ui";
+import { cn, Icon, PrivacyIndicator, type PrivacyState } from "@ghi/ui";
+import { formatClock } from "@ghi/i18n";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -21,6 +24,7 @@ import { LiveTranscript, TurnAnnouncer } from "./live-transcript";
 import { MoreSheet } from "./more-sheet";
 import { hasSession, isCapturing, type RecordModel } from "./model";
 import { PhaseBanners } from "./phase-banners";
+import { RecordControls } from "./record-controls";
 import { TargetPicker } from "./target-picker";
 import { bannerError, useRecord, useRecordSetup } from "./use-record";
 import { Waveform } from "./waveform";
@@ -73,12 +77,60 @@ export function RecordScreen() {
   const sensitiveOption = setup.recordOnlyDevice ? undefined : { checked: sensitiveNext, onChange: setSensitiveNext };
   const marksLabel = model.marks > 0 ? `${t("mobile.record.mark")}, ${t("mobile.record.marks", { count: model.marks })}` : t("mobile.record.mark");
 
+  const clock = formatClock(model.elapsedS * 1000, { pad: true });
+  const paused = model.phase === "paused" || model.phase === "interrupted";
+  const controls = (
+    <RecordControls
+      state={controlState(model, rec.starting, setup.mic === "denied")}
+      capturing={capturing}
+      paused={paused}
+      marks={model.marks}
+      markLabel={marksLabel}
+      onMark={rec.mark}
+      onStart={() => {
+        setSensitiveNext(false);
+        setSheet(setup.callActive ? "call" : "consent");
+      }}
+      onPause={rec.pause}
+      onResume={rec.resume}
+      onStop={rec.stop}
+      onFix={() => void ipc.commands.openAppSettings()}
+    />
+  );
+
   return (
     <section data-screen="record" className="flex h-full flex-col gap-3 overflow-hidden px-4 pt-[calc(var(--safe-top)+12px)] pb-4">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <h1 className="text-ios-title2 m-0">{t("mobile.record.title")}</h1>
+        <h1 className="text-ios-title2 m-0">{t(active ? "mobile.record.title" : "mobile.record.titleIdle")}</h1>
         <PrivacyIndicator state={privacyState(model)} />
       </header>
+
+      <div className="relative shrink-0">
+        <p
+          role="timer"
+          data-testid="timer"
+          // Fits between the margins and the More button: mono digits are 0.6 em wide, so an hour+ time (1:02:33) shrinks instead of sliding under it.
+          style={{ fontSize: `min(3rem, calc((100vw - 9rem) / ${clock.length * 0.6}))` }}
+          className={cn("m-0 text-center font-mono leading-none font-medium tracking-[-0.02em] tabular-nums", capturing ? "text-ink" : "text-faint")}
+        >
+          <span className="sr-only">{t("mobile.record.elapsed")} </span>
+          {clock}
+        </p>
+        {active && (
+          <button
+            type="button"
+            aria-label={t("mobile.record.more")}
+            disabled={!capturing && model.phase !== "paused"}
+            onClick={() => setMore("menu")}
+            className="absolute end-0 top-1/2 grid size-ios-target -translate-y-1/2 place-items-center rounded-full border border-ctl bg-surface2 text-ink active:bg-sunk disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Icon name="more_horiz" size={22} className="size-[1.375rem]" />
+          </button>
+        )}
+      </div>
+
+      {/* Nothing to draw before a session: the room goes to the controls at big text sizes. */}
+      {active && <Waveform active={capturing} tone={model.pocket ? "muffled" : "ok"} />}
 
       <PhaseBanners
         model={model}
@@ -89,58 +141,26 @@ export function RecordScreen() {
       />
 
       {active && model.sensitive && <SensitiveBadge />}
-
-      {/* Nothing to draw before a session: the room goes to the controls at big text sizes. */}
-      {active && <Waveform active={capturing} />}
-
-      {active ? (
-        <LiveTranscript lines={model.lines} partial={model.partial} speakers={model.speakers} className="min-h-0 flex-1" />
-      ) : (
-        <p className="text-ios-subhead m-0 flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center text-muted">
-          <Icon name="mic" size={32} className="size-8" />
-          {t("mobile.privacy.audioStaysLine")}
-        </p>
-      )}
       <TurnAnnouncer announce={model.announce} />
 
-      {/* Pinned: the transcript above is what shrinks, at any text size. */}
-      <div className="flex shrink-0 flex-col gap-3">
-        {calendarEvent && <CalendarCard event={calendarEvent} />}
-
-        {!active && !setup.recordOnlyDevice && <TargetPicker value={setup.target} onChange={(target) => patch({ target })} disabled={["desktop", "cloud"]} />}
-
-        {active && (
-          <div className="flex items-center justify-center gap-2">
-            <PhoneButton variant="secondary" icon="star_outline" aria-label={marksLabel} disabled={!capturing} onClick={rec.mark} inline>
-              {t("mobile.record.mark")}
-              {model.marks > 0 && <span className="font-normal text-muted">{t("mobile.record.marks", { count: model.marks })}</span>}
-            </PhoneButton>
-            <button
-              type="button"
-              aria-label={t("mobile.record.more")}
-              disabled={!capturing && model.phase !== "paused"}
-              onClick={() => setMore("menu")}
-              className="grid min-h-ios-target min-w-ios-target shrink-0 place-items-center rounded-(--ios-radius-group) border border-ctl bg-surface text-ink active:bg-sunk disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Icon name="more_horiz" size={22} className="size-[1.375rem]" />
-            </button>
-          </div>
-        )}
-
-        <RecordControl
-          state={controlState(model, rec.starting, setup.mic === "denied")}
-          mode="room"
-          elapsedMs={model.elapsedS * 1000}
-          onStart={() => {
-            setSensitiveNext(false);
-            setSheet(setup.callActive ? "call" : "consent");
-          }}
-          onPause={rec.pause}
-          onResume={rec.resume}
-          onStop={rec.stop}
-          onFix={() => void ipc.commands.openAppSettings()}
-        />
-      </div>
+      {active ? (
+        <>
+          <LiveTranscript lines={model.lines} partial={model.partial} speakers={model.speakers} className="min-h-0 flex-1" />
+          {/* Pinned: the transcript above is what shrinks, at any text size. */}
+          <div className="flex shrink-0 flex-col gap-3">{controls}</div>
+        </>
+      ) : (
+        // The design puts the ring right under the clock; what follows scrolls at big text sizes.
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pt-2">
+          <div className="flex shrink-0 justify-center">{controls}</div>
+          <p className="text-ios-callout m-0 flex shrink-0 items-center gap-3 rounded-2xl bg-accent-soft px-4 py-3.5 font-semibold text-accent">
+            <Icon name="mic" size={24} className="size-6 shrink-0" />
+            {t("mobile.privacy.audioStaysLine")}
+          </p>
+          {calendarEvent && <CalendarCard event={calendarEvent} />}
+          {!setup.recordOnlyDevice && <TargetPicker value={setup.target} onChange={(target) => patch({ target })} disabled={["desktop", "cloud"]} className="shrink-0" />}
+        </div>
+      )}
 
       {/* Sensitive mode keeps only the live transcript: a record-only phone has none to keep. */}
       <ConsentSheet language={setup.language} open={sheet === "consent"} onCancel={() => setSheet(null)} onConfirm={() => void confirm()} sensitive={sensitiveOption} />

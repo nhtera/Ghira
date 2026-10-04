@@ -14,7 +14,7 @@ import { loadRecent, RECENT_CLEARED, saveRecent, withRecent } from "./recent";
 import { useWindowEvent } from "../meeting-view/use-window-event";
 import { useSearch } from "./use-search";
 
-export function SearchScreen() {
+export function SearchScreen({ autoFocus = false }: { autoFocus?: boolean }) {
   const { t } = useTranslation();
   const locale = useLocale();
   const navigate = useNavigate();
@@ -62,6 +62,8 @@ export function SearchScreen() {
             />
             <input
               type="search"
+              // The user just tapped the search field on the meetings list.
+              autoFocus={autoFocus}
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder={t("mobile.search.placeholder")}

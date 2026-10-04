@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// M3: the meetings list. Large title, rows grouped by day (virtualized, so
-// 1,000+ meetings scroll), pull to refresh, and the empty / loading / error states.
+// M3: the meetings list. Large title, the design's search field (it opens the
+// Search tab's screen with the keyboard up: one search, two doors), rows grouped
+// by day under uppercase headers (virtualized, so 1,000+ meetings scroll), pull
+// to refresh, and the empty / loading / error states.
 import {
   Banner,
   Button,
@@ -97,7 +99,21 @@ export function MeetingList() {
         onTouchCancel={touchEnd}
         className="relative min-h-0 flex-1 overflow-y-auto"
       >
-        <LargeTitle ref={titleRef}>{t("mobile.meetings.title")}</LargeTitle>
+        <LargeTitle ref={titleRef} className="tracking-[-0.01em]!">
+          {t("mobile.meetings.title")}
+        </LargeTitle>
+        {!empty && list.status !== "loading" && (
+          <button
+            type="button"
+            onClick={() =>
+              void navigate({ to: "/search", search: { focus: true } })
+            }
+            className="text-ios-body mx-4 mb-2 flex min-h-ios-target w-[calc(100%-2rem)] items-center gap-2 rounded-(--ios-radius-group) bg-sunk px-3 text-start text-muted"
+          >
+            <Icon name="search" size={20} className="size-5 shrink-0" />
+            {t("mobile.meetings.searchPlaceholder")}
+          </button>
+        )}
         {indicator && (
           <p
             role="status"
@@ -191,7 +207,7 @@ export function MeetingList() {
                   }}
                 >
                   {item.type === "header" ? (
-                    <h2 className="text-ios-footnote m-0 bg-bg px-4 pt-3 pb-1.5 font-semibold text-muted">
+                    <h2 className="text-ios-caption1 m-0 bg-bg px-4 pt-3 pb-1.5 font-semibold tracking-[0.06em] text-muted uppercase">
                       {dayLabel(item.day)}
                     </h2>
                   ) : (
