@@ -10,7 +10,11 @@
 //! indexer ([`Store::meetings_needing_embeddings`]), as are rows built from an
 //! older `index_gen` (the chunk text changed: a rename, a line edit).
 
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
 use rusqlite::{OptionalExtension, params};
+use zeroize::Zeroize;
 
 use crate::rowcrypt::{self, Dek};
 use crate::store::Store;
@@ -33,6 +37,58 @@ pub struct StoredEmbedding {
     pub t0_ms: i64,
     pub t1_ms: i64,
     pub vec: Vec<f32>,
+}
+
+/// What a cached meeting was read at: its gid (row ids can be reused),
+/// transcript version, index generation, row count and the sum of the chunk
+/// numbers (the last two come from the `embeddings_model` index alone, so a
+/// check never reads the sealed vectors). Any edit or re-index that changes
+/// the rows changes this ([`Store::put_embeddings`] also drops the entry, for
+/// a rebuild that lands on the same stamp).
+type Stamp = (String, i64, i64, i64, i64);
+
+/// The most decrypted vector bytes [`Store::embedding_index`] keeps (512 MB,
+/// ~125k chunks of 1024 floats). Past it a call still works, reading the
+/// remaining meetings as the uncached path did, and keeps nothing more.
+/// (Semantic search needs the `embeddings` feature, which the iOS app does
+/// not build, so there is no smaller phone budget.)
+const CACHE_BUDGET_BYTES: usize = 512 * 1024 * 1024;
+
+/// A meeting's decrypted chunk vectors; zeroed when the last holder drops it.
+pub struct CachedRows(Vec<StoredEmbedding>);
+
+impl CachedRows {
+    fn bytes(&self) -> usize {
+        self.0.iter().map(|e| e.vec.len() * 4).sum()
+    }
+}
+
+impl std::ops::Deref for CachedRows {
+    type Target = [StoredEmbedding];
+    fn deref(&self) -> &[StoredEmbedding] {
+        &self.0
+    }
+}
+
+impl Drop for CachedRows {
+    fn drop(&mut self) {
+        for e in &mut self.0 {
+            e.vec.zeroize();
+        }
+    }
+}
+
+/// Decrypted vectors by (meeting rowid, model).
+pub(crate) type EmbeddingCache = HashMap<(i64, String), (Stamp, Arc<CachedRows>)>;
+
+/// Drops a meeting's cached vectors (its key is gone, or its rows changed).
+/// A query that already holds the `Arc` keeps its copy until it is done.
+pub(crate) fn forget(store: &Store, meeting_id: i64) {
+    store
+        .emb_cache
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .retain(|(id, _), _| *id != meeting_id);
 }
 
 fn aad(meeting_gid: &str, chunk: u32, model: &str) -> Vec<u8> {
@@ -152,6 +208,7 @@ impl Store {
             )?;
         }
         tx.commit()?;
+        forget(self, m.id);
         Ok(())
     }
 
@@ -230,6 +287,93 @@ impl Store {
             }
         }
         Ok(out)
+    }
+
+    /// [`Store::all_embeddings`] per meeting, kept decrypted in memory so a
+    /// query pays one cheap stamp query instead of decrypting every vector:
+    /// only meetings whose rows changed since the last call are read again.
+    /// Entries go with the meeting's key ([`Store::shred_key`]) and with
+    /// meetings that no longer have rows. Meetings whose key is gone are
+    /// skipped, as in [`Store::all_embeddings`]. At most
+    /// [`CACHE_BUDGET_BYTES`] stay cached, and the cache is emptied by
+    /// [`Store::clear_embedding_cache`] (the app lock).
+    pub fn embedding_index(&self, model: &str) -> Result<Vec<Arc<CachedRows>>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT m.id, m.gid, m.transcript_version, m.index_gen, e.n, e.s
+             FROM (SELECT meeting_id, count(*) AS n, sum(chunk) AS s
+                   FROM embeddings WHERE model = ?1 GROUP BY meeting_id) e
+             JOIN meetings m ON m.id = e.meeting_id
+             ORDER BY m.id",
+        )?;
+        let mut metas: Vec<(i64, String, Stamp)> = stmt
+            .query_map([model], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    (String::new(), r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?),
+                ))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        for m in &mut metas {
+            m.2.0 = m.1.clone();
+        }
+        let live: HashSet<i64> = metas.iter().map(|m| m.0).collect();
+        let mut cache = self.emb_cache.lock().unwrap_or_else(|p| p.into_inner());
+        cache.retain(|(id, m), _| m == model && live.contains(id));
+        let mut used: usize = cache.values().map(|(_, r)| r.bytes()).sum();
+        let mut out = Vec::with_capacity(metas.len());
+        for (id, gid, stamp) in metas {
+            let key = (id, model.to_string());
+            if let Some((at, rows)) = cache.get(&key)
+                && *at == stamp
+            {
+                out.push(rows.clone());
+                continue;
+            }
+            cache.remove(&key);
+            let Ok(dek) = self.dek(&conn, id) else {
+                continue;
+            };
+            let mut rows_stmt = conn.prepare_cached(
+                "SELECT chunk, t0_ms, t1_ms, dim, vec_ct FROM embeddings
+                 WHERE meeting_id = ?1 AND model = ?2 AND transcript_version = ?3
+                 ORDER BY chunk",
+            )?;
+            let raw: Vec<(u32, i64, i64, i64, Vec<u8>)> = rows_stmt
+                .query_map(params![id, model, stamp.1], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+                })?
+                .collect::<rusqlite::Result<_>>()?;
+            let rows: Vec<StoredEmbedding> = raw
+                .into_iter()
+                .filter_map(|(chunk, t0_ms, t1_ms, dim, ct)| {
+                    Some(StoredEmbedding {
+                        meeting_gid: gid.clone(),
+                        chunk,
+                        t0_ms,
+                        t1_ms,
+                        vec: open_vec(&dek, &gid, chunk, model, dim, &ct).ok()?,
+                    })
+                })
+                .collect();
+            let rows = Arc::new(CachedRows(rows));
+            if used + rows.bytes() <= CACHE_BUDGET_BYTES {
+                used += rows.bytes();
+                cache.insert(key, (stamp, rows.clone()));
+            }
+            out.push(rows);
+        }
+        Ok(out)
+    }
+
+    /// Empties the decrypted-vector cache (the app locks). A query already
+    /// running keeps the `Arc`s it holds until it finishes.
+    pub fn clear_embedding_cache(&self) {
+        self.emb_cache
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clear();
     }
 
     /// Gids of finished meetings with a transcript but no embeddings of

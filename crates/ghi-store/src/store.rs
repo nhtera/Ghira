@@ -342,6 +342,9 @@ pub struct Store {
     deks: Mutex<HashMap<i64, Dek>>,
     /// Unwrapped voice profile keys by profile rowid; zeroized on drop / delete.
     voice_keys: Mutex<HashMap<i64, Dek>>,
+    /// Decrypted chunk vectors for query-time search, by meeting rowid and
+    /// model; dropped with the meeting's key ([`Store::embedding_index`]).
+    pub(crate) emb_cache: Mutex<crate::embeddings::EmbeddingCache>,
     /// Exclusive lock on `<dir>/.lock`, held for the store's lifetime.
     _lock: File,
 }
@@ -421,6 +424,7 @@ impl Store {
             conn: Mutex::new(conn),
             deks: Mutex::new(HashMap::new()),
             voice_keys: Mutex::new(HashMap::new()),
+            emb_cache: Mutex::default(),
             _lock: lock,
         };
         let include = matches!(
@@ -511,7 +515,8 @@ impl Store {
         self.conn.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    /// Lock order everywhere: connection, then ring, then DEK cache.
+    /// Lock order everywhere: connection, then embedding cache, then ring, then
+    /// DEK cache.
     pub(crate) fn ring(&self) -> MutexGuard<'_, KeyRing> {
         self.ring.lock().unwrap_or_else(|p| p.into_inner())
     }
@@ -2066,6 +2071,7 @@ impl Store {
             [m.id],
         )?;
         self.deks().remove(&m.id);
+        crate::embeddings::forget(self, m.id);
         Ok(())
     }
 

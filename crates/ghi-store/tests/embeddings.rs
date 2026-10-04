@@ -4,6 +4,8 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use ghi_store::StoreError;
 use ghi_store::embeddings::EmbeddingChunk;
 use ghi_store::store::Store;
@@ -354,4 +356,169 @@ fn vectors_built_before_a_change_are_refused_and_stale_rows_are_reindexed() {
         // Nothing was stored by the refused call.
         assert_eq!(store.embeddings(&gid, MODEL).unwrap(), vec![chunk(0, 1.0)]);
     }
+}
+
+fn index_of(store: &Store) -> Vec<(String, u32, Vec<f32>)> {
+    store
+        .embedding_index(MODEL)
+        .unwrap()
+        .iter()
+        .flat_map(|rows| {
+            rows.iter()
+                .map(|e| (e.meeting_gid.clone(), e.chunk, e.vec.clone()))
+        })
+        .collect()
+}
+
+#[test]
+fn embedding_index_matches_all_embeddings_and_follows_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _) = common::open(tmp.path());
+    let a = ready_meeting(&store, "A");
+    let b = ready_meeting(&store, "B");
+    for (gid, seed) in [(&a, 1.0), (&b, 2.0)] {
+        let v = version(&store, gid);
+        store
+            .put_embeddings(
+                gid,
+                MODEL,
+                v,
+                store.index_gen(gid).unwrap(),
+                vec![chunk(0, seed), chunk(1, seed + 0.1)],
+            )
+            .unwrap();
+    }
+    let expect = |store: &Store| -> Vec<(String, u32, Vec<f32>)> {
+        store
+            .all_embeddings(MODEL)
+            .unwrap()
+            .into_iter()
+            .map(|e| (e.meeting_gid, e.chunk, e.vec))
+            .collect()
+    };
+    assert_eq!(index_of(&store), expect(&store));
+    // Second call is served from the cache and is the same.
+    assert_eq!(index_of(&store), expect(&store));
+
+    // A rebuild at the same version and generation is seen at once.
+    let v = version(&store, &a);
+    store
+        .put_embeddings(
+            &a,
+            MODEL,
+            v,
+            store.index_gen(&a).unwrap(),
+            vec![chunk(0, 7.0), chunk(1, 8.0)],
+        )
+        .unwrap();
+    assert_eq!(index_of(&store), expect(&store));
+    assert!(index_of(&store).iter().any(|(_, _, v)| v[0] == 7.0));
+
+    // A transcript edit that stales the rows takes them out of the index.
+    store
+        .add_segments(&b, vec![common::seg(2000, 3000, "thêm một dòng")])
+        .unwrap();
+    assert_eq!(index_of(&store), expect(&store));
+
+    // Deleting a meeting drops its vectors from the index.
+    store.delete_meeting(&a).unwrap();
+    assert_eq!(index_of(&store), expect(&store));
+    assert!(index_of(&store).iter().all(|(g, _, _)| *g != a));
+}
+
+#[test]
+fn embedding_index_forgets_a_shredded_meeting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _) = common::open(tmp.path());
+    let a = ready_meeting(&store, "A");
+    let v = version(&store, &a);
+    store
+        .put_embeddings(
+            &a,
+            MODEL,
+            v,
+            store.index_gen(&a).unwrap(),
+            vec![chunk(0, 1.0)],
+        )
+        .unwrap();
+    assert_eq!(index_of(&store).len(), 1);
+    store.shred_key(&a).unwrap();
+    assert!(index_of(&store).is_empty());
+}
+
+fn put(store: &Store, gid: &str, model: &str, seed: f32) {
+    let v = version(store, gid);
+    store
+        .put_embeddings(
+            gid,
+            model,
+            v,
+            store.index_gen(gid).unwrap(),
+            vec![chunk(0, seed)],
+        )
+        .unwrap();
+}
+
+#[test]
+fn embedding_index_is_served_from_the_cache_until_something_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _) = common::open(tmp.path());
+    let a = ready_meeting(&store, "A");
+    let b = ready_meeting(&store, "B");
+    put(&store, &a, MODEL, 1.0);
+    put(&store, &b, MODEL, 2.0);
+    let first = store.embedding_index(MODEL).unwrap();
+    let again = store.embedding_index(MODEL).unwrap();
+    assert!(first.iter().zip(&again).all(|(x, y)| Arc::ptr_eq(x, y)));
+
+    // Rebuilding one meeting reloads only that one.
+    put(&store, &b, MODEL, 3.0);
+    let after = store.embedding_index(MODEL).unwrap();
+    assert!(Arc::ptr_eq(&first[0], &after[0]));
+    assert!(!Arc::ptr_eq(&first[1], &after[1]));
+
+    // A rename (the chunk text changed: index generation moves) reloads too.
+    let sp = store
+        .add_speaker(
+            &a,
+            ghi_store::store::NewSpeaker {
+                label_idx: 0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let before = store.embedding_index(MODEL).unwrap();
+    store.rename_speaker(&sp, Some("Lan")).unwrap();
+    let renamed = store.embedding_index(MODEL).unwrap();
+    assert!(!Arc::ptr_eq(&before[0], &renamed[0]));
+    assert!(Arc::ptr_eq(&before[1], &renamed[1]));
+}
+
+#[test]
+fn embedding_index_keeps_only_the_model_asked_for() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _) = common::open(tmp.path());
+    let a = ready_meeting(&store, "A");
+    put(&store, &a, MODEL, 1.0);
+    put(&store, &a, "other", 2.0);
+    let first = store.embedding_index(MODEL).unwrap();
+    store.embedding_index("other").unwrap();
+    // The first model's entry went when the other model was asked for.
+    let second = store.embedding_index(MODEL).unwrap();
+    assert!(!Arc::ptr_eq(&first[0], &second[0]));
+    assert_eq!(first[0][0].vec, second[0][0].vec);
+}
+
+#[test]
+fn clearing_the_embedding_cache_drops_it_but_not_the_data() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _) = common::open(tmp.path());
+    let a = ready_meeting(&store, "A");
+    put(&store, &a, MODEL, 1.0);
+    let first = store.embedding_index(MODEL).unwrap();
+    store.clear_embedding_cache();
+    let second = store.embedding_index(MODEL).unwrap();
+    assert!(!Arc::ptr_eq(&first[0], &second[0]));
+    // The query that held the old rows still reads them.
+    assert_eq!(first[0][0].vec, second[0][0].vec);
 }

@@ -54,6 +54,7 @@ pub fn lock<R: tauri::Runtime>(app: &AppHandle<R>, core: &Core) -> Result<bool, 
     .app_lock;
     if on && !core.locked() {
         core.set_locked(true);
+        drop_cached_vectors(core);
         emit(app, true);
     }
     core.mark_launch_checked();
@@ -65,7 +66,15 @@ pub fn lock<R: tauri::Runtime>(app: &AppHandle<R>, core: &Core) -> Result<bool, 
 pub fn engage<R: tauri::Runtime>(app: &AppHandle<R>, core: &Core) {
     if !core.locked() {
         core.set_locked(true);
+        drop_cached_vectors(core);
         emit(app, true);
+    }
+}
+
+/// Decrypted search vectors don't stay in memory behind the lock screen.
+fn drop_cached_vectors(core: &Core) {
+    if let Ok(store) = core.store_even_locked() {
+        store.clear_embedding_cache();
     }
 }
 

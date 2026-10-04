@@ -24,6 +24,7 @@ use ghi_llm::embed::{Embedder, Kind};
 use ghi_llm::retrieval::query_terms;
 use ghi_llm::template::OutLang;
 use ghi_llm::{Llm, Transcript};
+use ghi_store::embeddings::StoredEmbedding;
 use ghi_store::search::{CANDIDATE_WINDOW, HitKind, SearchFilter, SearchQuery};
 use ghi_store::store::{Meeting, Segment, Store};
 
@@ -330,25 +331,25 @@ fn semantic(
         .map_err(|e| e.to_string())?
         .pop()
         .ok_or("no query vector")?;
-    let mut scored: Vec<(f32, Key)> = ctx
+    let index = ctx
         .store
-        .all_embeddings(embedder.model_id())
-        .map_err(store_err)?
-        .into_iter()
+        .embedding_index(embedder.model_id())
+        .map_err(store_err)?;
+    let mut scored: Vec<(f32, &StoredEmbedding)> = index
+        .iter()
+        .flat_map(|rows| rows.iter())
         .filter(|e| e.vec.len() == q.len())
-        .map(|e| {
-            let dot: f32 = q.iter().zip(&e.vec).map(|(a, b)| a * b).sum();
-            (dot, (e.meeting_gid, e.t0_ms, e.t1_ms))
-        })
+        .map(|e| (q.iter().zip(&e.vec).map(|(a, b)| a * b).sum::<f32>(), e))
         .filter(|(s, _)| *s >= SEMANTIC_FLOOR)
         .collect();
     scored.sort_by(|a, b| b.0.total_cmp(&a.0));
     let mut out: Vec<Key> = Vec::new();
     let mut seen: HashSet<Key> = HashSet::new();
-    for (_, key) in scored {
+    for (_, e) in scored {
         if out.len() == PER_LIST {
             break;
         }
+        let key: Key = (e.meeting_gid.clone(), e.t0_ms, e.t1_ms);
         if seen.contains(&key) || !ctx.in_scope(&key.0) || !ctx.spoken_by(&key.0, key.1, key.2) {
             continue;
         }
