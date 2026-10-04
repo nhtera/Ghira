@@ -17,6 +17,7 @@ import { ipc } from "../../ipc";
 import { meetingKeys, useMeetingNotes } from "../../state/meeting-queries";
 import { durationLabel } from "../library/duration";
 import { MEETINGS_KEY } from "../library/use-meetings";
+import { SensitiveBadge } from "../sensitive";
 import { detailStatus } from "./detail-status";
 import { sourceAppName } from "../folders/source-app";
 import { FolderTags } from "../folders/folder-tags";
@@ -168,10 +169,14 @@ export function MeetingHeader({ detail }: { detail: MeetingDetail }) {
             .filter(Boolean)
             .join(" · ")}
         </span>
-        {!detail.audioAvailable && (
-          <Chip icon="link_off" dashed>
-            {t("meeting.noAudio")}
-          </Chip>
+        {detail.sensitive ? (
+          <SensitiveBadge />
+        ) : (
+          !detail.audioAvailable && (
+            <Chip icon="link_off" dashed>
+              {t("meeting.noAudio")}
+            </Chip>
+          )
         )}
         {status !== "ready" && status !== "cloudEnhanced" && <StatusPill status={status} percent={percent} />}
       </div>

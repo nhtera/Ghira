@@ -9,12 +9,19 @@ import { sourceAppName } from "./source-app";
 const chip = "inline-flex h-5 max-w-40 items-center gap-0.5 rounded-full border border-line2 px-1.5 text-[11.5px] text-muted";
 const SHOWN = 3;
 
-export function RowChips({ row, folderName }: { row: Pick<MeetingRow, "folder" | "tags" | "sourceApp">; folderName?: string }) {
+export function RowChips({ row, folderName }: { row: Pick<MeetingRow, "folder" | "tags" | "sourceApp" | "sensitive">; folderName?: string }) {
   const { t } = useTranslation();
   const app = sourceAppName(row.sourceApp);
-  if (!folderName && row.tags.length === 0 && !app) return null;
+  if (!row.sensitive && !folderName && row.tags.length === 0 && !app) return null;
   return (
     <span className="mt-1 flex flex-wrap items-center gap-1">
+      {/* Text and icon, never color alone. */}
+      {row.sensitive && (
+        <span data-testid="row-sensitive" title={t("sensitive.tip")} className="inline-flex h-5 items-center gap-0.5 rounded-full bg-warn-soft px-1.5 text-[11.5px] font-semibold text-warn">
+          <Icon name="visibility_off" size={12} />
+          {t("sensitive.chip")}
+        </span>
+      )}
       {folderName && (
         <span className={chip}>
           <Icon name="folder" size={12} />

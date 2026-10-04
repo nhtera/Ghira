@@ -1602,5 +1602,20 @@
     "manageEmpty": "Chưa có thư mục hay thẻ nào. Thêm từ một cuộc họp hoặc khi chọn nhiều cuộc họp.",
     "notFound": "Thư mục hoặc thẻ này không còn nữa.",
     "failed": "Chưa thực hiện được. Hãy thử lại."
+  },
+  "sensitive": {
+    "badge": "Nhạy cảm · không lưu bản ghi âm",
+    "tip": "Cuộc họp nhạy cảm: chỉ giữ bản ghi. Không lưu bản ghi âm, không gửi lên đám mây, không học giọng nói.",
+    "next": "Nhạy cảm",
+    "menu": "Cuộc họp nhạy cảm",
+    "menuLive": "Cuộc họp nhạy cảm…",
+    "liveLocked": "Giữ đến khi kết thúc lần ghi",
+    "confirm": "Đặt là nhạy cảm",
+    "confirmLive": "Đặt cuộc họp này là nhạy cảm? Từ giờ không lưu thêm âm thanh, và phần bản ghi âm đã có sẽ bị xoá khi bạn dừng. Chỉ giữ bản ghi; AI đám mây và việc học giọng nói sẽ tắt. Không thể tắt lại trong lần ghi này.",
+    "confirmStored": "Đặt cuộc họp này là nhạy cảm? Bản ghi âm sẽ bị xoá ngay và chỉ giữ bản ghi. AI đám mây và việc học giọng nói sẽ tắt cho cuộc họp này.",
+    "turnedOff": "Đã tắt chế độ nhạy cảm. Bản ghi âm vẫn đã bị xoá.",
+    "chip": "Nhạy cảm",
+    "noTranscript": "Chưa có bản ghi nào để giữ lại, nên chưa đặt được cuộc họp này là nhạy cảm.",
+    "pending": "Cuộc họp này vẫn đang được xử lý từ bản ghi âm. Hãy thử lại khi xong."
   }
 }

@@ -135,6 +135,10 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             Arc::new(move || core.store_even_locked())
         },
         events: core.events(),
+        locked: {
+            let core = core.clone();
+            Arc::new(move || core.locked())
+        },
         runner: {
             let core = core.clone();
             Arc::new(move || core.runner())

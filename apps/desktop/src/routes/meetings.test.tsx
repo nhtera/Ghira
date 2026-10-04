@@ -34,6 +34,7 @@ const row = (gid: string, title: string, source: string): MeetingRow => ({
   transcriptVersion: 2,
   cloudUsed: false,
   consentConfirmed: false,
+  sensitive: false,
   template: null,
   people: [],
   job: null,

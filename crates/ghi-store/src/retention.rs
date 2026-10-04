@@ -17,7 +17,7 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::rowcrypt::{self, row_aad};
 use crate::store::{Store, now_ms};
-use crate::{Result, tombstones};
+use crate::{Result, StoreError, tombstones};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RetentionReport {
@@ -43,35 +43,50 @@ impl Store {
         };
         let mut report = RetentionReport::default();
         for (id, gid) in due {
-            // Files first: if we crash before the rows go, the next sweep
-            // repeats this (removing missing files is fine).
-            // A malformed gid (never written by the store) must not stop
-            // the sweep for every other meeting.
-            let Ok(dir) = self.bundle_dir(&gid) else {
-                continue;
+            let n = match self.remove_audio(id, &gid) {
+                Ok(n) => n,
+                // A malformed gid (never written by the store) must not stop
+                // the sweep for every other meeting.
+                Err(StoreError::Invalid(_)) => continue,
+                Err(e) => return Err(e),
             };
-            match std::fs::remove_dir_all(dir) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e.into()),
-            }
-            let mut conn = self.conn();
-            let tx = conn.transaction()?;
-            let lamport = Store::alloc_lamport(&tx, 1)?;
-            tombstones::write_where(
-                &tx,
-                "track",
-                "SELECT gid FROM tracks WHERE meeting_id = ?1",
-                [id],
-                lamport,
-            )?;
-            let n = tx.execute("DELETE FROM tracks WHERE meeting_id = ?1", params![id])?;
-            tx.execute("DELETE FROM waveforms WHERE meeting_id = ?1", params![id])?;
-            tx.commit()?;
             report.meetings += 1;
-            report.tracks += n as u32;
+            report.tracks += n;
         }
         Ok(report)
+    }
+
+    /// Deletes a meeting's audio now (bundle files, `tracks` rows with
+    /// tombstones, the cached waveform), keeping the text. Sensitive mode uses
+    /// it; like the sweep it is not a crypto-shred. Returns the tracks removed.
+    pub fn delete_audio(&self, meeting_gid: &str) -> Result<u32> {
+        let id = Store::meeting_ref(&self.conn(), meeting_gid)?.id;
+        self.remove_audio(id, meeting_gid)
+    }
+
+    /// Files first: if we crash before the rows go, the next call repeats
+    /// this (removing missing files is fine).
+    fn remove_audio(&self, id: i64, gid: &str) -> Result<u32> {
+        let dir = self.bundle_dir(gid)?;
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        tombstones::write_where(
+            &tx,
+            "track",
+            "SELECT gid FROM tracks WHERE meeting_id = ?1",
+            [id],
+            lamport,
+        )?;
+        let n = tx.execute("DELETE FROM tracks WHERE meeting_id = ?1", params![id])?;
+        tx.execute("DELETE FROM waveforms WHERE meeting_id = ?1", params![id])?;
+        tx.commit()?;
+        Ok(n as u32)
     }
 
     /// Applies a retention policy to every meeting: audio is kept `days`
@@ -117,10 +132,12 @@ impl Store {
         let m = Store::meeting_ref(&conn, meeting_gid)?;
         let dek = self.dek(&conn, m.id)?;
         let ct = rowcrypt::seal(&dek, data, &row_aad("waveforms", "data_ct", meeting_gid));
-        // Only while the audio is there (a sweep may have run meanwhile).
+        // Only while the audio is there (a sweep may have run meanwhile) and the
+        // meeting keeps audio (sensitive mode may have been turned on).
         conn.execute(
             "INSERT INTO waveforms (meeting_id, data_ct)
              SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM tracks WHERE meeting_id = ?1)
+               AND NOT EXISTS (SELECT 1 FROM meetings WHERE id = ?1 AND sensitive = 1)
              ON CONFLICT (meeting_id) DO UPDATE SET data_ct = excluded.data_ct",
             params![m.id, ct],
         )?;

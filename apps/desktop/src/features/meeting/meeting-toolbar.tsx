@@ -19,6 +19,7 @@ import { FollowupEmailDialog } from "../email/followup-email-dialog";
 import { ipc } from "../../ipc";
 import { invalidateMeeting, useTemplates } from "../../state/meeting-queries";
 import { useCloudOffered } from "../cloud-sheet/cloud-offered";
+import { SensitiveConfirm } from "../sensitive";
 import { useNotesLanguage, type PickedLanguage } from "./notes-language";
 import { DEFAULT_TEMPLATE, templateName } from "./template-names";
 import { inProgress } from "../library/meeting-status";
@@ -62,6 +63,7 @@ export function MeetingToolbar({
   const [picked, setPicked] = useState<PickedLanguage | null>(null);
   const { shown, request: language } = useNotesLanguage(detail, picked);
   const [asking, setAsking] = useState(false);
+  const [sensitiveAsk, setSensitiveAsk] = useState(false);
   const [emailing, setEmailing] = useState(false);
   const [busy, setBusy] = useState(false);
   // Choosing a language or template only stages it: ask right away what Regenerate will do.
@@ -120,6 +122,14 @@ export function MeetingToolbar({
     if (r.status === "error") return failed(r.error);
     void invalidateMeeting(client, detail.gid);
   };
+  // On asks first (the audio is deleted now); off needs no question.
+  const toggleSensitive = async () => {
+    if (!detail.sensitive) return setSensitiveAsk(true);
+    const r = await ipc.commands.setMeetingSensitive(detail.gid, false);
+    if (r.status === "error") return failed(r.error);
+    show({ tone: "info", title: t("sensitive.turnedOff") });
+    void invalidateMeeting(client, detail.gid);
+  };
   const exportItems: MenuItem[] = [
     {
       label: t("meeting.exportEllipsis"),
@@ -150,6 +160,12 @@ export function MeetingToolbar({
       label: t("cloud.sheet.never"),
       icon: detail.cloudLocked ? "check" : "cloud_off",
       onSelect: () => void toggleCloudLock(),
+    },
+    {
+      label: t("sensitive.menu"),
+      icon: detail.sensitive ? "check" : "visibility_off",
+      movesFocus: !detail.sensitive,
+      onSelect: () => void toggleSensitive(),
     },
   ];
   const ctl = "h-[30px] rounded-ctl border border-ctl bg-surface px-[11px] text-[12.5px] font-medium";
@@ -189,7 +205,7 @@ export function MeetingToolbar({
               </button>
             ))}
           </div>
-          {cloudOffered && (
+          {cloudOffered && !detail.sensitive && (
             <button type="button" onClick={onImproveWithCloud} className={cn(ctl, "inline-flex items-center gap-[5px] hover:bg-surface2")}>
               <Icon name="cloud_upload" size={16} />
               {t("notes.improveWithCloud")}
@@ -217,6 +233,11 @@ export function MeetingToolbar({
             onConfirm={() => void regenerate()}
             onCancel={() => setAsking(false)}
           />
+        </div>
+      )}
+      {sensitiveAsk && (
+        <div className="pb-2">
+          <SensitiveConfirm meeting={detail.gid} recording={false} onClose={() => setSensitiveAsk(false)} />
         </div>
       )}
       <FollowupEmailDialog

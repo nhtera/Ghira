@@ -221,6 +221,7 @@ describe("transcript", () => {
             language: null,
             title: "",
             consentConfirmed: true,
+            sensitive: false,
             speakers: [speaker(1)],
             lines: [line("a", 1)],
             marks: [],
@@ -290,6 +291,7 @@ describe("transcript", () => {
             language: null,
             title: "",
             consentConfirmed: true,
+            sensitive: false,
             speakers: [],
             lines: [line("a", 1), { ...line("b", 1), t0Ms: 9000, t1Ms: 9500 }],
             marks: [1500],
@@ -359,6 +361,63 @@ describe("loading with a session", () => {
     const m = run([{ type: "snapshot", state: state({ phase: "loading", recording: true }) }]);
     expect(isCapturing(m)).toBe(true);
     expect(run([mobile({ type: "phase", phase: "paused" })], m).recording).toBe(false);
+  });
+});
+
+describe("sensitive mode and discard", () => {
+  const at = (gid: string, t0: number, t1: number): LineInfo => ({ ...line(gid, 1), t0Ms: t0, t1Ms: t1 });
+
+  it("turns sensitive on with the event and restores it from a snapshot", () => {
+    let m = run([core({ type: "sessionStarted", meeting: "m", mode: "room", language: null, title: "" })]);
+    expect(m.sensitive).toBe(false);
+    m = run([core({ type: "sensitiveChanged", meeting: "m", sensitive: true })], m);
+    expect(m.sensitive).toBe(true);
+    m = run(
+      [
+        {
+          type: "snapshot",
+          state: state({
+            session: {
+              seq: 3,
+              meeting: "m",
+              state: "recording",
+              nowMs: null,
+              transcribing: true,
+              mode: "room",
+              language: null,
+              title: "",
+              consentConfirmed: true,
+              sensitive: true,
+              speakers: [],
+              lines: [],
+              marks: [],
+            },
+          }),
+        },
+      ],
+      initialModel,
+    );
+    expect(m.sensitive).toBe(true);
+    // A new recording starts without it.
+    m = run([core({ type: "sessionStarted", meeting: "n", mode: "room", language: null, title: "" })], m);
+    expect(m.sensitive).toBe(false);
+  });
+
+  it("a discard removes the lines that end after the cut, the marks from it, and the partial", () => {
+    let m = run([
+      core({ type: "sessionStarted", meeting: "m", mode: "room", language: null, title: "" }),
+      core({ type: "transcriptFinal", meeting: "m", line: at("a", 0, 3000) }),
+      core({ type: "transcriptFinal", meeting: "m", line: at("b", 4000, 7000) }),
+      core({ type: "transcriptFinal", meeting: "m", line: at("c", 8000, 9000) }),
+      core({ type: "markAdded", meeting: "m", tMs: 2000 }),
+      core({ type: "markAdded", meeting: "m", tMs: 8500 }),
+      core({ type: "transcriptPartial", meeting: "m", track: 0, text: "dở dang" }),
+    ]);
+    expect([m.lines.length, m.marks]).toEqual([3, 2]);
+    m = run([core({ type: "discardApplied", meeting: "m", fromMs: 3500 })], m);
+    expect(m.lines.map((l) => l.key)).toEqual(["a"]);
+    expect([m.marks, m.markTimes]).toEqual([1, [2000]]);
+    expect(m.partial).toBe("");
   });
 });
 

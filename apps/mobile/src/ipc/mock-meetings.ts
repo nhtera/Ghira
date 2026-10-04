@@ -141,6 +141,7 @@ function build(
     transcriptVersion: 2,
     cloudUsed: false,
     consentConfirmed: true,
+    sensitive: false,
     template: null,
     people: (o.people ?? []).map(([name, colorSlot]) => ({ name, colorSlot, isMe: false })),
     job: o.job ?? null,
@@ -590,6 +591,15 @@ export const meetingCommands: Partial<Commands> = {
     const m = find(id);
     if (!m) return fail("not found");
     m.detail.cloudLocked = value;
+    return ok(null);
+  },
+  // On deletes the audio (the UI asked first); off only clears the flag.
+  setMeetingSensitive: async (id, value) => {
+    const m = find(id);
+    if (!m) return fail("not found");
+    m.detail.sensitive = value;
+    m.row.sensitive = value;
+    if (value) m.detail.audioAvailable = false;
     return ok(null);
   },
   deleteMeeting: async (id) => {

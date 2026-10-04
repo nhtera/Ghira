@@ -41,6 +41,7 @@ const row = (gid: string, title: string) => ({
   transcriptVersion: 2,
   cloudUsed: false,
   consentConfirmed: false,
+  sensitive: false,
   job: null,
 });
 
@@ -108,6 +109,7 @@ describe("Popover", () => {
         language: null,
         title: "Weekly",
         consentConfirmed: false,
+        sensitive: false,
       },
     });
     mount();

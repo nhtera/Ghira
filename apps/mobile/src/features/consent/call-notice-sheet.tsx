@@ -5,6 +5,7 @@
 import { Icon, PhoneButton, Sheet } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
 import type { MeetingLanguage } from "../../bindings";
+import { SensitiveRow } from "../sensitive";
 import { CopyConsentButton } from "./consent-sheet";
 
 export type CallNoticeSheetProps = {
@@ -12,6 +13,8 @@ export type CallNoticeSheetProps = {
   open: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  /** The "Sensitive meeting" choice for this recording (none: not offered). */
+  sensitive?: { checked: boolean; onChange: (on: boolean) => void };
 };
 
 export function CallNoticeSheet({
@@ -19,6 +22,7 @@ export function CallNoticeSheet({
   open,
   onCancel,
   onConfirm,
+  sensitive,
 }: CallNoticeSheetProps) {
   const { t } = useTranslation();
   return (
@@ -57,6 +61,11 @@ export function CallNoticeSheet({
         {t("mobile.callLimit.consent")}
       </p>
       <CopyConsentButton language={language} className="mt-4" />
+      {sensitive && (
+        <div className="mt-4">
+          <SensitiveRow checked={sensitive.checked} onChange={sensitive.onChange} />
+        </div>
+      )}
     </Sheet>
   );
 }

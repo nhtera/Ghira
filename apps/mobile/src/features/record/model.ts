@@ -19,6 +19,8 @@ export type Line = {
   key: string;
   speaker: number | null;
   t0Ms: number;
+  /** Where the line ends: a discard removes every line that ends after its cut. */
+  t1Ms: number;
   text: string;
   overlap: boolean;
   marked: boolean;
@@ -52,6 +54,8 @@ export type RecordModel = {
   announce: { name: string; n: number } | null;
   /** The recording just ended and was saved. */
   saved: boolean;
+  /** Sensitive mode: no audio is kept for this meeting. */
+  sensitive: boolean;
 };
 
 export const initialModel: RecordModel = {
@@ -74,6 +78,7 @@ export const initialModel: RecordModel = {
   seq: 0,
   announce: null,
   saved: false,
+  sensitive: false,
 };
 
 export type Action =
@@ -146,6 +151,7 @@ const toLine = (l: LineInfo, marked = false): Line => ({
   key: l.gid || `t${l.t0Ms ?? 0}-${l.speaker ?? 0}`,
   speaker: l.speaker,
   t0Ms: l.t0Ms ?? 0,
+  t1Ms: l.t1Ms ?? l.t0Ms ?? 0,
   text: l.text,
   overlap: l.overlap,
   marked,
@@ -191,6 +197,16 @@ function core(m: RecordModel, env: CoreEvent): RecordModel {
       return e.track === 0 ? { ...base, partial: e.text } : base;
     case "transcriptFinal":
       return appendLine(base, e.line);
+    case "sensitiveChanged":
+      return { ...base, sensitive: e.sensitive };
+    case "discardApplied": {
+      // Everything from the cut on is gone (lines that end after it, marks at or after it).
+      const from = e.fromMs ?? 0;
+      const markTimes = base.markTimes.filter((t) => t < from);
+      // Marks the snapshot gave without times stay counted.
+      const untimed = Math.max(0, base.marks - base.markTimes.length);
+      return { ...base, lines: base.lines.filter((l) => l.t1Ms <= from), markTimes, marks: markTimes.length + untimed, partial: "" };
+    }
     case "markAdded": {
       // The snapshot may already hold this mark.
       if (e.tMs !== null && base.markTimes.includes(e.tMs)) return base;
@@ -271,6 +287,7 @@ export function reducer(m: RecordModel, a: Action): RecordModel {
         speakers,
         seq: session?.seq ?? m.seq,
         saved: m.saved && s.phase === "idle",
+        sensitive: session?.sensitive ?? false,
       };
     }
     case "mobile":

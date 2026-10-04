@@ -26,6 +26,8 @@ pub struct BundlePages {
     /// During a discard: pages written after the cut was chosen wait here
     /// until the bundles are rotated, then follow the kept pages.
     held: Option<Vec<(Track, Vec<u8>)>>,
+    /// Sensitive mode: pages are dropped, never written.
+    off: bool,
 }
 
 impl BundlePages {
@@ -34,7 +36,15 @@ impl BundlePages {
             writers,
             ends: [Vec::new(), Vec::new()],
             held: None,
+            off: false,
         }
+    }
+
+    /// Sensitive mode: from now on no page is written (or held). What was
+    /// written before stays in the bundles until the meeting's audio is deleted.
+    pub fn stop_writing(&mut self) {
+        self.off = true;
+        self.held = None;
     }
 
     /// Records to keep on `track` so nothing at or after `t_cut_ms` remains:
@@ -179,6 +189,9 @@ fn store_io(e: ghi_store::StoreError) -> io::Error {
 
 impl PageSink for BundlePages {
     fn write_page(&mut self, track: Track, page: &[u8]) -> io::Result<()> {
+        if self.off {
+            return Ok(());
+        }
         if let Some(held) = self.held.as_mut() {
             held.push((track, page.to_vec()));
             return Ok(());

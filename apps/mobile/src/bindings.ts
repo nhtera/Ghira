@@ -29,6 +29,25 @@ export const commands = {
 	recordCallActive: () => typedError<boolean, string>(__TAURI_INVOKE("record_call_active")),
 	/**  The pending "Resume or stop and save?" question after an interruption. */
 	recordResumePrompt: () => typedError<ResumePrompt, string>(__TAURI_INVOKE("record_resume_prompt")),
+	/**
+	 *  Sensitive mode (doc 02, P1) for the running recording: from now on no audio
+	 *  is kept (what was written goes when it stops), cloud AI and voice learning
+	 *  are refused for the meeting and no final pass runs. One way: part of the
+	 *  audio is gone, so a recording cannot leave the mode. Stored meetings use
+	 *  `set_meeting_sensitive`.
+	 */
+	recordSetSensitive: (sensitive: boolean) => typedError<null, string>(__TAURI_INVOKE("record_set_sensitive", { sensitive })),
+	/**
+	 *  What discarding the last `seconds` of the recording would remove, shown
+	 *  before confirming [RT-1].
+	 */
+	recordDiscardPreview: (seconds: number | null) => typedError<DiscardPreview, string>(__TAURI_INVOKE("record_discard_preview", { seconds })),
+	/**
+	 *  Discards everything from `from_ms` (meeting time) on [RT-1]: the span the
+	 *  user saw in the preview, however long they took to confirm. Returns where
+	 *  the cut landed (ms).
+	 */
+	recordDiscardFrom: (fromMs: number | null) => typedError<number | null, string>(__TAURI_INVOKE("record_discard_from", { fromMs })),
 	appVersion: () => __TAURI_INVOKE<MobileAppVersion>("app_version"),
 	lifecycleState: () => typedError<LifecycleState, string>(__TAURI_INVOKE("lifecycle_state")),
 	deviceTier: () => typedError<DeviceTier, string>(__TAURI_INVOKE("device_tier")),
@@ -126,6 +145,15 @@ export const commands = {
 	 *  (rename autocomplete).
 	 */
 	knownSpeakerNames: () => typedError<string[], string>(__TAURI_INVOKE("known_speaker_names")),
+	/**
+	 *  Sensitive meeting mode (doc 02, P1): no audio kept, no cloud, no voice
+	 *  learning. On the meeting being recorded it can only be turned on (part of
+	 *  the audio is gone: what was written goes at stop). On a stored meeting
+	 *  turning it on deletes its audio now (the UI confirms first); it is refused
+	 *  with `noTranscript` (nothing would be kept) or `transcriptPending` (its final
+	 *  pass still needs the audio). Turning it off only clears the flag.
+	 */
+	setMeetingSensitive: (meeting: string, sensitive: boolean) => typedError<null, string>(__TAURI_INVOKE("set_meeting_sensitive", { meeting, sensitive })),
 	/**
 	 *  The meeting's speakers (merged ones left out), with the middle 3 s of each
 	 *  one's longest line as the sample.
@@ -465,6 +493,17 @@ export type DeviceTier = {
 	tier: TierClass,
 };
 
+/**  What "discard the last N seconds" would remove, shown before confirming [RT-1]. */
+export type DiscardPreview = {
+	/**  Where the cut lands (meeting ms). */
+	fromMs: number | null,
+	/**  Transcript lines that end after the cut. */
+	lines: string[],
+	/**  Notepad lines typed after the cut. */
+	notes: string[],
+	marks: number,
+};
+
 /**
  *  An event with its sequence number (gap-free per bus) and wall time, so a
  *  late subscriber (a reloaded webview) can tell what it missed.
@@ -497,6 +536,12 @@ track: number; text: string } | { type: "transcriptFinal"; meeting: string; line
 { type: "speakerSplit"; meeting: string; from: number; speaker: SpeakerInfo; lines: string[] } | { type: "speakerNotAPerson"; meeting: string; id: number } | { type: "markAdded"; meeting: string; tMs: number | null } | 
 /**  Everything from `from_ms` on was removed (audio, lines, marks, notes). */
 { type: "discardApplied"; meeting: string; fromMs: number | null } | 
+/**
+ *  The meeting entered sensitive mode while recording: from now on no
+ *  audio is kept (what was written goes at stop), no cloud, no voice
+ *  learning. Never turned off again during the same recording.
+ */
+{ type: "sensitiveChanged"; meeting: string; sensitive: boolean } | 
 /**
  *  RMS level of each track over the last ~100 ms (at most 10 per second,
  *  only while audio flows). `None`: the track is not captured or no audio
@@ -703,6 +748,8 @@ export type MeetingRow = {
 	transcriptVersion: number | null,
 	cloudUsed: boolean,
 	consentConfirmed: boolean,
+	/**  Sensitive mode: no audio kept, no cloud, no voice learning. */
+	sensitive: boolean,
 	/**  Notes template id (`None`: the default). */
 	template: string | null,
 	/**  Named speakers, for the people column and filter. */
@@ -921,6 +968,12 @@ export type RecordStart = {
 	 *  above never does.
 	 */
 	callAcknowledged: boolean,
+	/**
+	 *  Sensitive mode from the start: no audio is kept (transcript only), no
+	 *  cloud, no voice learning. Needs the live transcript (`sensitiveNeedsTranscript`
+	 *  otherwise).
+	 */
+	sensitive: boolean,
 };
 
 /**
@@ -1072,6 +1125,8 @@ export type SessionSnapshot = {
 	title: string,
 	/**  Everyone's consent to recording was confirmed (the live toggle). */
 	consentConfirmed: boolean,
+	/**  Sensitive mode: no audio is kept for this meeting. */
+	sensitive: boolean,
 	/**  Speakers still in play (merged ones are gone). */
 	speakers: SpeakerInfo[],
 	/**  Final lines stored so far, in time order. */

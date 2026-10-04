@@ -37,21 +37,36 @@ pub fn recover(store: &Store) -> Result<Recovered, String> {
     recover_with_kinds(store, &[NOTES_LIVE_JOB, FINAL_PASS_JOB])
 }
 
-/// Like [`recover`], queueing only `kinds` for closed meetings and for
-/// `processing` ones with no job (the phone: `[FINAL_PASS_JOB]`). A kind set
-/// without a final pass (the device is below the processing tier) queues
-/// nothing: those meetings stay `done`, as recorded.
-pub fn recover_with_kinds(store: &Store, kinds: &[&'static str]) -> Result<Recovered, String> {
-    let mut out = Recovered::default();
+/// Applies the audio side of discards whose text side was stored but whose
+/// bundle rotation never ran [RT-1]; `meeting` limits it to one meeting.
+/// Returns how many were completed. A recording that stops must call this
+/// before it queues a final pass, so the pass never reads discarded audio.
+pub fn complete_pending_discards(store: &Store, meeting: Option<&str>) -> Result<usize, String> {
+    let mut n = 0;
     for d in store.pending_discards().map_err(err)? {
+        if meeting.is_some_and(|m| m != d.meeting_gid) {
+            continue;
+        }
         for k in &d.keep {
             store
                 .complete_discard_audio(&d.meeting_gid, k)
                 .map_err(err)?;
         }
         store.discard_audio_done(d.id).map_err(err)?;
-        out.discards_completed += 1;
+        n += 1;
     }
+    Ok(n)
+}
+
+/// Like [`recover`], queueing only `kinds` for closed meetings and for
+/// `processing` ones with no job (the phone: `[FINAL_PASS_JOB]`). A kind set
+/// without a final pass (the device is below the processing tier) queues
+/// nothing: those meetings stay `done`, as recorded.
+pub fn recover_with_kinds(store: &Store, kinds: &[&'static str]) -> Result<Recovered, String> {
+    let mut out = Recovered {
+        discards_completed: complete_pending_discards(store, None)?,
+        ..Recovered::default()
+    };
     let mut offset = 0;
     loop {
         let page = store.list_meetings(200, offset).map_err(err)?;
@@ -63,6 +78,16 @@ pub fn recover_with_kinds(store: &Store, kinds: &[&'static str]) -> Result<Recov
             store.delete_meeting(&m.gid).map_err(err)?;
             out.imports_dropped += 1;
             offset -= 1;
+        }
+        // A sensitive meeting keeps no audio: finish a removal a crash (or a
+        // failed stop) interrupted.
+        for m in page.iter().filter(|m| m.sensitive) {
+            // A failure must not stop the launch (the next one tries again).
+            if !store.tracks(&m.gid).map_err(err)?.is_empty()
+                && let Err(e) = store.delete_audio(&m.gid)
+            {
+                log::warn!("removing the audio of a sensitive meeting: {e}");
+            }
         }
         for m in page.iter().filter(|m| m.status == "processing") {
             let busy = [NOTES_LIVE_JOB, FINAL_PASS_JOB, NOTES_FINAL_JOB]
@@ -83,9 +108,14 @@ pub fn recover_with_kinds(store: &Store, kinds: &[&'static str]) -> Result<Recov
                     )
                     .map_err(err)?;
                 out.jobs_requeued += 1;
+            } else if !busy {
+                // Nothing to wait for and no audio to process: it is as ready as it gets.
+                store.set_meeting_status(&m.gid, "ready").map_err(err)?;
             }
         }
         for m in page.into_iter().filter(|m| m.status == "recording") {
+            // The final pass needs the audio a sensitive meeting does not keep.
+            let kinds = crate::session::job_kinds_at_stop(kinds, m.sensitive);
             let duration = store
                 .segments(&m.gid)
                 .map_err(err)?
@@ -97,14 +127,17 @@ pub fn recover_with_kinds(store: &Store, kinds: &[&'static str]) -> Result<Recov
             store
                 .set_meeting_status(
                     &m.gid,
-                    if kinds.is_empty() {
+                    if m.sensitive {
+                        // Its transcript is final as recorded.
+                        "ready"
+                    } else if kinds.is_empty() {
                         "done"
                     } else {
                         "processing"
                     },
                 )
                 .map_err(err)?;
-            for &kind in kinds {
+            for &kind in &kinds {
                 let busy = store.active_job(&m.gid, kind).map_err(err)?.is_some()
                     || (kind == NOTES_LIVE_JOB
                         && store
@@ -193,6 +226,92 @@ mod tests {
         assert_eq!(kinds, [NOTES_LIVE_JOB, FINAL_PASS_JOB]);
         // Idempotent.
         assert_eq!(recover(&store).unwrap(), Recovered::default());
+    }
+
+    #[test]
+    fn a_crashed_sensitive_recording_loses_its_audio_and_gets_no_final_pass() {
+        let tmp = tempfile::tempdir().unwrap();
+        let keys = Arc::new(MemoryKeyStore::default());
+        let gid;
+        {
+            let store = Store::open(tmp.path(), keys.clone(), Protection::default()).unwrap();
+            gid = store.create_meeting(NewMeeting::default()).unwrap().gid;
+            let mut w = store.open_track(&gid, TrackKind::Mic).unwrap();
+            w.append(&[1]).unwrap();
+            w.sync(true).unwrap();
+            // Turned on mid-recording, then the app died.
+            store.set_sensitive(&gid, true).unwrap();
+            drop(w);
+        }
+        let store = Store::open(tmp.path(), keys, Protection::default()).unwrap();
+        recover(&store).unwrap();
+        assert!(!store.audio_available(&gid).unwrap());
+        let kinds: Vec<String> = store
+            .jobs_for_meeting(&gid)
+            .unwrap()
+            .into_iter()
+            .map(|j| j.kind)
+            .collect();
+        assert_eq!(kinds, [NOTES_FINAL_JOB]);
+        assert_eq!(store.get_meeting(&gid).unwrap().status, "ready");
+        // The phone (final pass only): nothing to queue, the meeting is done.
+        let other = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        store.set_sensitive(&other, true).unwrap();
+        recover_with_kinds(&store, &[FINAL_PASS_JOB]).unwrap();
+        assert!(store.jobs_for_meeting(&other).unwrap().is_empty());
+        assert_eq!(store.get_meeting(&other).unwrap().status, "ready");
+    }
+
+    #[test]
+    fn a_processing_meeting_with_no_audio_and_no_job_is_ready() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        let gid = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        store.set_meeting_status(&gid, "processing").unwrap();
+        recover(&store).unwrap();
+        assert_eq!(store.get_meeting(&gid).unwrap().status, "ready");
+        assert!(store.jobs_for_meeting(&gid).unwrap().is_empty());
+    }
+
+    /// A removal that fails must not stop the launch.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_audio_removal_of_a_sensitive_meeting_does_not_stop_recovery() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        let gid = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        store.set_meeting_status(&gid, "done").unwrap();
+        let mut w = store.open_track(&gid, TrackKind::Mic).unwrap();
+        w.append(&[1]).unwrap();
+        store.finish_track(&gid, TrackKind::Mic, w).unwrap();
+        store.set_sensitive(&gid, true).unwrap();
+        // The bundle folder cannot be emptied.
+        let dir = tmp.path().join("bundles").join(&gid);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let blocked = std::fs::remove_dir_all(&dir).is_err();
+        let r = recover(&store);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        if blocked {
+            assert!(r.is_ok(), "{r:?}");
+            assert!(
+                store.audio_available(&gid).unwrap(),
+                "left for the next launch"
+            );
+        }
+        // The next launch finishes the removal.
+        recover(&store).unwrap();
+        assert!(!store.audio_available(&gid).unwrap());
     }
 
     fn open_with_crashed_meeting() -> (tempfile::TempDir, Store, String) {

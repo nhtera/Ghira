@@ -30,6 +30,7 @@ export function useAppActions() {
   );
   const startRecording = useCallback(
     async (mode: RecordMode = recordMode) => {
+      // Sensitive mode, if armed, is applied by the core (and cleared by it).
       const r = await report(ipc.commands.startRecording(mode, null, ""));
       if (r?.status === "ok") void navigate({ to: "/live" });
       return r;

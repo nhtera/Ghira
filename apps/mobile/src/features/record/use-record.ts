@@ -10,9 +10,19 @@ import type {
 import { ipc } from "../../ipc";
 import { initialModel, isCapturing, reducer, type Action, type RecordModel } from "./model";
 
-export type StartAck = { consent: boolean; call: boolean };
+export type StartAck = { consent: boolean; call: boolean; sensitive: boolean };
 /** What the screen can say went wrong: a refused start, or a command that failed. */
-export type RecordError = "micInUse" | "diskLow" | "callActive" | "waitingForTranscription" | "pairingNotAvailable" | "generic" | "action" | "microphoneDenied" | "alreadyRecording";
+export type RecordError =
+  | "micInUse"
+  | "diskLow"
+  | "callActive"
+  | "waitingForTranscription"
+  | "pairingNotAvailable"
+  | "sensitiveNeedsTranscript"
+  | "generic"
+  | "action"
+  | "microphoneDenied"
+  | "alreadyRecording";
 
 /** What the shell reports once, not per session. */
 export type RecordSetup = {
@@ -46,6 +56,7 @@ export function startErrorFor(message: string): RecordError {
   if (m.includes("micinuse") || m.includes("microphoneisinuse")) return "micInUse";
   if (m.includes("waitingfortranscription")) return "waitingForTranscription";
   if (m.includes("pairingnotavailable")) return "pairingNotAvailable";
+  if (m.includes("sensitiveneedstranscript")) return "sensitiveNeedsTranscript";
   return "generic";
 }
 
@@ -179,7 +190,7 @@ export function useRecord(setup: RecordSetup) {
       setStarting(true);
       setError(null);
       dispatch({ type: "dismissSaved" });
-      const r = await ipc.commands.recordStart({ mode: "room", language: setup.language, title: null, target: setup.target, consentAcknowledged: ack.consent, callAcknowledged: ack.call });
+      const r = await ipc.commands.recordStart({ mode: "room", language: setup.language, title: null, target: setup.target, consentAcknowledged: ack.consent, callAcknowledged: ack.call, sensitive: ack.sensitive });
       setStarting(false);
       if (r.status === "error") {
         const kind = startErrorFor(r.error);
@@ -208,5 +219,18 @@ export function useRecord(setup: RecordSetup) {
     resume: () => void run(ipc.commands.recordResume),
     stop: () => void run(ipc.commands.recordStop),
     mark: () => void run(ipc.commands.recordMark),
+    /** Sensitive mode on for the running recording (one way). Resolves whether it worked. */
+    makeSensitive: async () => {
+      const r = await ipc.commands.recordSetSensitive(true).catch(() => null);
+      if (r?.status !== "ok") setError("action");
+      return r?.status === "ok";
+    },
+    discardPreview: (seconds: number) => ipc.commands.recordDiscardPreview(seconds),
+    /** Discards from the previewed cut on. Resolves whether it worked. */
+    discardFrom: async (fromMs: number) => {
+      const r = await ipc.commands.recordDiscardFrom(fromMs).catch(() => null);
+      if (r?.status !== "ok") setError("action");
+      return r?.status === "ok";
+    },
   };
 }

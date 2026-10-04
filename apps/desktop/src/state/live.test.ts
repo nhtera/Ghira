@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
 import type { CoreEvent, Event, LineInfo, SpeakerInfo } from "../bindings";
-import { initialLive, reduce, type LiveState } from "./live";
+import { fromSnapshot, initialLive, reduce, type LiveState } from "./live";
 
 let seq = 0;
 const env = (event: Event): CoreEvent => ({ seq: seq++, atMs: 0, event });
@@ -119,8 +119,7 @@ describe("capture conditions", () => {
 });
 
 describe("snapshot", () => {
-  it("restores a session and skips events it already has", async () => {
-    const { fromSnapshot } = await import("./live");
+  it("restores a session and skips events it already has", () => {
     const snap = {
       seq: 10,
       meeting: M,
@@ -134,6 +133,7 @@ describe("snapshot", () => {
       language: null,
       title: "Standup",
       consentConfirmed: true,
+      sensitive: false,
     };
     let s = fromSnapshot(snap, 100_000);
     expect([s.meeting, s.lines.length, s.speakers[1].label, s.startedAtMs]).toEqual([M, 1, "Linh", 95_000]);
@@ -153,7 +153,35 @@ describe("session info", () => {
       { type: "sessionStarted", meeting: M, mode: "room", language: "vi", title: "Họp nhóm" },
       { type: "stateChanged", meeting: M, state: "recording" },
     ]);
-    expect(s.session).toEqual({ mode: "room", language: "vi", title: "Họp nhóm", consentConfirmed: false });
+    expect(s.session).toEqual({ mode: "room", language: "vi", title: "Họp nhóm", consentConfirmed: false, sensitive: false });
+  });
+
+  it("turns sensitive on with sensitiveChanged and restores it from a snapshot", () => {
+    const s = run([
+      { type: "stateChanged", meeting: M, state: "starting" },
+      { type: "sessionStarted", meeting: M, mode: "room", language: null, title: "" },
+      { type: "sensitiveChanged", meeting: M, sensitive: true },
+    ]);
+    expect(s.session?.sensitive).toBe(true);
+    const snap = fromSnapshot(
+      {
+        seq: 3,
+        meeting: M,
+        state: "recording",
+        nowMs: 0,
+        transcribing: true,
+        speakers: [],
+        lines: [],
+        marks: [],
+        mode: "room",
+        language: null,
+        title: "",
+        consentConfirmed: false,
+        sensitive: true,
+      },
+      0,
+    );
+    expect(snap.session?.sensitive).toBe(true);
   });
 });
 

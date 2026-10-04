@@ -163,9 +163,27 @@ export function useMeeting(id: string) {
     [id],
   );
 
+  /** Sensitive mode on a stored meeting: on deletes its audio (the caller asked first). Resolves `null` when it worked, else the core's refusal word. */
+  const setSensitive = useCallback(
+    async (sensitive: boolean) => {
+      const r = await ipc.commands
+        .setMeetingSensitive(id, sensitive)
+        .catch(() => null);
+      if (r?.status !== "ok") return r?.error ?? "failed";
+      setData((d) =>
+        d.detail
+          ? { ...d, detail: { ...d.detail, sensitive, audioAvailable: sensitive ? false : d.detail.audioAvailable } }
+          : d,
+      );
+      return null;
+    },
+    [id],
+  );
+
   return {
     ...data,
     chip: chipWithProgress(data.chip, percent),
+    setSensitive,
     setActionDone,
     saveSegment,
     reload: load,

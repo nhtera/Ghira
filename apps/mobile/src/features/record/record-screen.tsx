@@ -13,8 +13,11 @@ import type { RecordPhase } from "../../bindings";
 import { ipc } from "../../ipc";
 import { CallNoticeSheet } from "../consent/call-notice-sheet";
 import { ConsentSheet } from "../consent/consent-sheet";
+import { SensitiveBadge, SensitiveSheet } from "../sensitive";
+import { DiscardSheet } from "./discard-sheet";
 import { InterruptionSheet } from "./interruption-sheet";
 import { LiveTranscript, TurnAnnouncer } from "./live-transcript";
+import { MoreSheet } from "./more-sheet";
 import { hasSession, isCapturing, type RecordModel } from "./model";
 import { PhaseBanners } from "./phase-banners";
 import { TargetPicker } from "./target-picker";
@@ -45,13 +48,18 @@ export function RecordScreen() {
   const rec = useRecord(setup);
   const { model } = rec;
   const [sheet, setSheet] = useState<"consent" | "call" | null>(null);
+  // Chosen in the start sheet, for that one recording.
+  const [sensitiveNext, setSensitiveNext] = useState(false);
+  const [more, setMore] = useState<"menu" | "sensitive" | null>(null);
+  const [discard, setDiscard] = useState<number | null>(null);
   const active = hasSession(model);
   const capturing = isCapturing(model);
 
   const confirm = async () => {
     const call = sheet === "call";
     setSheet(null);
-    const refused = await rec.start({ consent: true, call });
+    const refused = await rec.start({ consent: true, call, sensitive: sensitiveNext });
+    if (refused === null) setSensitiveNext(false);
     // A call began after the screen last looked: show the call notice instead.
     if (refused === "callActive") {
       patch({ callActive: true });
@@ -59,6 +67,7 @@ export function RecordScreen() {
     } else if (refused === "microphoneDenied") patch({ mic: "denied" });
   };
 
+  const sensitiveOption = setup.recordOnlyDevice ? undefined : { checked: sensitiveNext, onChange: setSensitiveNext };
   const marksLabel = model.marks > 0 ? `${t("mobile.record.mark")}, ${t("mobile.record.marks", { count: model.marks })}` : t("mobile.record.mark");
 
   return (
@@ -75,6 +84,8 @@ export function RecordScreen() {
         error={bannerError(rec.error) ? { kind: bannerError(rec.error)!, onDismiss: rec.dismissError } : undefined}
         onDownloadModels={() => void navigate({ to: "/settings" })}
       />
+
+      {active && model.sensitive && <SensitiveBadge />}
 
       {/* Nothing to draw before a session: the room goes to the controls at big text sizes. */}
       {active && <Waveform active={capturing} />}
@@ -94,17 +105,31 @@ export function RecordScreen() {
         {!active && !setup.recordOnlyDevice && <TargetPicker value={setup.target} onChange={(target) => patch({ target })} disabled={["desktop", "cloud"]} />}
 
         {active && (
-          <PhoneButton variant="secondary" icon="star_outline" aria-label={marksLabel} disabled={!capturing} onClick={rec.mark} inline className="self-center">
-            {t("mobile.record.mark")}
-            {model.marks > 0 && <span className="font-normal text-muted">{t("mobile.record.marks", { count: model.marks })}</span>}
-          </PhoneButton>
+          <div className="flex items-center justify-center gap-2">
+            <PhoneButton variant="secondary" icon="star_outline" aria-label={marksLabel} disabled={!capturing} onClick={rec.mark} inline>
+              {t("mobile.record.mark")}
+              {model.marks > 0 && <span className="font-normal text-muted">{t("mobile.record.marks", { count: model.marks })}</span>}
+            </PhoneButton>
+            <button
+              type="button"
+              aria-label={t("mobile.record.more")}
+              disabled={!capturing && model.phase !== "paused"}
+              onClick={() => setMore("menu")}
+              className="grid min-h-ios-target min-w-ios-target shrink-0 place-items-center rounded-(--ios-radius-group) border border-ctl bg-surface text-ink active:bg-sunk disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Icon name="more_horiz" size={22} className="size-[1.375rem]" />
+            </button>
+          </div>
         )}
 
         <RecordControl
           state={controlState(model, rec.starting, setup.mic === "denied")}
           mode="room"
           elapsedMs={model.elapsedS * 1000}
-          onStart={() => setSheet(setup.callActive ? "call" : "consent")}
+          onStart={() => {
+            setSensitiveNext(false);
+            setSheet(setup.callActive ? "call" : "consent");
+          }}
           onPause={rec.pause}
           onResume={rec.resume}
           onStop={rec.stop}
@@ -112,8 +137,30 @@ export function RecordScreen() {
         />
       </div>
 
-      <ConsentSheet language={setup.language} open={sheet === "consent"} onCancel={() => setSheet(null)} onConfirm={() => void confirm()} />
-      <CallNoticeSheet language={setup.language} open={sheet === "call"} onCancel={() => setSheet(null)} onConfirm={() => void confirm()} />
+      {/* Sensitive mode keeps only the live transcript: a record-only phone has none to keep. */}
+      <ConsentSheet language={setup.language} open={sheet === "consent"} onCancel={() => setSheet(null)} onConfirm={() => void confirm()} sensitive={sensitiveOption} />
+      <CallNoticeSheet language={setup.language} open={sheet === "call"} onCancel={() => setSheet(null)} onConfirm={() => void confirm()} sensitive={sensitiveOption} />
+      <MoreSheet
+        open={more === "menu"}
+        onClose={() => setMore(null)}
+        sensitive={model.sensitive}
+        canSensitive={model.phase !== "recordOnly" && !setup.recordOnlyDevice}
+        onSensitive={() => setMore("sensitive")}
+        onDiscard={(s) => {
+          setMore(null);
+          setDiscard(s);
+        }}
+      />
+      <SensitiveSheet
+        open={more === "sensitive"}
+        recording
+        onCancel={() => setMore(null)}
+        onConfirm={() => {
+          setMore(null);
+          void rec.makeSensitive();
+        }}
+      />
+      <DiscardSheet seconds={discard} sensitive={model.sensitive} behind={model.backlogS > 0} preview={rec.discardPreview} onConfirm={rec.discardFrom} onClose={() => setDiscard(null)} />
       <InterruptionSheet
         open={model.phase === "interrupted"}
         call={model.interruption?.call ?? setup.callActive}

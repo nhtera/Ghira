@@ -486,6 +486,12 @@ pub async fn waveform_peaks(core: CoreState<'_>, meeting: String) -> Result<Wave
             samples = samples.max(track_samples(&store, &meeting, k)?);
         }
         let peaks = compute_waveform(&store, &meeting, &kinds, samples)?;
+        // Sensitive mode may have deleted the audio meanwhile: nothing is
+        // cached for a meeting that keeps none.
+        let now = store.get_meeting(&meeting).map_err(|e| e.to_string())?;
+        if now.sensitive {
+            return Ok(wave(Vec::new()));
+        }
         store
             .set_waveform(&meeting, &peaks)
             .map_err(|e| e.to_string())?;

@@ -63,6 +63,7 @@ fn start(store: &Arc<Store>, events: ghi_core::events::EventTx) -> Session {
         Some(FakeEngines::new(script()) as Arc<dyn ghi_core::engines::SpeechEngines>),
         capture,
         SessionConfig {
+            sensitive: false,
             mode: Mode::Room,
             language: None,
             title: "standup".into(),
@@ -312,6 +313,7 @@ fn a_failed_start_resumes_jobs_and_leaves_no_meeting() {
         Some(Arc::new(Broken)),
         capture,
         SessionConfig {
+            sensitive: false,
             mode: Mode::Room,
             language: None,
             title: "x".into(),
@@ -361,6 +363,7 @@ impl ghi_core::session::RecordingHooks for CountingHooks {
 
 fn config(mode: Mode) -> SessionConfig {
     SessionConfig {
+        sensitive: false,
         mode,
         language: None,
         title: "t".into(),

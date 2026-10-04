@@ -121,16 +121,24 @@ impl Persist {
                 t_cut_ms,
                 now_ms,
                 keep,
+                gate,
                 reply,
             } => {
                 self.flush();
-                // Speakers stay: they may talk again; orphans go at stop.
-                let r = self
-                    .store
-                    .discard_after(&self.meeting, t_cut_ms, now_ms, &keep, false)
-                    .map(|rep| rep.id)
-                    .map_err(|e| e.to_string());
+                // Held while the transaction runs: a caller that gave up
+                // waiting abandons the request, or finds it done.
+                let abandoned = gate.0.lock().unwrap_or_else(|e| e.into_inner());
+                let r = if *abandoned {
+                    Err("abandoned".to_string())
+                } else {
+                    // Speakers stay: they may talk again; orphans go at stop.
+                    self.store
+                        .discard_after(&self.meeting, t_cut_ms, now_ms, &keep, false)
+                        .map(|rep| rep.id)
+                        .map_err(|e| e.to_string())
+                };
                 let _ = reply.send(r);
+                drop(abandoned);
             }
             PersistMsg::Flush(done) => {
                 self.flush();

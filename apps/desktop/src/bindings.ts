@@ -49,6 +49,26 @@ export const commands = {
 	/**  The "Consent confirmed" toggle of a meeting [RT-14]. */
 	setConsentConfirmed: (meeting: string, confirmed: boolean) => typedError<null, string>(__TAURI_INVOKE("set_consent_confirmed", { meeting, confirmed })),
 	/**
+	 *  Sensitive meeting mode (doc 02, P1): no audio kept, no cloud, no voice
+	 *  learning. On the meeting being recorded it can only be turned on (part of
+	 *  the audio is gone: what was written goes at stop). On a stored meeting
+	 *  turning it on deletes its audio now (the UI confirms first); it is refused
+	 *  with `noTranscript` (nothing would be kept) or `transcriptPending` (its final
+	 *  pass still needs the audio). Turning it off only clears the flag.
+	 */
+	setMeetingSensitive: (meeting: string, sensitive: boolean) => typedError<null, string>(__TAURI_INVOKE("set_meeting_sensitive", { meeting, sensitive })),
+	/**
+	 *  Whether the next recording, started from any window or the tray, will be
+	 *  sensitive.
+	 */
+	sensitiveNext: () => typedError<boolean, string>(__TAURI_INVOKE("sensitive_next")),
+	/**
+	 *  Arms (or disarms) sensitive mode for the next recording. Kept in the core,
+	 *  so every window and the tray start the same way; it clears once a recording
+	 *  started.
+	 */
+	setSensitiveNext: (on: boolean) => typedError<null, string>(__TAURI_INVOKE("set_sensitive_next", { on })),
+	/**
 	 *  The recording in progress as it stands now (a reloaded webview, a second
 	 *  window): apply events with a greater `seq` after it. `None` when idle.
 	 */
@@ -65,6 +85,8 @@ export const commands = {
 	title: string,
 	/**  Everyone's consent to recording was confirmed (the live toggle). */
 	consentConfirmed: boolean,
+	/**  Sensitive mode: no audio is kept for this meeting. */
+	sensitive: boolean,
 	/**  Speakers still in play (merged ones are gone). */
 	speakers: SpeakerInfo[],
 	/**  Final lines stored so far, in time order. */
@@ -869,6 +891,12 @@ track: number; text: string } | { type: "transcriptFinal"; meeting: string; line
 /**  Everything from `from_ms` on was removed (audio, lines, marks, notes). */
 { type: "discardApplied"; meeting: string; fromMs: number | null } | 
 /**
+ *  The meeting entered sensitive mode while recording: from now on no
+ *  audio is kept (what was written goes at stop), no cloud, no voice
+ *  learning. Never turned off again during the same recording.
+ */
+{ type: "sensitiveChanged"; meeting: string; sensitive: boolean } | 
+/**
  *  RMS level of each track over the last ~100 ms (at most 10 per second,
  *  only while audio flows). `None`: the track is not captured or no audio
  *  passed in the window (paused, asleep); digital silence reads -100.
@@ -1145,6 +1173,8 @@ export type MeetingRow = {
 	transcriptVersion: number | null,
 	cloudUsed: boolean,
 	consentConfirmed: boolean,
+	/**  Sensitive mode: no audio kept, no cloud, no voice learning. */
+	sensitive: boolean,
 	/**  Notes template id (`None`: the default). */
 	template: string | null,
 	/**  Named speakers, for the people column and filter. */
@@ -1487,6 +1517,8 @@ export type SessionSnapshot = {
 	title: string,
 	/**  Everyone's consent to recording was confirmed (the live toggle). */
 	consentConfirmed: boolean,
+	/**  Sensitive mode: no audio is kept for this meeting. */
+	sensitive: boolean,
 	/**  Speakers still in play (merged ones are gone). */
 	speakers: SpeakerInfo[],
 	/**  Final lines stored so far, in time order. */

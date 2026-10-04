@@ -2,6 +2,7 @@
 // One meeting in the list: title, when, a one-line summary, people (color +
 // initial) and the sync chip. Swipe left (or focus the Delete button) to delete,
 // with an inline confirm.
+import { SensitiveChip } from "../sensitive";
 import { Avatar, InlineConfirm, SyncChip, type SyncChipKind } from "@ghi/ui";
 import { useRef, useState, type TouchEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -151,6 +152,7 @@ export function MeetingRowView({
               onRetry={chip.kind === "failed" ? onRetry : undefined}
             />
           )}
+          {row.sensitive && <SensitiveChip />}
           {shown.length > 0 && (
             <span
               className="ms-auto flex items-center gap-1"

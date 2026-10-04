@@ -367,3 +367,47 @@ test.describe("meeting view", () => {
     await expectAccessible(page);
   });
 });
+
+test.describe("sensitive meeting", () => {
+  test.beforeEach(async ({ page }) => {
+    await recordPlatform(page);
+  });
+
+  test("turning it on asks first, deletes the audio, hides playback and shows the badge", async ({ page }) => {
+    await openMeetings(page, "/meetings/m-notes");
+    await expect(page.getByTestId("sensitive-badge")).toHaveCount(0);
+    await expect(page.getByRole("group", { name: "Audio player" })).toBeVisible();
+
+    const sw = page.getByRole("switch", { name: "Sensitive meeting" });
+    await expect(sw).not.toBeChecked();
+    await sw.click();
+    const sheet = page.getByRole("dialog", { name: "Make this meeting sensitive?" });
+    await expect(sheet).toContainText("Its audio is deleted now and only the transcript stays");
+    await sheet.getByRole("button", { name: "Cancel" }).click();
+    await expect(sw).not.toBeChecked();
+    await expect(page.getByRole("group", { name: "Audio player" })).toBeVisible();
+
+    await sw.click();
+    await page.getByRole("dialog", { name: "Make this meeting sensitive?" }).getByRole("button", { name: "Make sensitive" }).click();
+    await expect(sw).toBeChecked();
+    await expect(page.getByTestId("sensitive-badge")).toHaveText("Sensitive · no audio kept");
+    await expect(page.getByRole("group", { name: "Audio player" })).toHaveCount(0);
+    // No cloud for it: the never-send switch is on and can't be changed.
+    await expect(page.getByRole("switch", { name: "Never send to cloud" })).toBeChecked();
+    await expect(page.getByRole("switch", { name: "Never send to cloud" })).toBeDisabled();
+
+    // No "Play from" on a line either.
+    await page.getByRole("tab", { name: "Transcript" }).click();
+    await page.locator("[data-segment]").first().click();
+    await expect(page.getByRole("button", { name: /Play from/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Edit" })).toBeVisible();
+    await expectAccessible(page);
+
+    // Off again: the flag only; the audio stays deleted.
+    await page.getByRole("tab", { name: "Notes" }).click();
+    await sw.click();
+    await expect(sw).not.toBeChecked();
+    await expect(page.getByTestId("sensitive-badge")).toHaveCount(0);
+    await expect(page.getByRole("group", { name: "Audio player" })).toHaveCount(0);
+  });
+});

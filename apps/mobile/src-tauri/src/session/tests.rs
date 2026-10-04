@@ -140,7 +140,26 @@ struct Rig {
     rx: EventRx,
     loads: Loads,
     seen: Arc<Seen>,
+    /// The app lock, as the recorder sees it.
+    locked: Arc<AtomicBool>,
     _guard: MutexGuard<'static, ()>,
+}
+
+/// A test that fails must not leave its recording (and the tap's ring, which is
+/// process-wide) behind for the next one: that turned one failure into many
+/// ("micInUse").
+impl Drop for Rig {
+    fn drop(&mut self) {
+        if let Some(s) = self.recorder.active() {
+            let _ = s.stop();
+        }
+        let until = Instant::now() + Duration::from_secs(5);
+        while self.recorder.latest().is_some() && Instant::now() < until {
+            thread::sleep(Duration::from_millis(10));
+        }
+        PRODUCER.lock().unwrap_or_else(|e| e.into_inner()).take();
+        *CURRENT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
 }
 
 fn rig(tier: DeviceTier) -> Rig {
@@ -163,6 +182,7 @@ fn rig_with(tier: DeviceTier, fake_engines: bool) -> Rig {
     );
     let (tx, rx) = bus();
     let (provider, loads) = counting_provider();
+    let locked = Arc::new(AtomicBool::new(false));
     let seen = Arc::new(Seen::default());
     let probe = Arc::new(Probe {
         seen: seen.clone(),
@@ -175,6 +195,10 @@ fn rig_with(tier: DeviceTier, fake_engines: bool) -> Rig {
     let recorder = Recorder::new(RecorderDeps {
         store: Arc::new(move || Ok(st.clone())),
         events: tx,
+        locked: {
+            let l = locked.clone();
+            Arc::new(move || l.load(Ordering::SeqCst))
+        },
         runner: Arc::new(move || Some(slot.clone())),
         models: tmp.path().join("models"),
         backlog_dir: tmp.path().join("backlog"),
@@ -192,6 +216,7 @@ fn rig_with(tier: DeviceTier, fake_engines: bool) -> Rig {
         rx,
         loads,
         seen,
+        locked,
         _guard: guard,
     }
 }
@@ -204,6 +229,7 @@ fn request() -> RecordStart {
         target: ProcessingTarget::Phone,
         consent_acknowledged: true,
         call_acknowledged: false,
+        sensitive: false,
     }
 }
 
@@ -660,6 +686,7 @@ fn the_live_models_wait_for_a_resident_final_pass() {
     let recorder = Recorder::new(RecorderDeps {
         store: Arc::new(move || Ok(st.clone())),
         events: r.recorder.deps.events.clone(),
+        locked: Arc::new(|| false),
         runner: Arc::new(move || Some(slot.clone())),
         models: r._tmp.path().join("models"),
         backlog_dir: r._tmp.path().join("backlog2"),
@@ -836,4 +863,284 @@ fn the_consent_message_follows_the_meeting_language_and_the_users_words() {
     let m = Recorder::consent_message(L::Auto, "  Recording, OK?  ", "");
     assert!(m.text.starts_with("Recording, OK?\n\n") && m.text.contains("Lưu ý"));
     assert_eq!(m.en, "Recording, OK?");
+}
+
+fn bundle_dir(r: &Rig, id: &str) -> std::path::PathBuf {
+    r._tmp.path().join("store").join("bundles").join(id)
+}
+
+#[test]
+fn a_sensitive_recording_keeps_the_transcript_and_no_audio() {
+    let r = rig(live_tier());
+    let mut req = request();
+    req.sensitive = true;
+    let id = r.recorder.start(&req).unwrap();
+    assert!(r.store.tracks(&id).unwrap().is_empty());
+    assert!(!bundle_dir(&r, &id).exists(), "no file is even created");
+    feed(8);
+    wait_for("three lines", || {
+        r.recorder
+            .snapshot()
+            .session
+            .is_some_and(|s| s.lines.len() >= 3)
+    });
+    assert!(r.recorder.snapshot().session.unwrap().sensitive);
+    r.recorder.stop().unwrap();
+    wait_for("the session to drain", || drained(&r));
+    let m = r.store.get_meeting(&id).unwrap();
+    assert!(m.sensitive);
+    assert_eq!(m.status, "ready", "nothing is left to wait for");
+    assert!(!r.store.audio_available(&id).unwrap());
+    assert!(!bundle_dir(&r, &id).exists());
+    assert_eq!(r.store.segments(&id).unwrap().len(), 3);
+    assert!(
+        r.store.jobs_for_meeting(&id).unwrap().is_empty(),
+        "no final pass: it needs the audio"
+    );
+    let events: Vec<_> = r.rx.try_iter().map(|e| e.event).collect();
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::StateChanged {
+            state: SessionState::Ready,
+            ..
+        }
+    )));
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::SensitiveChanged {
+            sensitive: true,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn sensitive_mode_is_refused_without_a_live_transcript() {
+    let mut req = request();
+    req.sensitive = true;
+    // Below the live tier.
+    let r = rig(low_tier());
+    assert_eq!(r.recorder.start(&req).unwrap_err(), ERR_SENSITIVE);
+    assert!(r.store.list_meetings(10, 0).unwrap().is_empty());
+    drop(r);
+    // Live tier, but the speech models are not installed.
+    let r = rig_with(live_tier(), false);
+    assert_eq!(r.recorder.start(&req).unwrap_err(), ERR_SENSITIVE);
+    assert!(r.store.list_meetings(10, 0).unwrap().is_empty());
+    // A normal recording is still allowed there.
+    req.sensitive = false;
+    r.recorder.start(&req).unwrap();
+    assert!(r.recorder.set_sensitive(true).is_err(), "no transcript");
+    r.recorder.stop().unwrap();
+}
+
+#[test]
+fn turning_sensitive_on_mid_recording_drops_the_audio_at_stop_and_is_one_way() {
+    let r = rig(live_tier());
+    let id = r.recorder.start(&request()).unwrap();
+    feed(3);
+    wait_for("some audio", || r.recorder.snapshot().elapsed_s > 2.5);
+    r.recorder.set_sensitive(false).unwrap();
+    r.recorder.set_sensitive(true).unwrap();
+    assert!(r.store.get_meeting(&id).unwrap().sensitive);
+    assert!(r.recorder.snapshot().session.unwrap().sensitive);
+    assert!(r.recorder.set_sensitive(false).is_err(), "one way");
+    feed(5);
+    wait_for("three lines", || {
+        r.recorder
+            .snapshot()
+            .session
+            .is_some_and(|s| s.lines.len() >= 3)
+    });
+    r.recorder.stop().unwrap();
+    wait_for("the session to drain", || drained(&r));
+    assert!(!r.store.audio_available(&id).unwrap());
+    assert!(!bundle_dir(&r, &id).exists());
+    assert_eq!(r.store.segments(&id).unwrap().len(), 3);
+    assert!(r.store.jobs_for_meeting(&id).unwrap().is_empty());
+    assert_eq!(r.store.get_meeting(&id).unwrap().status, "ready");
+}
+
+#[test]
+fn discarding_removes_the_last_seconds_everywhere_and_recording_goes_on() {
+    let r = rig(live_tier());
+    let id = r.recorder.start(&request()).unwrap();
+    feed(8);
+    wait_for("the audio reached the timeline", || {
+        r.recorder.snapshot().elapsed_s > 7.5
+    });
+    r.recorder.mark().unwrap();
+    wait_for("the mark to be stored", || {
+        r.store.marks(&id).unwrap().len() == 1
+    });
+    // The preview lists what goes; confirming passes the cut it showed.
+    let preview = r.recorder.discard_preview(4.0).unwrap();
+    assert!(
+        (3_500.0..=4_300.0).contains(&preview.from_ms),
+        "{preview:?}"
+    );
+    assert_eq!(preview.marks, 1);
+    let cut = r.recorder.discard_from(preview.from_ms as i64).unwrap();
+    assert_eq!(cut, preview.from_ms as i64);
+    assert!(
+        r.recorder.discard_from(1_000_000).is_err(),
+        "a cut in the future is refused"
+    );
+    assert_eq!(r.recorder.snapshot().marks, 0, "the mark was after the cut");
+    // The engine may still be behind: whatever it makes for the span is dropped.
+    feed(2);
+    wait_for("the engine to catch up", || {
+        r.recorder.snapshot().backlog_s < 0.5
+    });
+    r.recorder.stop().unwrap();
+    wait_for("the session to drain", || drained(&r));
+
+    let texts: Vec<String> = r
+        .store
+        .segments(&id)
+        .unwrap()
+        .into_iter()
+        .map(|s| s.text)
+        .collect();
+    assert_eq!(texts, ["xin chào mọi người", "hôm nay chốt lịch"]);
+    assert!(r.store.marks(&id).unwrap().is_empty());
+    assert!(r.store.pending_discards().unwrap().is_empty());
+    assert_eq!(r.store.discarded_spans(&id).unwrap().len(), 1);
+    let audio = r.store.open_bundle(&id, TrackKind::Mic).unwrap();
+    assert!(audio.complete());
+    // The audio itself: tone before the cut, silence after it.
+    let pcm = ghi_audio::encoder::read_ogg_opus(&audio.read_all().unwrap()[..]).unwrap();
+    let rms = |a: usize, b: usize| {
+        let s = &pcm[a.min(pcm.len())..b.min(pcm.len())];
+        (s.iter().map(|x| x * x).sum::<f32>() / s.len().max(1) as f32).sqrt()
+    };
+    let at = |ms: i64| (ms as usize) * 16;
+    assert!(rms(at(500), at(3_000)) > 0.02, "kept audio is there");
+    assert!(
+        rms(at(cut + 600), at(cut + 3_500)) < 0.005,
+        "discarded audio is silent"
+    );
+    let events: Vec<_> = r.rx.try_iter().map(|e| e.event).collect();
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, Event::DiscardApplied { from_ms, .. } if *from_ms == cut))
+    );
+}
+
+#[test]
+fn a_discard_without_a_recording_is_refused() {
+    let r = rig(live_tier());
+    assert!(r.recorder.discard_from(0).is_err());
+    assert!(r.recorder.discard_preview(60.0).is_err());
+}
+
+#[test]
+fn a_sensitive_recording_can_still_discard_its_last_seconds() {
+    let r = rig(live_tier());
+    let mut req = request();
+    req.sensitive = true;
+    let id = r.recorder.start(&req).unwrap();
+    feed(8);
+    wait_for("three lines", || {
+        r.recorder
+            .snapshot()
+            .session
+            .is_some_and(|s| s.lines.len() >= 3)
+    });
+    r.recorder.discard_from(4_000).unwrap();
+    r.recorder.stop().unwrap();
+    wait_for("the session to drain", || drained(&r));
+    assert_eq!(r.store.segments(&id).unwrap().len(), 2);
+    assert!(r.store.pending_discards().unwrap().is_empty());
+    assert!(!r.store.audio_available(&id).unwrap());
+}
+
+#[test]
+fn a_locked_app_gets_no_discard_preview_and_no_discard() {
+    let r = rig(live_tier());
+    let id = r.recorder.start(&request()).unwrap();
+    feed(8);
+    wait_for("three lines", || {
+        r.recorder
+            .snapshot()
+            .session
+            .is_some_and(|s| s.lines.len() >= 3)
+    });
+    r.locked.store(true, Ordering::SeqCst);
+    // The transcript and notes are content: not while locked.
+    assert_eq!(
+        r.recorder.discard_preview(60.0).unwrap_err(),
+        "the app is locked"
+    );
+    assert_eq!(r.recorder.discard_from(0).unwrap_err(), "the app is locked");
+    assert_eq!(
+        r.store.segments(&id).unwrap().len(),
+        3,
+        "nothing was removed"
+    );
+    r.locked.store(false, Ordering::SeqCst);
+    assert!(r.recorder.discard_preview(60.0).is_ok());
+}
+
+#[test]
+fn stop_waits_for_a_discard_in_flight_and_a_later_one_finds_the_session_stopped() {
+    let r = rig(live_tier());
+    let id = r.recorder.start(&request()).unwrap();
+    feed(4);
+    wait_for("some audio", || r.recorder.snapshot().elapsed_s > 3.5);
+    let session = r.recorder.active().unwrap();
+    // A discard (or the sensitive toggle) holds the edit lock.
+    let held = session.ops.lock().unwrap();
+    let stopped = Arc::new(AtomicBool::new(false));
+    let (s2, flag) = (session.clone(), stopped.clone());
+    let stopper = thread::spawn(move || {
+        s2.stop().unwrap();
+        flag.store(true, Ordering::SeqCst);
+    });
+    thread::sleep(Duration::from_millis(300));
+    assert!(
+        !stopped.load(Ordering::SeqCst),
+        "stop waits for the edit in flight"
+    );
+    drop(held);
+    stopper.join().unwrap();
+    assert!(stopped.load(Ordering::SeqCst));
+    assert_eq!(session.discard_from(0).unwrap_err(), "stopped");
+    assert_eq!(session.set_sensitive(true).unwrap_err(), "stopped");
+    wait_for("the session to drain", || drained(&r));
+    assert!(r.store.get_meeting(&id).unwrap().status != "recording");
+}
+
+#[test]
+fn a_discard_left_half_done_is_applied_before_the_final_pass_is_queued() {
+    let r = rig(live_tier());
+    let id = r.recorder.start(&request()).unwrap();
+    feed(4);
+    wait_for("some audio", || r.recorder.snapshot().elapsed_s > 3.5);
+    let session = r.recorder.active().unwrap();
+    // The text side of a discard was stored; its audio side never ran.
+    let keep = ghi_store::edits::KeepPages {
+        kind: TrackKind::Mic,
+        pages: 1,
+        prefix: None,
+    };
+    r.store
+        .discard_after(&id, 2_000, 3_500, &[keep], false)
+        .unwrap();
+    assert_eq!(r.store.pending_discards().unwrap().len(), 1);
+    session.stop().unwrap();
+    wait_for("the session to drain", || drained(&r));
+    assert!(
+        r.store.pending_discards().unwrap().is_empty(),
+        "applied first"
+    );
+    let kinds: Vec<_> = r
+        .store
+        .jobs_for_meeting(&id)
+        .unwrap()
+        .into_iter()
+        .map(|j| j.kind)
+        .collect();
+    assert_eq!(kinds, [FINAL_PASS_JOB]);
 }

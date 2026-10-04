@@ -7,6 +7,7 @@ import type { RecordMode, SessionState } from "../../bindings";
 import { useAppActions } from "../../shell/actions";
 import { elapsedMs, useLive } from "../../state/live";
 import { useUi } from "../../state/ui";
+import { SensitiveStartToggle } from "../sensitive";
 import { useNow } from "./clock";
 
 function recordState(s: SessionState): RecordState {
@@ -30,16 +31,20 @@ export function HeaderRecord() {
   const mode: RecordMode = useUi((s) => s.recordMode);
   const setMode = useUi((s) => s.setRecordMode);
   const { startRecording, stopRecording, pauseRecording, resumeRecording } = useAppActions();
+  const idle = recordState(state) === "idle";
   return (
-    <RecordControl
-      state={recordState(state)}
-      mode={mode}
-      elapsedMs={elapsedMs(clock, now)}
-      onStart={(m) => void startRecording(m)}
-      onModeChange={setMode}
-      onPause={() => void pauseRecording()}
-      onResume={() => void resumeRecording()}
-      onStop={() => void stopRecording()}
-    />
+    <div className="flex items-center gap-2">
+      {idle && <SensitiveStartToggle />}
+      <RecordControl
+        state={recordState(state)}
+        mode={mode}
+        elapsedMs={elapsedMs(clock, now)}
+        onStart={(m) => void startRecording(m)}
+        onModeChange={setMode}
+        onPause={() => void pauseRecording()}
+        onResume={() => void resumeRecording()}
+        onStop={() => void stopRecording()}
+      />
+    </div>
   );
 }

@@ -20,6 +20,7 @@ import { LOCKED_EVENT } from "../app-lock/events";
 import { useWindowEvent } from "./use-window-event";
 import { useMeeting } from "./use-meeting";
 import { Switch } from "../settings/controls";
+import { SensitiveBadge, SensitiveRow, SensitiveSheet } from "../sensitive";
 
 export type MeetingTab = "notes" | "actions" | "transcript";
 const TABS: MeetingTab[] = ["notes", "actions", "transcript"];
@@ -45,10 +46,13 @@ export function MeetingView({
   } | null>(null);
   const [visited, setVisited] = useState<ReadonlySet<string>>(new Set());
   const [sharing, setSharing] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   // Locking hides the meeting: its sheets close with it.
   useWindowEvent(LOCKED_EVENT, () => {
     setQuote(null);
     setSharing(false);
+    setAsking(false);
   });
 
   const back = () => void navigate({ to: "/meetings" });
@@ -138,6 +142,7 @@ export function MeetingView({
             <PrivacyIndicator
               state={detail.cloudUsed ? "cloudMeeting" : "local"}
             />
+            {detail.sensitive && <SensitiveBadge />}
           </div>
         </div>
         <div
@@ -173,14 +178,31 @@ export function MeetingView({
                   </p>
                 </div>
                 <Switch
-                  checked={detail.cloudLocked}
+                  checked={detail.cloudLocked || detail.sensitive}
+                  disabled={detail.sensitive}
                   onChange={(on) => void m.setCloudLocked(on)}
                   labelledBy="cloud-never"
                 />
               </div>
+              <div className="px-4 pt-3">
+                <SensitiveRow
+                  checked={detail.sensitive}
+                  // On asks first (the audio is deleted now); off needs no question.
+                  onChange={(on) => {
+                    setFailed(null);
+                    if (on) setAsking(true);
+                    else void m.setSensitive(false).then(setFailed);
+                  }}
+                />
+                {failed && (
+                  <p role="alert" className="text-ios-footnote m-0 mt-1 text-warn">
+                    {failed === "noTranscript" ? t("mobile.sensitive.noTranscript") : failed === "transcriptPending" ? t("mobile.sensitive.pending") : t("mobile.sensitive.failed")}
+                  </p>
+                )}
+              </div>
               <NotesPanel
                 meeting={id}
-                cloudLocked={detail.cloudLocked}
+                cloudLocked={detail.cloudLocked || detail.sensitive}
                 onSent={m.reload}
                 notes={m.notes}
                 visited={visited}
@@ -205,6 +227,7 @@ export function MeetingView({
               timeMs={audio.timeMs}
               playing={audio.playing}
               focusAt={at}
+              canPlay={detail.audioAvailable}
               onPlay={(ms) => void audio.playFrom(ms)}
               onSave={m.saveSegment}
               empty={
@@ -224,7 +247,17 @@ export function MeetingView({
           if (quote) setVisited((v) => new Set(v).add(quote.key));
           setQuote(null);
         }}
+        canPlay={detail.audioAvailable}
         onPlay={(ms) => void audio.playFrom(ms)}
+      />
+      <SensitiveSheet
+        open={asking}
+        recording={false}
+        onCancel={() => setAsking(false)}
+        onConfirm={() => {
+          setAsking(false);
+          void m.setSensitive(true).then(setFailed);
+        }}
       />
       <ShareSheet
         open={sharing}

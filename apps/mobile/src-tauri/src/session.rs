@@ -39,7 +39,7 @@ use ghi_audio::ring::RingProducer;
 use ghi_audio::{CaptureEvent, Route, Track};
 use ghi_core::events::{Event, EventTx, SessionSnapshot, SessionState};
 use ghi_core::live::PersistMsg;
-use ghi_core::pages::{BundlePages, Metered};
+use ghi_core::pages::{BundlePages, Metered, Muted};
 use ghi_core::persist::Persist;
 use ghi_core::session::{FINAL_PASS_JOB, RecordingHooks};
 use ghi_store::store::{NewMeeting, Store, TrackKind};
@@ -72,6 +72,9 @@ pub const ERR_MIC_DENIED: &str = "microphoneDenied";
 pub const ERR_WAITING: &str = "waitingForTranscription";
 pub const ERR_PAIRING: &str = "pairingNotAvailable";
 pub const ERR_RUNNING: &str = "alreadyRecording";
+/// Sensitive mode keeps nothing but the live transcript: without one (below
+/// the live tier, models missing) there is nothing to keep.
+pub const ERR_SENSITIVE: &str = "sensitiveNeedsTranscript";
 
 /// Ring between the Swift tap and the pump: 2 s at 48 kHz.
 const RING_SAMPLES: usize = 96_000;
@@ -443,14 +446,42 @@ impl Shared {
 enum Cmd {
     Pause,
     Resume,
+    /// Flushes the page in progress, picks the pages to keep per track (with
+    /// each file's nonce prefix), mutes the audio still in the pipeline and
+    /// starts holding new pages [RT-1].
+    Discard {
+        t_cut_ms: i64,
+        reply: Sender<Discarding>,
+    },
+    /// Rotates the bundle to `keep` and writes the held pages; an empty
+    /// `keep` just stops holding (a discard that failed).
+    Release {
+        keep: Vec<(Track, u32)>,
+        reply: Sender<Result<(), String>>,
+    },
+    /// Sensitive mode: pages stop being written; replies once none can be.
+    Sensitive {
+        reply: Sender<()>,
+    },
     Stop,
 }
+
+struct Discarding {
+    keep: Vec<(Track, u32, Option<String>)>,
+    /// Timeline position (samples) before which audio is discarded.
+    mute_until: u64,
+}
+
+/// How long a discard waits for the pump and the persist thread.
+const DISCARD_WAIT: Duration = Duration::from_secs(30);
 
 /// What a start needs from the app.
 pub struct RecorderDeps {
     /// The store, usable while the app is locked (a recording keeps going).
     pub store: Arc<dyn Fn() -> Result<Arc<Store>, String> + Send + Sync>,
     pub events: EventTx,
+    /// The app is locked: a recording goes on, but its text is not shown.
+    pub locked: Arc<dyn Fn() -> bool + Send + Sync>,
     /// The job runner, once the store is open.
     pub runner: Arc<dyn Fn() -> Option<Arc<ghi_core::jobs::JobRunner>> + Send + Sync>,
     pub models: PathBuf,
@@ -635,6 +666,13 @@ pub struct Session {
     language: Option<String>,
     title: String,
     fake_mic: Mutex<Option<FakeMic>>,
+    /// Sensitive mode is on (only ever turned on during a recording).
+    sensitive: AtomicBool,
+    /// Meeting spans (ms) discarded while recording: the engine, which trails
+    /// the audio, drops what it makes for them ([`Applier`]).
+    cuts: engine::Cuts,
+    /// Held by a discard or the sensitive toggle: one multi-step edit at a time.
+    ops: Mutex<()>,
 }
 
 #[derive(Default)]
@@ -668,6 +706,12 @@ impl Recorder {
 
     pub fn tier(&self) -> &DeviceTier {
         &self.deps.tier
+    }
+
+    /// A live transcript can be made: the live tier and the speech models.
+    fn live_possible(&self) -> bool {
+        self.deps.tier.tier == TierClass::Live
+            && (self.deps.provider.is_some() || engine::engines_available(&self.deps.models))
     }
 
     fn hooks(&self) -> Option<Arc<dyn RecordingHooks>> {
@@ -728,6 +772,9 @@ impl Recorder {
         }
         if free_bytes(&self.deps.backlog_dir).is_some_and(|f| f < MIN_FREE_BYTES) {
             return Err(ERR_DISK_LOW.into());
+        }
+        if req.sensitive && !self.live_possible() {
+            return Err(ERR_SENSITIVE.into());
         }
         // One at a time; a draining engine owns the lifecycle events, the Live
         // Activity and the GPU.
@@ -799,6 +846,7 @@ impl Recorder {
                 source: "mobile".into(),
                 mode: "room".into(),
                 lang: language.clone(),
+                sensitive: req.sensitive,
                 ..Default::default()
             })
             .map_err(|e| format!("creating the meeting: {e}"))?
@@ -814,15 +862,22 @@ impl Recorder {
                 meeting: meeting.clone(),
                 state: SessionState::Starting,
             });
-            let writer = store.open_track(&meeting, TrackKind::Mic).map_err(io_err)?;
-            let recorder = Metered::new(
-                OpusRecorder::new(
-                    BundlePages::new([Some(writer), None]),
-                    &[Track::Mic],
-                    EncoderConfig::default(),
-                )
-                .map_err(io_err)?,
-            );
+            // Sensitive: no audio bundle is created. (The sealed backlog the
+            // live transcript reads is still written, and deleted when the
+            // recording ends.)
+            let mut pages = if req.sensitive {
+                BundlePages::new([None, None])
+            } else {
+                let writer = store.open_track(&meeting, TrackKind::Mic).map_err(io_err)?;
+                BundlePages::new([Some(writer), None])
+            };
+            if req.sensitive {
+                pages.stop_writing();
+            }
+            let recorder = Metered::new(Muted::new(
+                OpusRecorder::new(pages, &[Track::Mic], EncoderConfig::default())
+                    .map_err(io_err)?,
+            ));
             let (producer, consumer) = ghi_audio::ring::ring(RING_SAMPLES);
             let cfg = PipelineConfig {
                 route: Route::Unknown,
@@ -857,6 +912,7 @@ impl Recorder {
                 Vec::new()
             };
 
+            let cuts = engine::Cuts::default();
             let shared = Arc::new(Shared::new(meeting.clone(), events.clone()));
             {
                 let mut s = shared.lock();
@@ -933,7 +989,8 @@ impl Recorder {
                         language.clone(),
                         events.clone(),
                         persist_tx.clone(),
-                    ),
+                    )
+                    .with_cuts(cuts.clone()),
                     language: language.clone(),
                     runner_idle: hooks.clone().map(|h| {
                         Arc::new(move || h.wait_idle(Duration::from_millis(1)))
@@ -985,6 +1042,9 @@ impl Recorder {
                 language: language.clone(),
                 title: title.clone(),
                 fake_mic: Mutex::new(fake_mic),
+                sensitive: AtomicBool::new(req.sensitive),
+                cuts,
+                ops: Mutex::new(()),
             });
             events.emit(Event::SessionStarted {
                 meeting: meeting.clone(),
@@ -996,6 +1056,12 @@ impl Recorder {
                 meeting: meeting.clone(),
                 state: SessionState::Recording,
             });
+            if req.sensitive {
+                events.emit(Event::SensitiveChanged {
+                    meeting: meeting.clone(),
+                    sensitive: true,
+                });
+            }
             platform::activity_start(shared.phase().into());
             shared.activity_update();
             Ok(session)
@@ -1050,6 +1116,36 @@ impl Recorder {
                 session: None,
             },
         }
+    }
+
+    /// Transcript text and notes are content: not for a locked app.
+    fn refuse_locked(&self) -> Result<(), String> {
+        if (self.deps.locked)() {
+            Err("the app is locked".into())
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Turns sensitive mode on for the running recording.
+    pub fn set_sensitive(&self, on: bool) -> Result<(), String> {
+        self.active().ok_or("not recording")?.set_sensitive(on)
+    }
+
+    /// Discards everything from `from_ms` on in the running recording.
+    pub fn discard_from(&self, from_ms: i64) -> Result<i64, String> {
+        self.refuse_locked()?;
+        self.active().ok_or("not recording")?.discard_from(from_ms)
+    }
+
+    /// What discarding the last `seconds` would remove.
+    pub fn discard_preview(
+        &self,
+        seconds: f64,
+    ) -> Result<ghi_app::library::DiscardPreview, String> {
+        self.refuse_locked()?;
+        let s = self.active().ok_or("not recording")?;
+        ghi_app::library::discard_preview_of(&s.store, &s.id, s.shared.now_ms(), seconds)
     }
 
     /// The pending "Resume or stop and save?" question after an interruption.
@@ -1118,6 +1214,10 @@ impl Session {
         if self.stopped.swap(true, Ordering::AcqRel) {
             return Ok(());
         }
+        // A discard or the sensitive toggle in flight finishes first (and a
+        // later one finds the session stopped), so a half-applied discard is
+        // never left for the final pass to read [RT-1].
+        let ops = self.ops.lock().unwrap_or_else(|e| e.into_inner());
         if !self.fake_mic_stop() {
             platform::audio_stop();
         }
@@ -1135,7 +1235,25 @@ impl Session {
         if let Some(t) = pump {
             let _ = t.join();
         }
+        drop(ops);
         let duration_ms = self.shared.now_ms();
+        if self.sensitive() {
+            // The audio written before sensitive mode went on goes now, with
+            // the flag (set again in case the toggle could not store it). A
+            // failure is reported and the stop goes on: the next launch's
+            // recovery removes the audio of any sensitive meeting.
+            if let Err(e) = self
+                .store
+                .set_sensitive(&self.id, true)
+                .and_then(|()| self.store.delete_audio(&self.id))
+            {
+                self.recorder.deps.events.emit(Event::Error {
+                    meeting: Some(self.id.clone()),
+                    kind: ghi_core::events::ErrorKind::Storage,
+                    message: format!("removing the audio of a sensitive meeting: {e}"),
+                });
+            }
+        }
         let closed = self
             .store
             .finish_meeting(&self.id, duration_ms)
@@ -1194,14 +1312,37 @@ impl Session {
         if let Err(e) = self.store.remove_orphan_speakers(&self.id) {
             log::warn!("closing the meeting's speakers: {e}");
         }
+        // The final pass re-reads the audio: a sensitive meeting has none. The
+        // store's flag counts too (it is what the rest of the app reads).
+        let sensitive =
+            self.sensitive() || self.store.get_meeting(&self.id).is_ok_and(|m| m.sensitive);
+        // A discard whose audio side did not complete is applied before any
+        // pass can read the bundle; if that fails no pass is queued now (the
+        // next launch completes it and queues the pass) [RT-1].
+        let discards = ghi_core::recover::complete_pending_discards(&self.store, Some(&self.id));
+        let job_kinds: &[&'static str] = if sensitive || discards.is_err() {
+            &[]
+        } else {
+            &self.job_kinds
+        };
+        if let Err(e) = &discards {
+            self.recorder.deps.events.emit(Event::Error {
+                meeting: Some(self.id.clone()),
+                kind: ghi_core::events::ErrorKind::Storage,
+                message: format!("finishing a discard: {e}"),
+            });
+            if let Err(e) = self.store.set_meeting_status(&self.id, "processing") {
+                log::warn!("keeping the meeting for recovery: {e}");
+            }
+        }
         let queued = (|| -> Result<(), String> {
-            if self.job_kinds.is_empty() {
+            if job_kinds.is_empty() {
                 return Ok(());
             }
             self.store
                 .set_meeting_status(&self.id, "processing")
                 .map_err(io_err)?;
-            for kind in &self.job_kinds {
+            for kind in job_kinds {
                 self.store
                     .enqueue_job(
                         Some(&self.id),
@@ -1224,11 +1365,19 @@ impl Session {
         // Below the live tier nothing is queued: the meeting stays `done`
         // (recorded), which is not "ready" (processed), so the session simply
         // goes idle.
-        self.set_state(if self.job_kinds.is_empty() {
-            SessionState::Idle
+        if sensitive {
+            // Nothing is left to wait for: the live transcript is the transcript.
+            if let Err(e) = self.store.set_meeting_status(&self.id, "ready") {
+                log::warn!("settling a sensitive meeting: {e}");
+            }
+            self.set_state(SessionState::Ready);
         } else {
-            SessionState::Processing
-        });
+            self.set_state(if job_kinds.is_empty() {
+                SessionState::Idle
+            } else {
+                SessionState::Processing
+            });
+        }
         // Only now may a job run: nothing of this session is left in memory.
         if let Some(h) = &self.hooks {
             h.recording_stopped();
@@ -1308,6 +1457,158 @@ impl Session {
             t_ms,
         });
         self.shared.activity_update();
+    }
+
+    /// Sensitive mode is on for this recording.
+    pub fn sensitive(&self) -> bool {
+        self.sensitive.load(Ordering::Acquire)
+    }
+
+    /// Turns sensitive mode on: from this call no audio is written (what was
+    /// written before is deleted at stop), cloud AI and voice learning are
+    /// refused for the meeting and no final pass runs (it needs the audio). A
+    /// recording cannot leave sensitive mode again: part of its audio is gone.
+    pub fn set_sensitive(&self, on: bool) -> Result<(), String> {
+        if !on {
+            return if self.sensitive() {
+                Err("sensitive mode cannot be turned off during the recording".into())
+            } else {
+                Ok(())
+            };
+        }
+        if self.sensitive() {
+            return Ok(());
+        }
+        // Without a live transcript nothing would be kept.
+        if !self.shared.lock().engine_expected {
+            return Err(ERR_SENSITIVE.into());
+        }
+        let _op = self.ops.lock().unwrap_or_else(|e| e.into_inner());
+        if self.stopped.load(Ordering::Acquire) {
+            return Err("stopped".into());
+        }
+        // The flag first: fail closed. If the pump is slow to answer the
+        // meeting is still sensitive (`stop` deletes the audio and queues no
+        // final pass), and the command only reports that it did not confirm.
+        self.sensitive.store(true, Ordering::Release);
+        // `stop` sets the flag in the store again if this fails.
+        let stored = self.store.set_sensitive(&self.id, true);
+        self.recorder.deps.events.emit(Event::SensitiveChanged {
+            meeting: self.id.clone(),
+            sensitive: true,
+        });
+        // Then no more pages are written, once the pump has seen the command.
+        let (tx, rx) = mpsc::channel();
+        self.cmd
+            .send(Cmd::Sensitive { reply: tx })
+            .map_err(io_err)?;
+        rx.recv_timeout(DISCARD_WAIT).map_err(io_err)?;
+        stored.map_err(io_err)
+    }
+
+    /// Discards everything from `t_cut_ms` (meeting time) on [RT-1]: audio,
+    /// lines, marks, notes citing them, as one operation. The span the user
+    /// saw in the preview is what goes, however long they took to confirm.
+    /// Returns the cut. Rejects a cut before 0 or after the time reached.
+    pub fn discard_from(&self, t_cut_ms: i64) -> Result<i64, String> {
+        let _op = self.ops.lock().unwrap_or_else(|e| e.into_inner());
+        if self.stopped.load(Ordering::Acquire) {
+            return Err("stopped".into());
+        }
+        let now_ms = self.shared.now_ms();
+        if t_cut_ms < 0 || t_cut_ms > now_ms {
+            return Err(format!(
+                "discard: {t_cut_ms} ms is outside the recording (0..{now_ms} ms)"
+            ));
+        }
+        let persist = self
+            .persist
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .ok_or("stopped")?;
+        // 1. The pump flushes, picks the pages to keep and holds new ones.
+        let (tx, rx) = mpsc::channel();
+        self.cmd
+            .send(Cmd::Discard {
+                t_cut_ms,
+                reply: tx,
+            })
+            .map_err(io_err)?;
+        let d = rx.recv_timeout(DISCARD_WAIT).map_err(io_err)?;
+        // From here on, any failure must stop the hold (or the rest of the
+        // recording would pile up in memory and be lost).
+        let release = |keep: Vec<(Track, u32)>| -> Result<(), String> {
+            let (tx, rx) = mpsc::channel();
+            self.cmd
+                .send(Cmd::Release { keep, reply: tx })
+                .map_err(io_err)?;
+            rx.recv_timeout(DISCARD_WAIT)
+                .map_err(io_err)?
+                .map_err(|e| format!("discard audio: {e}"))
+        };
+        // 2. One store transaction for the text side (+ a pending audio row).
+        //    The span is registered under the same lock as the request, so the
+        //    engine's lines are either dropped or ahead of it in the queue.
+        let span_end_ms = (d.mute_until * 1000 / u64::from(engine::SAMPLE_RATE)) as i64;
+        let keep = d
+            .keep
+            .iter()
+            .map(|(_, pages, prefix)| ghi_store::edits::KeepPages {
+                kind: TrackKind::Mic,
+                pages: *pages,
+                prefix: prefix.clone(),
+            })
+            .collect();
+        let (tx, text_rx) = crossbeam_channel::bounded(1);
+        let gate = Arc::new(ghi_core::live::DiscardGate::default());
+        let queued = {
+            let mut cuts = self.cuts.lock().unwrap_or_else(|e| e.into_inner());
+            cuts.push((t_cut_ms, span_end_ms));
+            let sent = persist.send(PersistMsg::Discard {
+                t_cut_ms,
+                now_ms,
+                keep,
+                gate: gate.clone(),
+                reply: tx,
+            });
+            if sent.is_err() {
+                cuts.pop();
+            }
+            sent
+        };
+        // On a timeout the request is abandoned (or its late answer is used):
+        // no pending row is left to cut audio recorded afterwards [RT-1].
+        let text_side = queued.map_err(io_err).and_then(|()| {
+            let answer = match text_rx.recv_timeout(DISCARD_WAIT) {
+                Ok(r) => r,
+                Err(e) => gate.settle(&text_rx).ok_or_else(|| io_err(e))?,
+            };
+            answer.map_err(|e| format!("discard: {e}"))
+        });
+        let id = match text_side {
+            Ok(id) => id,
+            Err(e) => {
+                self.cuts
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .retain(|c| *c != (t_cut_ms, span_end_ms));
+                let _ = release(Vec::new());
+                return Err(e);
+            }
+        };
+        // 3. The audio side: rotate the bundle, then write what was held.
+        release(d.keep.iter().map(|(t, k, _)| (*t, *k)).collect())?;
+        self.store.discard_audio_done(id).map_err(io_err)?;
+        // The marks after the cut are gone.
+        let marks = self.store.marks(&self.id).map_or(0, |m| m.len() as u32);
+        self.shared.lock().marks = marks;
+        self.recorder.deps.events.emit(Event::DiscardApplied {
+            meeting: self.id.clone(),
+            from_ms: t_cut_ms,
+        });
+        self.shared.activity_update();
+        Ok(t_cut_ms)
     }
 
     /// An audio interruption began (a call, another app) or ended. Recording
@@ -1496,6 +1797,7 @@ impl Session {
                 .get_meeting(&self.id)
                 .map(|m| m.consent_confirmed)
                 .unwrap_or(false),
+            sensitive: self.sensitive(),
             speakers,
             lines,
             marks: self
@@ -1528,7 +1830,7 @@ struct PumpCtx {
 
 fn pump(
     ctx: PumpCtx,
-    mut pipeline: Pipeline<Metered<OpusRecorder<BundlePages>>>,
+    mut pipeline: Pipeline<Metered<Muted<OpusRecorder<BundlePages>>>>,
     mut asr: ghi_audio::pipeline::AsrConsumer,
     mut backlog: Option<BacklogWriter>,
     rx: Receiver<Cmd>,
@@ -1568,6 +1870,41 @@ fn pump(
             match cmd {
                 Cmd::Pause => pipeline.pause(),
                 Cmd::Resume => pipeline.resume(),
+                Cmd::Discard { t_cut_ms, reply } => {
+                    let pos = pipeline.position();
+                    // The marker makes the encoder end its page now, so the
+                    // audio up to here is in the bundle (and the rotation
+                    // removes what is after the cut).
+                    let now_ms = (pos * 1000 / engine::SAMPLE_RATE as u64) as i64;
+                    pipeline.discard((now_ms - t_cut_ms).max(0) as f32 / 1000.0);
+                    let rec = &mut pipeline.writer_mut().inner;
+                    // Audio captured before the discard but not yet emitted
+                    // (up to the pipeline's 0.25 s stall window) is muted.
+                    let mute_until = pos + u64::from(engine::SAMPLE_RATE) / 2;
+                    rec.mute_until(mute_until);
+                    let pages = rec.inner.sink_mut();
+                    let keep = vec![(
+                        Track::Mic,
+                        pages.keep_before(Track::Mic, t_cut_ms),
+                        pages.prefix_hex(Track::Mic),
+                    )];
+                    pages.hold();
+                    let _ = reply.send(Discarding { keep, mute_until });
+                }
+                Cmd::Release { keep, reply } => {
+                    let r = pipeline
+                        .writer_mut()
+                        .inner
+                        .inner
+                        .sink_mut()
+                        .release(&keep)
+                        .map_err(|e| e.to_string());
+                    let _ = reply.send(r);
+                }
+                Cmd::Sensitive { reply } => {
+                    pipeline.writer_mut().inner.inner.sink_mut().stop_writing();
+                    let _ = reply.send(());
+                }
                 Cmd::Stop => stopping = true,
             }
         }
@@ -1689,8 +2026,23 @@ fn pump(
     }
     let position = pipeline.position();
     let written = backlog.as_ref().map_or(0, |w| w.written());
-    if let Err(e) = pipeline.finish().inner.finish() {
+    // Pages still held by a discard that never completed are written out.
+    if let Err(e) = pipeline.writer_mut().inner.inner.sink_mut().release(&[]) {
         fail(&shared, format!("closing the audio file: {e}"));
+    }
+    match pipeline.finish().inner.inner.finish() {
+        // The bundle is finished and its page count recorded (a bundle left
+        // open is only cut back at the next launch).
+        Ok(pages) => {
+            for w in pages.writers.into_iter().flatten() {
+                if let Err(e) = (recorder.deps.store)()
+                    .and_then(|st| st.finish_track(&meeting, TrackKind::Mic, w).map_err(io_err))
+                {
+                    fail(&shared, format!("closing the audio file: {e}"));
+                }
+            }
+        }
+        Err(e) => fail(&shared, format!("closing the audio file: {e}")),
     }
     {
         let mut s = shared.lock();

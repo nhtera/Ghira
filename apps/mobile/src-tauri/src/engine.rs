@@ -15,7 +15,7 @@
 //! [`Gate`]: crate::gate::Gate
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::Sender;
@@ -151,8 +151,17 @@ pub enum Update {
     },
 }
 
+/// Meeting spans (start ms, end ms) discarded during the recording. The engine
+/// trails the audio, so it can still make text for a span after the discard
+/// was applied to the store: the [`Applier`] drops it. The session holds the
+/// lock while it registers a span and queues the store's discard, and the
+/// applier while it filters and queues lines, so a line is either dropped or
+/// queued before the discard (which then removes it).
+pub type Cuts = Arc<Mutex<Vec<(i64, i64)>>>;
+
 /// Turns committed updates into lines, speakers, events and store writes.
 pub struct Applier {
+    cuts: Cuts,
     meeting: String,
     language: Option<String>,
     tracker: SpeakerTracker,
@@ -198,6 +207,7 @@ impl Applier {
         persist: Sender<PersistMsg>,
     ) -> Applier {
         Applier {
+            cuts: Cuts::default(),
             meeting,
             language,
             tracker: SpeakerTracker::new(),
@@ -205,6 +215,12 @@ impl Applier {
             persist,
             generation: 0,
         }
+    }
+
+    /// Drops the text of the spans in `cuts` (discards while recording).
+    pub fn with_cuts(mut self, cuts: Cuts) -> Applier {
+        self.cuts = cuts;
+        self
     }
 
     /// The streams were reopened: the diarizer's labels start over.
@@ -216,8 +232,14 @@ impl Applier {
     /// started on the backlog timeline, `now_samples` the read position.
     pub fn apply(&mut self, updates: Vec<Update>, offset_samples: u64, now_samples: u64) {
         let offset = offset_samples as f64 / RATE;
+        let cuts = self.cuts.clone();
+        let cuts = cuts.lock().unwrap_or_else(|e| e.into_inner());
+        // The engine is still inside a discarded span: its partial is not shown.
+        let now_ms = ms(now_samples as f64 / RATE);
+        let inside_cut = cuts.iter().any(|&(_, end)| now_ms <= end);
         for u in updates {
             match u {
+                Update::Partial(_) if inside_cut => {}
                 Update::Partial(text) => self.events.emit(Event::TranscriptPartial {
                     meeting: self.meeting.clone(),
                     track: 0,
@@ -225,7 +247,7 @@ impl Applier {
                 }),
                 Update::Final {
                     text, words, segs, ..
-                } => self.final_line(&text, words, segs, offset),
+                } => self.final_line(&text, words, segs, offset, &cuts),
             }
         }
         let mut ch = Vec::new();
@@ -233,13 +255,26 @@ impl Applier {
         self.changes(ch);
     }
 
-    fn final_line(&mut self, text: &str, words: Vec<Word>, segs: Vec<SpeakerSegment>, off: f64) {
+    fn final_line(
+        &mut self,
+        text: &str,
+        words: Vec<Word>,
+        segs: Vec<SpeakerSegment>,
+        off: f64,
+        cuts: &[(i64, i64)],
+    ) {
         let words: Vec<Word> = words
             .into_iter()
             .map(|w| Word {
                 start: w.start + off,
                 end: w.end + off,
                 ..w
+            })
+            // Words inside a discarded span never reach the transcript.
+            .filter(|w| {
+                !cuts
+                    .iter()
+                    .any(|&(from, to)| ms(w.end) > from && ms(w.start) < to)
             })
             .collect();
         if words.is_empty() {

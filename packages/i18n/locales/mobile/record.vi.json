@@ -72,7 +72,8 @@
         "callActive": "Đang có cuộc gọi. Hãy đọc thông báo trước.",
         "diskLow": "Không đủ dung lượng để ghi âm. Hãy giải phóng bộ nhớ rồi thử lại.",
         "pairingNotAvailable": "Chưa gửi sang máy tính được. Hãy chọn Điện thoại.",
-        "waitingForTranscription": "Đang hoàn tất bản ghi âm trước… hãy thử lại sau giây lát."
+        "waitingForTranscription": "Đang hoàn tất bản ghi âm trước… hãy thử lại sau giây lát.",
+        "sensitiveNeedsTranscript": "Chế độ nhạy cảm cần bản ghi trực tiếp, mà điện thoại chưa tạo được lúc này. Hãy tắt chế độ này để ghi âm."
       },
       "interrupted": {
         "body": "Một ứng dụng khác đã chiếm micro. Mọi thứ đến {{time}} đã được lưu.",
@@ -104,6 +105,22 @@
       },
       "callNotice": {
         "steps": "Hãy bật loa ngoài cho cuộc gọi và đặt điện thoại nơi nghe được mọi người. {{app}} ghi âm cả phòng."
+      },
+      "more": "Thêm tác vụ",
+      "discard": {
+        "menu_other": "Bỏ {{count}} phút vừa rồi…",
+        "title_other": "Bỏ {{count}} phút vừa rồi?",
+        "body": "Không thể hoàn tác.",
+        "loading": "Đang xem phần sẽ bị bỏ…",
+        "summaryItems": "Sẽ xoá bản ghi âm và {{items}}.",
+        "summaryTextOnly": "Sẽ xoá {{items}}.",
+        "summaryAudioOnly": "Chỉ xoá bản ghi âm. Bản ghi và ghi chú không bị ảnh hưởng.",
+        "summaryNothing": "Chưa có gì được ghi trong đoạn này.",
+        "lines_other": "{{count}} dòng bản ghi",
+        "notes_other": "{{count}} ghi chú",
+        "marks_other": "{{count}} đánh dấu",
+        "confirm": "Bỏ đoạn này",
+        "behind": "Phần chữ đang được chuyển thành bản ghi cho đoạn này cũng sẽ bị bỏ."
       }
     },
     "voice": {
@@ -112,6 +129,21 @@
       "needsModels": "Bạn có thể thêm giọng của mình sau khi tải xong mô hình giọng nói. Bạn cũng có thể làm sau trong Cài đặt.",
       "passage": "Xin chào, tôi đang đọc đoạn này để {{app}} nhận ra giọng của tôi. Tuần này chúng ta sẽ chốt kế hoạch quý bốn, rà lại ngân sách và phân công việc trước ngày phát hành.",
       "passageLabel": "Hãy đọc to đoạn này"
+    },
+    "sensitive": {
+      "label": "Cuộc họp nhạy cảm",
+      "hint": "Chỉ giữ bản ghi: không lưu bản ghi âm, không gửi lên đám mây, không học giọng nói.",
+      "badge": "Nhạy cảm · không lưu bản ghi âm",
+      "stays": "Bật đến khi kết thúc lần ghi",
+      "makeIt": "Đặt là nhạy cảm…",
+      "confirmTitle": "Đặt cuộc họp này là nhạy cảm?",
+      "confirmLive": "Từ giờ không lưu thêm âm thanh, và phần bản ghi âm đã có sẽ bị xoá khi bạn dừng. Chỉ giữ bản ghi; AI đám mây và việc học giọng nói sẽ tắt. Không thể tắt lại trong lần ghi này.",
+      "confirmStored": "Bản ghi âm sẽ bị xoá ngay và chỉ giữ bản ghi. AI đám mây và việc học giọng nói sẽ tắt cho cuộc họp này.",
+      "confirm": "Đặt là nhạy cảm",
+      "failed": "Không đổi được chế độ nhạy cảm. Hãy thử lại.",
+      "chip": "Nhạy cảm",
+      "noTranscript": "Chưa có bản ghi nào để giữ lại, nên chưa đặt được cuộc họp này là nhạy cảm.",
+      "pending": "Cuộc họp này vẫn đang được xử lý từ bản ghi âm. Hãy thử lại khi xong."
     }
   }
 }

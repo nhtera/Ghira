@@ -18,6 +18,7 @@ const row: MeetingRow = {
   transcriptVersion: 2,
   cloudUsed: false,
   consentConfirmed: false,
+  sensitive: false,
   template: null,
   people: [],
   job: null,
@@ -41,6 +42,13 @@ describe("MeetingRowView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Failed · Retry" }));
     expect(onRetry).toHaveBeenCalledOnce();
     expect(container.querySelector(".shadow-float")?.className).toContain("right-[226px]");
+  });
+  it("a sensitive meeting wears a chip with a word and an icon", () => {
+    view({ sensitive: true, status: "ready" }, { status: "ready" });
+    expect(screen.getByTestId("row-sensitive").textContent).toBe("Sensitive");
+    cleanup();
+    view({ sensitive: false, status: "ready" }, { status: "ready" });
+    expect(screen.queryByTestId("row-sensitive")).toBeNull();
   });
   it("names the source for screen readers and shows the length", () => {
     view({ status: "ready" }, { status: "ready" });

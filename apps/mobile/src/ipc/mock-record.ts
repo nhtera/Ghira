@@ -166,19 +166,22 @@ let speakers: SpeakerInfo[] = [];
 let seq = 0;
 /** The session records without live transcription (below the live tier). */
 let recordOnly = false;
+/** Sensitive mode is on for the session (one way). */
+let sensitive = false;
 
 // A page reload keeps the session, like the core outliving the webview.
 const KEY = "ghi-record-mock";
 function persist() {
   try {
-    sessionStorage.setItem(KEY, JSON.stringify({ session, lines, speakers, seq, recordOnly, completed }));
+    sessionStorage.setItem(KEY, JSON.stringify({ session, lines, speakers, seq, recordOnly, completed, sensitive }));
   } catch {
     /* no storage: the mock forgets on reload */
   }
 }
 try {
   const saved = JSON.parse(sessionStorage.getItem(KEY) ?? "null");
-  if (saved) ({ session, lines, speakers, seq, recordOnly, completed } = saved);
+  if (saved) ({ session, lines, speakers, seq, recordOnly, completed, sensitive } = saved);
+  sensitive = Boolean(sensitive);
 } catch {
   /* nothing saved */
 }
@@ -239,6 +242,7 @@ function snapshot(): RecordState {
       language: "auto",
       title: "",
       consentConfirmed: true,
+      sensitive,
       speakers,
       lines,
       marks: Array.from({ length: session.marks }, (_, i) => i * 1000),
@@ -366,10 +370,14 @@ export const recordCommands: Partial<Commands> = {
     if (session.phase !== "idle" && session.phase !== "done") return fail("alreadyRecording");
     // Below the live tier it always records, without a transcript.
     recordOnly = hooks.tier === "recordOnly";
+    // Sensitive mode keeps nothing but the live transcript.
+    if (start.sensitive && recordOnly) return fail("sensitiveNeedsTranscript");
+    sensitive = start.sensitive;
     lines = [];
     speakers = [];
     session = { ...idleState(), phase: "loading", recording: true };
     core({ type: "sessionStarted", meeting: "m-1", mode: "room", language: null, title: "" });
+    if (sensitive) core({ type: "sensitiveChanged", meeting: "m-1", sensitive: true });
     mobile({ type: "phase", phase: "loading" });
     if (!hooks.holdLoading) {
       await pause(20);
@@ -395,6 +403,35 @@ export const recordCommands: Partial<Commands> = {
     session = { ...session, marks: session.marks + 1 };
     core({ type: "markAdded", meeting: "m-1", tMs: session.marks * 1000 });
     return ok(null);
+  },
+  recordSetSensitive: async (on) => {
+    hooks.log.push(`recordSetSensitive:${on}`);
+    if (hooks.failAction) return fail("failed");
+    if (!on) return sensitive ? fail("sensitive mode cannot be turned off during the recording") : ok(null);
+    if (recordOnly) return fail("sensitiveNeedsTranscript");
+    if (!sensitive) {
+      sensitive = true;
+      core({ type: "sensitiveChanged", meeting: "m-1", sensitive: true });
+    }
+    return ok(null);
+  },
+  // The last `seconds` of the recording: what the lines (4 s each) and marks (1 s apart) say.
+  recordDiscardPreview: async (secondsOrNull) => {
+    const seconds = secondsOrNull ?? 0;
+    hooks.log.push(`recordDiscardPreview:${seconds}`);
+    if (hooks.failAction) return fail("failed");
+    const now = Math.max(lines.length * 4000, session.marks * 1000);
+    const from = Math.max(0, now - seconds * 1000);
+    return ok({ fromMs: from, lines: lines.filter((l) => (l.t1Ms ?? 0) > from).map((l) => l.text), notes: [], marks: Math.max(0, session.marks - Math.ceil(from / 1000)) });
+  },
+  recordDiscardFrom: async (fromMsOrNull) => {
+    const fromMs = fromMsOrNull ?? 0;
+    hooks.log.push(`recordDiscardFrom:${fromMs}`);
+    if (hooks.failAction) return fail("failed");
+    lines = lines.filter((l) => (l.t1Ms ?? 0) <= fromMs);
+    session = { ...session, marks: Math.min(session.marks, Math.ceil(fromMs / 1000)) };
+    core({ type: "discardApplied", meeting: "m-1", fromMs });
+    return ok(fromMs);
   },
   recordStop: async () => {
     hooks.log.push("recordStop");

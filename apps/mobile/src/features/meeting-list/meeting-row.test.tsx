@@ -54,6 +54,16 @@ describe("MeetingRowView", () => {
     expect(p.onRetry).toHaveBeenCalledOnce();
   });
 
+  it("a sensitive meeting wears a chip with a word and an icon", () => {
+    Object.assign(row, { sensitive: true });
+    show();
+    expect(screen.getByTestId("row-sensitive").textContent).toBe("Sensitive");
+    cleanup();
+    Object.assign(row, { sensitive: false });
+    show();
+    expect(screen.queryByTestId("row-sensitive")).toBeNull();
+  });
+
   it("swipes left to reveal Delete and asks before deleting", () => {
     const p = show();
     const surface = screen.getByRole("button", { name: /^Weekly 1:1/ })

@@ -57,6 +57,7 @@ const rowOfGroup = (g: HitGroup): MeetingRow => ({
   transcriptVersion: null,
   cloudUsed: false,
   consentConfirmed: false,
+  sensitive: false,
   template: null,
   people: [],
   job: null,

@@ -97,6 +97,7 @@ mod tests {
             transcript_version: 1.0,
             cloud_used: false,
             consent_confirmed: false,
+            sensitive: false,
             template: None,
             people: vec![],
             job,

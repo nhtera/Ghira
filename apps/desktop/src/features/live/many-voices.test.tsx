@@ -67,7 +67,7 @@ describe("overlap in the live transcript", () => {
   const lines = [line(1, 0, 6000, "Chúng ta cần chốt", true), line(2, 4000, 9000, "Cho tôi nói với", true), line(1, 20_000, 22_000, "Tiếp theo nhé")];
 
   it("flagged overlapping lines stack in one bracket, the hint said once", () => {
-    setLive({ state: "recording", meeting: "m", speakers: speakers(2), lines, session: { mode: "room", language: null, title: "", consentConfirmed: false } });
+    setLive({ state: "recording", meeting: "m", speakers: speakers(2), lines, session: { mode: "room", language: null, title: "", consentConfirmed: false, sensitive: false } });
     renderLive(<TranscriptView />);
     const stack = screen.getByTestId("transcript-stack");
     expect(within(stack).getByText(/Chúng/)).toBeTruthy();
@@ -82,7 +82,7 @@ describe("overlap in the live transcript", () => {
   it("lines that overlap in time but are not flagged stay plain lines, in any mode", () => {
     const plain = lines.map((l) => ({ ...l, overlap: false }));
     for (const mode of ["call", "room"]) {
-      setLive({ state: "recording", meeting: "m", speakers: speakers(2), lines: plain, session: { mode, language: null, title: "", consentConfirmed: false } });
+      setLive({ state: "recording", meeting: "m", speakers: speakers(2), lines: plain, session: { mode, language: null, title: "", consentConfirmed: false, sensitive: false } });
       const { unmount } = renderLive(<TranscriptView />);
       expect(screen.queryByTestId("transcript-stack")).toBeNull();
       expect(screen.queryAllByTestId("overlap-tag")).toHaveLength(0);

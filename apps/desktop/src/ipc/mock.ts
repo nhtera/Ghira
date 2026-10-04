@@ -25,7 +25,7 @@ import type {
 } from "../bindings";
 import type { Commands, Ipc } from "./ipc";
 import { audioUrl, namesOf, onImportStaged, onImportUpdate, reviewCommands, simulateImportDrop, transcriptOf } from "./mock-review";
-import { aiCommands } from "./mock-ai";
+import { aiCommands, audioDeleted, sensitiveMeetings } from "./mock-ai";
 import { calendarCommands } from "./mock-calendar";
 import { organizeCommands } from "./mock-organize";
 import { peopleCommands } from "./mock-people";
@@ -58,6 +58,8 @@ type Session = {
   arrived: Set<number>;
 };
 let session: Session | null = null;
+/** Sensitive mode armed for the next recording (kept by the core). */
+let sensitiveNextArmed = false;
 /** `?nomodels=1`: speech models are missing, so a recording only records. */
 const noModels = new URLSearchParams(location.search).has("nomodels");
 let meetings = 0;
@@ -161,6 +163,7 @@ const rows: MeetingRow[] = library.rows.map((r, i) => ({
   transcriptVersion: 2,
   cloudUsed: r.st === "cloud",
   consentConfirmed: false,
+  sensitive: false,
   template: null,
   people: r.ppl
     .filter((p) => p !== "?")
@@ -265,9 +268,22 @@ const commands: Commands = {
     strictOffline: () => settings.strictOffline,
   }),
   appVersion: () => Promise.resolve<AppVersion>({ app: "0.1.0", core: "0.1.0 (mock)" }),
+  sensitiveNext: () => ok(sensitiveNextArmed),
+  setSensitiveNext: (on) => {
+    sensitiveNextArmed = on;
+    return ok(null);
+  },
   startRecording: (mode) => {
     if (session) return fail("a recording is already running");
+    // Armed in the core, for any window; it clears once a recording started.
+    const sensitive = sensitiveNextArmed;
+    if (sensitive && noModels) return fail("sensitive mode needs the speech models: without a live transcript nothing would be kept");
     const id = `mock-${++meetings}`;
+    sensitiveNextArmed = false;
+    if (sensitive) {
+      sensitiveMeetings.add(id);
+      audioDeleted.add(id);
+    }
     session = { id, mode, startedAt: Date.now(), pausedMs: 0, pausedAt: null, timers: [], next: 0, arrived: new Set() };
     rows.unshift({
       gid: id,
@@ -280,6 +296,7 @@ const commands: Commands = {
       transcriptVersion: 0,
       cloudUsed: false,
       consentConfirmed: false,
+      sensitive,
       template: null,
       people: [],
       unnamedVoices: 0,
@@ -292,6 +309,7 @@ const commands: Commands = {
     emit({ type: "stateChanged", meeting: id, state: "starting" });
     emit({ type: "sessionStarted", meeting: id, mode, language: null, title: "" });
     emit({ type: "stateChanged", meeting: id, state: "recording" });
+    if (sensitive) emit({ type: "sensitiveChanged", meeting: id, sensitive: true });
     if (noModels) emit({ type: "error", meeting: id, kind: "modelsMissing", message: "" });
     const s = session;
     s.timers.push(window.setTimeout(() => tick(s), 600));
@@ -412,6 +430,27 @@ const commands: Commands = {
   // The mock serves no audio; the UI handles a sample that doesn't load.
   issueAudioSample: () => fail("no audio on the mock core"),
   showMain: () => ok(null),
+  // On a recording it can only be turned on; on a stored meeting it deletes the audio (off only clears the flag).
+  setMeetingSensitive: (meeting, sensitive) => {
+    const row = rows.find((x) => x.gid === meeting);
+    if (!row) return fail(`meeting not found: ${meeting}`);
+    if (sensitive && session?.id !== meeting && row.status === "processing") return fail("transcriptPending");
+    row.sensitive = sensitive || (session?.id === meeting && row.sensitive);
+    if (session?.id === meeting) {
+      if (!sensitive && sensitiveMeetings.has(meeting)) return fail("sensitive mode cannot be turned off during the recording");
+      if (sensitive) {
+        sensitiveMeetings.add(meeting);
+        audioDeleted.add(meeting);
+        emit({ type: "sensitiveChanged", meeting, sensitive: true });
+      }
+      return ok(null);
+    }
+    if (sensitive) {
+      sensitiveMeetings.add(meeting);
+      audioDeleted.add(meeting);
+    } else sensitiveMeetings.delete(meeting);
+    return ok(null);
+  },
   setConsentConfirmed: (meeting, confirmed) => {
     const r = rows.find((x) => x.gid === meeting);
     if (r) r.consentConfirmed = confirmed;
@@ -433,6 +472,7 @@ const commands: Commands = {
             language: null,
             title: "",
             consentConfirmed: false,
+            sensitive: sensitiveMeetings.has(session.id),
           }
         : null,
     ),

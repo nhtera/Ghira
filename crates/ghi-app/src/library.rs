@@ -40,6 +40,8 @@ pub struct MeetingRow {
     pub transcript_version: f64,
     pub cloud_used: bool,
     pub consent_confirmed: bool,
+    /// Sensitive mode: no audio kept, no cloud, no voice learning.
+    pub sensitive: bool,
     /// Notes template id (`None`: the default).
     pub template: Option<String>,
     /// Named speakers, for the people column and filter.
@@ -199,6 +201,7 @@ fn rows_of(
             transcript_version: m.transcript_version as f64,
             cloud_used: m.cloud_used,
             consent_confirmed: m.consent_confirmed,
+            sensitive: m.sensitive,
         })
         .collect())
 }
@@ -417,38 +420,47 @@ pub struct DiscardPreview {
 pub async fn discard_preview(core: CoreState<'_>, seconds: f64) -> Result<DiscardPreview, String> {
     blocking(&core, move |c| {
         let (meeting, now) = c.with_session_unlocked(|s| (s.meeting().to_string(), s.now_ms()))?;
-        let from = (now - (seconds.clamp(0.0, 24.0 * 3600.0) * 1000.0) as i64).max(0);
         let store = c.store()?;
-        let lines = store
-            .segments(&meeting)
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .filter(|s| s.t1_ms > from)
-            .map(|s| s.text)
-            .collect();
-        let notes = store
-            .note_blocks(&meeting)
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .filter(|b| {
-                b.provenance == Provenance::User && b.anchors.iter().any(|a| a.t0_ms >= from)
-            })
-            .map(|b| b.body)
-            .collect();
-        let marks = store
-            .marks(&meeting)
-            .map_err(|e| e.to_string())?
-            .iter()
-            .filter(|m| m.t_ms >= from)
-            .count() as u32;
-        Ok(DiscardPreview {
-            from_ms: from as f64,
-            lines,
-            notes,
-            marks,
-        })
+        discard_preview_of(&store, &meeting, now, seconds)
     })
     .await
+}
+
+/// [`discard_preview`] for a recording at meeting time `now_ms` (the phone's
+/// recorder is not a core session).
+pub fn discard_preview_of(
+    store: &ghi_store::store::Store,
+    meeting: &str,
+    now_ms: i64,
+    seconds: f64,
+) -> Result<DiscardPreview, String> {
+    let from = (now_ms - (seconds.clamp(0.0, 24.0 * 3600.0) * 1000.0) as i64).max(0);
+    let lines = store
+        .segments(meeting)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|s| s.t1_ms > from)
+        .map(|s| s.text)
+        .collect();
+    let notes = store
+        .note_blocks(meeting)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|b| b.provenance == Provenance::User && b.anchors.iter().any(|a| a.t0_ms >= from))
+        .map(|b| b.body)
+        .collect();
+    let marks = store
+        .marks(meeting)
+        .map_err(|e| e.to_string())?
+        .iter()
+        .filter(|m| m.t_ms >= from)
+        .count() as u32;
+    Ok(DiscardPreview {
+        from_ms: from as f64,
+        lines,
+        notes,
+        marks,
+    })
 }
 
 /// The "Consent confirmed" toggle of a meeting [RT-14].
@@ -516,6 +528,56 @@ pub async fn delete_meeting(
         Ok(())
     })
     .await
+}
+
+/// Sensitive meeting mode (doc 02, P1): no audio kept, no cloud, no voice
+/// learning. On the meeting being recorded it can only be turned on (part of
+/// the audio is gone: what was written goes at stop). On a stored meeting
+/// turning it on deletes its audio now (the UI confirms first); it is refused
+/// with `noTranscript` (nothing would be kept) or `transcriptPending` (its final
+/// pass still needs the audio). Turning it off only clears the flag.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_meeting_sensitive(
+    core: CoreState<'_>,
+    tokens: tauri::State<'_, std::sync::Arc<crate::audio_protocol::AudioTokens>>,
+    meeting: String,
+    sensitive: bool,
+) -> Result<(), String> {
+    let tokens = tokens.inner().clone();
+    blocking(&core, move |c| {
+        if let Ok(live) = c.with_session(|s| {
+            (s.meeting() == meeting).then(|| s.set_sensitive(sensitive).map_err(|e| e.to_string()))
+        }) && let Some(result) = live
+        {
+            tokens.revoke_meeting(&meeting);
+            return result;
+        }
+        let store = c.store()?;
+        ghi_core::sensitive::set_stored(&store, &meeting, sensitive)?;
+        // Samples issued before may cover audio that is gone now.
+        tokens.revoke_meeting(&meeting);
+        Ok(())
+    })
+    .await
+}
+
+/// Whether the next recording, started from any window or the tray, will be
+/// sensitive.
+#[tauri::command]
+#[specta::specta]
+pub async fn sensitive_next(core: CoreState<'_>) -> Result<bool, String> {
+    Ok(core.sensitive_next())
+}
+
+/// Arms (or disarms) sensitive mode for the next recording. Kept in the core,
+/// so every window and the tray start the same way; it clears once a recording
+/// started.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_sensitive_next(core: CoreState<'_>, on: bool) -> Result<(), String> {
+    core.set_sensitive_next(on);
+    Ok(())
 }
 
 /// Runs a meeting's failed jobs again (the library's "Failed · Retry").

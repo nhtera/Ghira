@@ -17,7 +17,7 @@ describe("ConsentBanner", () => {
   });
 
   it("is not shown once consent is confirmed", () => {
-    setLive({ state: "recording", meeting: "m-ok", session: { mode: "call", language: null, title: "", consentConfirmed: true } });
+    setLive({ state: "recording", meeting: "m-ok", session: { mode: "call", language: null, title: "", consentConfirmed: true, sensitive: false } });
     renderLive(<ConsentBanner meeting="m-ok" />);
     expect(screen.queryByTestId("consent-hint")).toBeNull();
   });

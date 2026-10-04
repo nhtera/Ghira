@@ -57,7 +57,8 @@ test("pause and resume show the paused state", async ({ page }) => {
 test("discard the last minutes: preview, then confirm", async ({ page }) => {
   await record(page);
   await page.locator("button[aria-haspopup=menu]").click();
-  await page.getByRole("menuitem").nth(1).click();
+  // The discard items follow the sensitive-mode item.
+  await page.getByRole("menuitem", { name: /^Discard the last/ }).nth(1).click();
   const panel = page.getByTestId("discard-panel");
   await expect(panel.getByRole("alertdialog")).toBeVisible();
   // Not a modal: the page behind stays usable and nothing is removed yet.
@@ -66,7 +67,8 @@ test("discard the last minutes: preview, then confirm", async ({ page }) => {
   await expect(panel).toHaveCount(0);
 
   await page.locator("button[aria-haspopup=menu]").click();
-  await page.getByRole("menuitem").nth(1).click();
+  // The discard items follow the sensitive-mode item.
+  await page.getByRole("menuitem", { name: /^Discard the last/ }).nth(1).click();
   await panel.getByRole("button").first().click();
   await expect(panel).toHaveCount(0);
   // The cut reaches back to the start on the mock: the lines are gone.

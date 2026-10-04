@@ -27,7 +27,7 @@ export type LiveState = {
   /** Last applied `seq`: a gap means events were missed (re-read state). */
   seq: number | null;
   /** What was started: mode, language hint (null = both), title. */
-  session: { mode: string; language: string | null; title: string; consentConfirmed: boolean } | null;
+  session: { mode: string; language: string | null; title: string; consentConfirmed: boolean; sensitive: boolean } | null;
   /** Capture conditions shown as health notices (D4, D12). */
   capture: {
     /** The Mac slept mid-recording (the gap is marked; recording resumes on wake). */
@@ -90,7 +90,7 @@ export function fromSnapshot(snap: SessionSnapshot, nowWall: number): LiveState 
     speakers: Object.fromEntries(snap.speakers.map((sp) => [sp.id, sp])),
     marks: snap.marks.filter((m): m is number => m != null),
     recordOnly: !snap.transcribing,
-    session: { mode: snap.mode, language: snap.language, title: snap.title, consentConfirmed: snap.consentConfirmed },
+    session: { mode: snap.mode, language: snap.language, title: snap.title, consentConfirmed: snap.consentConfirmed, sensitive: snap.sensitive },
     seq: snap.seq,
     startedAtMs: nowWall - (snap.nowMs ?? 0),
     pausedAtMs: snap.state === "paused" ? nowWall : null,
@@ -123,7 +123,7 @@ export function reduce(s: LiveState, env: CoreEvent): LiveState {
       return { ...s, ...timing, meeting: e.meeting, state: e.state, seq };
     }
     case "sessionStarted":
-      return { ...s, session: { mode: e.mode, language: e.language, title: e.title, consentConfirmed: false }, seq };
+      return { ...s, session: { mode: e.mode, language: e.language, title: e.title, consentConfirmed: false, sensitive: false }, seq };
     case "transcriptPartial":
       return { ...s, partial: { ...s.partial, [e.track]: e.text }, seq };
     case "transcriptFinal":
@@ -163,6 +163,8 @@ export function reduce(s: LiveState, env: CoreEvent): LiveState {
         seq,
       };
     }
+    case "sensitiveChanged":
+      return { ...s, session: s.session ? { ...s.session, sensitive: e.sensitive } : s.session, seq };
     case "levelMeter":
       return { ...s, levels: { mic: e.micDbfs, system: e.systemDbfs }, seq };
     case "health":

@@ -13,6 +13,7 @@ import { elapsedMs, useLive } from "../../state/live";
 import { useNow } from "./clock";
 import { HeaderRecord } from "./header-record";
 import { TitleField, useConsent } from "./toolbar";
+import { SensitiveBadge } from "../sensitive";
 
 export type LiveLayout = "transcript" | "focus";
 
@@ -61,6 +62,7 @@ export function LiveHeader({
   layout,
   onLayout,
   onDiscard,
+  onSensitive,
   discardSeconds,
   compact,
 }: {
@@ -69,6 +71,8 @@ export function LiveHeader({
   layout: LiveLayout;
   onLayout: (l: LiveLayout) => void;
   onDiscard: (seconds: number) => void;
+  /** Asks to make the recording sensitive (the screen shows the confirmation). */
+  onSensitive: () => void;
   discardSeconds: number[];
   compact: boolean;
 }) {
@@ -102,6 +106,7 @@ export function LiveHeader({
         <span className="sr-only @[1140px]:not-sr-only">{aec ? t("live.audio.speakers") : t("live.audio.headphones")}</span>
         <span className="sr-only">{route}</span>
       </span>
+      {session?.sensitive && <SensitiveBadge />}
       {consent.confirmed && (
         <span title={t("live.consent.confirmed")} data-testid="consent-confirmed" className="inline-flex h-7 flex-none items-center gap-1 text-[12px] font-medium whitespace-nowrap text-accent">
           <Icon name="check_circle" size={16} />
@@ -136,6 +141,10 @@ export function LiveHeader({
             trigger={<Button icon="more_horiz" aria-label={t("live.more")} />}
             items={[
               { kind: "checkbox", label: t("live.consent.confirmed"), checked: consent.confirmed, onSelect: () => void consent.toggle() },
+              // One way: part of the audio is gone, so a recording stays sensitive.
+              session?.sensitive
+                ? { label: t("sensitive.menu"), icon: "check" as const, disabled: true, hint: t("sensitive.liveLocked"), onSelect: () => {} }
+                : { label: t("sensitive.menuLive"), icon: "visibility_off" as const, movesFocus: true, onSelect: onSensitive },
               { kind: "separator" },
               ...discardSeconds.map((s) => ({ label: t("live.discard.menuItem", { count: s / 60 }), icon: "delete" as const, danger: true, onSelect: () => onDiscard(s) })),
             ]}

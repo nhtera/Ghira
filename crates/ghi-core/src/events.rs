@@ -169,6 +169,13 @@ pub enum Event {
         #[cfg_attr(feature = "specta", specta(type = f64))]
         from_ms: i64,
     },
+    /// The meeting entered sensitive mode while recording: from now on no
+    /// audio is kept (what was written goes at stop), no cloud, no voice
+    /// learning. Never turned off again during the same recording.
+    SensitiveChanged {
+        meeting: String,
+        sensitive: bool,
+    },
     /// RMS level of each track over the last ~100 ms (at most 10 per second,
     /// only while audio flows). `None`: the track is not captured or no audio
     /// passed in the window (paused, asleep); digital silence reads -100.
@@ -279,6 +286,8 @@ pub struct SessionSnapshot {
     pub title: String,
     /// Everyone's consent to recording was confirmed (the live toggle).
     pub consent_confirmed: bool,
+    /// Sensitive mode: no audio is kept for this meeting.
+    pub sensitive: bool,
     /// Speakers still in play (merged ones are gone).
     pub speakers: Vec<SpeakerInfo>,
     /// Final lines stored so far, in time order.

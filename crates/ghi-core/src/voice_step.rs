@@ -72,6 +72,16 @@ fn ms(s: f64) -> i64 {
     (s * 1000.0).round() as i64
 }
 
+/// The meeting is in sensitive mode. A meeting the store does not know is not;
+/// any other store error counts as sensitive (no voice is learned on doubt).
+pub(crate) fn is_sensitive(store: &Store, meeting: &str) -> bool {
+    match store.get_meeting(meeting) {
+        Ok(m) => m.sensitive,
+        Err(ghi_store::StoreError::NotFound { .. }) => false,
+        Err(_) => true,
+    }
+}
+
 /// Adds the cluster's voice to Me's profile (D7) unless the speakerphone
 /// guard says it is not Me or this meeting already taught it. Returns whether
 /// an exemplar was added.
@@ -82,7 +92,8 @@ pub fn learn_me(
     voice: &ClusterVoice,
     lang: Option<&str>,
 ) -> Result<bool, String> {
-    if has_exemplar_from(me, meeting) || !me_gate(me, &voice.vec) {
+    // A sensitive meeting never teaches a voice.
+    if is_sensitive(store, meeting) || has_exemplar_from(me, meeting) || !me_gate(me, &voice.vec) {
         return Ok(false);
     }
     let (t0_ms, t1_ms) = range_ms(&voice.longest);
@@ -116,6 +127,10 @@ struct Cluster {
 impl VoiceStep {
     /// Runs the step. `Ok(false)`: a recording preempted it, start over.
     pub(crate) fn run(&self, ctx: &JobCtx, input: &Input) -> Result<bool, String> {
+        if is_sensitive(ctx.store, input.meeting) {
+            log::info!("voice step skipped: sensitive meeting");
+            return Ok(true);
+        }
         if !(self.ready)() {
             log::info!("voice step skipped: the speaker model is not installed");
             return Ok(true);
@@ -352,7 +367,9 @@ impl VoiceStep {
                     .map_err(st)?
                     .iter()
                     .any(|s| s.gid == c.gid && s.display_name.is_none() && !s.is_me);
-                if still_unnamed {
+                // Checked again right before it is written: sensitive mode may
+                // have been turned on while this pass ran.
+                if still_unnamed && !is_sensitive(store, input.meeting) {
                     store
                         .put_speaker_voice(
                             &c.gid,

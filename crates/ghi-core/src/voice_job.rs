@@ -62,6 +62,9 @@ fn speakers_of(payload: &Value) -> Vec<String> {
 /// meeting takes the speaker in (one decode per meeting).
 pub fn queue_learn(store: &Store, meeting: &str, speaker: &str) -> Result<(), String> {
     let err = |e: ghi_store::StoreError| e.to_string();
+    if crate::voice_step::is_sensitive(store, meeting) {
+        return Ok(());
+    }
     let queued = store.active_jobs().map_err(err)?.into_iter().find(|j| {
         j.kind == VOICE_LEARN_JOB
             && j.state == JobState::Queued
@@ -281,6 +284,9 @@ impl JobHandler for VoiceLearnJob {
         let speakers = store.speakers(&meeting).map_err(err)?;
         let segments = store.segments(&meeting).map_err(err)?;
         let m = store.get_meeting(&meeting).map_err(err)?;
+        if m.sensitive {
+            return Ok(Outcome::Done);
+        }
         let tracks = store.tracks(&meeting).map_err(err)?;
         let token = (self.third_party)();
         let me_profile = store.me_voice_profile(VOICE_MODEL).map_err(err)?;

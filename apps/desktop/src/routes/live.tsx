@@ -11,6 +11,7 @@ import type { RecordMode } from "../bindings";
 import { Page } from "../shell/page";
 import { useCompact } from "../shell/use-compact";
 import { ConsentBanner, DiscardPanel, HeaderRecord, LiveBanners, LiveFooter, LiveHeader, LiveSystemBanners, Notepad, PausedOverlay, SpeakerStrip, TranscriptView, type LiveLayout } from "../features/live";
+import { SensitiveConfirm } from "../features/sensitive";
 import { isActive, useLive } from "../state/live";
 import { useUi } from "../state/ui";
 
@@ -26,6 +27,7 @@ export function LiveScreen() {
   const pendingMode = useUi((s) => s.recordMode);
   const [layout, setLayout] = useState<LiveLayout>("transcript");
   const [discard, setDiscard] = useState<number | null>(null);
+  const [sensitiveAsk, setSensitiveAsk] = useState(false);
   const active = isActive(state) && meeting != null;
 
   if (!active) {
@@ -44,11 +46,16 @@ export function LiveScreen() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <LiveSystemBanners />
-      <LiveHeader meeting={meeting} mode={mode} layout={layout} onLayout={setLayout} onDiscard={setDiscard} discardSeconds={DISCARD_SECONDS} compact={compact} />
+      <LiveHeader meeting={meeting} mode={mode} layout={layout} onLayout={setLayout} onDiscard={setDiscard} onSensitive={() => setSensitiveAsk(true)} discardSeconds={DISCARD_SECONDS} compact={compact} />
       <SpeakerStrip />
       {discard != null && (
         <div className="px-5 pb-2">
           <DiscardPanel meeting={meeting} seconds={discard} onClose={() => setDiscard(null)} />
+        </div>
+      )}
+      {sensitiveAsk && (
+        <div className="px-5 pb-2">
+          <SensitiveConfirm meeting={meeting} recording onClose={() => setSensitiveAsk(false)} />
         </div>
       )}
       <div

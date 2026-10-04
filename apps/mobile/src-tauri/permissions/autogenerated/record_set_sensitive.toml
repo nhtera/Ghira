@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-record-set-sensitive"
+description = "Enables the record_set_sensitive command without any pre-configured scope."
+commands.allow = ["record_set_sensitive"]
+
+[[permission]]
+identifier = "deny-record-set-sensitive"
+description = "Denies the record_set_sensitive command without any pre-configured scope."
+commands.deny = ["record_set_sensitive"]

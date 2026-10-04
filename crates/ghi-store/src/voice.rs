@@ -468,6 +468,25 @@ impl Store {
         }
         let sub = self.voice_key(&conn, profile_id)?.subkey(VOICE_INFO);
         let tx = conn.transaction()?;
+        // A sensitive meeting never teaches a voice: checked in this
+        // transaction, so turning the mode on meanwhile cannot be missed.
+        let mut exemplars = exemplars;
+        exemplars.retain(|e| {
+            e.source.as_ref().is_none_or(|s| {
+                !tx.query_row(
+                    "SELECT sensitive FROM meetings WHERE gid = ?1",
+                    [&s.meeting_gid],
+                    |r| r.get::<_, bool>(0),
+                )
+                .optional()
+                .ok()
+                .flatten()
+                .unwrap_or(false)
+            })
+        });
+        if exemplars.is_empty() {
+            return Ok(());
+        }
         let mut all = read_set(&tx, &sub, profile_id, profile_gid, model, lang)?
             .map(|s| s.exemplars)
             .unwrap_or_default();
@@ -508,7 +527,7 @@ impl Store {
 
     /// [`drop_voice_exemplars_from`](Store::drop_voice_exemplars_from) for Me's
     /// profile, if there is one (and its key is readable).
-    pub(crate) fn drop_me_exemplars_from(&self, meeting_gid: &str) -> Result<usize> {
+    pub fn drop_me_exemplars_from(&self, meeting_gid: &str) -> Result<usize> {
         let mut conn = self.conn();
         let row: Option<(i64, String)> = conn
             .query_row(
@@ -858,6 +877,15 @@ impl Store {
             &speaker_voice_aad(speaker_gid, model, lang),
         );
         let tx = conn.transaction()?;
+        // Not for a sensitive meeting (checked in this transaction).
+        let sensitive: bool = tx.query_row(
+            "SELECT sensitive FROM meetings WHERE id = ?1",
+            [meeting_id],
+            |r| r.get(0),
+        )?;
+        if sensitive {
+            return Ok(());
+        }
         tx.execute(
             "INSERT OR REPLACE INTO speaker_voices (speaker_id, model, lang, dim, vec_ct)
              VALUES (?1, ?2, ?3, ?4, ?5)",

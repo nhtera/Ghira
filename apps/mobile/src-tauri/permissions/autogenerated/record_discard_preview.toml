@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-record-discard-preview"
+description = "Enables the record_discard_preview command without any pre-configured scope."
+commands.allow = ["record_discard_preview"]
+
+[[permission]]
+identifier = "deny-record-discard-preview"
+description = "Denies the record_discard_preview command without any pre-configured scope."
+commands.deny = ["record_discard_preview"]

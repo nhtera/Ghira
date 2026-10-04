@@ -264,7 +264,7 @@ export function AskPanel({
         open={cloudQuestion != null}
         onOpenChange={(o) => !o && setCloudQuestion(null)}
         meeting={meeting}
-        locked={detail.cloudLocked}
+        locked={detail.cloudLocked || detail.sensitive}
         task={{ kind: "ask", question: cloudQuestion ?? "" }}
         onAnswer={(answer) => {
           const q = cloudQuestion ?? "";

@@ -125,6 +125,7 @@ fn notes_then_final_pass_then_final_notes() {
         Some(engines),
         capture,
         SessionConfig {
+            sensitive: false,
             mode: Mode::Room,
             language: None,
             title: "beta".into(),
@@ -277,6 +278,7 @@ fn record_now_process_when_models_arrive() {
         None,
         capture,
         SessionConfig {
+            sensitive: false,
             mode: Mode::Room,
             language: None,
             title: "no models".into(),

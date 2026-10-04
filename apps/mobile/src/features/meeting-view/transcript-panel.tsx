@@ -34,6 +34,8 @@ export type TranscriptPanelProps = {
   playing: boolean;
   /** Open with the line nearest this moment selected (a search result). */
   focusAt?: number;
+  /** The meeting still has audio (a sensitive one has none). */
+  canPlay?: boolean;
   onPlay: (ms: number) => void;
   onSave: (segment: string, text: string) => Promise<boolean>;
   /** The transcript is not there yet (waiting for models) or empty. */
@@ -49,6 +51,7 @@ export function TranscriptPanel({
   timeMs,
   playing,
   focusAt,
+  canPlay = true,
   onPlay,
   onSave,
   empty,
@@ -199,7 +202,7 @@ export function TranscriptPanel({
                 />
                 {selected === s.gid && (
                   <div className="flex flex-wrap justify-end gap-2 px-2 pt-1 pb-1">
-                    {s.t0Ms !== null && (
+                    {canPlay && s.t0Ms !== null && (
                       <Button
                         icon="play_arrow"
                         className="min-h-ios-target px-4"

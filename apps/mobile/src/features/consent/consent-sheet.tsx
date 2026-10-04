@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingLanguage } from "../../bindings";
 import { ipc } from "../../ipc";
+import { SensitiveRow } from "../sensitive";
 
 /** The clipboard, if the webview lets us (it can refuse); resolves whether it worked. */
 export async function writeClipboard(text: string): Promise<boolean> {
@@ -57,9 +58,11 @@ export type ConsentSheetProps = {
   open: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  /** The "Sensitive meeting" choice for this recording (none: not offered). */
+  sensitive?: { checked: boolean; onChange: (on: boolean) => void };
 };
 
-export function ConsentSheet({ language, open, onCancel, onConfirm }: ConsentSheetProps) {
+export function ConsentSheet({ language, open, onCancel, onConfirm, sensitive }: ConsentSheetProps) {
   const { t } = useTranslation();
   return (
     <Sheet
@@ -81,6 +84,11 @@ export function ConsentSheet({ language, open, onCancel, onConfirm }: ConsentShe
       }
     >
       <CopyConsentButton language={language} />
+      {sensitive && (
+        <div className="mt-4">
+          <SensitiveRow checked={sensitive.checked} onChange={sensitive.onChange} />
+        </div>
+      )}
     </Sheet>
   );
 }

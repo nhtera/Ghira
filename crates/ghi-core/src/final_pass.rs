@@ -247,6 +247,16 @@ impl FinalPassJob {
         let store: &Arc<Store> = ctx.store;
         let err = |e: ghi_store::StoreError| e.to_string();
         let m = store.get_meeting(&meeting).map_err(err)?;
+        // A sensitive meeting keeps no audio: there is nothing to re-read. It
+        // settles like a meeting without audio, so it never stays "processing".
+        if m.sensitive {
+            if notes {
+                queue_notes(store, &meeting)?;
+            } else {
+                settle_ready(ctx, &meeting).map_err(err)?;
+            }
+            return Ok(Outcome::Done);
+        }
         let call = m.mode == "call";
         // Speakers an earlier, yielded run added and never used (unnamed, no
         // lines) would pile up with every yield.

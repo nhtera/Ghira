@@ -47,6 +47,7 @@ const row = (gid: string, over: Partial<MeetingRow> = {}): MeetingRow => ({
   transcriptVersion: 2,
   cloudUsed: false,
   consentConfirmed: false,
+  sensitive: false,
   template: null,
   people: [],
   job: null,

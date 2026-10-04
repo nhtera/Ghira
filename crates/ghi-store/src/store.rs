@@ -783,6 +783,44 @@ impl Store {
         self.update_meeting(gid, "cloud_locked = ?1", i64::from(locked))
     }
 
+    /// Sensitive mode: the meeting keeps no audio, no cloud and no voice
+    /// learning. This sets the flag only; [`Store::delete_audio`] removes the audio.
+    pub fn set_sensitive(&self, gid: &str, sensitive: bool) -> Result<()> {
+        self.update_meeting(gid, "sensitive = ?1", i64::from(sensitive))
+    }
+
+    /// Turns sensitive mode on only if no `final_pass` job of the meeting is
+    /// queued or running, in one statement: a pass that claims the job later
+    /// sees the flag, one that already has it blocks the change, and nothing
+    /// is left half-way between. Returns whether it was applied.
+    pub fn set_sensitive_unless_final_pass_active(&self, gid: &str) -> Result<bool> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        let n = tx.execute(
+            "UPDATE meetings SET sensitive = 1, lamport = ?1
+             WHERE gid = ?2 AND NOT EXISTS (
+                 SELECT 1 FROM jobs j WHERE j.meeting_id = meetings.id
+                   AND j.kind = 'final_pass' AND j.state IN ('queued', 'running'))",
+            params![lamport, gid],
+        )?;
+        if n == 0 {
+            let known: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM meetings WHERE gid = ?1)",
+                [gid],
+                |r| r.get(0),
+            )?;
+            if !known {
+                return Err(StoreError::NotFound {
+                    kind: "meeting",
+                    gid: gid.to_string(),
+                });
+            }
+        }
+        tx.commit()?;
+        Ok(n > 0)
+    }
+
     /// The notes template the meeting's notes are written with (`None`: default).
     pub fn set_meeting_template(&self, gid: &str, template: Option<&str>) -> Result<()> {
         self.update_meeting(gid, "template = ?1", template)

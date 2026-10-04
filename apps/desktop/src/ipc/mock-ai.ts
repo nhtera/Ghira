@@ -157,6 +157,11 @@ type AiCommands = Pick<
 /** Meetings marked "never send to cloud" on the mock. */
 export const lockedMeetings = new Set<string>();
 
+/** Meetings in sensitive mode on the mock: no audio, no cloud. */
+export const sensitiveMeetings = new Set<string>();
+/** Meetings whose audio sensitive mode deleted (turning it off does not bring it back). */
+export const audioDeleted = new Set<string>();
+
 /** A few lines of the transcript before and after redaction, preferring the lines redaction changed. */
 function excerpt(raw: string, redacted: string): { excerptBefore: string | null; excerptAfter: string | null } {
   const a = raw.split("\n");
@@ -185,7 +190,7 @@ export function aiCommands(host: AiHost): AiCommands {
     cloudPreview: (meeting, ask) => {
       if (host.strictOffline()) return fail("strict offline is on: nothing can be sent");
       if (!row(meeting)) return fail(`meeting not found: ${meeting}`);
-      if (lockedMeetings.has(meeting)) return fail("cloud AI is off for this meeting");
+      if (lockedMeetings.has(meeting) || sensitiveMeetings.has(meeting)) return fail("cloud AI is off for this meeting");
       const t = host.transcript(meeting);
       const names = ask.redact ? [...host.names(meeting), ...ask.extraNames] : [];
       const raw = (t?.segments ?? []).map((s) => s.text).join("\n");

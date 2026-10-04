@@ -269,6 +269,7 @@ pub fn run(args: &SessionArgs) -> Result<(), ErrorDoc> {
         },
         capture,
         SessionConfig {
+            sensitive: false,
             mode,
             language: language(args.lang),
             title: args.title.clone(),

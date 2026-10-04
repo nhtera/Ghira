@@ -17,7 +17,8 @@
 //!   `microphoneDenied`, `diskLow` (< 500 MB), `micInUse` (voice enrollment
 //!   holds the microphone), `waitingForTranscription` (the previous recording
 //!   is still being transcribed after a minute), `alreadyRecording`,
-//!   `pairingNotAvailable` (the `desktop` target, until phase 15).
+//!   `pairingNotAvailable` (the `desktop` target, until phase 15),
+//!   `sensitiveNeedsTranscript` (sensitive mode without a live transcript).
 //! - Below the live tier recording is always allowed, whatever the `target`:
 //!   it records only, queues no jobs and is processed later. The same for
 //!   missing models (the final pass waits for them).
@@ -74,6 +75,10 @@ pub struct RecordStart {
     /// phone call is active. Only this lifts the call block; the consent flag
     /// above never does.
     pub call_acknowledged: bool,
+    /// Sensitive mode from the start: no audio is kept (transcript only), no
+    /// cloud, no voice learning. Needs the live transcript (`sensitiveNeedsTranscript`
+    /// otherwise).
+    pub sensitive: bool,
 }
 
 /// The recording as it stands now, for a reloaded webview: apply `coreEvent`s
@@ -225,6 +230,47 @@ pub async fn record_consent_message(
         .map(|s| (s.consent_message_en, s.consent_message_vi))
         .unwrap_or_default();
     Ok(Recorder::consent_message(language, &en, &vi))
+}
+
+/// Sensitive mode (doc 02, P1) for the running recording: from now on no audio
+/// is kept (what was written goes when it stops), cloud AI and voice learning
+/// are refused for the meeting and no final pass runs. One way: part of the
+/// audio is gone, so a recording cannot leave the mode. Stored meetings use
+/// `set_meeting_sensitive`.
+#[tauri::command]
+#[specta::specta]
+pub async fn record_set_sensitive(app: tauri::AppHandle, sensitive: bool) -> Result<(), String> {
+    let rec = recorder(&app)?;
+    blocking(move || rec.set_sensitive(sensitive)).await
+}
+
+/// What discarding the last `seconds` of the recording would remove, shown
+/// before confirming [RT-1].
+#[tauri::command]
+#[specta::specta]
+pub async fn record_discard_preview(
+    app: tauri::AppHandle,
+    seconds: f64,
+) -> Result<ghi_app::library::DiscardPreview, String> {
+    let rec = recorder(&app)?;
+    blocking(move || rec.discard_preview(seconds)).await
+}
+
+/// Discards everything from `from_ms` (meeting time) on [RT-1]: the span the
+/// user saw in the preview, however long they took to confirm. Returns where
+/// the cut landed (ms).
+#[tauri::command]
+#[specta::specta]
+pub async fn record_discard_from(app: tauri::AppHandle, from_ms: f64) -> Result<f64, String> {
+    let rec = recorder(&app)?;
+    let cut = blocking(move || rec.discard_from(from_ms.max(0.0) as i64)).await?;
+    // Samples issued before may cover audio that is gone now.
+    if let Some(tokens) = app.try_state::<Arc<ghi_app::audio_protocol::AudioTokens>>()
+        && let Some(id) = recorder(&app)?.latest().map(|s| s.id.clone())
+    {
+        tokens.revoke_meeting(&id);
+    }
+    Ok(cut as f64)
 }
 
 /// A phone call is active right now (CXCallObserver).

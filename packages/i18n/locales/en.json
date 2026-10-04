@@ -1654,5 +1654,20 @@
     "manageEmpty": "No folders or tags yet. Add them from a meeting or by selecting meetings.",
     "notFound": "That folder or tag no longer exists.",
     "failed": "That didn’t work. Try again."
+  },
+  "sensitive": {
+    "badge": "Sensitive · no audio kept",
+    "tip": "Sensitive meeting: only the transcript is kept. No audio is saved, nothing goes to the cloud, and no voices are learned.",
+    "next": "Sensitive",
+    "menu": "Sensitive meeting",
+    "menuLive": "Sensitive meeting…",
+    "liveLocked": "Stays on until the recording ends",
+    "confirm": "Make sensitive",
+    "confirmLive": "Make this meeting sensitive? No more audio is kept, and the audio recorded so far is deleted when you stop. Only the transcript stays; cloud AI and voice learning are off. This can't be turned off during this recording.",
+    "confirmStored": "Make this meeting sensitive? Its audio is deleted now and only the transcript stays. Cloud AI and voice learning are off for it.",
+    "turnedOff": "Sensitive mode is off. The audio stays deleted.",
+    "chip": "Sensitive",
+    "noTranscript": "There is no transcript to keep yet, so this meeting can't be made sensitive.",
+    "pending": "This meeting is still being processed from its audio. Try again when it is ready."
   }
 }

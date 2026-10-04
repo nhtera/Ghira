@@ -70,6 +70,7 @@ fn phone_queues_only_the_final_pass_and_it_adds_no_notes() {
         Some(engines),
         capture,
         SessionConfig {
+            sensitive: false,
             mode: Mode::Room,
             language: None,
             title: "phone".into(),
@@ -170,6 +171,7 @@ fn a_pass_that_goes_inactive_mid_run_yields_uncommitted_then_commits_once() {
         Some(engines),
         capture,
         SessionConfig {
+            sensitive: false,
             mode: Mode::Room,
             language: None,
             title: "phone".into(),
@@ -257,6 +259,7 @@ fn phone_meeting(
         Some(live_engines),
         capture,
         SessionConfig {
+            sensitive: false,
             mode: Mode::Room,
             language: None,
             title: "phone".into(),

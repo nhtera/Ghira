@@ -58,6 +58,11 @@ pub struct SessionConfig {
     /// Cancel the speakers' echo from the mic in call mode (the setting
     /// `echoCancellation`); off: the mic reaches the transcript as captured.
     pub echo_cancellation: bool,
+    /// Sensitive mode from the start: no audio is written, the meeting is
+    /// flagged (no cloud, no voice learning) and its final pass is not queued.
+    /// Needs a live transcript: without speech engines the start is refused,
+    /// since nothing would be kept.
+    pub sensitive: bool,
 }
 
 /// In lossless mode the pump waits while this many ASR frames (5 s) wait.
@@ -102,6 +107,10 @@ enum PumpCmd {
         keep: Vec<(Track, u32)>,
         reply: Sender<Result<(), String>>,
     },
+    /// Sensitive mode: pages stop being written; replies once none can be.
+    Sensitive {
+        reply: Sender<()>,
+    },
     Stop,
 }
 
@@ -128,6 +137,9 @@ pub trait RecordingHooks: Send + Sync {
 
 /// How long `start` waits for a running job to yield before loading engines.
 const JOB_YIELD_WAIT: Duration = Duration::from_secs(5);
+/// Why sensitive mode is refused without a live transcript.
+const NEEDS_TRANSCRIPT: &str = "sensitive mode needs the speech models: without a live \
+                                transcript nothing would be kept";
 /// How long a second edit (discard, split, snapshot) waits for the first.
 const OP_WAIT: Duration = Duration::from_secs(15);
 /// The level meter reports at most this often.
@@ -160,6 +172,8 @@ pub struct Session {
     /// Jobs queued at stop when `cfg.queue_jobs`.
     job_kinds: Vec<&'static str>,
     hooks: Option<Arc<dyn RecordingHooks>>,
+    /// Sensitive mode is on (only ever turned on during a recording).
+    sensitive: AtomicBool,
     /// Held by the multi-step operations (discard, split, snapshot) so they
     /// never interleave.
     ops: Mutex<()>,
@@ -247,6 +261,7 @@ impl Session {
                 source: "live".into(),
                 mode: cfg.mode.as_str().into(),
                 lang: cfg.language.clone(),
+                sensitive: cfg.sensitive,
                 ..Default::default()
             })
             .map_err(|e| err("creating the meeting", e))?
@@ -259,15 +274,20 @@ impl Session {
         });
 
         let mut writers: [Option<ghi_store::bundle::BundleWriter>; 2] = [None, None];
-        for &t in &tracks {
+        // Sensitive: no bundle is even created, nothing touches the disk.
+        for &t in tracks.iter().filter(|_| !cfg.sensitive) {
             writers[t.index()] = Some(
                 store
                     .open_track(&meeting, kind_of(t))
                     .map_err(|e| err("opening the audio file", e))?,
             );
         }
+        let mut pages = BundlePages::new(writers);
+        if cfg.sensitive {
+            pages.stop_writing();
+        }
         let recorder = Metered::new(Muted::new(
-            OpusRecorder::new(BundlePages::new(writers), &tracks, EncoderConfig::default())
+            OpusRecorder::new(pages, &tracks, EncoderConfig::default())
                 .map_err(|e| err("audio encoder", e))?,
         ));
         let pcfg = PipelineConfig {
@@ -345,6 +365,14 @@ impl Session {
             Err(e) => return Err(abort(pump_tx, persist_tx, threads, e)),
         };
         let live = engine.is_some();
+        if cfg.sensitive && !live {
+            return Err(abort(
+                pump_tx,
+                persist_tx,
+                threads,
+                SessionError(NEEDS_TRANSCRIPT.into()),
+            ));
+        }
         // Nothing reads the ASR ring without engines: never wait on it.
         cfg.lossless &= live;
         lossless.store(cfg.lossless, Ordering::Release);
@@ -381,7 +409,14 @@ impl Session {
             meeting: meeting.clone(),
             state: SessionState::Recording,
         });
+        if cfg.sensitive {
+            events.emit(Event::SensitiveChanged {
+                meeting: meeting.clone(),
+                sensitive: true,
+            });
+        }
         Ok(Session {
+            sensitive: AtomicBool::new(cfg.sensitive),
             meeting,
             store,
             events,
@@ -398,6 +433,53 @@ impl Session {
             hooks,
             ops: Mutex::new(()),
         })
+    }
+
+    /// Sensitive mode is on for this recording.
+    pub fn sensitive(&self) -> bool {
+        self.sensitive.load(Ordering::Acquire)
+    }
+
+    /// Turns sensitive mode on: from this call no audio is written (what was
+    /// written before is deleted at stop), cloud AI and voice learning are
+    /// refused for the meeting, and no final pass runs (it needs the audio).
+    /// A recording cannot leave sensitive mode again: part of its audio is gone.
+    pub fn set_sensitive(&self, on: bool) -> Result<(), SessionError> {
+        if !on {
+            return if self.sensitive() {
+                Err(SessionError(
+                    "sensitive mode cannot be turned off during the recording".into(),
+                ))
+            } else {
+                Ok(())
+            };
+        }
+        if self.sensitive() {
+            return Ok(());
+        }
+        // Without a live transcript nothing would be kept (same rule as the start).
+        if !self.transcribing {
+            return Err(SessionError(NEEDS_TRANSCRIPT.into()));
+        }
+        let _op = self.op_lock()?;
+        // The flag first: fail closed. If the pump is slow to answer the
+        // meeting is still sensitive (`stop` deletes the audio and queues no
+        // final pass), and the command only reports that it did not confirm.
+        self.sensitive.store(true, Ordering::Release);
+        // `stop` sets the flag in the store again if this fails.
+        let stored = self.store.set_sensitive(&self.meeting, true);
+        self.events.emit(Event::SensitiveChanged {
+            meeting: self.meeting.clone(),
+            sensitive: true,
+        });
+        // Then no more pages are written, once the pump has seen the command.
+        let (tx, rx) = bounded(1);
+        self.pump
+            .send(PumpCmd::Sensitive { reply: tx })
+            .map_err(|e| err("sensitive", e))?;
+        rx.recv_timeout(Duration::from_secs(30))
+            .map_err(|e| err("sensitive", e))?;
+        stored.map_err(|e| err("sensitive", e))
     }
 
     /// Which jobs `stop` queues (with `queue_jobs`); the default is the
@@ -620,6 +702,7 @@ impl Session {
                 .get_meeting(&self.meeting)
                 .map(|m| m.consent_confirmed)
                 .unwrap_or(false),
+            sensitive: self.sensitive(),
             speakers: speakers.unwrap_or_default(),
             lines,
             marks: self
@@ -734,6 +817,7 @@ impl Session {
                     prefix: p.clone(),
                 })
                 .collect();
+            let gate = Arc::new(crate::live::DiscardGate::default());
             self.persist
                 .as_ref()
                 .ok_or_else(|| SessionError("stopped".into()))?
@@ -741,12 +825,17 @@ impl Session {
                     t_cut_ms,
                     now_ms,
                     keep,
+                    gate: gate.clone(),
                     reply: tx,
                 })
                 .map_err(|e| err("discard", e))?;
-            rx.recv_timeout(wait)
-                .map_err(|e| err("discard", e))?
-                .map_err(|e| err("discard", e))
+            // On a timeout the request is abandoned (or its late answer is
+            // used): no pending row is left to cut audio recorded afterwards.
+            let answer = match rx.recv_timeout(wait) {
+                Ok(r) => r,
+                Err(e) => gate.settle(&rx).ok_or_else(|| err("discard", e))?,
+            };
+            answer.map_err(|e| err("discard", e))
         };
         let id = match text_side() {
             Ok(id) => id,
@@ -782,6 +871,24 @@ impl Session {
             h.recording_stopped();
         }
         let duration_ms = self.now_ms();
+        let sensitive = self.sensitive();
+        if sensitive {
+            // The audio written before sensitive mode went on goes now, with
+            // the flag (set again in case the toggle could not store it).
+            // A failure is reported and the stop goes on: the next launch's
+            // recovery removes the audio of any sensitive meeting.
+            if let Err(e) = self
+                .store
+                .set_sensitive(&self.meeting, true)
+                .and_then(|()| self.store.delete_audio(&self.meeting))
+            {
+                self.events.emit(Event::Error {
+                    meeting: Some(self.meeting.clone()),
+                    kind: ErrorKind::Storage,
+                    message: format!("removing the audio of a sensitive meeting: {e}"),
+                });
+            }
+        }
         self.store
             .finish_meeting(&self.meeting, duration_ms)
             .map_err(|e| err("closing the meeting", e))?;
@@ -790,12 +897,18 @@ impl Session {
             .remove_orphan_speakers(&self.meeting)
             .map_err(|e| err("closing the meeting", e))?;
         let mut jobs = Vec::new();
-        if self.cfg.queue_jobs {
+        let kinds = job_kinds_at_stop(&self.job_kinds, sensitive);
+        if self.cfg.queue_jobs && !kinds.is_empty() {
+            // A sensitive meeting's transcript is final as recorded (no pass
+            // will refine it), so it is ready now; its notes follow when the
+            // model is there, and are optional.
             self.store
-                .set_meeting_status(&self.meeting, "processing")
+                .set_meeting_status(
+                    &self.meeting,
+                    if sensitive { "ready" } else { "processing" },
+                )
                 .map_err(|e| err("closing the meeting", e))?;
-            debug_assert!(!self.job_kinds.is_empty(), "queue_jobs with no job kinds");
-            for kind in &self.job_kinds {
+            for kind in &kinds {
                 jobs.push(
                     self.store
                         .enqueue_job(
@@ -807,8 +920,17 @@ impl Session {
                         .map_err(|e| err("queueing jobs", e))?,
                 );
             }
-            self.set_state(SessionState::Processing);
+            self.set_state(if sensitive {
+                SessionState::Ready
+            } else {
+                SessionState::Processing
+            });
         } else {
+            if sensitive && self.cfg.queue_jobs {
+                self.store
+                    .set_meeting_status(&self.meeting, "ready")
+                    .map_err(|e| err("closing the meeting", e))?;
+            }
             self.set_state(SessionState::Ready);
         }
         Ok(StopReport {
@@ -817,6 +939,21 @@ impl Session {
             jobs,
         })
     }
+}
+
+/// The jobs queued when a recording stops. A sensitive meeting has no audio, so
+/// no final pass; its notes come from the live transcript as `notes_final`
+/// (which settles the meeting and queues its index, with or without a model),
+/// not `notes_live` (which settles nothing).
+pub fn job_kinds_at_stop(kinds: &[&'static str], sensitive: bool) -> Vec<&'static str> {
+    if !sensitive {
+        return kinds.to_vec();
+    }
+    kinds
+        .iter()
+        .filter(|k| **k == NOTES_LIVE_JOB)
+        .map(|_| crate::notes_job::NOTES_FINAL_JOB)
+        .collect()
 }
 
 /// Stops a half-started session's threads (the Undo guard in `start` then
@@ -996,6 +1133,10 @@ fn pump(
                         .map_err(|e| e.to_string());
                     let _ = reply.send(r);
                 }
+                PumpCmd::Sensitive { reply } => {
+                    pipeline.writer_mut().inner.inner.sink_mut().stop_writing();
+                    let _ = reply.send(());
+                }
                 PumpCmd::Stop => stop = true,
             }
         }
@@ -1121,6 +1262,7 @@ mod tests {
                 queue_jobs: false,
                 lossless: false,
                 echo_cancellation: true,
+                sensitive: false,
             },
             tx,
             None,

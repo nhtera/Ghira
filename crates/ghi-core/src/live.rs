@@ -92,6 +92,29 @@ pub struct SpeakerOut {
     pub is_me: bool,
 }
 
+/// Lets a discard whose caller gave up waiting be dropped by the persist
+/// thread, so a late store transaction never leaves a pending row that would
+/// cut audio recorded after it [RT-1]. The persist thread holds the lock while
+/// it runs the transaction; the caller takes it after a timeout and either finds
+/// the answer (it ran) or marks the request abandoned (it will not run).
+#[derive(Debug, Default)]
+pub struct DiscardGate(pub std::sync::Mutex<bool>);
+
+impl DiscardGate {
+    /// After a timeout: the late answer if the transaction ran meanwhile, else
+    /// `None` and the request is abandoned.
+    pub fn settle(&self, rx: &Receiver<Result<i64, String>>) -> Option<Result<i64, String>> {
+        let mut abandoned = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        match rx.try_recv() {
+            Ok(r) => Some(r),
+            Err(_) => {
+                *abandoned = true;
+                None
+            }
+        }
+    }
+}
+
 /// From the engine to the persist thread.
 #[derive(Debug)]
 pub enum PersistMsg {
@@ -112,6 +135,7 @@ pub enum PersistMsg {
         t_cut_ms: i64,
         now_ms: i64,
         keep: Vec<ghi_store::edits::KeepPages>,
+        gate: std::sync::Arc<DiscardGate>,
         reply: Sender<Result<i64, String>>,
     },
     Flush(Sender<()>),

@@ -10,6 +10,8 @@ export type QuoteSheetProps = {
   /** The speaker's label, when the citation names one. */
   speaker?: string;
   onClose: () => void;
+  /** The meeting still has audio (a sensitive one has none). */
+  canPlay?: boolean;
   onPlay: (ms: number) => void;
 };
 
@@ -17,12 +19,13 @@ export function QuoteSheet({
   citation,
   speaker,
   onClose,
+  canPlay: audio = true,
   onPlay,
 }: QuoteSheetProps) {
   const { t } = useTranslation();
   const at = citation?.t0Ms ?? null;
   const time = at === null ? null : formatClock(at, { pad: true });
-  const canPlay = at !== null && !citation?.missing;
+  const canPlay = audio && at !== null && !citation?.missing;
   return (
     <Sheet
       open={citation !== null}

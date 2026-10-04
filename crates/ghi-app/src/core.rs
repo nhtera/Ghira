@@ -45,6 +45,9 @@ pub struct Core {
     /// Meetings closed by crash recovery at this launch (D12 "recovered"),
     /// until the user dismisses the notice.
     recovered: Mutex<Vec<String>>,
+    /// Sensitive mode is armed for the next recording (any window or the tray
+    /// starts it); cleared once one started.
+    sensitive_next: std::sync::atomic::AtomicBool,
     /// App settings as last read or written (system.rs).
     settings: Mutex<Option<crate::system::AppSettings>>,
     /// What the app does after a settings change (the desktop re-registers
@@ -421,6 +424,7 @@ impl Core {
             settings: Mutex::new(None),
             settings_hook: Mutex::new(None),
             recovered: Mutex::new(Vec::new()),
+            sensitive_next: std::sync::atomic::AtomicBool::new(false),
             events,
             hooks,
             launch_checked: std::sync::atomic::AtomicBool::new(false),
@@ -859,14 +863,35 @@ impl Core {
         language: Option<String>,
         title: String,
     ) -> Result<String, String> {
-        self.start_with(mode, language, title, true)
+        // Taken now: an arm from another window while the engines load is
+        // for the next recording. Put back if this one does not start.
+        let sensitive = self
+            .sensitive_next
+            .swap(false, std::sync::atomic::Ordering::AcqRel);
+        self.start_with(mode, language, title, true, sensitive)
+            .inspect_err(|_| {
+                if sensitive {
+                    self.set_sensitive_next(true);
+                }
+            })
+    }
+
+    /// Whether the next recording will be sensitive.
+    pub fn sensitive_next(&self) -> bool {
+        self.sensitive_next
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    pub fn set_sensitive_next(&self, on: bool) {
+        self.sensitive_next
+            .store(on, std::sync::atomic::Ordering::Release);
     }
 
     /// The onboarding's test recording: a short session whose meeting is
     /// deleted afterwards (levels and a line of transcript reach the UI as
     /// usual core events for the returned meeting id).
     pub fn start_test(self: &Arc<Self>, seconds: u32) -> Result<String, String> {
-        let id = self.start_with(Mode::Call, None, String::new(), false)?;
+        let id = self.start_with(Mode::Call, None, String::new(), false, false)?;
         // Remembered in the store too: a quit or crash during the test must
         // not leave it behind as a meeting (deleted at the next launch,
         // before crash recovery would process it).
@@ -920,6 +945,7 @@ impl Core {
         language: Option<String>,
         title: String,
         queue_jobs: bool,
+        sensitive: bool,
     ) -> Result<String, String> {
         let _lifecycle = lock(&self.lifecycle);
         if lock(&self.session).is_some() {
@@ -973,6 +999,7 @@ impl Core {
             load,
             capture,
             SessionConfig {
+                sensitive,
                 mode,
                 language,
                 title,

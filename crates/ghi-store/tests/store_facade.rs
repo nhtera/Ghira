@@ -1054,6 +1054,37 @@ fn cloud_lock_and_the_request_log() {
 }
 
 #[test]
+fn sensitive_flag_toggles_and_delete_audio_keeps_the_text() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let m = common::meeting(&store, "Nhạy cảm");
+    let other = common::meeting(&store, "Bình thường");
+    for g in [&m, &other] {
+        store
+            .add_segment(g, common::seg(0, 1000, "chữ ở lại"))
+            .unwrap();
+        record(&store, g, &[b"pcm"]);
+    }
+    store.set_waveform(&m, &[1, 2]).unwrap();
+    assert!(!store.get_meeting(&m).unwrap().sensitive);
+    store.set_sensitive(&m, true).unwrap();
+    assert!(store.get_meeting(&m).unwrap().sensitive);
+    // The flag alone keeps the audio; deleting it is a separate step.
+    assert!(store.audio_available(&m).unwrap());
+    assert_eq!(store.delete_audio(&m).unwrap(), 1);
+    assert!(!store.audio_available(&m).unwrap());
+    assert!(!store.bundle_path(&m, TrackKind::Mic).unwrap().exists());
+    assert_eq!(store.waveform(&m).unwrap(), None);
+    assert_eq!(store.segments(&m).unwrap()[0].text, "chữ ở lại");
+    // Idempotent, and another meeting's audio is untouched.
+    assert_eq!(store.delete_audio(&m).unwrap(), 0);
+    assert!(store.audio_available(&other).unwrap());
+    store.set_sensitive(&m, false).unwrap();
+    assert!(!store.get_meeting(&m).unwrap().sensitive);
+    assert!(store.set_sensitive(&new_gid(), true).is_err());
+}
+
+#[test]
 fn a_retention_policy_applies_to_every_meeting() {
     let tmp = tempfile::tempdir().unwrap();
     let (store, _k) = common::open(tmp.path());

@@ -72,7 +72,8 @@
         "callActive": "A phone call is active. Read the notice first.",
         "diskLow": "Not enough storage to record. Free up space and try again.",
         "pairingNotAvailable": "Sending to a computer isn’t available yet. Choose This phone.",
-        "waitingForTranscription": "Finishing the last recording… try again in a moment."
+        "waitingForTranscription": "Finishing the last recording… try again in a moment.",
+        "sensitiveNeedsTranscript": "Sensitive mode needs the live transcript, and this phone can’t make one right now. Turn it off to record."
       },
       "interrupted": {
         "body": "Another app took the microphone. Everything up to {{time}} is saved.",
@@ -105,6 +106,27 @@
       },
       "callNotice": {
         "steps": "Put the call on speakerphone and set the phone down where it can hear everyone. {{app}} records the room."
+      },
+      "more": "More actions",
+      "discard": {
+        "menu_one": "Discard the last {{count}} minute…",
+        "menu_other": "Discard the last {{count}} minutes…",
+        "title_one": "Discard the last {{count}} minute?",
+        "title_other": "Discard the last {{count}} minutes?",
+        "body": "This can’t be undone.",
+        "loading": "Checking what would go…",
+        "summaryItems": "This removes the audio and {{items}}.",
+        "summaryTextOnly": "This removes {{items}}.",
+        "summaryAudioOnly": "This removes the audio only. The transcript and notes stay.",
+        "summaryNothing": "Nothing was recorded in this stretch yet.",
+        "lines_one": "{{count}} transcript line",
+        "lines_other": "{{count}} transcript lines",
+        "notes_one": "{{count}} note",
+        "notes_other": "{{count}} notes",
+        "marks_one": "{{count}} mark",
+        "marks_other": "{{count}} marks",
+        "confirm": "Discard",
+        "behind": "Text still being transcribed for this stretch is dropped too."
       }
     },
     "voice": {
@@ -113,6 +135,21 @@
       "needsModels": "Your voice can be added once the speech models are downloaded. You can do it later in Settings.",
       "passage": "In our weekly sync we review the roadmap, confirm the budget, and agree on who owns each action item before Friday’s release.",
       "passageLabel": "Read this aloud"
+    },
+    "sensitive": {
+      "label": "Sensitive meeting",
+      "hint": "Only the transcript is kept: no audio is saved, nothing goes to the cloud, no voices are learned.",
+      "badge": "Sensitive · no audio kept",
+      "stays": "On until the recording ends",
+      "makeIt": "Make sensitive…",
+      "confirmTitle": "Make this meeting sensitive?",
+      "confirmLive": "No more audio is kept, and the audio recorded so far is deleted when you stop. Only the transcript stays; cloud AI and voice learning are off. It can’t be turned off during this recording.",
+      "confirmStored": "Its audio is deleted now and only the transcript stays. Cloud AI and voice learning are off for it.",
+      "confirm": "Make sensitive",
+      "failed": "Couldn’t change sensitive mode. Try again.",
+      "chip": "Sensitive",
+      "noTranscript": "There is no transcript to keep yet, so this meeting can’t be made sensitive.",
+      "pending": "This meeting is still being processed from its audio. Try again when it is ready."
     }
   }
 }

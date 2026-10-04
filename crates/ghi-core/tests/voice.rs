@@ -132,6 +132,7 @@ fn record(
         None,
         capture,
         SessionConfig {
+            sensitive: false,
             mode,
             language: None,
             title: "voices".into(),

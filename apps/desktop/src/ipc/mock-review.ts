@@ -22,7 +22,7 @@ import type {
   TemplateInfo,
 } from "../bindings";
 import type { Commands } from "./ipc";
-import { lockedMeetings } from "./mock-ai";
+import { audioDeleted, lockedMeetings, sensitiveMeetings } from "./mock-ai";
 
 type Result<T> = { status: "ok"; data: T } | { status: "error"; error: string };
 const ok = <T>(data: T): Promise<Result<T>> => Promise.resolve({ status: "ok", data });
@@ -433,11 +433,11 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         template: r.template,
         status: r.status,
         cloudLocked: lockedMeetings.has(r.gid),
-        sensitive: false,
+        sensitive: sensitiveMeetings.has(r.gid),
         cloudUsed: r.cloudUsed,
         consentConfirmed: r.consentConfirmed,
         transcriptVersion: r.transcriptVersion,
-        audioAvailable: true,
+        audioAvailable: !audioDeleted.has(r.gid),
         // Copies: the voice commands edit the stored speakers in place, and an unchanged reference would hide that from the query cache.
         speakers: d.speakers.map((s) => ({ ...s })),
         job: r.job,
@@ -703,6 +703,7 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
             transcriptVersion: 0,
             cloudUsed: false,
             consentConfirmed: false,
+            sensitive: false,
             template: null,
             people: group ? members.flatMap((m, i) => (m.participant ? [{ name: m.participant, colorSlot: [1, 2, 4, 8][i % 4]!, isMe: false }] : [])) : [],
             job: { kind: "final_pass", progress: 0, waitingForModels: false },

@@ -299,7 +299,7 @@ export function MeetingScreen({
         open={cloudOpen}
         onOpenChange={setCloudOpen}
         meeting={id}
-        locked={detail.cloudLocked}
+        locked={detail.cloudLocked || detail.sensitive}
         task={{ kind: "notes", template: detail.template }}
       />
     </div>
