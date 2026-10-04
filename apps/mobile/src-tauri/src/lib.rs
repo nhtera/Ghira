@@ -139,6 +139,16 @@ pub fn run() {
         .plugin(navigation::guard())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
+            // First, so a failing setup step below leaves its error in the log.
+            #[cfg(all(target_os = "ios", feature = "test-hooks"))]
+            if let Err(e) = app
+                .path()
+                .document_dir()
+                .map_err(std::io::Error::other)
+                .and_then(|d| capture_stderr(&d))
+            {
+                eprintln!("ghira: could not capture stderr: {e}");
+            }
             builder.mount_events(app);
             cmd::events::install(app.handle());
             // The store-facing state the shared commands take (the core, the
@@ -156,10 +166,6 @@ pub fn run() {
             // Recordings are unencrypted in the spike: never in device backups.
             if let Err(e) = platform::exclude_from_backup(&data) {
                 eprintln!("ghira: {e}");
-            }
-            #[cfg(all(target_os = "ios", feature = "test-hooks"))]
-            if let Err(e) = capture_stderr(&data) {
-                eprintln!("ghira: could not capture stderr: {e}");
             }
             #[cfg(feature = "test-hooks")]
             {

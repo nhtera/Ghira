@@ -23,6 +23,15 @@ if [[ -z "$device" ]]; then
   exit 1
 fi
 
+# The app must have run once: it creates Library/Application Support/Ghira and
+# its models folder itself. Folders created by this copy are not writable by
+# the app, and a fresh container then fails at launch (Permission denied).
+listing="$(xcrun devicectl device info files --device "$device" --domain-type appDataContainer \
+  --domain-identifier "$bundle" 2>/dev/null || true)"
+if [[ "$listing" != *"Application Support/Ghira/models"* ]]; then
+  echo "open Ghira once on the phone first (it creates its models folder), then rerun" >&2
+  exit 1
+fi
 for file in nemotron-3.5-asr-streaming-0.6b.q8_0.gguf Nemotron-3-Diarization.q8_0.gguf \
   3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx; do
   src="$models_dir/$file"

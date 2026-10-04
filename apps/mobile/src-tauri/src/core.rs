@@ -126,7 +126,10 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
 
     let backlog_dir = data.join("backlog");
     let metrics_dir = data.join("metrics");
-    for d in [&backlog_dir, &metrics_dir] {
+    // The app makes the models folder itself: one created from outside (a
+    // `devicectl` copy into a fresh container) is not writable by the app, and
+    // its parent would block the folders above at the next launch.
+    for d in [&backlog_dir, &metrics_dir, &core.models()] {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
     let recorder = Recorder::new(RecorderDeps {
