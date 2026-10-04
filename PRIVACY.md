@@ -34,3 +34,18 @@ text), and the meeting is marked as having used cloud AI.
 Recognizing a speaker by voice uses a voiceprint, which is biometric data. Ghira
 only creates one with explicit consent, stores it encrypted on your device, and
 deletes it permanently when you ask.
+
+## Calendar
+
+Calendar access is optional and off until you connect it. Ghira reads your local
+calendar on your device (EventKit on macOS and iOS, or one ICS file you choose)
+only to name a meeting and know who attends. Events are read when needed and
+are not stored. Only a meeting you record keeps its event's title and attendees,
+encrypted with that meeting. Nothing from your calendar is sent anywhere.
+
+## Sensitive meetings
+
+A meeting marked sensitive keeps no audio: none is written if it is sensitive
+from the start, and any audio already written is deleted. It is never sent to
+cloud AI and is never used to learn a voice. Only its transcript and notes are
+kept, encrypted like every other meeting.
