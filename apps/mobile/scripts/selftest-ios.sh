@@ -7,7 +7,8 @@
 #
 # The phone must be unlocked (the engine only uses the GPU in the foreground).
 # Relaunches the app: a recording in progress is stopped.
-# Models first: apps/mobile/scripts/push-models.sh.
+# Needs a test-hooks build (apps/mobile/scripts/build-ios.sh --test-hooks; debug,
+# never shipped). Models first: apps/mobile/scripts/push-models.sh.
 set -euo pipefail
 
 wav="${1:?usage: $0 <file.wav> [device-id]}"

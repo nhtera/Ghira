@@ -2,14 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Builds the iOS spike app (phase 7) with the speech engine.
 #
-#   apps/mobile/scripts/build-ios.sh [--release] [--sim [--test-hooks]]
+#   apps/mobile/scripts/build-ios.sh [--release] [--sim] [--test-hooks]
 #
 # - Device (default): signed with $APPLE_DEVELOPMENT_TEAM, or the first paid
 #   team Xcode knows. The team only goes into the generated Xcode project,
 #   which is not committed.
 # - --sim: the simulator (no signing; a placeholder team id is used).
-# - --test-hooks (with --sim only): the cargo feature `test-hooks` + Swift
-#   condition GHI_TEST_HOOKS (fake mic, Darwin-notification triggers).
+# - --test-hooks (debug builds only, never --release): the cargo feature
+#   `test-hooks` + Swift condition GHI_TEST_HOOKS (fake mic, Darwin-notification
+#   triggers, GHI_SELFTEST). On a device it is for the owner's own phone only.
 # - CARGO_TARGET_DIR is honoured (set it to keep clear of other builds).
 # - Builds NeMo-Speech.cpp for iOS first if needed (tools/scripts/build-nemo-ios.sh).
 set -euo pipefail
@@ -24,11 +25,11 @@ for arg in "$@"; do
     --release) profile=() ;;
     --sim) target=aarch64-sim ;;
     --test-hooks) hooks=1 ;;
-    *) echo "usage: $0 [--release] [--sim [--test-hooks]]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--release] [--sim] [--test-hooks]" >&2; exit 2 ;;
   esac
 done
-if [[ $hooks == 1 && ("$target" != aarch64-sim || ${#profile[@]} == 0) ]]; then
-  echo "--test-hooks is for the simulator debug build only (--sim, no --release)" >&2
+if [[ $hooks == 1 && ${#profile[@]} == 0 ]]; then
+  echo "--test-hooks is for debug builds only (no --release)" >&2
   exit 2
 fi
 features=nemo
