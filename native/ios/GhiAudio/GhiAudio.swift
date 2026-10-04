@@ -183,7 +183,10 @@ final class GhiAudio {
 
     private func activateSession() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: [])
+        // `.default`, not `.measurement`: measurement turns off the input's
+        // automatic gain, and on an iPhone 15 Pro Max speech then peaked at
+        // about -46 dBFS (RMS 0.005), too faint for the voice check and ASR.
+        try session.setCategory(.record, mode: .default, options: [])
         try session.setPrefersNoInterruptionsFromSystemAlerts(true)
         try session.setActive(true)
     }

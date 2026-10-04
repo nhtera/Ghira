@@ -289,6 +289,16 @@ pub fn finish_enrollment(c: &Core, consent_text_key: &str) -> Result<(), String>
         return Err(INVALID_CONSENT.into());
     }
     if speech_seconds(&pcm) < MIN_ANY_SPEECH_S {
+        // Numbers only (no audio): tells a silent input from a short one.
+        let peak = pcm
+            .chunks_exact(1_600)
+            .map(|f| (f.iter().map(|x| x * x).sum::<f32>() / f.len() as f32).sqrt())
+            .fold(0.0f32, f32::max);
+        log::warn!(
+            "enrollment too quiet: captured={:.1}s speech={:.1}s peak_rms={peak:.4}",
+            pcm.len() as f32 / 16_000.0,
+            speech_seconds(&pcm)
+        );
         return Err(TOO_QUIET.into());
     }
     let mut embedder = (crate::core::voice_factory(&c.models()))().map_err(|_| NO_MODEL)?;

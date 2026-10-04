@@ -38,6 +38,7 @@ ghi-audio = { path = "../../../crates/ghi-audio" }
 ghi-models = { path = "../../../crates/ghi-models" }
 # Model downloads only (ghi-net is the one network egress point).
 ghi-net = { path = "../../../crates/ghi-net" }
+ghi-diag = { path = "../../../crates/ghi-diag" }
 ghi-speech = { path = "../../../crates/ghi-speech" }
 ghi-store = { path = "../../../crates/ghi-store" }
 crossbeam-channel = "0.5"

@@ -149,6 +149,14 @@ pub fn run() {
             {
                 eprintln!("ghira: could not capture stderr: {e}");
             }
+            // The local event log and crash reports (no meeting content), like
+            // the desktop's; never fails the launch.
+            if let Ok(data) = core::data_dir(app.handle()) {
+                let dir = data.join("diagnostics");
+                ghi_diag::install_panic_hook("ghira-ios", dir.clone(), || "ios".into());
+                let _ = ghi_diag::init_log(&dir);
+                log::info!("app start version={}", env!("CARGO_PKG_VERSION"));
+            }
             builder.mount_events(app);
             cmd::events::install(app.handle());
             // The store-facing state the shared commands take (the core, the

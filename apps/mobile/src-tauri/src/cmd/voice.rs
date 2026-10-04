@@ -103,7 +103,8 @@ pub async fn voice_enroll_stop(core: ghi_app::CoreState<'_>) -> Result<(), Strin
         }
         ghi_app::voice_cmd::finish_enrollment(c, CONSENT_KEY)
     })
-    .await?;
+    .await
+    .inspect_err(|e| log::warn!("voice enrollment: {e}"))?;
     CONSENT.store(false, Ordering::Release);
     Ok(())
 }
