@@ -16,7 +16,8 @@
         "privacy": "Riêng tư và bảo mật",
         "cloud": "Ghi chú qua đám mây",
         "consent": "Lời thông báo ghi âm",
-        "about": "Giới thiệu"
+        "about": "Giới thiệu",
+        "vocab": "Từ vựng riêng"
       },
       "status": {
         "ready": "Sẵn sàng",
@@ -139,6 +140,24 @@
           "js": "Thư viện JavaScript ({{count}})",
           "native": "Thư viện gốc, C/C++ ({{count}})"
         }
+      },
+      "vocab": {
+        "title": "Từ vựng riêng",
+        "addHeader": "Thêm từ",
+        "hint": "Tên người, sản phẩm, thuật ngữ. Bản ghi cuối sẽ được sửa theo các từ này.",
+        "field": "Từ mới",
+        "placeholder": "vd. Acme, Nguyễn Văn An",
+        "add": "Thêm",
+        "count": "{{count}}/{{max}}",
+        "duplicate": "Từ này đã có.",
+        "full": "Danh sách đã đầy. Hãy xoá bớt một từ.",
+        "empty": "Chưa có từ nào.",
+        "termsHeader": "Các từ của bạn",
+        "remove": "Xoá",
+        "removeTerm": "Xoá {{term}}",
+        "learnedHeader": "Học từ tên bạn đặt cho người nói",
+        "learnedFooter": "Các tên này cũng được dùng. Xoá để ngừng sửa theo tên đó.",
+        "learnedEmpty": "Chưa có. Tên bạn đặt cho người nói sẽ hiện ở đây."
       }
     },
     "privacy": {
@@ -183,7 +202,15 @@
         "working": "Đang chuẩn bị tệp…",
         "done": "Sẵn sàng để chia sẻ."
       },
-      "cloudRow": "Ghi chú đám mây và khoá API"
+      "cloudRow": "Ghi chú đám mây và khoá API",
+      "logRow": "Nhật ký yêu cầu đám mây",
+      "log": {
+        "title": "Nhật ký yêu cầu đám mây",
+        "footer": "Mỗi lần ghi chú được gửi tới nhà cung cấp đám mây. Chỉ lưu cuộc họp, nhà cung cấp và kích thước, không bao giờ lưu nội dung.",
+        "empty": "Chưa gửi gì lên đám mây.",
+        "untitled": "Cuộc họp chưa đặt tên",
+        "tokens": "{{in}} vào · {{out}} ra (token)"
+      }
     },
     "lock": {
       "title": "{{app}} đang khoá",

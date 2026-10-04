@@ -71,6 +71,7 @@ export function PrivacyScreen() {
           <ListSection header={t("mobile.privacy.dataHeader")}>
             <ListRow title={t("mobile.privacy.exportAll")} subtitle={t("mobile.privacy.exportAllHint")} icon="ios_share" onPress={() => setSheet("export")} />
             <ListRow title={t("mobile.privacy.cloudRow")} icon="cloud" chevron onPress={() => go("/settings/cloud")} />
+            <ListRow title={t("mobile.privacy.logRow")} icon="cloud" chevron onPress={() => go("/settings/privacy/log")} />
             <ListRow title={t("mobile.privacy.deleteAll.row")} destructive icon="delete_forever" onPress={() => setSheet("delete")} />
           </ListSection>
 

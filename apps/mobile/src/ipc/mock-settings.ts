@@ -5,7 +5,7 @@
 // ("the cloud sheet never calls cloudSend before the click"), the lock, the
 // inbox and the failure switches. Time stands still: nothing happens by itself
 // except the short scripted import of an inbox item.
-import type { AppSettings, CloudSendResult, InboxItem, MobileSettings } from "../bindings";
+import type { AppSettings, CloudSendResult, InboxItem, MobileSettings, Vocabulary } from "../bindings";
 import type { Commands } from "./ipc";
 import { recordCommands } from "./mock-record";
 
@@ -38,6 +38,13 @@ export interface GhiSettingsMock {
   lastKey: string;
   /** Cloud requests made today. */
   cloudRequests: number;
+  /** Time of the newest logged cloud request (null: now); the visual tests pin it. */
+  logAt: number | null;
+  /** The custom vocabulary: the user's terms, the names learned from speakers, and the ones removed. */
+  terms: string[];
+  learned: string[];
+  /** Vocabulary cap (the core's is 200). */
+  maxTerms: number;
   /** Meeting ids whose cloud send fails (the notes stay local). */
   failSend: string[];
   /** Meeting ids with cloud AI off. */
@@ -116,6 +123,10 @@ const hooks: GhiSettingsMock = {
   keys: {},
   lastKey: "",
   cloudRequests: 0,
+  logAt: null,
+  terms: [],
+  learned: ["Linh Trần"],
+  maxTerms: 200,
   failSend: [],
   cloudLocked: [],
   inbox: [],
@@ -136,7 +147,8 @@ const hooks: GhiSettingsMock = {
     app = freshApp();
     mobile = freshMobile();
     meDeleted = false;
-    Object.assign(hooks, { calls: {}, args: {}, locked: false, starting: false, noAuthMethod: false, warnings: [], retentionNote: "", faceIdOk: true, faceIdPrompts: 0, busy: false, keys: {}, lastKey: "", cloudRequests: 0, failSend: [], cloudLocked: [], inbox: [], exportedWith: null, wiped: false });
+    ignored = [];
+    Object.assign(hooks, { calls: {}, args: {}, locked: false, starting: false, noAuthMethod: false, warnings: [], retentionNote: "", faceIdOk: true, faceIdPrompts: 0, busy: false, keys: {}, lastKey: "", cloudRequests: 0, logAt: null, terms: [], learned: ["Linh Trần"], maxTerms: 200, failSend: [], cloudLocked: [], inbox: [], exportedWith: null, wiped: false });
   },
 };
 if (typeof window !== "undefined") {
@@ -176,6 +188,14 @@ const foldPhrase = (s: string) =>
     .replace(/đ/gi, "d")
     .trim()
     .toLowerCase();
+
+// Like ghi-core vocab::learned_terms: minus the removed names and the user's own terms, compared without case or accents.
+let ignored: string[] = [];
+const vocabularyOf = (): Vocabulary => ({
+  terms: [...hooks.terms],
+  learned: hooks.learned.filter((n) => ![...ignored, ...hooks.terms].some((x) => foldPhrase(x) === foldPhrase(n))),
+  maxTerms: hooks.maxTerms,
+});
 
 const RAW_TEXT = "Nguyễn Văn An: Chúng ta chốt ngân sách 2 tỷ đồng cho quý bốn.\nLinh Trần: Mình sẽ gửi báo cáo cho anh An trước thứ Sáu.";
 const REDACTED_TEXT = "<<PERSON_1>>: Chúng ta chốt ngân sách 2 tỷ đồng cho quý bốn.\n<<PERSON_2>>: Mình sẽ gửi báo cáo cho anh <<PERSON_1>> trước thứ Sáu.";
@@ -264,7 +284,31 @@ const scripted: Partial<Commands> = {
     hooks.keys[provider] = false;
     return ok(null);
   },
-  cloudRequestLog: async () => ok(Array.from({ length: hooks.cloudRequests }, () => ({ meeting: "m-1", meetingTitle: "", provider: "anthropic", model: "claude-sonnet-5-5", tokensIn: 900, tokensOut: 300, at: Date.now() }))),
+  cloudRequestLog: async (limit) =>
+    ok(
+      Array.from({ length: Math.min(hooks.cloudRequests, limit) }, (_, i) => ({
+        meeting: "m-1",
+        meetingTitle: i === 1 ? "" : "Weekly sync",
+        provider: "anthropic",
+        model: "claude-sonnet-5-5",
+        tokensIn: 900,
+        tokensOut: 300,
+        at: (hooks.logAt ?? Date.now()) - i * 60_000,
+      })),
+    ),
+  vocabulary: async () => ok(vocabularyOf()),
+  setVocabulary: async (terms) => {
+    const out: string[] = [];
+    // Rust keeps the first 80 characters of each term.
+    for (const t of terms.map((x) => Array.from(x.trim()).slice(0, 80).join("")).filter(Boolean)) if (!out.some((o) => foldPhrase(o) === foldPhrase(t))) out.push(t);
+    if (out.length > hooks.maxTerms) return fail(`at most ${hooks.maxTerms} terms`);
+    hooks.terms = out;
+    return ok(vocabularyOf());
+  },
+  ignoreLearnedTerm: async (term) => {
+    if (!ignored.some((i) => foldPhrase(i) === foldPhrase(term))) ignored.push(term);
+    return ok(vocabularyOf());
+  },
   cloudPreview: async (meeting, ask) => {
     if (!app.cloudOffered) return fail("cloudOff");
     if (hooks.cloudLocked.includes(meeting)) return fail("cloud AI is off for this meeting");

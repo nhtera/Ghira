@@ -23,6 +23,9 @@ describe("knownError", () => {
     ])
       expect(knownError(code)).toBe(code);
   });
+  it("maps the core's locked refusal", () => {
+    expect(knownError("the app is locked")).toBe("locked");
+  });
   it("maps Rust's strict-offline text and falls back to generic", () => {
     expect(knownError("strict offline is on: nothing can be sent")).toBe(
       "offline",

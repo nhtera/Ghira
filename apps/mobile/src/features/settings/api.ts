@@ -81,5 +81,7 @@ export function knownError(
   if (!code) return "generic";
   if ((KNOWN as readonly string[]).includes(code)) return code as KnownError;
   if (/strict offline/i.test(code)) return "offline";
+  // Core::store() while the app lock is on.
+  if (/app is locked/i.test(code)) return "locked";
   return "generic";
 }

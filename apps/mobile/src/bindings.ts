@@ -237,6 +237,11 @@ export const commands = {
 	getSettings: () => typedError<AppSettings, string>(__TAURI_INVOKE("get_settings")),
 	/**  Changes some settings and returns them all. */
 	updateSettings: (patch: SettingsPatch) => typedError<AppSettings, string>(__TAURI_INVOKE("update_settings", { patch })),
+	vocabulary: () => typedError<Vocabulary, string>(__TAURI_INVOKE("vocabulary")),
+	/**  Replaces the user's terms (trimmed, deduplicated, at most 200). */
+	setVocabulary: (terms: string[]) => typedError<Vocabulary, string>(__TAURI_INVOKE("set_vocabulary", { terms })),
+	/**  Removes a learned name from the vocabulary (it stays removed). */
+	ignoreLearnedTerm: (term: string) => typedError<Vocabulary, string>(__TAURI_INVOKE("ignore_learned_term", { term })),
 	/**
 	 *  Whether the app is locked. The first call after launch locks it when the
 	 *  setting is on (nothing is shown before that).
@@ -1204,6 +1209,14 @@ export type TierClass =
 export type TopicView = {
 	title: string,
 	tMs: number | null,
+};
+
+export type Vocabulary = {
+	/**  The user's own terms (names, products, jargon), as written. */
+	terms: string[],
+	/**  Names learned from the speakers the user named (removable). */
+	learned: string[],
+	maxTerms: number,
 };
 
 export type VoiceStatus = {

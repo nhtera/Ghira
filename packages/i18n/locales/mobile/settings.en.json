@@ -16,7 +16,8 @@
         "privacy": "Privacy and security",
         "cloud": "Cloud notes",
         "consent": "Consent message",
-        "about": "About"
+        "about": "About",
+        "vocab": "Custom vocabulary"
       },
       "status": {
         "ready": "Ready",
@@ -140,6 +141,24 @@
           "js": "Libraries, JavaScript ({{count}})",
           "native": "Native libraries ({{count}})"
         }
+      },
+      "vocab": {
+        "title": "Custom vocabulary",
+        "addHeader": "Add a term",
+        "hint": "Names, products and jargon. The final transcript is corrected towards these words.",
+        "field": "New term",
+        "placeholder": "e.g. Acme, Nguyễn Văn An",
+        "add": "Add",
+        "count": "{{count}} of {{max}}",
+        "duplicate": "Already in the list.",
+        "full": "The list is full. Remove a term to add another.",
+        "empty": "No terms yet.",
+        "termsHeader": "Your terms",
+        "remove": "Remove",
+        "removeTerm": "Remove {{term}}",
+        "learnedHeader": "Learned from names you gave speakers",
+        "learnedFooter": "These are used too. Remove one to stop correcting towards it.",
+        "learnedEmpty": "Nothing yet. Names you give speakers appear here."
       }
     },
     "privacy": {
@@ -185,7 +204,15 @@
         "working": "Preparing the archive…",
         "done": "Ready to share."
       },
-      "cloudRow": "Cloud notes and API key"
+      "cloudRow": "Cloud notes and API key",
+      "logRow": "Cloud request log",
+      "log": {
+        "title": "Cloud request log",
+        "footer": "Every time notes were sent to a cloud provider. Only the meeting, provider and size are kept, never the text.",
+        "empty": "Nothing has been sent to the cloud.",
+        "untitled": "Untitled meeting",
+        "tokens": "{{in}} in · {{out}} out tokens"
+      }
     },
     "lock": {
       "title": "{{app}} is locked",

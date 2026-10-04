@@ -10,6 +10,8 @@ import { ConsentScreen } from "./consent";
 import { SettingsHome } from "./home";
 import { LicensesScreen } from "./licenses";
 import { PrivacyScreen } from "./privacy";
+import { RequestLogScreen } from "./request-log";
+import { VocabularyScreen } from "./vocabulary";
 import { VoiceScreen } from "./voice";
 
 export function settingsRoutes(parent: AnyRoute) {
@@ -20,6 +22,8 @@ export function settingsRoutes(parent: AnyRoute) {
     at("/models", ModelsScreen),
     at("/voice", VoiceScreen),
     at("/privacy", PrivacyScreen),
+    at("/privacy/log", RequestLogScreen),
+    at("/vocabulary", VocabularyScreen),
     at("/cloud", CloudScreen),
     at("/consent", ConsentScreen),
     at("/about", AboutScreen),

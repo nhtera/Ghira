@@ -31,5 +31,24 @@ visualMatrix("settings", [
     route: "/settings/consent",
     ready: (p) => expect(p.locator("textarea").first()).toBeVisible(),
   },
+  {
+    name: "vocabulary",
+    route: "/settings/vocabulary",
+    setup: async (p) => {
+      await p.evaluate(() => (window.__ghiSettingsMock!.terms = ["Ghira", "Nguyễn Văn An", "Chốt ngân sách"]));
+    },
+    ready: (p) => expect(p.getByText("Chốt ngân sách")).toBeVisible(),
+  },
+  {
+    name: "request-log",
+    route: "/settings/privacy/log",
+    setup: async (p) => {
+      await p.evaluate(() => {
+        window.__ghiSettingsMock!.cloudRequests = 3;
+        window.__ghiSettingsMock!.logAt = Date.UTC(2026, 9, 4, 8, 30);
+      });
+    },
+    ready: (p) => expect(p.getByText("Weekly sync").first()).toBeVisible(),
+  },
   { name: "about", route: "/settings/about", ready: (p) => expect(p.getByText("0.1.0").first()).toBeVisible() },
 ]);

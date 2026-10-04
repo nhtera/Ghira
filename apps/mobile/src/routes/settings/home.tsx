@@ -48,6 +48,7 @@ export function SettingsHome() {
           </ListSection>
           <ListSection header={t("mobile.settings.section.device")}>
             <ListRow title={t("mobile.settings.rows.models")} value={modelsValue} chevron onPress={() => go("/settings/models")} />
+            <ListRow title={t("mobile.settings.rows.vocab")} chevron onPress={() => go("/settings/vocabulary")} />
             <ListRow title={t("mobile.settings.rows.voice")} value={voiceValue} chevron onPress={() => go("/settings/voice")} />
           </ListSection>
           <ListSection header={t("mobile.settings.section.privacy")}>

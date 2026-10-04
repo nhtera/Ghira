@@ -2,11 +2,7 @@
 // Phone-sized controls the settings screens share: a switch, buttons with 44 pt
 // targets, a choice row (radio-like) and the error line.
 import { cn, Icon, ListRow } from "@ghi/ui";
-import type {
-  ComponentPropsWithRef,
-  InputHTMLAttributes,
-  ReactNode,
-} from "react";
+import type { ComponentPropsWithRef, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { knownError } from "./api";
 
@@ -133,10 +129,7 @@ export function Field({
   label,
   className,
   ...input
-}: { id: string; label: string } & Omit<
-  InputHTMLAttributes<HTMLInputElement>,
-  "id"
->) {
+}: { id: string; label: string } & Omit<ComponentPropsWithRef<"input">, "id">) {
   return (
     <div className="flex flex-col gap-1">
       <label
