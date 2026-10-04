@@ -374,6 +374,9 @@ type ReviewCommands = Pick<
   | "meetingTranscript"
   | "updateSegmentText"
   | "setSegmentSpeaker"
+  | "mergeMeetingSpeakers"
+  | "splitMeetingSpeaker"
+  | "setSpeakerNotPerson"
   | "updateNoteBlock"
   | "addNoteBlock"
   | "deleteNoteBlock"
@@ -457,6 +460,62 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         if (g) g.speakerGid = speaker;
         return null;
       }),
+    // Same rules and error codes as ghi-app's speakers_cmd; the lines follow their speakers.
+    mergeMeetingSpeakers: (m, from, into) => {
+      if (!row(m)) return fail(`meeting not found: ${m}`);
+      const d = detailOf(m);
+      const f = d.speakers.find((x) => x.gid === from);
+      const t = d.speakers.find((x) => x.gid === into);
+      if (!f || !t) return fail("notASpeaker");
+      if (f === t) return fail("sameSpeaker");
+      // A desktop call has a far side: only the mic speaker can be Me, so Me
+      // and a far-side speaker never merge either way.
+      if ((f.isMe || t.isMe) && row(m)?.mode === "call") return fail("farSide");
+      for (const g of d.transcript.segments) if (g.speakerGid === from) g.speakerGid = into;
+      for (const a of d.notes.actionItems) if (a.ownerSpeakerGid === from) a.ownerSpeakerGid = into;
+      t.lines += f.lines;
+      if (f.isMe) Object.assign(t, { isMe: true, notPerson: false });
+      d.speakers = d.speakers.filter((x) => x !== f);
+      return ok(null);
+    },
+    splitMeetingSpeaker: (m, speaker, segmentGids, fromSegment) => {
+      if (!row(m)) return fail(`meeting not found: ${m}`);
+      const d = detailOf(m);
+      const sp = d.speakers.find((x) => x.gid === speaker);
+      if (!sp) return fail("notASpeaker");
+      const own = d.transcript.segments.filter((g) => g.speakerGid === speaker);
+      const from = own.find((g) => g.gid === fromSegment);
+      if ((segmentGids.length > 0) === (fromSegment != null) || (fromSegment != null && !from)) return fail("nothingToSplit");
+      const moving = from ? own.filter((g) => (g.t0Ms ?? 0) >= (from.t0Ms ?? 0)) : segmentGids.map((id) => own.find((g) => g.gid === id));
+      if (moving.some((g) => !g) || new Set(moving).size !== moving.length) return fail("nothingToSplit");
+      if (moving.length >= own.length) return fail("wholeSpeaker");
+      const slot = [1, 2, 3, 4, 5, 6, 7, 8].find((n) => !d.speakers.some((x) => x.colorSlot === n)) ?? 0;
+      const created: MeetingSpeaker = {
+        gid: gid("spk"),
+        name: null,
+        number: Math.max(...d.speakers.map((x) => x.number)) + 1,
+        colorSlot: slot,
+        isMe: false,
+        notPerson: sp.notPerson,
+        lines: moving.length,
+        sampleT0Ms: null,
+        sampleT1Ms: null,
+        suggestion: null,
+      };
+      for (const g of moving) if (g) g.speakerGid = created.gid;
+      sp.lines -= moving.length;
+      d.speakers.push(created);
+      return ok(created.gid);
+    },
+    setSpeakerNotPerson: (m, speaker, notPerson) => {
+      if (!row(m)) return fail(`meeting not found: ${m}`);
+      const sp = detailOf(m).speakers.find((x) => x.gid === speaker);
+      if (!sp) return fail("notASpeaker");
+      if (notPerson && sp.isMe) return fail("isMe");
+      sp.notPerson = notPerson;
+      if (notPerson) sp.suggestion = null;
+      return ok(null);
+    },
     updateNoteBlock: (m, b, text) =>
       withDetail(m, (d) => {
         const x = block(d, b);

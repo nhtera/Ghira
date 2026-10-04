@@ -216,7 +216,8 @@ impl Store {
         if from_me {
             let me = people::me_id(&tx)?;
             tx.execute(
-                "UPDATE speakers SET is_me = 1, person_id = ?1, lamport = ?2 WHERE id = ?3",
+                "UPDATE speakers SET is_me = 1, person_id = ?1, not_person = 0, lamport = ?2
+                 WHERE id = ?3",
                 params![me, lamport, into],
             )?;
             orphans.extend(into_person);

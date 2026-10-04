@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-speaker-not-person"
+description = "Enables the set_speaker_not_person command without any pre-configured scope."
+commands.allow = ["set_speaker_not_person"]
+
+[[permission]]
+identifier = "deny-set-speaker-not-person"
+description = "Denies the set_speaker_not_person command without any pre-configured scope."
+commands.deny = ["set_speaker_not_person"]

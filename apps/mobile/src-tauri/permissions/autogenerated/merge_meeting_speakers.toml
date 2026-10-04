@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-merge-meeting-speakers"
+description = "Enables the merge_meeting_speakers command without any pre-configured scope."
+commands.allow = ["merge_meeting_speakers"]
+
+[[permission]]
+identifier = "deny-merge-meeting-speakers"
+description = "Denies the merge_meeting_speakers command without any pre-configured scope."
+commands.deny = ["merge_meeting_speakers"]

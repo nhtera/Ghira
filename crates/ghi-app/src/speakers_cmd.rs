@@ -24,6 +24,13 @@ pub const NOT_NAMED: &str = "notNamed";
 pub const NO_VOICE: &str = "noVoice";
 pub const INVALID_CONSENT: &str = "invalidConsent";
 pub const STORAGE: &str = "storage";
+/// Merging a speaker into itself.
+pub const SAME_SPEAKER: &str = "sameSpeaker";
+/// A split needs some of the speaker's lines, but not all of them.
+pub const NOTHING_TO_SPLIT: &str = "nothingToSplit";
+pub const WHOLE_SPEAKER: &str = "wholeSpeaker";
+/// Me cannot be marked "not a person".
+pub const IS_ME: &str = "isMe";
 
 /// A store failure as a code (the detail goes to the log, never the UI).
 pub fn storage(e: impl std::fmt::Display) -> String {
@@ -452,6 +459,186 @@ pub async fn save_voice_profile(
     .await
 }
 
+// ------------------------------------------------- merge, split, not a person
+//
+// Edits of a stored meeting's speakers (the side panel, design 7c). The store
+// does the work in one transaction each and bumps the meeting's `index_gen`;
+// here the chunk text (it carries who spoke) is queued for a re-index. Lines
+// keep their segments, so notes citations (time anchors) still resolve, and
+// the transcript version does not change. Nothing is emitted: the panel
+// reloads the meeting when the command returns, like the other stored-speaker
+// commands (the speaker events belong to the live session).
+
+/// The first palette slot (1..8) no speaker of the meeting uses, else Others (0).
+fn free_color_slot(speakers: &[ghi_store::store::Speaker]) -> i64 {
+    (1..=8)
+        .find(|n| {
+            !speakers
+                .iter()
+                .any(|s| s.merged_into.is_none() && s.color_slot == *n)
+        })
+        .unwrap_or(0)
+}
+
+fn reindex(c: &Core, store: &ghi_store::store::Store, meeting: &str) -> Result<(), String> {
+    ghi_core::voice_job::requeue_index(store, &[meeting.to_string()]).map_err(storage)?;
+    c.notify_jobs();
+    Ok(())
+}
+
+/// Merges `from` into `into`: all of `from`'s lines and action items move to
+/// `into`, and `from` is hidden. Me carries over (`into` becomes Me, and the
+/// person Me links to, replacing `into`'s own; `into` stops being "not a
+/// person"); in a call Me is
+/// the mic speaker only, so Me and a far-side speaker cannot be merged either
+/// way. A named `from` loses its name with it; its stored voice is dropped.
+/// Errors: `liveMeeting`, `notASpeaker`, `sameSpeaker`, `farSide`, `storage`.
+fn merge_speakers_in(c: &Core, meeting: &str, from: &str, into: &str) -> Result<(), String> {
+    let store = c.store()?;
+    let f = stored_speaker(c, &store, meeting, from)?;
+    let t = stored_speaker(c, &store, meeting, into)?;
+    if from == into {
+        return Err(SAME_SPEAKER.into());
+    }
+    if (f.is_me || (t.is_me && f.label_idx != -1)) && call_with_far_side(&store, meeting)? {
+        return Err(FAR_SIDE.into());
+    }
+    store.merge_speakers(from, into).map_err(storage)?;
+    // The merge has committed: a voice left behind on the hidden speaker is
+    // never read again, so a failure here is logged, not reported.
+    if let Err(e) = store.clear_speaker_voice(from) {
+        log::warn!("merge: clearing the merged speaker's voice: {e}");
+    }
+    reindex(c, &store, meeting)
+}
+
+/// Merges `from` into `into` (lines, action items and Me move; `from` is hidden).
+/// Errors: `liveMeeting`, `notASpeaker`, `sameSpeaker`, `farSide`, `storage`.
+#[tauri::command]
+#[specta::specta]
+pub async fn merge_meeting_speakers(
+    core: CoreState<'_>,
+    meeting: String,
+    from: String,
+    into: String,
+) -> Result<(), String> {
+    blocking(&core, move |c| merge_speakers_in(c, &meeting, &from, &into)).await
+}
+
+/// Splits lines off `speaker` into a new speaker ("Speaker N", the next free
+/// color, never Me, no name): either the given `segment_gids`, or every line of
+/// the speaker from `from_segment` on. Returns the new speaker's gid. Errors:
+/// `liveMeeting`, `notASpeaker`, `nothingToSplit` (no lines, a line that is
+/// not theirs, or both ways given), `wholeSpeaker` (it would take all their
+/// lines), `storage`.
+fn split_speaker_in(
+    c: &Core,
+    meeting: &str,
+    speaker: &str,
+    segment_gids: Vec<String>,
+    from_segment: Option<String>,
+) -> Result<String, String> {
+    let store = c.store()?;
+    stored_speaker(c, &store, meeting, speaker)?;
+    let segs = store.segments(meeting).map_err(storage)?;
+    let own: Vec<_> = segs
+        .iter()
+        .filter(|g| g.speaker_gid.as_deref() == Some(speaker))
+        .collect();
+    let moving: Vec<String> = match (segment_gids.is_empty(), from_segment) {
+        (false, None) => segment_gids,
+        (true, Some(from)) => {
+            let t0 = own
+                .iter()
+                .find(|g| g.gid == from)
+                .map(|g| g.t0_ms)
+                .ok_or(NOTHING_TO_SPLIT)?;
+            own.iter()
+                .filter(|g| g.t0_ms >= t0)
+                .map(|g| g.gid.clone())
+                .collect()
+        }
+        _ => return Err(NOTHING_TO_SPLIT.into()),
+    };
+    let mut seen = std::collections::HashSet::new();
+    if moving
+        .iter()
+        .any(|g| !seen.insert(g.as_str()) || !own.iter().any(|o| &o.gid == g))
+    {
+        return Err(NOTHING_TO_SPLIT.into());
+    }
+    if moving.len() >= own.len() {
+        return Err(WHOLE_SPEAKER.into());
+    }
+    let all = store.speakers(meeting).map_err(storage)?;
+    let not_person = all.iter().any(|s| s.gid == speaker && s.not_person);
+    let gid = store
+        .split_speaker(speaker, &moving, free_color_slot(&all))
+        .map_err(storage)?;
+    // Lines split off a TV are still the TV's kind of lines.
+    if not_person && let Err(e) = store.set_speaker_not_person(&gid, true) {
+        log::warn!("split: carrying not a person: {e}");
+    }
+    reindex(c, &store, meeting)?;
+    Ok(gid)
+}
+
+/// Splits the given lines (or all from `from_segment` on) off a speaker into a
+/// new one; returns its gid. Errors: `liveMeeting`, `notASpeaker`,
+/// `nothingToSplit`, `wholeSpeaker`, `storage`.
+#[tauri::command]
+#[specta::specta]
+pub async fn split_meeting_speaker(
+    core: CoreState<'_>,
+    meeting: String,
+    speaker: String,
+    segment_gids: Vec<String>,
+    from_segment: Option<String>,
+) -> Result<String, String> {
+    blocking(&core, move |c| {
+        split_speaker_in(c, &meeting, &speaker, segment_gids, from_segment)
+    })
+    .await
+}
+
+/// Marks a speaker "not a person" (a TV, a notification sound) or back: a
+/// not-a-person speaker is unlinked from its person, loses any voice
+/// suggestion and is not counted among the unnamed voices; turning it off
+/// links it again by its name. Me cannot be marked. Errors: `liveMeeting`,
+/// `notASpeaker`, `isMe`, `storage`.
+fn set_not_person_in(
+    c: &Core,
+    meeting: &str,
+    speaker: &str,
+    not_person: bool,
+) -> Result<(), String> {
+    let store = c.store()?;
+    let sp = stored_speaker(c, &store, meeting, speaker)?;
+    if not_person && sp.is_me {
+        return Err(IS_ME.into());
+    }
+    store
+        .set_speaker_not_person(speaker, not_person)
+        .map_err(storage)?;
+    reindex(c, &store, meeting)
+}
+
+/// Marks a speaker "not a person" or back. Errors: `liveMeeting`, `notASpeaker`,
+/// `isMe`, `storage`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_speaker_not_person(
+    core: CoreState<'_>,
+    meeting: String,
+    speaker: String,
+    not_person: bool,
+) -> Result<(), String> {
+    blocking(&core, move |c| {
+        set_not_person_in(c, &meeting, &speaker, not_person)
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,7 +671,11 @@ mod tests {
                 NOT_NAMED,
                 NO_VOICE,
                 INVALID_CONSENT,
-                STORAGE
+                STORAGE,
+                SAME_SPEAKER,
+                NOTHING_TO_SPLIT,
+                WHOLE_SPEAKER,
+                IS_ME
             ],
             [
                 "busyRecording",
@@ -497,7 +688,11 @@ mod tests {
                 "notNamed",
                 "noVoice",
                 "invalidConsent",
-                "storage"
+                "storage",
+                "sameSpeaker",
+                "nothingToSplit",
+                "wholeSpeaker",
+                "isMe"
             ]
         );
         // A store failure never leaks its text to the UI.
@@ -659,5 +854,351 @@ mod tests {
             .unwrap()
             .gid;
         assert!(!call_with_far_side(&s, &room).unwrap());
+    }
+
+    // ---- merge, split, not a person (over a real Core with a temp store)
+
+    use ghi_store::anchors::Anchor;
+    use ghi_store::store::{NewActionItem, NewNoteBlock, NewSegment};
+
+    struct Fix {
+        _tmp: tempfile::TempDir,
+        core: Arc<Core>,
+        rx: ghi_core::events::EventRx,
+        meeting: String,
+        /// Speakers a, b, c (gids); a is Me when `with_me`.
+        sp: Vec<String>,
+        /// Segments: a0, b0, b1, b2, c0.
+        seg: Vec<String>,
+    }
+
+    fn fix(mode: &str, me_is_a: bool) -> Fix {
+        let tmp = tempfile::tempdir().unwrap();
+        let (core, rx) = Core::for_test(tmp.path().join("data"));
+        let store = core.store().unwrap();
+        let meeting = store
+            .create_meeting(NewMeeting {
+                title: "x".into(),
+                mode: mode.into(),
+                ..Default::default()
+            })
+            .unwrap()
+            .gid;
+        let add = |idx: i64, slot: i64, me: bool| {
+            store
+                .add_speaker(
+                    &meeting,
+                    NewSpeaker {
+                        label_idx: idx,
+                        color_slot: slot,
+                        is_me: me,
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+        };
+        let sp = vec![
+            add(if me_is_a { -1 } else { 0 }, 1, me_is_a),
+            add(1, 2, false),
+            add(2, 3, false),
+        ];
+        let line = |i: usize, n: i64| NewSegment {
+            speaker_gid: Some(sp[i].clone()),
+            t0_ms: n * 1000,
+            t1_ms: n * 1000 + 800,
+            text: format!("line {n}"),
+            ..Default::default()
+        };
+        let seg = store
+            .add_segments(
+                &meeting,
+                vec![line(0, 0), line(1, 1), line(1, 2), line(1, 3), line(2, 4)],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|g| g.gid)
+            .collect();
+        Fix {
+            _tmp: tmp,
+            core,
+            rx,
+            meeting,
+            sp,
+            seg,
+        }
+    }
+
+    fn lines_of(store: &Store, m: &str, sp: &str) -> Vec<String> {
+        store
+            .segments(m)
+            .unwrap()
+            .into_iter()
+            .filter(|g| g.speaker_gid.as_deref() == Some(sp))
+            .map(|g| g.gid)
+            .collect()
+    }
+
+    #[test]
+    fn merge_moves_lines_and_keeps_citations_and_the_transcript_version() {
+        let f = fix("room", false);
+        let store = f.core.store().unwrap();
+        let version = store.get_meeting(&f.meeting).unwrap().transcript_version;
+        let anchor = Anchor {
+            meeting_gid: f.meeting.clone(),
+            t0_ms: 1000,
+            t1_ms: 1800,
+            transcript_version: version,
+        };
+        store
+            .add_note_block(
+                &f.meeting,
+                NewNoteBlock {
+                    kind: "decision".into(),
+                    body: "b".into(),
+                    provenance: ghi_store::store::Provenance::Ai,
+                    anchors: vec![anchor.clone()],
+                    pinned: false,
+                },
+            )
+            .unwrap();
+        store
+            .add_action_item(
+                &f.meeting,
+                NewActionItem {
+                    text: "do".into(),
+                    owner_speaker_gid: Some(f.sp[1].clone()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        store.rename_speaker(&f.sp[1], Some("Lan")).unwrap();
+        let version_of = |s: &Store| s.get_meeting(&f.meeting).unwrap().transcript_version;
+        merge_speakers_in(&f.core, &f.meeting, &f.sp[1], &f.sp[2]).unwrap();
+        assert_eq!(lines_of(&store, &f.meeting, &f.sp[2]).len(), 4);
+        assert!(lines_of(&store, &f.meeting, &f.sp[1]).is_empty());
+        assert_eq!(version_of(&store), version);
+        let list = speakers_of(&store, &f.meeting).unwrap();
+        assert_eq!(list.len(), 2, "the merged speaker is hidden");
+        assert_eq!(list.iter().find(|s| s.gid == f.sp[2]).unwrap().lines, 4);
+        // The name goes with the merged speaker; the survivor keeps its own.
+        assert!(list.iter().all(|s| s.name.is_none()));
+        assert_eq!(
+            store.action_items(&f.meeting).unwrap()[0]
+                .owner_speaker_gid
+                .as_deref(),
+            Some(f.sp[2].as_str())
+        );
+        // The citation still resolves to the same lines.
+        let note = &store.note_blocks(&f.meeting).unwrap()[0];
+        assert_eq!(note.anchors, vec![anchor.clone()]);
+        let r = store.resolve_anchor(&anchor).unwrap();
+        assert_eq!(r.segments.len(), 1);
+        assert_eq!(r.segments[0].speaker_gid.as_deref(), Some(f.sp[2].as_str()));
+        // Errors.
+        let e = |from: &str, into: &str| merge_speakers_in(&f.core, &f.meeting, from, into);
+        assert_eq!(e(&f.sp[2], &f.sp[2]).unwrap_err(), SAME_SPEAKER);
+        assert_eq!(
+            e(&f.sp[1], &f.sp[0]).unwrap_err(),
+            NOT_A_SPEAKER,
+            "already merged"
+        );
+        assert_eq!(e("nope", &f.sp[0]).unwrap_err(), NOT_A_SPEAKER);
+    }
+
+    #[test]
+    fn merging_me_carries_me_unless_a_call_pins_it_to_the_mic() {
+        // A room: Me merged into another speaker makes that speaker Me.
+        let f = fix("room", true);
+        let store = f.core.store().unwrap();
+        merge_speakers_in(&f.core, &f.meeting, &f.sp[0], &f.sp[1]).unwrap();
+        let list = speakers_of(&store, &f.meeting).unwrap();
+        assert!(list.iter().find(|s| s.gid == f.sp[1]).unwrap().is_me);
+        assert_eq!(list.iter().filter(|s| s.is_me).count(), 1);
+        // Someone merged into Me leaves Me as it was.
+        merge_speakers_in(&f.core, &f.meeting, &f.sp[2], &f.sp[1]).unwrap();
+        assert!(speakers_of(&store, &f.meeting).unwrap()[0].is_me);
+        // A call with a far side: Me stays on the mic speaker.
+        let c = fix("call", true);
+        let cs = c.core.store().unwrap();
+        cs.open_track(&c.meeting, ghi_store::store::TrackKind::Mic)
+            .unwrap();
+        cs.open_track(&c.meeting, ghi_store::store::TrackKind::System)
+            .unwrap();
+        assert_eq!(
+            merge_speakers_in(&c.core, &c.meeting, &c.sp[0], &c.sp[1]).unwrap_err(),
+            FAR_SIDE
+        );
+        // Nor are far-side lines credited to Me.
+        assert_eq!(
+            merge_speakers_in(&c.core, &c.meeting, &c.sp[1], &c.sp[0]).unwrap_err(),
+            FAR_SIDE
+        );
+        assert!(speakers_of(&cs, &c.meeting).unwrap()[0].is_me);
+    }
+
+    #[test]
+    fn split_moves_exactly_the_chosen_lines_to_a_new_unnamed_speaker() {
+        let f = fix("room", false);
+        let store = f.core.store().unwrap();
+        // By gids.
+        let new =
+            split_speaker_in(&f.core, &f.meeting, &f.sp[1], vec![f.seg[2].clone()], None).unwrap();
+        assert_eq!(lines_of(&store, &f.meeting, &new), vec![f.seg[2].clone()]);
+        assert_eq!(
+            lines_of(&store, &f.meeting, &f.sp[1]),
+            vec![f.seg[1].clone(), f.seg[3].clone()]
+        );
+        let list = speakers_of(&store, &f.meeting).unwrap();
+        let n = list.iter().find(|s| s.gid == new).unwrap();
+        assert!(n.name.is_none() && !n.is_me && n.lines == 1);
+        assert_eq!(n.number, 4, "Speaker 4");
+        assert_eq!(n.color_slot, 4, "the first free color");
+        // From a line on.
+        let tail = split_speaker_in(
+            &f.core,
+            &f.meeting,
+            &f.sp[1],
+            vec![],
+            Some(f.seg[3].clone()),
+        )
+        .unwrap();
+        assert_eq!(lines_of(&store, &f.meeting, &tail), vec![f.seg[3].clone()]);
+        assert_eq!(
+            lines_of(&store, &f.meeting, &f.sp[1]),
+            vec![f.seg[1].clone()]
+        );
+        // Errors leave things alone.
+        let sp = |segs: Vec<String>, from: Option<String>| {
+            split_speaker_in(&f.core, &f.meeting, &f.sp[0], segs, from)
+        };
+        assert_eq!(sp(vec![], None).unwrap_err(), NOTHING_TO_SPLIT);
+        assert_eq!(
+            sp(vec![f.seg[1].clone()], None).unwrap_err(),
+            NOTHING_TO_SPLIT,
+            "not theirs"
+        );
+        assert_eq!(
+            sp(vec![f.seg[0].clone()], Some(f.seg[0].clone())).unwrap_err(),
+            NOTHING_TO_SPLIT,
+            "both ways"
+        );
+        assert_eq!(sp(vec![f.seg[0].clone()], None).unwrap_err(), WHOLE_SPEAKER);
+        assert_eq!(
+            sp(vec![], Some(f.seg[0].clone())).unwrap_err(),
+            WHOLE_SPEAKER
+        );
+        assert_eq!(speakers_of(&store, &f.meeting).unwrap().len(), 5);
+    }
+
+    #[test]
+    fn splitting_me_leaves_me_with_the_original() {
+        let f = fix("room", true);
+        let store = f.core.store().unwrap();
+        // Give Me a second line to split off.
+        store
+            .set_segment_speaker(&f.seg[1], Some(&f.sp[0]))
+            .unwrap();
+        let new =
+            split_speaker_in(&f.core, &f.meeting, &f.sp[0], vec![f.seg[1].clone()], None).unwrap();
+        let list = speakers_of(&store, &f.meeting).unwrap();
+        assert!(list.iter().find(|s| s.gid == f.sp[0]).unwrap().is_me);
+        assert!(!list.iter().find(|s| s.gid == new).unwrap().is_me);
+    }
+
+    #[test]
+    fn not_a_person_leaves_the_people_and_the_unnamed_counts() {
+        let f = fix("room", true);
+        let store = f.core.store().unwrap();
+        let unnamed = |s: &Store| {
+            s.unnamed_voice_counts(std::slice::from_ref(&f.meeting))
+                .unwrap()
+                .get(&f.meeting)
+                .copied()
+                .unwrap_or(0)
+        };
+        assert_eq!(unnamed(&store), 2);
+        set_not_person_in(&f.core, &f.meeting, &f.sp[2], true).unwrap();
+        assert_eq!(unnamed(&store), 1);
+        assert!(speakers_of(&store, &f.meeting).unwrap()[2].not_person);
+        // A named one: its person goes with it, and comes back by the name.
+        store.rename_speaker(&f.sp[1], Some("Lan")).unwrap();
+        let has_lan = |s: &Store| s.people_overview().unwrap().iter().any(|p| p.name == "Lan");
+        assert!(has_lan(&store));
+        set_not_person_in(&f.core, &f.meeting, &f.sp[1], true).unwrap();
+        assert!(!has_lan(&store));
+        set_not_person_in(&f.core, &f.meeting, &f.sp[1], false).unwrap();
+        assert!(has_lan(&store));
+        set_not_person_in(&f.core, &f.meeting, &f.sp[2], false).unwrap();
+        assert_eq!(unnamed(&store), 1, "Lan is named, the other is back");
+        // Me is a person.
+        assert_eq!(
+            set_not_person_in(&f.core, &f.meeting, &f.sp[0], true).unwrap_err(),
+            IS_ME
+        );
+        assert_eq!(
+            set_not_person_in(&f.core, &f.meeting, "nope", true).unwrap_err(),
+            NOT_A_SPEAKER
+        );
+    }
+
+    #[test]
+    fn edits_are_refused_while_locked_and_change_nothing() {
+        let f = fix("room", false);
+        f.core.set_locked(true);
+        let locked = "the app is locked";
+        assert_eq!(
+            merge_speakers_in(&f.core, &f.meeting, &f.sp[1], &f.sp[2]).unwrap_err(),
+            locked
+        );
+        assert_eq!(
+            split_speaker_in(&f.core, &f.meeting, &f.sp[1], vec![f.seg[1].clone()], None)
+                .unwrap_err(),
+            locked
+        );
+        assert_eq!(
+            set_not_person_in(&f.core, &f.meeting, &f.sp[1], true).unwrap_err(),
+            locked
+        );
+        f.core.set_locked(false);
+        let store = f.core.store().unwrap();
+        assert_eq!(speakers_of(&store, &f.meeting).unwrap().len(), 3);
+        assert_eq!(lines_of(&store, &f.meeting, &f.sp[1]).len(), 3);
+    }
+
+    #[test]
+    fn stored_edits_emit_no_live_events() {
+        // The panel reloads the meeting when the command returns; the speaker
+        // events (with the session's numeric ids) are for the live session.
+        let f = fix("room", false);
+        merge_speakers_in(&f.core, &f.meeting, &f.sp[1], &f.sp[2]).unwrap();
+        set_not_person_in(&f.core, &f.meeting, &f.sp[2], true).unwrap();
+        assert!(f.rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn merging_me_into_a_not_person_makes_it_a_person_and_split_keeps_the_kind() {
+        let f = fix("room", true);
+        let store = f.core.store().unwrap();
+        let np = |gid: &str| {
+            store
+                .speakers(&f.meeting)
+                .unwrap()
+                .into_iter()
+                .find(|s| s.gid == gid)
+                .unwrap()
+                .not_person
+        };
+        // Lines split off a "not a person" speaker are not a person either.
+        set_not_person_in(&f.core, &f.meeting, &f.sp[1], true).unwrap();
+        let new =
+            split_speaker_in(&f.core, &f.meeting, &f.sp[1], vec![f.seg[3].clone()], None).unwrap();
+        assert!(np(&new));
+        // Me merged into it: Me is a person.
+        merge_speakers_in(&f.core, &f.meeting, &f.sp[0], &f.sp[1]).unwrap();
+        assert!(!np(&f.sp[1]));
+        assert_eq!(
+            set_not_person_in(&f.core, &f.meeting, &f.sp[1], true).unwrap_err(),
+            IS_ME
+        );
     }
 }

@@ -146,6 +146,22 @@ export const commands = {
 	 *  Me), `storage`.
 	 */
 	clearSpeakerMe: (meeting: string, speaker: string) => typedError<null, string>(__TAURI_INVOKE("clear_speaker_me", { meeting, speaker })),
+	/**
+	 *  Merges `from` into `into` (lines, action items and Me move; `from` is hidden).
+	 *  Errors: `liveMeeting`, `notASpeaker`, `sameSpeaker`, `farSide`, `storage`.
+	 */
+	mergeMeetingSpeakers: (meeting: string, from: string, into: string) => typedError<null, string>(__TAURI_INVOKE("merge_meeting_speakers", { meeting, from, into })),
+	/**
+	 *  Splits the given lines (or all from `from_segment` on) off a speaker into a
+	 *  new one; returns its gid. Errors: `liveMeeting`, `notASpeaker`,
+	 *  `nothingToSplit`, `wholeSpeaker`, `storage`.
+	 */
+	splitMeetingSpeaker: (meeting: string, speaker: string, segmentGids: string[], fromSegment: string | null) => typedError<string, string>(__TAURI_INVOKE("split_meeting_speaker", { meeting, speaker, segmentGids, fromSegment })),
+	/**
+	 *  Marks a speaker "not a person" or back. Errors: `liveMeeting`, `notASpeaker`,
+	 *  `isMe`, `storage`.
+	 */
+	setSpeakerNotPerson: (meeting: string, speaker: string, notPerson: boolean) => typedError<null, string>(__TAURI_INVOKE("set_speaker_not_person", { meeting, speaker, notPerson })),
 	meetingDetail: (meeting: string) => typedError<MeetingDetail, string>(__TAURI_INVOKE("meeting_detail", { meeting })),
 	meetingNotes: (meeting: string) => typedError<MeetingNotes, string>(__TAURI_INVOKE("meeting_notes", { meeting })),
 	meetingTranscript: (meeting: string) => typedError<MeetingTranscript, string>(__TAURI_INVOKE("meeting_transcript", { meeting })),

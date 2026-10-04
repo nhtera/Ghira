@@ -526,6 +526,60 @@ export const meetingCommands: Partial<Commands> = {
     s.words = [];
     return ok(null);
   },
+  // Same rules and error codes as ghi-app's speakers_cmd; the lines follow their speakers.
+  mergeMeetingSpeakers: async (id, from, into) => {
+    const m = find(id);
+    if (!m) return fail("not found");
+    const f = m.detail.speakers.find((x) => x.gid === from);
+    const t = m.detail.speakers.find((x) => x.gid === into);
+    if (!f || !t) return fail("notASpeaker");
+    if (f === t) return fail("sameSpeaker");
+    // The phone records the mic only: no far side, so Me merges either way.
+    for (const g of m.transcript.segments) if (g.speakerGid === from) g.speakerGid = into;
+    for (const a of m.notes.actionItems) if (a.ownerSpeakerGid === from) a.ownerSpeakerGid = into;
+    t.lines += f.lines;
+    if (f.isMe) Object.assign(t, { isMe: true, notPerson: false });
+    m.detail.speakers = m.detail.speakers.filter((x) => x !== f);
+    return ok(null);
+  },
+  splitMeetingSpeaker: async (id, target, segmentGids, fromSegment) => {
+    const m = find(id);
+    if (!m) return fail("not found");
+    const sp = m.detail.speakers.find((x) => x.gid === target);
+    if (!sp) return fail("notASpeaker");
+    const own = m.transcript.segments.filter((g) => g.speakerGid === target);
+    const from = own.find((g) => g.gid === fromSegment);
+    if ((segmentGids.length > 0) === (fromSegment != null) || (fromSegment != null && !from))
+      return fail("nothingToSplit");
+    const moving = from
+      ? own.filter((g) => (g.t0Ms ?? 0) >= (from.t0Ms ?? 0))
+      : segmentGids.map((g) => own.find((x) => x.gid === g));
+    if (moving.some((g) => !g) || new Set(moving).size !== moving.length)
+      return fail("nothingToSplit");
+    if (moving.length >= own.length) return fail("wholeSpeaker");
+    const spk = m.detail.speakers;
+    const created = speaker(
+      `sp-new-${spk.length + 1}`,
+      Math.max(...spk.map((x) => x.number)) + 1,
+      null,
+      [1, 2, 3, 4, 5, 6, 7, 8].find((n) => !spk.some((x) => x.colorSlot === n)) ?? 0,
+      false,
+      moving.length,
+    );
+    created.notPerson = sp.notPerson;
+    for (const g of moving) if (g) g.speakerGid = created.gid;
+    sp.lines -= moving.length;
+    spk.push(created);
+    return ok(created.gid);
+  },
+  setSpeakerNotPerson: async (id, speaker, notPerson) => {
+    const sp = find(id)?.detail.speakers.find((x) => x.gid === speaker);
+    if (!sp) return fail("notASpeaker");
+    if (notPerson && sp.isMe) return fail("isMe");
+    sp.notPerson = notPerson;
+    if (notPerson) sp.suggestion = null;
+    return ok(null);
+  },
   setActionDone: async (id, item, done) => {
     const a = find(id)?.notes.actionItems.find((x) => x.gid === item);
     if (!a) return fail("not found");
