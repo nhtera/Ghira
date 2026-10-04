@@ -7,6 +7,9 @@ import XCTest
 enum Ghira {
     static let bundleId = "com.nhtera.ghira"
 
+    /// Set by run.sh with GHI_DEVICE_UDID: a real iPhone (no simctl, no Face ID simulation, no App Group access).
+    static var onDevice: Bool { !(ProcessInfo.processInfo.environment["GHI_ON_DEVICE"] ?? "").isEmpty }
+
     /// Scripted engines on a live-tier phone by default (CI has no models); set
     /// GHI_REAL_ENGINES=1 on the host to run against the models in the app.
     static func app(env: [String: String] = [:], args: [String] = []) -> XCUIApplication {

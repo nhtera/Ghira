@@ -55,6 +55,9 @@ apps/mobile/scripts/sim.sh boot && apps/mobile/scripts/sim.sh install && apps/mo
 apps/mobile/scripts/test-ios-sim.sh -p ghi-store -p ghi-core -p ghi-mobile   # needs the booted simulator
 native/ios/GhiUITests/run.sh         # lifecycle + smoke XCUITests, on the installed app (GHI_REAL_ENGINES=1: real models)
 native/ios/GhiUITests/flows.sh       # resets, installs, grants, then the full flow with scripted engines (no models)
+# on the owner's real iPhone (only when asked; test-hooks app installed: build-ios.sh --test-hooks, devicectl install):
+GHI_DEVICE_UDID=<xcodebuild udid> GHI_DEVICE_CTL_ID=<devicectl id> GHI_FAKE_MIC_PATH=<wav> GHI_REAL_ENGINES=1 native/ios/GhiUITests/run.sh
+apps/mobile/scripts/selftest-ios.sh <16k wav>   # on-device ASR throughput + text (test-hooks build; models via push-models.sh after one launch)
 ./tools/scripts/check-no-test-hooks.sh <release libghi_mobile_lib.a | Ghira.app>   # --expect-hooks on a hooked build
 pnpm gen:licenses && pnpm gen:licenses:mobile   # About -> Licenses data; CI fails on a diff (license.yml)
 # CI picks the simulator with GHI_SIM_UDID (sim.sh create); locally the default is iPhone 17 Pro, iOS 26.3.

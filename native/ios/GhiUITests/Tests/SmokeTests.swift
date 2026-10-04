@@ -41,9 +41,10 @@ final class SmokeTests: XCTestCase {
 
         XCUIDevice.shared.press(.home)
         sleep(2)
-        Ghira.pressLockButton()
+        // A device has a passcode: no lock button dance, the app just stays in the background.
+        if !Ghira.onDevice { Ghira.pressLockButton() }
         sleep(UInt32(seconds))
-        Ghira.pressLockButton()
+        if !Ghira.onDevice { Ghira.pressLockButton() }
         sleep(2)
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))

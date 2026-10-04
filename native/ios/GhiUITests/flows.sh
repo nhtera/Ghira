@@ -6,6 +6,7 @@
 #   apps/mobile/scripts/build-ios.sh --sim --test-hooks   # once
 #   native/ios/GhiUITests/flows.sh
 set -euo pipefail
+[[ -z "${GHI_DEVICE_UDID:-}" ]] || { echo "flows.sh: simulator only (it resets the app)" >&2; exit 1; }
 here="$(cd "$(dirname "$0")" && pwd)"
 sim="$here/../../../apps/mobile/scripts/sim.sh"
 wav="${TMPDIR:-/tmp}/ghira-flow-mic.wav"

@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # XCUITest bundle that drives the INSTALLED Ghira app by bundle id (phase 16-B
 # spike e). It lives outside the Tauri project on purpose: Tauri's Xcode
-# pre-build script needs the Tauri CLI. Simulator only.
+# pre-build script needs the Tauri CLI. Simulator by default; run.sh with
+# GHI_DEVICE_UDID runs it on a real iPhone (signing is passed on the command line).
 #
 #   cd native/ios/GhiUITests && xcodegen generate --quiet
 #   xcodebuild test -project GhiUITests.xcodeproj -scheme GhiUITests \

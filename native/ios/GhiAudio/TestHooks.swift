@@ -33,7 +33,9 @@ enum GhiTestHooks {
     static func install() {
         NSLog("ghira: TEST HOOKS ENABLED")
         if let path = ProcessInfo.processInfo.environment["GHI_FAKE_MIC"] {
-            if let wav = readWav(URL(fileURLWithPath: path)) {
+            // A relative path (a device run copies the WAV to Documents/fake-mic.wav) is the app's home.
+            let url = path.hasPrefix("/") ? URL(fileURLWithPath: path) : URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(path)
+            if let wav = readWav(url) {
                 lock.lock()
                 pcm = wav.samples
                 pcmRate = wav.rate

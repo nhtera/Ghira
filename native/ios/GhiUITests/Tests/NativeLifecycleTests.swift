@@ -106,6 +106,7 @@ final class NativeLifecycleTests: XCTestCase {
     /// queries are flaky on the simulator), so it retries and skips if the
     /// activity never shows; the owner checks Mark/Stop on a device.
     func testLiveActivityAppearsOnTheLockScreen() throws {
+        try XCTSkipIf(Ghira.onDevice, "needs the simulator lock button; the owner checks the Live Activity on the phone")
         let app = Ghira.app()
         startRecording(app)
         XCUIDevice.shared.press(.home)
@@ -129,6 +130,7 @@ final class NativeLifecycleTests: XCTestCase {
     /// failed Face ID keeps the gate, a match unlocks. Depends on the Settings
     /// screen (16-J) and an enrolled simulator (run.sh).
     func testAppLockFaceIDMatchAndNoMatch() throws {
+        try XCTSkipIf(Ghira.onDevice, "Face ID is simulated with BiometricKit_Sim notifications (simulator only)")
         let app = Ghira.app()
         app.launch()
         Ghira.unlockIfNeeded(app)
