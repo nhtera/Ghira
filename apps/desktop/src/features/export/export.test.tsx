@@ -74,7 +74,7 @@ describe("ExportSheet", () => {
     expect(await screen.findByText("Saved 3 meetings")).toBeTruthy();
   });
 
-  it("copy as Markdown writes meetingAsText to the clipboard; Obsidian asks for the folder only on 'Change folder…'", async () => {
+  it("copy as Markdown writes meetingAsText to the clipboard; Obsidian uses its remembered folder (one Change… for the destination)", async () => {
     vi.spyOn(ipc.commands, "meetingAsText").mockResolvedValue({ status: "ok", data: "# Standup" });
     const write = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
@@ -85,8 +85,7 @@ describe("ExportSheet", () => {
     expect(write).toHaveBeenCalledWith("# Standup");
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Export to Obsidian…" })));
     expect(obs).toHaveBeenLastCalledWith("m1", expect.objectContaining({ notes: true }), false, expect.any(String));
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Change folder…" })));
-    expect(obs).toHaveBeenLastCalledWith("m1", expect.anything(), true, expect.any(String));
+    expect(screen.queryByRole("button", { name: "Change folder…" })).toBeNull();
   });
 
   it("says where the file goes (the remembered folder's name) and Change… picks another", async () => {

@@ -2,6 +2,7 @@
 import { useTranslation } from "react-i18next";
 import { Segmented, usePlatform, type ThemePreference } from "@ghi/ui";
 import { APP_NAME, type Locale } from "@ghi/i18n";
+import { ExportCard } from "./export-card";
 import { OrganizeCard } from "../folders/organize-card";
 import { usePrefs } from "../../state/prefs";
 import { Card, Row, SwitchRow, bigSegCls, useSettings } from "./parts";
@@ -46,6 +47,7 @@ export function GeneralSection() {
           </>
         )}
       </Card>
+      <ExportCard />
       <OrganizeCard />
     </div>
   );

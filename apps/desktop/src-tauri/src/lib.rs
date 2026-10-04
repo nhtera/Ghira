@@ -361,6 +361,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             export_cmd::export_meetings,
             export_cmd::export_destination,
             export_cmd::choose_export_folder,
+            export_cmd::obsidian_vault,
+            export_cmd::choose_obsidian_vault,
             export_cmd::open_mail_draft,
             ghi_app::calendar_cmd::meeting_contacts,
             export_cmd::export_obsidian,

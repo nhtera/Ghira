@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import type { MeetingDetail } from "../../bindings";
 import { useMeetingNotes } from "../../state/meeting-queries";
 import { usePlayer } from "../../state/player";
+import { inProgress } from "../library/meeting-status";
 import { templateName } from "../meeting/template-names";
 import { ActionItems } from "./action-rows";
 import { BlockRow } from "./block-row";
@@ -187,7 +188,7 @@ export function NotesTab({
             </ul>
           </Section>
         )}
-        {empty && !onlyMine && (
+        {empty && !onlyMine && !(inProgress(detail.status) || detail.job != null) && (
           <p className="text-body m-0 text-muted">{t("notes.empty")}</p>
         )}
       </div>

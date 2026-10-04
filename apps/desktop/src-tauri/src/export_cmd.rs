@@ -38,6 +38,15 @@ fn remember(store: &ghi_store::store::Store, key: &str, dir: &Path) {
     }
 }
 
+/// Like `remember`, for the commands whose answer is the remembered folder: a
+/// failed write is an error, so the UI never shows a folder that was not kept.
+fn try_remember(store: &ghi_store::store::Store, key: &str, dir: &Path) -> Result<(), String> {
+    let s = dir.to_str().ok_or("the folder's name is not valid text")?;
+    store
+        .set_setting(key, &serde_json::json!(s))
+        .map_err(|e| e.to_string())
+}
+
 fn file_name(p: &Path) -> String {
     p.file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -56,10 +65,11 @@ fn dialog_start(store: &ghi_store::store::Store) -> Option<PathBuf> {
         .or_else(|| remembered_dir(store))
 }
 
-/// Makes `dir` the destination and where dialogs start next time.
-fn remember_destination(store: &ghi_store::store::Store, dir: &Path) {
-    remember(store, EXPORT_DIR_SETTING, dir);
-    remember(store, EXPORT_LAST_DIR_SETTING, dir);
+/// Makes `dir` the destination and where dialogs start next time; a failed
+/// write is an error.
+fn try_remember_destination(store: &ghi_store::store::Store, dir: &Path) -> Result<(), String> {
+    try_remember(store, EXPORT_DIR_SETTING, dir)?;
+    try_remember(store, EXPORT_LAST_DIR_SETTING, dir)
 }
 
 /// The name (not the path) of the folder exports go to, or `None` when none
@@ -92,7 +102,44 @@ pub async fn choose_export_folder(
     };
     let name = file_name(&dir);
     blocking(&core, move |c| {
-        remember_destination(&*c.store()?, &dir);
+        try_remember_destination(&*c.store()?, &dir)?;
+        Ok(Some(name))
+    })
+    .await
+}
+
+/// The name (not the path) of the Obsidian vault folder, or `None` when none
+/// was chosen yet or it is gone (the next Obsidian export asks again).
+#[tauri::command]
+#[specta::specta]
+pub async fn obsidian_vault(core: CoreState<'_>) -> Result<Option<String>, String> {
+    blocking(&core, |c| {
+        Ok(setting_path(&*c.store()?, OBSIDIAN_SETTING)
+            .filter(|d| d.is_dir())
+            .map(|d| file_name(&d)))
+    })
+    .await
+}
+
+/// Asks for the Obsidian vault folder (a native dialog starting at the current
+/// one), remembers it and returns its name; `None` if the user cancelled.
+#[tauri::command]
+#[specta::specta]
+pub async fn choose_obsidian_vault(
+    app: AppHandle,
+    core: CoreState<'_>,
+    title: String,
+) -> Result<Option<String>, String> {
+    let start = blocking(&core, |c| {
+        Ok(setting_path(&*c.store()?, OBSIDIAN_SETTING).filter(|d| d.is_dir()))
+    })
+    .await?;
+    let Some(dir) = dialogs::pick_folder(&app, title, start).await? else {
+        return Ok(None);
+    };
+    let name = file_name(&dir);
+    blocking(&core, move |c| {
+        try_remember(&*c.store()?, OBSIDIAN_SETTING, &dir)?;
         Ok(Some(name))
     })
     .await

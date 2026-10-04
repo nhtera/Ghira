@@ -200,7 +200,9 @@
     "soundsLikeName": "Giống giọng {{name}}",
     "dismissSuggestionFor": "Bỏ gợi ý cho {{speaker}}",
     "inOthers_other": "{{count}} giọng trong Khác",
-    "close": "Đóng"
+    "close": "Đóng",
+    "suggestionPill": "{{name}}? · {{percent}}%",
+    "suggestionPillPlain": "{{name}}?"
   },
   "common": {
     "accept": "Đồng ý",
@@ -681,7 +683,12 @@
       "showInTray_mac": "Hiện {{app}} trên thanh menu",
       "showInTray_win": "Hiện {{app}} trong khay hệ thống",
       "detectMeetings": "Hỏi ghi âm khi cuộc gọi bắt đầu",
-      "detectMeetingsHint": "{{app}} nhận ra khi ứng dụng họp dùng micro. Không bao giờ tự bắt đầu ghi."
+      "detectMeetingsHint": "{{app}} nhận ra khi ứng dụng họp dùng micro. Không bao giờ tự bắt đầu ghi.",
+      "exportTitle": "Xuất",
+      "exportFolder": "Thư mục xuất",
+      "obsidianVault": "Thư mục vault Obsidian",
+      "folderNone": "Chưa chọn",
+      "folderFailed": "Không đọc được thư mục."
     },
     "languages": {
       "meetingLanguages": "Ngôn ngữ trong cuộc họp",
@@ -1209,7 +1216,6 @@
     },
     "done_mac": "Đã xuất. Không có gì rời khỏi máy.",
     "done_win": "Đã xuất. Không có gì rời khỏi máy.",
-    "changeFolder": "Đổi thư mục…",
     "subtitlesNote": "Phụ đề chỉ gồm tên người nói và bản ghi.",
     "fmt": {
       "markdown": "Markdown (.md)",
@@ -1617,5 +1623,30 @@
     "chip": "Nhạy cảm",
     "noTranscript": "Chưa có bản ghi nào để giữ lại, nên chưa đặt được cuộc họp này là nhạy cảm.",
     "pending": "Cuộc họp này vẫn đang được xử lý từ bản ghi âm. Hãy thử lại khi xong."
+  },
+  "speakerPanel": {
+    "open": "Tuỳ chọn cho người nói {{name}}",
+    "caption": "Người nói · Người nói {{number}}",
+    "nameHint": "Để trống để quay về “Người nói {{number}}”. Tên áp dụng cho mọi câu.",
+    "nameCleared": "Đã xoá tên khỏi mọi câu",
+    "isPerson": "{{name}} lại là một người",
+    "mergeAction": "Gộp",
+    "mergeConfirm": "Gộp {{from}} vào {{into}}? Cả {{count}} câu sẽ chuyển sang {{into}}. Không thể hoàn tác.",
+    "notPersonAction": "Đánh dấu không phải người",
+    "notPersonConfirm": "Đánh dấu {{name}} không phải người? Các câu của họ sẽ bị ẩn khỏi ghi chú. Bạn có thể bật lại ngay tại đây.",
+    "splitBody": "Chuyển một phần số câu của người nói này sang một người nói mới.",
+    "fromLine_other": "Từ {{time}} trở đi ({{count}} câu)",
+    "theseLines": "Những câu này",
+    "splitDone_other": "Đã chuyển {{count}} câu sang một người nói mới",
+    "errors": {
+      "liveMeeting": "Cuộc họp này đang được ghi. Hãy dùng các thẻ người nói phía trên bản ghi cho đến khi lưu xong.",
+      "notASpeaker": "Người nói này không còn trong cuộc họp.",
+      "sameSpeaker": "Không thể gộp một người nói vào chính họ. Hãy chọn người khác.",
+      "farSide": "Trong cuộc gọi chỉ micro của bạn mới là Tôi, nên không thể gộp người nói này với Tôi.",
+      "nothingToSplit": "Hãy chọn vài câu của người nói này để chuyển, hoặc một câu để bắt đầu.",
+      "wholeSpeaker": "Hãy để lại ít nhất một câu cho người nói này. Muốn chuyển tất cả, hãy gộp họ vào người khác.",
+      "isMe": "Không thể đánh dấu Tôi là không phải người. Hãy đặt người khác làm Tôi trước.",
+      "storage": "Không đọc hoặc ghi được cuộc họp. Hãy thử lại."
+    }
   }
 }

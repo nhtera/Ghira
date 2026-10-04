@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // D5 "Name your speakers": one card per unnamed voice with a 3 s sample.
 // Naming applies to notes and transcript; Skip leaves the voice as "Speaker N".
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Avatar, Button, Icon, useToast } from "@ghi/ui";
 import { ipc } from "../../ipc";
+import { errorText } from "../people/error-text";
+import { useStoredSpeakerActions } from "../speakers/use-speaker-actions";
 import { useMeetingAttendees } from "../calendar/use-calendar";
 import { adapter, type UnnamedSpeaker } from "./speakers-adapter";
 
@@ -13,6 +15,9 @@ function SpeakerCard({ meeting, speaker, invited, onDone }: { meeting: string; s
   const { show } = useToast();
   const [name, setName] = useState("");
   const [sample, setSample] = useState<{ src: string } | null>(null);
+  const actions = useStoredSpeakerActions(meeting);
+  const [dismissed, setDismissed] = useState(false);
+  const suggestion = dismissed ? null : speaker.suggestion;
   const number = String(speaker.number);
   const label = t("speakers.numbered", { number });
 
@@ -25,10 +30,34 @@ function SpeakerCard({ meeting, speaker, invited, onDone }: { meeting: string; s
     const trimmed = name.trim();
     if (!trimmed) return;
     const r = await adapter.rename(meeting, speaker.gid, trimmed);
-    if (!r.ok) return show({ tone: "warning", title: t("system.commandFailed", { message: r.error }) });
+    if (!r.ok) return show({ tone: "warning", title: errorText(t, r.error) });
     show({ tone: "success", title: t("speakers.renamed", { name: trimmed }) });
     onDone();
   };
+
+  const suggested = suggestion ? (suggestion.isMe ? t("speakers.me") : suggestion.name) : "";
+  // One suggestion request at a time: a second click while it runs does nothing.
+  const [pending, setPending] = useState(false);
+  const inFlight = useRef(false);
+  const once = async (run: () => Promise<void>) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPending(true);
+    try {
+      await run();
+    } finally {
+      inFlight.current = false;
+      setPending(false);
+    }
+  };
+  const accept = () =>
+    once(async () => {
+      if (suggestion && (await actions.accept(speaker.gid, suggestion.isMe, suggested))) onDone();
+    });
+  const dismiss = () =>
+    once(async () => {
+      if (await actions.dismiss(speaker.gid)) setDismissed(true);
+    });
 
   return (
     <li className="flex flex-wrap items-center gap-2.5 border-t border-line pt-2.5">
@@ -38,6 +67,31 @@ function SpeakerCard({ meeting, speaker, invited, onDone }: { meeting: string; s
         <Button size="sm" className="h-[30px]" icon="play_arrow" onClick={() => void play()}>
           {t("speakers.play3")}
         </Button>
+      )}
+      {suggestion && (
+        <span data-testid="voice-suggestion" className="inline-flex items-center">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void accept()}
+            aria-label={t("speakers.acceptSuggestion", { name: suggested })}
+            className="inline-flex h-[30px] items-center gap-0.5 rounded-full bg-warn-soft px-2.5 text-[12.5px] font-semibold text-warn"
+          >
+            {suggestion.score != null
+              ? t("speakers.suggestionPill", { name: suggested, percent: Math.round(suggestion.score * 100) })
+              : t("speakers.suggestionPillPlain", { name: suggested })}
+            <Icon name="check" size={15} />
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void dismiss()}
+            aria-label={t("speakers.dismissSuggestionFor", { speaker: label })}
+            className="ml-0.5 inline-flex size-7 items-center justify-center rounded-full text-muted hover:bg-sunk"
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </span>
       )}
       {sample && <audio key={sample.src} src={sample.src} autoPlay aria-label={t("speakers.playing")} />}
       <input

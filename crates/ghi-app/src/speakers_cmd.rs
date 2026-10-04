@@ -141,6 +141,7 @@ pub fn speakers_with(
 }
 
 /// Names a speaker of a stored meeting (empty name: back to "Speaker N").
+/// Errors: `liveMeeting`, `notASpeaker`, `storage`.
 #[tauri::command]
 #[specta::specta]
 pub async fn rename_meeting_speaker(
@@ -150,26 +151,20 @@ pub async fn rename_meeting_speaker(
     name: String,
 ) -> Result<(), String> {
     blocking(&core, move |c| {
-        if c.with_session(|s| s.meeting() == meeting).unwrap_or(false) {
-            return Err("use the live speaker controls while recording".into());
-        }
-        let store = c.store()?;
-        let err = |e: ghi_store::StoreError| e.to_string();
-        // Only a speaker of this meeting (gids come from the UI).
-        if !store
-            .speakers(&meeting)
-            .map_err(err)?
-            .iter()
-            .any(|s| s.gid == speaker)
-        {
-            return Err("not a speaker of this meeting".into());
-        }
-        let name = name.trim().chars().take(100).collect::<String>();
-        store
-            .rename_speaker(&speaker, (!name.is_empty()).then_some(name.as_str()))
-            .map_err(err)
+        rename_speaker_in(c, &meeting, &speaker, &name)
     })
     .await
+}
+
+/// [`rename_meeting_speaker`] on a `Core`.
+pub fn rename_speaker_in(c: &Core, meeting: &str, speaker: &str, name: &str) -> Result<(), String> {
+    let store = c.store()?;
+    // Only a speaker of this meeting (gids come from the UI).
+    stored_speaker(c, &store, meeting, speaker)?;
+    let name = name.trim().chars().take(100).collect::<String>();
+    store
+        .rename_speaker(speaker, (!name.is_empty()).then_some(name.as_str()))
+        .map_err(storage)
 }
 
 // ------------------------------------------------------------ voice (14c)
@@ -1163,6 +1158,28 @@ mod tests {
         let store = f.core.store().unwrap();
         assert_eq!(speakers_of(&store, &f.meeting).unwrap().len(), 3);
         assert_eq!(lines_of(&store, &f.meeting, &f.sp[1]).len(), 3);
+    }
+
+    #[test]
+    fn rename_answers_with_codes() {
+        let f = fix("room", false);
+        rename_speaker_in(&f.core, &f.meeting, &f.sp[1], " Hana ").unwrap();
+        let store = f.core.store().unwrap();
+        let name = |gid: &str| {
+            speakers_of(&store, &f.meeting)
+                .unwrap()
+                .into_iter()
+                .find(|s| s.gid == gid)
+                .unwrap()
+                .name
+        };
+        assert_eq!(name(&f.sp[1]).as_deref(), Some("Hana"));
+        rename_speaker_in(&f.core, &f.meeting, &f.sp[1], "").unwrap();
+        assert_eq!(name(&f.sp[1]), None);
+        assert_eq!(
+            rename_speaker_in(&f.core, &f.meeting, "nobody", "X").unwrap_err(),
+            NOT_A_SPEAKER
+        );
     }
 
     #[test]

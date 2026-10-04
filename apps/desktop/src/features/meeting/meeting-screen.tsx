@@ -213,9 +213,6 @@ export function MeetingScreen({
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <MeetingHeader detail={detail} />
           {detail.status === "failed" && <FailedBanner detail={detail} />}
-          {((busy && detail.status !== "failed") || finished) && (
-            <MeetingProcessing meeting={id} waitingForModels={detail.job?.waitingForModels} job={detail.job} />
-          )}
           <MeetingToolbar
             detail={detail}
             onExport={() => setExporting(true)}
@@ -270,7 +267,12 @@ export function MeetingScreen({
           >
             <div className="max-w-[760px]">
               {tab === "notes" ? (
-                <NotesTab meeting={id} detail={detail} onlyMine={onlyMine} />
+                <>
+                  {((busy && detail.status !== "failed") || finished) && (
+                    <MeetingProcessing meeting={id} waitingForModels={detail.job?.waitingForModels} job={detail.job} />
+                  )}
+                  <NotesTab meeting={id} detail={detail} onlyMine={onlyMine} />
+                </>
               ) : (
                 <TranscriptTab
                   meeting={id}

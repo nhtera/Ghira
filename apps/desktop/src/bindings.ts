@@ -116,7 +116,10 @@ export const commands = {
 	 *  one's longest line as the sample.
 	 */
 	meetingSpeakers: (meeting: string) => typedError<MeetingSpeaker[], string>(__TAURI_INVOKE("meeting_speakers", { meeting })),
-	/**  Names a speaker of a stored meeting (empty name: back to "Speaker N"). */
+	/**
+	 *  Names a speaker of a stored meeting (empty name: back to "Speaker N").
+	 *  Errors: `liveMeeting`, `notASpeaker`, `storage`.
+	 */
 	renameMeetingSpeaker: (meeting: string, speaker: string, name: string) => typedError<null, string>(__TAURI_INVOKE("rename_meeting_speaker", { meeting, speaker, name })),
 	/**  Whether a recovery key is set up. */
 	hasRecoveryKey: () => typedError<boolean, string>(__TAURI_INVOKE("has_recovery_key")),
@@ -242,6 +245,16 @@ export const commands = {
 	 *  remembers it and returns its name; `None` if the user cancelled.
 	 */
 	chooseExportFolder: (title: string) => typedError<string | null, string>(__TAURI_INVOKE("choose_export_folder", { title })),
+	/**
+	 *  The name (not the path) of the Obsidian vault folder, or `None` when none
+	 *  was chosen yet or it is gone (the next Obsidian export asks again).
+	 */
+	obsidianVault: () => typedError<string | null, string>(__TAURI_INVOKE("obsidian_vault")),
+	/**
+	 *  Asks for the Obsidian vault folder (a native dialog starting at the current
+	 *  one), remembers it and returns its name; `None` if the user cancelled.
+	 */
+	chooseObsidianVault: (title: string) => typedError<string | null, string>(__TAURI_INVOKE("choose_obsidian_vault", { title })),
 	/**
 	 *  Opens the default mail app with a new message (nothing is sent, and the
 	 *  app makes no network request).

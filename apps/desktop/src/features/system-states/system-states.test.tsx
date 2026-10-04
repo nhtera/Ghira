@@ -145,6 +145,18 @@ describe("damaged model", () => {
     expect(await screen.findByText("Downloading 40%")).toBeTruthy();
   });
 
+  it("dismiss hides only the strip; the next engine error brings it back", async () => {
+    core.state.damaged = true;
+    renderStates();
+    await screen.findByText(/model file is damaged/);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/model file is damaged/)).toBeNull();
+    expect(core.commands.deleteMeeting).not.toHaveBeenCalled();
+    await waitFor(() => expect(core.state.coreListeners.size).toBe(2));
+    await fire({ type: "error", meeting: null, kind: "engine", message: "bad model" });
+    expect(await screen.findByText(/model file is damaged/)).toBeTruthy();
+  });
+
   it("appears when a core engine error makes the status re-read", async () => {
     renderStates();
     await waitFor(() => expect(core.commands.modelsStatus).toHaveBeenCalledOnce());

@@ -212,7 +212,9 @@
     "dismissSuggestionFor": "Dismiss the suggestion for {{speaker}}",
     "inOthers_one": "{{count}} voice in Others",
     "inOthers_other": "{{count}} voices in Others",
-    "close": "Close"
+    "close": "Close",
+    "suggestionPill": "{{name}}? · {{percent}}%",
+    "suggestionPillPlain": "{{name}}?"
   },
   "common": {
     "accept": "Accept",
@@ -699,7 +701,12 @@
       "showInTray_mac": "Show {{app}} in the menu bar",
       "showInTray_win": "Show {{app}} in the system tray",
       "detectMeetings": "Ask to record when a call starts",
-      "detectMeetingsHint": "{{app}} notices when a meeting app uses the microphone. It never starts on its own."
+      "detectMeetingsHint": "{{app}} notices when a meeting app uses the microphone. It never starts on its own.",
+      "exportTitle": "Export",
+      "exportFolder": "Export folder",
+      "obsidianVault": "Obsidian vault folder",
+      "folderNone": "Not chosen yet",
+      "folderFailed": "Couldn't read the folder."
     },
     "languages": {
       "meetingLanguages": "Languages spoken in meetings",
@@ -1241,7 +1248,6 @@
     },
     "done_mac": "Exported. Nothing left this Mac.",
     "done_win": "Exported. Nothing left this PC.",
-    "changeFolder": "Change folder…",
     "subtitlesNote": "Subtitles contain speaker names and transcript only.",
     "fmt": {
       "markdown": "Markdown (.md)",
@@ -1669,5 +1675,32 @@
     "chip": "Sensitive",
     "noTranscript": "There is no transcript to keep yet, so this meeting can't be made sensitive.",
     "pending": "This meeting is still being processed from its audio. Try again when it is ready."
+  },
+  "speakerPanel": {
+    "open": "Speaker options for {{name}}",
+    "caption": "Speaker · Speaker {{number}}",
+    "nameHint": "Leave it empty to go back to “Speaker {{number}}”. The name applies to every line.",
+    "nameCleared": "Name removed from every line",
+    "isPerson": "{{name}} is a person again",
+    "mergeAction": "Merge",
+    "mergeConfirm": "Merge {{from}} into {{into}}? All {{count}} lines move to {{into}}. There is no undo.",
+    "notPersonAction": "Mark as not a person",
+    "notPersonConfirm": "Mark {{name}} as not a person? Their lines are hidden from the notes. You can switch it back here.",
+    "splitBody": "Move part of this speaker’s lines to a new speaker.",
+    "fromLine_one": "From {{time}} on ({{count}} line)",
+    "fromLine_other": "From {{time}} on ({{count}} lines)",
+    "theseLines": "These lines",
+    "splitDone_one": "Moved {{count}} line to a new speaker",
+    "splitDone_other": "Moved {{count}} lines to a new speaker",
+    "errors": {
+      "liveMeeting": "This meeting is being recorded. Use the speaker chips above the transcript until it is saved.",
+      "notASpeaker": "That speaker is no longer in this meeting.",
+      "sameSpeaker": "A speaker can’t be merged into themselves. Pick someone else.",
+      "farSide": "In a call only your own microphone can be Me, so this speaker can’t be merged with Me.",
+      "nothingToSplit": "Pick some of this speaker’s lines to move, or a line to start from.",
+      "wholeSpeaker": "Leave at least one line with this speaker. To move them all, merge them into someone else.",
+      "isMe": "Me can’t be marked as not a person. Mark someone else as Me first.",
+      "storage": "Couldn’t read or write the meeting. Try again."
+    }
   }
 }

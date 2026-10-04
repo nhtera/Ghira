@@ -169,6 +169,13 @@ export function LiveSystemBanners() {
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const diskDismissed = dismissedAt != null && s.diskLowBytes != null && s.diskLowBytes >= dismissedAt * 0.75;
   const fallback = useAppAudioFallback();
+  // Hidden by the user: only the strip goes, the capture state is untouched.
+  const [hidden, setHidden] = useState<string[]>([]);
+  const hide = (id: string) => () => setHidden((h) => [...h, id]);
+  // A dismissed strip returns with its next occurrence: forget it once the condition has cleared.
+  const active: Record<string, boolean> = { "system-silent": s.systemSilent, "system-lost": s.lostTracks.includes(1) };
+  const stale = hidden.filter((id) => !active[id]);
+  if (stale.length > 0) setHidden(hidden.filter((id) => active[id]));
   const lost = (track: number) => s.lostTracks.includes(track);
   const openAudioSettings = async () => {
     const r = await ipc.commands.openPrivacySettings("systemAudio");
@@ -191,10 +198,11 @@ export function LiveSystemBanners() {
           {t("live.banner.appAudioFallback")}
         </SystemBanner>
       )}
-      {s.systemSilent && (
+      {s.systemSilent && !hidden.includes("system-silent") && (
         <SystemBanner
           id="system-silent"
           icon="volume_off"
+          onDismiss={hide("system-silent")}
           actions={
             <Button size="sm" variant="ghost" className={BANNER_ACTION} onClick={() => void openAudioSettings()}>
               {t(`common.openSystemSettings_${platform}`)}
@@ -209,10 +217,11 @@ export function LiveSystemBanners() {
           {t("live.banner.micLost")}
         </SystemBanner>
       )}
-      {lost(1) && (
+      {lost(1) && !hidden.includes("system-lost") && (
         <SystemBanner
           id="system-lost"
           icon="volume_off"
+          onDismiss={hide("system-lost")}
           actions={
             <Button size="sm" variant="ghost" className={BANNER_ACTION} onClick={() => void openAudioSettings()}>
               {t(`common.openSystemSettings_${platform}`)}

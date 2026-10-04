@@ -75,3 +75,11 @@ test("turns the app lock on, locks now and unlocks", async ({ page }) => {
   await page.getByRole("button", { name: "Unlock with Windows Hello" }).click();
   await expect(page.getByRole("heading", { level: 2, name: "Privacy" })).toBeVisible();
 });
+
+test("the Obsidian vault folder shows by name and can be changed", async ({ page }) => {
+  await open(page);
+  const row = page.locator("[data-row]").filter({ hasText: "Obsidian vault folder" });
+  await expect(row).toContainText("Vault");
+  await row.getByRole("button", { name: /Change/ }).click();
+  await expect(row).toContainText("Notes vault");
+});

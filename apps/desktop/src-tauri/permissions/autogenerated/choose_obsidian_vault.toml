@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-choose-obsidian-vault"
+description = "Enables the choose_obsidian_vault command without any pre-configured scope."
+commands.allow = ["choose_obsidian_vault"]
+
+[[permission]]
+identifier = "deny-choose-obsidian-vault"
+description = "Denies the choose_obsidian_vault command without any pre-configured scope."
+commands.deny = ["choose_obsidian_vault"]

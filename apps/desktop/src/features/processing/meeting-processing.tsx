@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// D5 on the meeting's own page: the stepper while its notes are written, then
+// D5 on the meeting's own page (inside the Notes tab, where the notes will appear): the stepper while its notes are written, then
 // "Name your speakers". After Stop the app opens the new meeting here; the
 // library shows the same panels for meetings processed in the background.
 import { useEffect } from "react";
@@ -24,7 +24,7 @@ export function MeetingProcessing({ meeting, waitingForModels, job }: { meeting:
     if (finished && loaded && left.length === 0) clearFinished(meeting);
   }, [finished, loaded, left.length, clearFinished, meeting]);
   return (
-    <div className="px-7 pt-2">
+    <div>
       {processing && <ProcessingPanel processing={processing} waitingForModels={waitingForModels} />}
       {finished && left.length > 0 && <NameSpeakers meeting={meeting} speakers={left} onDone={markNamed} onSkipAll={() => clearFinished(meeting)} />}
     </div>

@@ -2,7 +2,7 @@
 // A model file failed its checksum at load (D12): notes can't be written until
 // it is downloaded again. Recordings are safe. Re-checked when the core
 // reports an engine or job error.
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { formatBytes } from "@ghi/i18n";
 import { Button } from "@ghi/ui";
@@ -14,13 +14,18 @@ export function ModelDamagedBanner() {
   const { t, i18n } = useTranslation();
   const dl = useModelDownload();
   const { refresh } = dl;
+  // Hides the strip only; a new engine or job error brings it back.
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     let off: (() => void) | undefined;
     let alive = true;
     void ipc
       .onCoreEvent((e) => {
-        if (e.event.type === "error" && (e.event.kind === "engine" || e.event.kind === "job" || e.event.kind === "modelsMissing")) refresh();
+        if (e.event.type === "error" && (e.event.kind === "engine" || e.event.kind === "job" || e.event.kind === "modelsMissing")) {
+          setDismissed(false);
+          refresh();
+        }
       })
       .then((u) => (alive ? (off = u) : u()));
     return () => {
@@ -32,13 +37,14 @@ export function ModelDamagedBanner() {
   const damaged = dl.models.filter((m) => m.model.damaged);
   const active = dl.models.find((m) => m.active);
   // Stays up (with progress) until the status says the file is good again.
-  if (damaged.length === 0) return null;
+  if (damaged.length === 0 || dismissed) return null;
   const size = damaged.reduce((n, m) => n + (m.model.size ?? 0), 0);
 
   return (
     <SystemBanner
       id="model-damaged"
       icon="error"
+      onDismiss={() => setDismissed(true)}
       actions={
         active ? (
           <span className="text-small font-semibold">{t("settings.models.status.downloading", { percent: active.percent })}</span>

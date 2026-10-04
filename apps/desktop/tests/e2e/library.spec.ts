@@ -65,3 +65,17 @@ test("the detection prompt offers Start without taking focus", async ({ page }) 
   await page.getByRole("region", { name: "Zoom call detected. Record it?" }).getByRole("button", { name: "Start" }).click();
   await expect(page.getByRole("textbox", { name: "Meeting title" })).toBeVisible();
 });
+
+test("the stepper sits in the Notes tab, not in the Transcript tab", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Record call", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Meeting title" })).toBeVisible();
+  await page.getByRole("button", { name: "Stop" }).click();
+  await expect(page).toHaveURL(/#\/meetings\/[^/]+\/notes/);
+  const panel = page.getByRole("tabpanel");
+  await expect(panel.getByRole("region", { name: "Writing your notes on this PC" })).toBeVisible();
+  await page.getByRole("tab", { name: "Transcript" }).click();
+  await expect(page.getByRole("region", { name: "Writing your notes on this PC" })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Notes" }).click();
+  await expect(panel.getByRole("region", { name: "Writing your notes on this PC" })).toBeVisible();
+});

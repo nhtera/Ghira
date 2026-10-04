@@ -47,6 +47,8 @@ fn main() {
             "retry_capture",
             "export_destination",
             "choose_export_folder",
+            "obsidian_vault",
+            "choose_obsidian_vault",
             "open_mail_draft",
             "meeting_contacts",
             "reply_meeting_detected",

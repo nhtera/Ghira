@@ -29,6 +29,8 @@ type GroupProps = {
   onPick: (gid: string | null) => void;
   onSave: (gid: string, text: string) => Promise<boolean>;
   onSetSpeaker: (gid: string, speaker: string, name: string) => Promise<boolean>;
+  /** The speaker's name was clicked (design 7c): their side panel, from this group's first line. */
+  onOpenSpeaker?: (speaker: string, segment: string) => void;
 };
 
 const NONE: readonly LineRange[] = [];
@@ -108,7 +110,7 @@ function MarkTag({ mark }: { mark: MarkView }) {
   );
 }
 
-export const GroupRow = memo(function GroupRow({ group, stacked, speaker, others, active, ranges, marks, editing, picking, onEdit, onPick, onSave, onSetSpeaker }: GroupProps) {
+export const GroupRow = memo(function GroupRow({ group, stacked, speaker, others, active, ranges, marks, editing, picking, onEdit, onPick, onSave, onSetSpeaker, onOpenSpeaker }: GroupProps) {
   const { t } = useTranslation();
   const first = group.segs[0]!;
   const time = formatClock(first.t0Ms ?? 0, { pad: true });
@@ -123,7 +125,21 @@ export const GroupRow = memo(function GroupRow({ group, stacked, speaker, others
       {speaker ? <Avatar kind={speaker.isMe ? "me" : "person"} name={speaker.name} initial={speaker.initial} colorSlot={speaker.colorSlot} size="md" /> : <Avatar kind="unknown" size="md" />}
       <div className="min-w-0">
         <b className="block min-h-[22px] text-[13px]" style={color ? { color } : undefined}>
-          {speaker ? speaker.name : t("notes.unassigned")}
+          {speaker && group.speakerGid && onOpenSpeaker ? (
+            <button
+              type="button"
+              data-speaker-open={group.speakerGid}
+              aria-label={t("speakerPanel.open", { name: speaker.name })}
+              onClick={() => onOpenSpeaker(group.speakerGid!, first.gid)}
+              className="rounded-seg font-[inherit] text-[inherit] hover:underline"
+            >
+              {speaker.name}
+            </button>
+          ) : speaker ? (
+            speaker.name
+          ) : (
+            t("notes.unassigned")
+          )}
         </b>
         {group.segs.map((seg, k) => {
           const index = group.first + k;

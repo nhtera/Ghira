@@ -179,7 +179,10 @@ export const commands = {
 	 *  one's longest line as the sample.
 	 */
 	meetingSpeakers: (meeting: string) => typedError<MeetingSpeaker[], string>(__TAURI_INVOKE("meeting_speakers", { meeting })),
-	/**  Names a speaker of a stored meeting (empty name: back to "Speaker N"). */
+	/**
+	 *  Names a speaker of a stored meeting (empty name: back to "Speaker N").
+	 *  Errors: `liveMeeting`, `notASpeaker`, `storage`.
+	 */
 	renameMeetingSpeaker: (meeting: string, speaker: string, name: string) => typedError<null, string>(__TAURI_INVOKE("rename_meeting_speaker", { meeting, speaker, name })),
 	/**
 	 *  "This is me": the speaker becomes Me (another Me in the meeting stops

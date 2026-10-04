@@ -37,6 +37,8 @@
     "allow-retry-capture",
     "allow-export-destination",
     "allow-choose-export-folder",
+    "allow-obsidian-vault",
+    "allow-choose-obsidian-vault",
     "allow-open-mail-draft",
     "allow-meeting-contacts",
     "allow-reply-meeting-detected",

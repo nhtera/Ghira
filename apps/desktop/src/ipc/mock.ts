@@ -558,7 +558,6 @@ const commands: Commands = {
         suggestion: null,
       })),
     ),
-  renameMeetingSpeaker: () => ok(null),
   hasRecoveryKey: () => ok(false),
   // A fixed sample phrase (the real one comes from the store's word list).
   createRecoveryKey: () => Promise.resolve(Array.from({ length: 24 }, (_, i) => `word${i + 1}`)),

@@ -92,6 +92,30 @@ describe("LiveBanners", () => {
     expect(container.querySelector('[data-banner="disk-low"]')).toBeNull();
   });
 
+  it("system audio banners can be dismissed one by one; the capture state stays", async () => {
+    setLive({ state: "recording", capture: cap({ systemSilent: true, lostTracks: [1] }) });
+    const { container } = renderLive(<LiveSystemBanners />);
+    const user = userEvent.setup();
+    const silent = container.querySelector('[data-banner="system-silent"]')!;
+    await user.click(silent.querySelector("button[aria-label='Dismiss']")!);
+    expect(container.querySelector('[data-banner="system-silent"]')).toBeNull();
+    expect(container.querySelector('[data-banner="system-lost"]')).not.toBeNull();
+    await user.click(container.querySelector('[data-banner="system-lost"] button[aria-label="Dismiss"]')!);
+    expect(container.querySelector('[data-banner="system-lost"]')).toBeNull();
+    expect(useLive.getState().capture.systemSilent).toBe(true);
+    expect(useLive.getState().capture.lostTracks).toEqual([1]);
+  });
+
+  it("a dismissed system audio banner comes back with its next occurrence", async () => {
+    setLive({ state: "recording", capture: cap({ systemSilent: true }) });
+    const { container } = renderLive(<LiveSystemBanners />);
+    await userEvent.setup().click(container.querySelector('[data-banner="system-silent"] button[aria-label="Dismiss"]')!);
+    expect(container.querySelector('[data-banner="system-silent"]')).toBeNull();
+    act(() => setLive({ state: "recording", capture: cap({ systemSilent: false }) }));
+    act(() => setLive({ state: "recording", capture: cap({ systemSilent: true }) }));
+    expect(container.querySelector('[data-banner="system-silent"]')).not.toBeNull();
+  });
+
   it("shows the all-system-audio fallback once the core reports it, and it can be dismissed", async () => {
     setLive({ state: "recording" });
     const { container } = renderLive(<LiveSystemBanners />);

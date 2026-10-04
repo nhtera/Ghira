@@ -374,6 +374,7 @@ type ReviewCommands = Pick<
   | "meetingTranscript"
   | "updateSegmentText"
   | "setSegmentSpeaker"
+  | "renameMeetingSpeaker"
   | "mergeMeetingSpeakers"
   | "splitMeetingSpeaker"
   | "setSpeakerNotPerson"
@@ -397,6 +398,8 @@ type ReviewCommands = Pick<
   | "revealLastExport"
   | "exportDestination"
   | "chooseExportFolder"
+  | "obsidianVault"
+  | "chooseObsidianVault"
   | "pickImportFiles"
   | "stagedFiles"
   | "takeDroppedFiles"
@@ -408,6 +411,7 @@ type ReviewCommands = Pick<
 
 /** The remembered export folder (its name only). */
 let exportFolder: string | null = "Documents";
+let obsidianVault: string | null = "Vault";
 
 export function reviewCommands(host: ReviewHost): ReviewCommands {
   const row = (m: string) => host.rows.find((r) => r.gid === m);
@@ -460,6 +464,13 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         if (g) g.speakerGid = speaker;
         return null;
       }),
+    // An empty name goes back to "Speaker N". The "Name your speakers" cards use other gids: a no-op for those.
+    renameMeetingSpeaker: (m, speaker, name) => {
+      if (!row(m)) return fail(`meeting not found: ${m}`);
+      const sp = detailOf(m).speakers.find((x) => x.gid === speaker);
+      if (sp) sp.name = name.trim() || null;
+      return ok(null);
+    },
     // Same rules and error codes as ghi-app's speakers_cmd; the lines follow their speakers.
     mergeMeetingSpeakers: (m, from, into) => {
       if (!row(m)) return fail(`meeting not found: ${m}`);
@@ -642,6 +653,8 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
     revealLastExport: () => ok(null),
     exportDestination: () => ok(exportFolder),
     chooseExportFolder: () => ok((exportFolder = "Meeting notes")),
+    obsidianVault: () => ok(obsidianVault),
+    chooseObsidianVault: () => ok((obsidianVault = "Notes vault")),
     pickImportFiles: () => ok(importGroup() ? stageZoomGroup() : stageSamples()),
     stagedFiles: (ids) => Promise.resolve(ids.map((id) => staged.get(id)).filter((f): f is StagedFile => !!f)),
     takeDroppedFiles: () => {

@@ -108,10 +108,10 @@ export function ExportSheet({ open, onOpenChange, meetings }: { open: boolean; o
       }
     });
 
-  const obsidian = (chooseFolder: boolean) =>
+  const obsidian = () =>
     run(async () => {
       if (!single) return;
-      const r = await ipc.commands.exportObsidian(single, content, chooseFolder, t("export.formats.obsidian"));
+      const r = await ipc.commands.exportObsidian(single, content, false, t("export.formats.obsidian"));
       if (r.status === "error") return fail(r.error);
       if (r.data == null) return;
       saved(t("export.saved", { name: r.data }));
@@ -205,17 +205,9 @@ export function ExportSheet({ open, onOpenChange, meetings }: { open: boolean; o
                 <Button size="sm" icon="content_copy" disabled={busy || !copyable} onClick={() => void copy(false)}>
                   {t("export.copyText")}
                 </Button>
-                <Button size="sm" icon="folder" disabled={busy || !copyable} onClick={() => void obsidian(false)}>
+                <Button size="sm" icon="folder" disabled={busy || !copyable} onClick={() => void obsidian()}>
                   {t("export.toObsidian")}
                 </Button>
-                <button
-                  type="button"
-                  disabled={busy || subtitles}
-                  onClick={() => void obsidian(true)}
-                  className="text-small h-6 rounded-seg px-1 font-semibold text-accent hover:underline disabled:opacity-50"
-                >
-                  {t("export.changeFolder")}
-                </button>
                 <Button
                   size="sm"
                   icon="inbox"

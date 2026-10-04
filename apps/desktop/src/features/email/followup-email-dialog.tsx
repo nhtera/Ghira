@@ -208,7 +208,7 @@ export function FollowupEmailDialog({ open, onOpenChange, meeting }: { open: boo
           {error && <AskError error={error} status />}
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-col px-5 pt-[18px]">
+        <div className="flex min-h-0 min-w-0 flex-col px-[26px] pt-[22px]">
           {hasDraft ? (
             <>
               <div className="grid grid-cols-[64px_minmax(0,1fr)] items-baseline gap-x-2.5 gap-y-1.5 border-b border-line pb-3 text-[13px]">
@@ -229,7 +229,7 @@ export function FollowupEmailDialog({ open, onOpenChange, meeting }: { open: boo
                   className="min-w-0 bg-transparent font-semibold text-ink outline-none focus-visible:underline"
                 />
               </div>
-              <label className="flex min-h-0 flex-1 flex-col pt-3">
+              <label className="flex min-h-0 flex-1 flex-col pt-[18px] pb-3">
                 <span className="sr-only">{t("email.body")}</span>
                 <textarea
                   value={body}

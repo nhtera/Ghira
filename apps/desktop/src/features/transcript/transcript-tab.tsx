@@ -11,6 +11,7 @@ import { Button } from "@ghi/ui";
 import type { MeetingDetail, MeetingSpeaker } from "../../bindings";
 import { useMeetingTranscript } from "../../state/meeting-queries";
 import { usePlayer } from "../../state/player";
+import { SpeakerPanel } from "../speaker-panel";
 import { TopicRail, showTopicRail } from "../topic-rail";
 import { FindBar } from "./find-bar";
 import { GroupRow, OverlapTag, type SpeakerLabel } from "./group-row";
@@ -66,6 +67,10 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
   // Editing and picking a speaker: one line at a time.
   const [editing, setEditing] = useState<string | null>(null);
   const [picking, setPicking] = useState<string | null>(null);
+  // The speaker side panel (design 7c): who, and the line it was opened from.
+  const [panel, setPanel] = useState<{ speaker: string; segment: string } | null>(null);
+  const panelSpeaker = panel ? detail.speakers.find((s) => s.gid === panel.speaker) : undefined;
+  const openSpeaker = useCallback((speaker: string, segment: string) => setPanel({ speaker, segment }), []);
 
   // Scrolling: follow the playing line until the user scrolls away.
   const list = useRef<HTMLDivElement>(null);
@@ -219,6 +224,7 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
       onPick={setPicking}
       onSave={actions.saveText}
       onSetSpeaker={actions.setSpeaker}
+      onOpenSpeaker={openSpeaker}
     />
   );
 
@@ -310,6 +316,19 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
         )}
       </div>
       {rail && <TopicRail topics={topics} onJump={jumpTo} />}
+      {panel && panelSpeaker && (
+        <SpeakerPanel
+          key={`${panel.speaker}:${panel.segment}`}
+          meeting={meeting}
+          mode={detail.mode}
+          speaker={panelSpeaker}
+          speakers={detail.speakers}
+          segments={segments}
+          fromSegment={panel.segment}
+          onClose={() => setPanel(null)}
+          onMerged={() => setPanel(null)}
+        />
+      )}
     </div>
   );
 }
