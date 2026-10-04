@@ -58,6 +58,14 @@ export interface GhiRecordMock {
   callActive: boolean;
   /** The speaker model is installed (voice enrollment works). */
   voiceModel: boolean;
+  /** Seconds the enrollment has heard; null lets it rise with the clock (it ends at 25 s). */
+  voiceSeconds: number | null;
+  /** The loudness (0..1) the enrollment hears; null wobbles like a voice. */
+  voiceLevel: number | null;
+  /** `voiceEnrollStop` fails with this core code (tooShort, tooQuiet, micPermission…). */
+  voiceStopError: string | null;
+  /** `voiceEnrollStart` fails with this core code. */
+  voiceStartError: string | null;
   /** Commands the UI called that have no other visible effect. */
   log: string[];
   /** The last `recordStart` the UI sent. */
@@ -107,6 +115,10 @@ const defaults: GhiRecordMock = {
   onCellular: false,
   callActive: false,
   voiceModel: true,
+  voiceSeconds: null,
+  voiceLevel: null,
+  voiceStopError: null,
+  voiceStartError: null,
   log: [],
   lastStart: null,
   clipboard: "",
@@ -122,6 +134,7 @@ const hooks: GhiRecordMock = (typeof window !== "undefined" && (window.__ghiReco
 let completed: OnboardingStep[] = [...ORDER];
 let voiceConsent = false;
 let enrolling = false;
+let enrollStartedAt = 0;
 let meProfile = false;
 let mobileSettings: MobileSettings = { defaultTarget: "phone", modelsWifiOnly: true };
 let appSettings = {
@@ -298,13 +311,29 @@ export const recordCommands: Partial<Commands> = {
     return ok(null);
   },
   voiceEnrollStart: async () => {
-    if (!voiceConsent) return fail("consent");
-    if (!hooks.voiceModel) return fail("model");
+    if (!voiceConsent) return fail("invalidConsent");
+    if (!hooks.voiceModel) return fail("noModel");
+    if (hooks.voiceStartError) return fail(hooks.voiceStartError);
     enrolling = true;
+    enrollStartedAt = Date.now();
     return ok(null);
   },
+  enrollVoiceLevel: async () => {
+    if (!enrolling) return fail("notEnrolling");
+    const max = 25;
+    const seconds = Math.min(max, hooks.voiceSeconds ?? (Date.now() - enrollStartedAt) / 1000);
+    // A voice-like wobble that rises with the read.
+    const level = hooks.voiceLevel ?? Math.min(1, 0.25 + 0.5 * Math.abs(Math.sin(seconds * 3)));
+    return ok({ level, seconds, maxSeconds: max, done: seconds >= max });
+  },
   voiceEnrollStop: async () => {
+    if (!voiceConsent) {
+      enrolling = false;
+      return fail("invalidConsent");
+    }
+    if (!enrolling) return fail("notEnrolling");
     enrolling = false;
+    if (hooks.voiceStopError) return fail(hooks.voiceStopError);
     meProfile = true;
     return ok(null);
   },

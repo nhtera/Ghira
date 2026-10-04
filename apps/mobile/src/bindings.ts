@@ -283,6 +283,11 @@ export const commands = {
 	/**  Where the model and Me's profile stand. Errors: `storage`. */
 	voiceStatus: () => typedError<VoiceStatus, string>(__TAURI_INVOKE("voice_status")),
 	/**
+	 *  For the level meter and the timer; poll a few times a second. Errors:
+	 *  `notEnrolling`.
+	 */
+	enrollVoiceLevel: () => typedError<EnrollLevel, string>(__TAURI_INVOKE("enroll_voice_level")),
+	/**
 	 *  The attendees of the calendar event a recorded meeting was named after
 	 *  (rename suggestions list them first). Empty if none. Errors: `storage`.
 	 */
@@ -572,6 +577,16 @@ export type DiscardPreview = {
 	/**  Notepad lines typed after the cut. */
 	notes: string[],
 	marks: number,
+};
+
+export type EnrollLevel = {
+	/**  Loudness of the latest moment, 0..1. */
+	level: number | null,
+	/**  Audio buffered so far. */
+	seconds: number | null,
+	maxSeconds: number | null,
+	/**  The mic is closed (the buffer is full or it ran too long): finish. */
+	done: boolean,
 };
 
 /**

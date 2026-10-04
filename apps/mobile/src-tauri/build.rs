@@ -94,6 +94,7 @@ fn main() {
             "unlock",
             "set_app_lock",
             "voice_status",
+            "enroll_voice_level",
             "meeting_attendees",
             "meeting_contacts",
         ]),

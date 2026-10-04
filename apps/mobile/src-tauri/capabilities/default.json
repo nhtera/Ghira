@@ -97,6 +97,7 @@
     "allow-unlock",
     "allow-set-app-lock",
     "allow-voice-status",
+    "allow-enroll-voice-level",
     "allow-meeting-attendees",
     "allow-meeting-contacts"
   ]

@@ -6,20 +6,22 @@ import { Banner, cn, Icon, PhoneButton } from "@ghi/ui";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ipc } from "../../ipc";
+import { EnrollError, EnrollMeter } from "../voice/enroll-panel";
+import { useVoiceEnroll } from "../voice/use-voice-enroll";
 import { StepLayout } from "./step-layout";
-
-type Phase = "idle" | "listening" | "saved";
 
 export function VoiceStep({ onNext }: { onNext: () => void }) {
   const { t } = useTranslation();
   const checkbox = useId();
   const [consent, setConsent] = useState(false);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [failed, setFailed] = useState(false);
+  const [consentFailed, setConsentFailed] = useState(false);
   const [modelReady, setModelReady] = useState(true);
-  const state = useRef({ consent, phase });
+  const enroll = useVoiceEnroll();
+  const { state } = enroll;
+  const phase = state.phase === "done" ? "saved" : state.phase === "idle" ? "idle" : "listening";
+  const last = useRef({ consent, saved: phase === "saved" });
   useEffect(() => {
-    state.current = { consent, phase };
+    last.current = { consent, saved: phase === "saved" };
   });
 
   useEffect(() => {
@@ -31,39 +33,21 @@ export function VoiceStep({ onNext }: { onNext: () => void }) {
       );
     return () => {
       alive = false;
-      // Leaving before a profile was saved takes the consent and the audio back.
-      const { consent: given, phase: last } = state.current;
-      if (last === "listening") void ipc.commands.voiceEnrollCancel();
-      if (given && last !== "saved") void ipc.commands.voiceSetConsent(false);
+      // Leaving before a profile was saved takes the consent back (the hook
+      // already ends the enrollment and wipes the audio).
+      const { consent: given, saved } = last.current;
+      if (given && !saved) void ipc.commands.voiceSetConsent(false);
     };
   }, []);
 
   const toggle = async (given: boolean) => {
     setConsent(given);
-    setFailed(false);
+    setConsentFailed(false);
     const r = await ipc.commands.voiceSetConsent(given);
-    if (r.status === "error") setConsent(!given);
-  };
-
-  const start = async () => {
-    setFailed(false);
-    const r = await ipc.commands.voiceEnrollStart();
-    if (r.status === "ok") setPhase("listening");
-    else setFailed(true);
-  };
-
-  const stop = async () => {
-    const r = await ipc.commands.voiceEnrollStop();
-    if (r.status === "ok") setPhase("saved");
-    else {
-      setPhase("idle");
-      setFailed(true);
+    if (r.status === "error") {
+      setConsent(!given);
+      setConsentFailed(true);
     }
-  };
-
-  const cancel = async () => {
-    await ipc.commands.voiceEnrollCancel();
-    setPhase("idle");
   };
 
   return (
@@ -77,7 +61,7 @@ export function VoiceStep({ onNext }: { onNext: () => void }) {
             {t("mobile.common.continue")}
           </PhoneButton>
         ) : (
-          <PhoneButton variant="secondary" onClick={onNext}>
+          <PhoneButton variant="secondary" disabled={state.phase === "starting" || state.phase === "saving"} onClick={onNext}>
             {t("mobile.common.skip")}
           </PhoneButton>
         )
@@ -87,7 +71,8 @@ export function VoiceStep({ onNext }: { onNext: () => void }) {
         {!modelReady && (
           <Banner variant="info" title={t("mobile.voice.needsModels")} />
         )}
-        {failed && <Banner variant="warning" title={t("mobile.voice.error")} />}
+        {state.error && <EnrollError code={state.error} skippable />}
+        {consentFailed && <EnrollError code="consent" skippable />}
 
         <label
           htmlFor={checkbox}
@@ -121,23 +106,21 @@ export function VoiceStep({ onNext }: { onNext: () => void }) {
         )}
 
         {consent && phase === "idle" && (
-          <PhoneButton icon="mic" onClick={() => void start()}>
+          <PhoneButton icon="mic" onClick={() => void enroll.start()}>
             {t("mobile.voice.start")}
           </PhoneButton>
         )}
         {phase === "listening" && (
           <>
-            <p
-              role="status"
-              className="text-ios-subhead m-0 flex items-center gap-2 text-accent"
-            >
+            <p role="status" className="text-ios-subhead m-0 flex items-center gap-2 text-accent">
               <Icon name="graphic_eq" size={22} className="size-[1.375rem]" />
               {t("mobile.voice.listening")}
             </p>
-            <PhoneButton onClick={() => void stop()}>
+            <EnrollMeter state={state} />
+            <PhoneButton disabled={!enroll.canFinish} onClick={() => void enroll.finish()}>
               {t("mobile.voice.done")}
             </PhoneButton>
-            <PhoneButton variant="ghost" onClick={() => void cancel()}>
+            <PhoneButton variant="ghost" onClick={enroll.cancel}>
               {t("mobile.common.cancel")}
             </PhoneButton>
           </>

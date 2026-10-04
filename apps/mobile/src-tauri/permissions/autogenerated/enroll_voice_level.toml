@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-enroll-voice-level"
+description = "Enables the enroll_voice_level command without any pre-configured scope."
+commands.allow = ["enroll_voice_level"]
+
+[[permission]]
+identifier = "deny-enroll-voice-level"
+description = "Denies the enroll_voice_level command without any pre-configured scope."
+commands.deny = ["enroll_voice_level"]

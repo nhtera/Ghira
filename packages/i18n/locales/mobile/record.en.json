@@ -136,9 +136,18 @@
     "voice": {
       "done": "Done reading",
       "error": "Couldn’t save your voice. Try again, or skip.",
+      "errorMicPermission": "Microphone access is off. Turn it on in Settings → {{app}} → Microphone, then try again.",
+      "errorRetry": "Couldn’t save your voice. Try again.",
+      "errorTooQuiet": "We could barely hear you. Hold the phone closer and try again.",
+      "errorTooShort": "That was too short. Read the whole passage, about 20 seconds, then tap Done reading.",
+      "level": "Voice level",
+      "levelGood": "Hearing you",
+      "levelQuiet": "Can’t hear you. Hold the phone closer.",
       "needsModels": "Your voice can be added once the speech models are downloaded. You can do it later in Settings.",
-      "passage": "In our weekly sync we review the roadmap, confirm the budget, and agree on who owns each action item before Friday’s release.",
-      "passageLabel": "Read this aloud"
+      "passage": "In our weekly sync we review the roadmap, confirm the budget, and agree on who owns each action item before Friday’s release. Hôm nay mình chốt scope cho bản beta, rồi phân công việc cho từng người. If anything slips, I will flag it early, and we will decide together what to cut.",
+      "passageLabel": "Read this aloud",
+      "reading": "Reading… {{seconds}} s of about {{max}} s",
+      "waitHint": "Keep reading. You can finish after {{min}} s."
     },
     "sensitive": {
       "label": "Sensitive meeting",

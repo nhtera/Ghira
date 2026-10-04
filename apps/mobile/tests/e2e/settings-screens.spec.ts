@@ -85,7 +85,8 @@ test.describe("voice profile", () => {
     await start.click();
     await expect(page.getByText("Listening…")).toBeVisible();
     await expectAccessible(page);
-    await page.getByRole("button", { name: "Finish" }).click();
+    await page.evaluate(() => (window.__ghiRecord!.voiceSeconds = 15));
+    await page.getByRole("button", { name: "Done reading" }).click();
     await expect(page.getByText("Saved on this phone · 3 samples")).toBeVisible();
     await expect(page.getByText("Voice profile saved.")).toBeVisible();
     await page.getByRole("button", { name: "Delete my voice profile" }).click();
@@ -116,7 +117,7 @@ test("leaving the voice screen mid-enrollment ends the enrollment", async ({ pag
   await expect(page.getByText("Listening…")).toBeVisible();
   await page.getByRole("button", { name: /^Back/ }).click();
   await row(page, /^Voice profile/).click();
-  await expect(page.getByRole("button", { name: "Finish" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Done reading" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Set up my voice" })).toBeVisible();
 });
 

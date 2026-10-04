@@ -127,6 +127,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             ghi_app::lock_cmd::unlock,
             ghi_app::lock_cmd::set_app_lock,
             ghi_app::voice_cmd::voice_status,
+            ghi_app::voice_cmd::enroll_voice_level,
             ghi_app::calendar_cmd::meeting_attendees,
             ghi_app::calendar_cmd::meeting_contacts,
         ])

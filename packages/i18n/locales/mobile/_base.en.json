@@ -159,7 +159,7 @@
       "phone": "This phone"
     },
     "voice": {
-      "body": "Read a 20-second passage so {{app}} labels you as “Me”. The profile stays encrypted on this phone.",
+      "body": "Read a passage aloud, about 20 seconds, so {{app}} labels you as “Me”. The profile stays encrypted on this phone.",
       "consent": "I agree to store a voice profile of myself on this phone. I can delete it in Settings.",
       "listening": "Listening…",
       "record": "Record voice",

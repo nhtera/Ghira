@@ -9,6 +9,8 @@ import { useGo } from "../../features/settings/go";
 import { unwrap, useAction, useResource } from "../../features/settings/api";
 import { Btn, ErrorLine } from "../../features/settings/controls";
 import { Page } from "../../features/settings/page";
+import { EnrollError, EnrollMeter } from "../../features/voice/enroll-panel";
+import { useVoiceEnroll } from "../../features/voice/use-voice-enroll";
 
 const loadVoice = async () => unwrap(await ipc.commands.voiceStatus());
 
@@ -21,37 +23,42 @@ export function VoiceScreen() {
   const [note, setNote] = useState<"saved" | "deleted" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const status = voice.data;
-  const enrolling = status?.enrolling ?? false;
-
-  // Leaving the screen ends an enrollment: the mic must not stay open behind another screen.
-  const enrollingNow = useRef(false);
-  useEffect(() => {
-    enrollingNow.current = enrolling;
-  }, [enrolling]);
-  useEffect(
-    () => () => {
-      if (enrollingNow.current) void ipc.commands.voiceEnrollCancel();
-    },
-    [],
-  );
+  // The hook ends an enrollment when the screen goes: the mic must not stay open behind another screen.
+  const enroll = useVoiceEnroll(() => {
+    setConsent(false);
+    setNote("saved");
+    voice.reload();
+  });
+  const phase = enroll.state.phase;
+  const enrolling = phase !== "idle" && phase !== "done";
 
   const start = () =>
     void action.run(async () => {
       setNote(null);
       unwrap(await ipc.commands.voiceSetConsent(true));
-      unwrap(await ipc.commands.voiceEnrollStart());
-      voice.reload();
+      await enroll.start();
     });
-  const finish = () =>
-    void action.run(async () => {
-      unwrap(await ipc.commands.voiceEnrollStop());
-      setConsent(false);
-      setNote("saved");
-      voice.reload();
-    });
+  // Leaving without a saved profile takes the consent back (the hook ends the enrollment).
+  const given = useRef(false);
+  useEffect(() => {
+    given.current = phase !== "idle" && phase !== "done";
+  }, [phase]);
+  useEffect(
+    () => () => {
+      if (given.current) void ipc.commands.voiceSetConsent(false);
+    },
+    [],
+  );
+  // A failed try ends the enrollment; the consent goes with it.
+  const failed = enroll.state.error;
+  useEffect(() => {
+    if (failed) void ipc.commands.voiceSetConsent(false);
+  }, [failed]);
   const cancel = () =>
     void action.run(async () => {
+      enroll.cancel();
       unwrap(await ipc.commands.voiceEnrollCancel());
+      await ipc.commands.voiceSetConsent(false);
       setConsent(false);
       voice.reload();
     });
@@ -68,6 +75,11 @@ export function VoiceScreen() {
       {status && (
         <>
           <ErrorLine code={action.error} />
+          {enroll.state.error && (
+            <div className="mx-4 my-2">
+              <EnrollError code={enroll.state.error} />
+            </div>
+          )}
           <ListSection header={t("mobile.settings.voice.headerMe")} footer={t("mobile.settings.voice.footer")}>
             <ListRow
               title={status.meProfile ? t("mobile.settings.voice.statusSet", { count: status.meProfile.samples }) : t("mobile.settings.voice.statusNone")}
@@ -86,14 +98,15 @@ export function VoiceScreen() {
             </div>
           ) : enrolling ? (
             <div className="mx-4 flex flex-col gap-3">
-              <p className="text-ios-subhead m-0 text-muted">{t("mobile.voice.listening")}</p>
+              <p role="status" className="text-ios-subhead m-0 text-muted">{t("mobile.voice.listening")}</p>
               <blockquote lang={i18n.language} className="text-ios-body m-0 rounded-(--ios-radius-group) bg-surface p-4 select-text">
-                {t("onboarding.voice.passage")}
+                {t("mobile.voice.passage")}
               </blockquote>
-              <Btn tone="primary" onClick={finish} disabled={action.busy}>
+              <EnrollMeter state={enroll.state} />
+              <Btn tone="primary" onClick={() => void enroll.finish()} disabled={!enroll.canFinish}>
                 {t("mobile.settings.voice.finish")}
               </Btn>
-              <Btn onClick={cancel}>{t("mobile.common.cancel")}</Btn>
+              {phase !== "saving" && <Btn onClick={cancel}>{t("mobile.common.cancel")}</Btn>}
             </div>
           ) : (
             <div className="mx-4 flex flex-col gap-3">

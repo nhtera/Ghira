@@ -160,7 +160,7 @@ if (typeof window !== "undefined") {
 export const gateMessage = (): string | null => (hooks.starting ? "the app is starting" : hooks.locked ? "the app is locked" : null);
 
 // Commands that keep working while locked or starting (Core::store_even_locked and the app's own).
-const OPEN = /^(lockState|lockNow|unlock|setAppLock|appVersion|lifecycleState|deviceTier|micPermission|requestMicPermission|openAppSettings|record\w*|models\w*|onboarding\w*|mobileSettings|setMobileSettings|voiceSetConsent|voiceEnroll\w*)$/;
+const OPEN = /^(lockState|lockNow|unlock|setAppLock|appVersion|lifecycleState|deviceTier|micPermission|requestMicPermission|openAppSettings|record\w*|models\w*|onboarding\w*|mobileSettings|setMobileSettings|voiceSetConsent|voiceEnroll\w*|enrollVoiceLevel)$/;
 
 /** Makes the content commands refuse like Rust does while the app is locked or starting. */
 export function gateContent(script: Partial<Commands>): Partial<Commands> {

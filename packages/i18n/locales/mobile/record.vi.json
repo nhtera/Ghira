@@ -130,9 +130,18 @@
     "voice": {
       "done": "Đọc xong",
       "error": "Không lưu được giọng của bạn. Hãy thử lại hoặc bỏ qua.",
+      "errorMicPermission": "Quyền dùng micro đang tắt. Hãy bật trong Cài đặt → {{app}} → Micrô, rồi thử lại.",
+      "errorRetry": "Không lưu được giọng của bạn. Hãy thử lại.",
+      "errorTooQuiet": "Gần như không nghe thấy bạn. Hãy cầm điện thoại lại gần hơn rồi thử lại.",
+      "errorTooShort": "Đoạn đọc quá ngắn. Hãy đọc hết đoạn văn, khoảng 20 giây, rồi bấm Đọc xong.",
+      "level": "Âm lượng giọng nói",
+      "levelGood": "Đang nghe thấy bạn",
+      "levelQuiet": "Gần như không nghe thấy bạn. Hãy cầm điện thoại lại gần hơn.",
       "needsModels": "Bạn có thể thêm giọng của mình sau khi tải xong mô hình giọng nói. Bạn cũng có thể làm sau trong Cài đặt.",
-      "passage": "Xin chào, tôi đang đọc đoạn này để {{app}} nhận ra giọng của tôi. Tuần này chúng ta sẽ chốt kế hoạch quý bốn, rà lại ngân sách và phân công việc trước ngày phát hành.",
-      "passageLabel": "Hãy đọc to đoạn này"
+      "passage": "Xin chào, tôi đang đọc đoạn này để máy nhận ra giọng của tôi. Tuần này chúng ta sẽ chốt kế hoạch quý bốn, rà lại ngân sách và phân công việc trước ngày phát hành. Nếu có gì chậm trễ, mình sẽ báo sớm để cả nhóm cùng quyết định nên bỏ phần nào. Let’s keep the next sync short.",
+      "passageLabel": "Hãy đọc to đoạn này",
+      "reading": "Đang đọc… {{seconds}}/{{max}} giây",
+      "waitHint": "Hãy đọc tiếp. Bạn có thể bấm Đọc xong sau {{min}} giây."
     },
     "sensitive": {
       "label": "Cuộc họp nhạy cảm",

@@ -53,6 +53,7 @@ test("walks every step and ends on Record", async ({ page }) => {
   await expect(page.getByText(/In our weekly sync we review the roadmap/)).toBeVisible();
   await page.getByRole("button", { name: "Start reading" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Listening…" })).toBeVisible();
+  await setKnobs(page, { voiceSeconds: 16 });
   await page.getByRole("button", { name: "Done reading" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
   await next(page).click();
@@ -122,7 +123,7 @@ test("voice: skip leaves no consent behind, and waits for the voice model", asyn
 test("voice: a failed save says so and lets the user retry or skip", async ({ page }) => {
   await openOnboarding(page, { completed: ["languages", "micPriming", "consent", "processing", "models"] });
   await page.getByRole("checkbox", { name: /I agree/ }).check();
-  await setKnobs(page, { voiceModel: false });
+  await setKnobs(page, { voiceStartError: "storage" });
   await page.getByRole("button", { name: "Start reading" }).click();
   await expect(page.getByText("Couldn’t save your voice. Try again, or skip.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Skip" })).toBeVisible();

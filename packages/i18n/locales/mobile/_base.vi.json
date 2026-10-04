@@ -159,7 +159,7 @@
       "phone": "Điện thoại"
     },
     "voice": {
-      "body": "Đọc một đoạn 20 giây để {{app}} gắn nhãn bạn là “Tôi”. Hồ sơ được mã hoá trên điện thoại.",
+      "body": "Đọc to một đoạn khoảng 20 giây để {{app}} gắn nhãn bạn là “Tôi”. Hồ sơ được mã hoá trên điện thoại.",
       "consent": "Tôi đồng ý lưu hồ sơ giọng nói của mình trên điện thoại. Tôi có thể xoá trong Cài đặt.",
       "listening": "Đang nghe…",
       "record": "Ghi giọng",
