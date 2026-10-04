@@ -142,3 +142,27 @@ cargo test -p ghi-desktop --lib -- audio_protocol navigation
 tools/release/net-audit.sh --selftest && tools/release/net-audit.sh --strict --cli
 tools/release/crash-safety.sh -n 3
 ```
+
+## Release-prep re-run, 2026-10-04 (phase 18 prep, no secrets)
+
+Run on macOS 15 arm64 (Apple Silicon), commit `e9e8695` plus an uncommitted working tree
+(other agents' changes outside the audited paths), DEBUG `target/debug/ghi` built with no speech
+engines (`ghi version --json` shows `"engines":[]`). No meeting content in these results.
+
+| Check | Command | Result |
+|---|---|---|
+| Crash safety, `kill -9` during recording | `tools/release/crash-safety.sh -n 20 --seed 1004` (30 s marker WAV, kill at random 3-27 s) | **PASS**: 20/20 within the 5 s limit; max loss 0.983 s, mean 0.481 s |
+| Network audit, harness sanity | `tools/release/net-audit.sh --selftest` | OK (sees loopback sockets, strict mode fails as designed) |
+| Network audit, strict, headless meeting | `tools/release/net-audit.sh --strict --cli` (record-only session, jobs, store list, `models fetch --strict-offline` refused with exit 1) | **PASS**: `sockets seen: 0`; processes sampled `ghi`, `ghi-llm-worker` |
+
+Not run, and why:
+
+| Step | Reason |
+|---|---|
+| `crash-safety.sh --final-pass` (kill the final pass, retry) | Needs a `ghi` built with `--features ghi-cli/nemo`. Building it would overwrite the shared `target/debug/ghi` that other agents use, so it was left for a dedicated target dir or the RC build. Speech models are present in `models/` |
+| `net-audit.sh --strict --cli` with speech engines and the LLM worker | Same nemo build needed. The 2026-10-02 run above (section 4) covered it on the earlier commit |
+| `net-audit.sh --app Ghira` and Little Snitch / `tcpdump` layers | Need the signed, notarized app driven by the owner; `tcpdump` needs `sudo` (not available to agents) |
+| 5 hard power-offs during a recording | Need a person and the machine's power button (`smoke-checklist.md`) |
+| Windows and iOS device runs | No Windows runner; iOS device runs are owner items (Simulator only in the agent phase) |
+
+No new problem found by these runs. Open items stay as listed above (F2, F4 and the owner-only checks).
