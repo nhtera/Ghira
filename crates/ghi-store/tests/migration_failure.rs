@@ -247,3 +247,85 @@ fn v2_copies_v1_action_anchors() {
     assert_eq!(anchors, format!("[{anchor}]"));
     assert_eq!(provenance, "user");
 }
+
+/// A migration chain that fails part-way, from every shipped schema version:
+/// the steps before the failing one stay applied, the failing one leaves no
+/// trace, the rows still decrypt, and the real chain then finishes the job.
+#[test]
+fn a_failure_part_way_up_the_chain_leaves_the_previous_version_intact() {
+    let ring = common::fixture_ring();
+    for from in common::FIXTURE_VERSIONS {
+        for fail_at in from + 1..=MIGRATIONS.len() as u32 {
+            let tmp = tempfile::tempdir().unwrap();
+            let keys = common::install_fixture(from, tmp.path());
+            let path = tmp.path().join("ghira.db");
+            let count = |conn: &rusqlite::Connection, table: &str| -> i64 {
+                conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+                    .unwrap()
+            };
+            let tables = [
+                "meetings",
+                "segments",
+                "speakers",
+                "notes_blocks",
+                "action_items",
+            ];
+            let conn = db::open(&path, &common::db_key(&keys)).unwrap();
+            let rows: Vec<i64> = tables.iter().map(|t| count(&conn, t)).collect();
+            drop(conn);
+
+            let chain: Vec<Migration> = MIGRATIONS[..fail_at as usize - 1]
+                .iter()
+                .copied()
+                .chain([Migration {
+                    version: fail_at,
+                    step: Step::Func(fails_after_partial_work),
+                }])
+                .collect();
+            let ctx = format!("v{from} -> v{fail_at}");
+            let Err(err) = common::open_with(tmp.path(), &keys, &chain) else {
+                panic!("{ctx}: the migration should fail");
+            };
+            assert!(
+                matches!(err, StoreError::Migration { version, .. } if version == fail_at),
+                "{ctx}: {err}"
+            );
+
+            let conn = db::open(&path, &common::db_key(&keys)).unwrap();
+            assert_eq!(db::user_version(&conn).unwrap(), fail_at - 1, "{ctx}");
+            let check: String = conn
+                .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(check, "ok", "{ctx}");
+            let after: Vec<i64> = tables.iter().map(|t| count(&conn, t)).collect();
+            assert_eq!(rows, after, "{ctx}: the failed step's DELETE is gone");
+            let status: String = conn
+                .query_row(
+                    "SELECT status FROM meetings WHERE gid = ?1",
+                    [common::m1()],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(status, "ready", "{ctx}");
+            let half: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE name = 'half_done'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(half, 0, "{ctx}");
+            assert_eq!(
+                common::raw_m1_lines(&conn, &ring),
+                common::M1_LINES,
+                "{ctx}"
+            );
+            drop(conn);
+
+            // The failure is not sticky: the real chain completes.
+            let store = common::open_with(tmp.path(), &keys, MIGRATIONS).expect(&ctx);
+            assert_eq!(store.get_meeting(&common::m1()).unwrap().status, "ready");
+            assert_eq!(store.segments(&common::m1()).unwrap().len(), 3);
+        }
+    }
+}

@@ -98,3 +98,96 @@ pub fn copy_dir(from: &Path, to: &Path) {
         }
     }
 }
+
+// ------------------------------------------------- per-version fixtures
+//
+// `tests/fixtures/schema/vN.db` is a small SQLCipher database as schema
+// version N left it (see `tests/schema_upgrade.rs` for what is in it and how
+// to rebuild them). They are encrypted with a TEST key ring, never a real one.
+
+use ghi_store::rowcrypt::{open_text, row_aad};
+
+/// Newest schema version with a fixture.
+pub const FIXTURE_VERSIONS: std::ops::RangeInclusive<u32> = 1..=7;
+
+/// Gid `kind`/`i` of the fixtures (valid UUIDs, so `check_gid` accepts them).
+pub fn gid(kind: u8, i: u16) -> String {
+    format!("018f0000-0000-7000-8000-{kind:02x}{i:010x}")
+}
+
+/// The meeting every fixture keeps (title, lines, notes, ...).
+pub fn m1() -> String {
+    gid(1, 1)
+}
+/// A meeting whose delete had finished: only its tombstone is left.
+pub fn m2() -> String {
+    gid(1, 2)
+}
+/// A meeting whose key was shredded but whose rows are still there (a delete
+/// interrupted by a crash); the next open finishes it.
+pub fn m3() -> String {
+    gid(1, 3)
+}
+
+/// The transcript lines of [`m1`], by time.
+pub const M1_LINES: [&str; 3] = [
+    "Chốt kế hoạch quý bốn",
+    "Đồng ý ngân sách cho dự án Hà Nội",
+    "Anh Bình sẽ gửi báo cáo",
+];
+
+/// The fixtures' key ring. Fixed bytes, test-only.
+pub fn fixture_ring() -> KeyRing {
+    let mut b = b"GHKR".to_vec();
+    b.extend([1u8, 0]);
+    b.extend([0x11u8; 32]);
+    b.extend([0x22u8; 32]);
+    KeyRing::from_bytes(&b).expect("fixture ring")
+}
+
+pub fn fixture_file(version: u32) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/schema")
+        .join(format!("v{version}.db"))
+}
+
+/// Copies fixture `version` to `<dir>/ghira.db`; returns a key store holding
+/// the fixture ring.
+pub fn install_fixture(version: u32, dir: &Path) -> Keys {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::copy(fixture_file(version), dir.join("ghira.db")).unwrap_or_else(|e| {
+        panic!("fixture v{version}: {e} (rebuild: see tests/fixtures/README.md)")
+    });
+    keys_with(fixture_ring())
+}
+
+/// The plaintext of [`m1`]'s transcript lines read straight from `conn`
+/// (unwrap the meeting key with `ring`, decrypt each sealed line): works on
+/// any schema version, without the `Store` API.
+pub fn raw_m1_lines(conn: &rusqlite::Connection, ring: &KeyRing) -> Vec<String> {
+    let m1 = m1();
+    let wrapped: Vec<u8> = conn
+        .query_row(
+            "SELECT dek_wrapped FROM meetings WHERE gid = ?1",
+            [&m1],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let dek = ring
+        .unwrap_dek(&wrapped, &m1)
+        .expect("unwrap the meeting key");
+    let mut stmt = conn
+        .prepare(
+            "SELECT gid, text_ct FROM segments
+             WHERE meeting_id = (SELECT id FROM meetings WHERE gid = ?1) ORDER BY t0_ms",
+        )
+        .unwrap();
+    let rows: Vec<(String, Vec<u8>)> = stmt
+        .query_map([&m1], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    rows.into_iter()
+        .map(|(gid, ct)| open_text(&dek, &ct, &row_aad("segments", "text_ct", &gid)).unwrap())
+        .collect()
+}
