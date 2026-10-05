@@ -583,14 +583,17 @@ fn unpair_and_wipe_delivers_the_wipe_and_plain_unpair_refuses_the_phone() {
             .any(|e| matches!(e, SyncEvent::WipeDone { gid } if *gid == gid_a))
     );
 
-    // A second phone, plainly unpaired: its next handshake is refused.
+    // A second phone, plainly unpaired: it is told on its next session.
     pair(&hub, &b);
     hub.svc.unpair(&b.identity.device_gid).unwrap();
-    assert!(hub.events().iter().any(
-        |e| matches!(e, SyncEvent::Unpaired { by_peer: false, name, .. } if name == "iPhone")
-    ));
-    // Nothing is left to serve, so a node is brought up by an open pairing
-    // sheet (its code is not used: the phone does not know it).
+    assert_eq!(
+        hub.svc.devices().unwrap()[0].state,
+        DeviceState::UnpairPending
+    );
+
+    // A key the hub never paired is still refused (nothing is served to it
+    // beyond the sheet's own node, whose code it does not know).
+    let stranger = spoke();
     lock(&hub.svc.state).pairing_until = Some(Instant::now() + PAIR_TTL);
     hub.svc.reconcile();
     let node = hub.svc.node().expect("the sheet brings the node up");
@@ -598,13 +601,85 @@ fn unpair_and_wipe_delivers_the_wipe_and_plain_unpair_refuses_the_phone() {
     let svc = hub.svc.clone();
     let server = thread::spawn(move || svc.serve_connection(&node, x, None, None));
     let refused = session_over(
-        b.store.clone() as Arc<dyn SyncStore>,
+        stranger.store.clone() as Arc<dyn SyncStore>,
         Arc::new(SystemClock),
-        &b.identity,
+        &stranger.identity,
         y,
     );
     assert!(refused.is_err());
     assert!(server.join().unwrap().is_err());
+
+    // The unpaired phone connects: it gets `Unpair` and the pin goes.
+    let node = hub.svc.node().expect("still up");
+    let (x, y) = mem_pipe();
+    let svc = hub.svc.clone();
+    let server = thread::spawn(move || svc.serve_connection(&node, x, None, None));
+    let report = session_over(
+        b.store.clone() as Arc<dyn SyncStore>,
+        Arc::new(SystemClock),
+        &b.identity,
+        y,
+    )
+    .unwrap();
+    assert_eq!(report.closed_by, Some(ControlOutcome::Unpaired));
+    server.join().unwrap().unwrap();
+    assert!(b.store.devices().unwrap().is_empty(), "the phone let go");
+    assert!(hub.svc.devices().unwrap().is_empty());
+    assert!(hub.events().iter().any(
+        |e| matches!(e, SyncEvent::Unpaired { by_peer: false, name, .. } if name == "iPhone")
+    ));
+}
+
+#[test]
+fn the_listener_stays_open_for_an_unpair_the_phone_has_not_taken_yet() {
+    let _turn = NET.lock().unwrap_or_else(|e| e.into_inner());
+    let lan = ghi_net::lan::lan_addrs();
+    if lan.is_empty() {
+        eprintln!("no private network address here: skipped");
+        return;
+    }
+    let hub = hub_with(lan, REACHABLE_WITHIN);
+    hub.svc.start();
+    let base = ghi_net::lan::listeners_open();
+    hub.svc.set_enabled(true).unwrap();
+    let phone = spoke();
+    pair(&hub, &phone);
+    wait_for("the listener", 5, || hub.svc.listening());
+
+    hub.svc.unpair(&phone.identity.device_gid).unwrap();
+    assert!(hub.svc.listening(), "the last pin is not gone yet");
+    assert!(ghi_net::lan::listeners_open() > base);
+
+    let node = hub.svc.node().unwrap();
+    let (a, b) = mem_pipe();
+    let svc = hub.svc.clone();
+    let server = thread::spawn(move || svc.serve_connection(&node, a, None, None));
+    let mine = session_over(
+        phone.store.clone() as Arc<dyn SyncStore>,
+        Arc::new(SystemClock),
+        &phone.identity,
+        b,
+    )
+    .unwrap();
+    assert_eq!(mine.closed_by, Some(ControlOutcome::Unpaired));
+    server.join().unwrap().unwrap();
+    wait_for("the listener to close", 5, || {
+        !hub.svc.listening() && ghi_net::lan::listeners_open() == base
+    });
+    hub.svc.stop();
+}
+
+#[test]
+fn an_unpair_nobody_takes_is_dropped_when_its_wait_ends() {
+    let hub = hub();
+    let phone = spoke();
+    pair(&hub, &phone);
+    hub.svc.unpair(&phone.identity.device_gid).unwrap();
+    let store = hub.store();
+    assert!(store.expire_unpair_pending(i64::MAX).unwrap().is_empty());
+    assert_eq!(store.devices().unwrap().len(), 1, "still waiting");
+    assert_eq!(store.expire_unpair_pending(0).unwrap().len(), 1);
+    assert!(store.devices().unwrap().is_empty());
 }
 
 #[test]

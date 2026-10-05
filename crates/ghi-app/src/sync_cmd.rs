@@ -40,6 +40,8 @@ pub enum DeviceState {
     /// "Unpair and wipe" was chosen; waiting for the device to be reachable
     /// so it can delete what it holds from this one (doc 07 §3.5).
     WipePending,
+    /// Unpaired here; waiting for the device to be reachable to tell it.
+    UnpairPending,
 }
 
 /// One paired device.

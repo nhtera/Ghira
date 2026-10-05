@@ -85,6 +85,9 @@ pub const PAIR_TTL: Duration = Duration::from_secs(120);
 const MAX_PER_ADDRESS: usize = 2;
 /// How long "Delete everything" waits for devices to take their `Wipe`.
 pub const WIPE_WAIT: Duration = Duration::from_secs(120);
+/// How long an unpair waits for the device to come and take it (doc 07 §3.5);
+/// then the pin goes anyway.
+pub const UNPAIR_WAIT: Duration = Duration::from_secs(7 * 24 * 3600);
 /// A device seen within this long is reachable for the wipe's wait.
 pub const REACHABLE_WITHIN: Duration = Duration::from_secs(90);
 /// A refused mass delete is not asked about again for this long.
@@ -289,6 +292,7 @@ impl SyncStore for Watched {
         fn pin_device(&self, device: &NewDevice, pair_psk: &[u8; 32]) -> StoreResult<Device>;
         fn unpin_device(&self, gid: &str) -> StoreResult<()>;
         fn set_wipe_pending(&self, gid: &str) -> StoreResult<()>;
+        fn set_unpair_pending(&self, gid: &str) -> StoreResult<()>;
         fn touch_device(&self, gid: &str, addr: Option<&str>) -> StoreResult<()>;
         fn pair_psk(&self, gid: &str) -> StoreResult<Zeroizing<[u8; 32]>>;
         fn set_cursors(&self, gid: &str, push_seq: i64, pull_feed_id: Option<&str>, pull_seq: i64) -> StoreResult<()>;
@@ -454,6 +458,7 @@ fn device_row(d: &Device) -> DeviceRow {
         state: match d.state {
             StoreDeviceState::Paired => DeviceState::Paired,
             StoreDeviceState::WipePending => DeviceState::WipePending,
+            StoreDeviceState::UnpairPending => DeviceState::UnpairPending,
         },
         last_seen_ms: d.last_seen.map(|v| v as f64),
     }
@@ -680,6 +685,12 @@ impl SyncService {
         let Ok(store) = self.core.store_even_locked() else {
             return false;
         };
+        // An unpair nobody took in time stops holding the listener open.
+        if let Err(e) = store.expire_unpair_pending(UNPAIR_WAIT.as_millis() as i64) {
+            log::warn!("sync: expiring unpairs: {e}");
+        }
+        // Any device left (paired, or waiting for a Wipe or an Unpair to be
+        // delivered) keeps the listener up.
         Self::enabled(&store) && store.devices().is_ok_and(|d| !d.is_empty())
     }
 
@@ -974,6 +985,10 @@ impl SyncService {
         // between the lease and its job is repaired here too).
         self.start_lease_jobs();
         self.refresh_known(closed_by);
+        if closed_by.is_some() {
+            // A pin is gone: the listener may have nothing left to wait for.
+            self.poke();
+        }
     }
 
     fn on_paired(self: &Arc<Self>, gid: &str) {
@@ -1048,6 +1063,13 @@ impl SyncService {
             if state == StoreDeviceState::WipePending {
                 self.wipe_finished();
                 self.emit(SyncEvent::WipeDone { gid });
+            } else if state == StoreDeviceState::UnpairPending {
+                // The user's own unpair, now delivered (or given up on).
+                self.emit(SyncEvent::Unpaired {
+                    gid,
+                    name,
+                    by_peer: false,
+                });
             } else if closed_by == Some(ControlOutcome::Wiped) {
                 self.emit(SyncEvent::Unpaired {
                     gid: gid.clone(),
@@ -1261,6 +1283,15 @@ impl SyncService {
         if self.cfg.role == Role::Spoke {
             // The computer forgets this phone too, when it can be reached.
             self.spoke_tell_hub(&store, wire::Control::Unpair);
+        } else {
+            // The phone is told when it next connects (or on its next ping);
+            // the listener stays up until then.
+            store.set_unpair_pending(gid).map_err(|e| e.to_string())?;
+            if let Some(e) = lock(&self.state).known.as_mut().and_then(|k| k.get_mut(gid)) {
+                e.1 = StoreDeviceState::UnpairPending;
+            }
+            self.reconcile();
+            return Ok(());
         }
         store.unpin_device(gid).map_err(|e| e.to_string())?;
         if let Some(k) = lock(&self.state).known.as_mut() {

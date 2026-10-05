@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use ghi_store::StoreError;
-use ghi_store::sync::devices::{Device, DeviceState};
+use ghi_store::sync::devices::Device;
 use ghi_store::sync::records::Record;
 
 use super::spoke::attach_deks;
@@ -35,14 +35,23 @@ pub struct HubSession<T: Transport> {
     report: SessionReport,
     /// The spoke, once `Hello` identified it.
     spoke: Option<Device>,
-    /// A `Wipe` went out in `HelloOk`; only `WipeDone` may follow.
-    wipe_delivered: bool,
+    /// A `Wipe` or `Unpair` went out (in `HelloOk` or on a ping); only its
+    /// confirmation may follow.
+    delivered: Option<control::ControlOutcome>,
     /// Rows sent with a key: `(upto_seq, meeting gids)` until the spoke's
     /// next request shows it applied them.
     pending_keys: Vec<(i64, Vec<String>)>,
     /// Tracks offered in this session (`track_gid` -> pages).
     offers: HashMap<String, u64>,
     last_activity_ns: u64,
+}
+
+/// What the spoke's confirmation of `ctl` means for the report.
+fn outcome_of(ctl: &wire::Control) -> control::ControlOutcome {
+    match ctl {
+        wire::Control::Wipe { .. } => control::ControlOutcome::Wiped,
+        wire::Control::Unpair => control::ControlOutcome::Unpaired,
+    }
 }
 
 /// How one request ended.
@@ -63,7 +72,7 @@ impl<T: Transport> HubSession<T> {
             guard: MassDeleteGuard::default(),
             report: SessionReport::default(),
             spoke: None,
-            wipe_delivered: false,
+            delivered: None,
             pending_keys: Vec::new(),
             offers: HashMap::new(),
             last_activity_ns: now,
@@ -160,13 +169,13 @@ impl<T: Transport> HubSession<T> {
         if !matches!(msg, Message::Hello(_)) && self.spoke.is_none() {
             return Err(SyncError::Wire("request before hello".into()));
         }
-        if self.wipe_delivered {
+        if self.delivered.is_some() {
             // A session that delivers a wipe does nothing else.
             return match msg {
-                Message::WipeDone | Message::Ok => self.wipe_done(),
+                Message::WipeDone | Message::Ok => self.delivered_done(),
                 Message::Bye => Ok(Flow::Close),
                 Message::Ping => self.reply(id, &Message::Pong { dirty: false }),
-                _ => self.refuse(id, ErrorCode::Busy, Some("wipe_pending".into())),
+                _ => self.refuse(id, ErrorCode::Busy, Some("control_pending".into())),
             };
         }
         match msg {
@@ -236,7 +245,7 @@ impl<T: Transport> HubSession<T> {
         self.store.touch_device(&dev.gid, None)?;
         self.report.peer = Some(dev.gid.clone());
         let pending = control::pending_for(self.store.as_ref(), &dev.gid)?;
-        self.wipe_delivered = !pending.is_empty();
+        self.delivered = pending.first().map(outcome_of);
         let ok = HelloOk {
             proto,
             device_gid: self.store.device_gid()?,
@@ -247,11 +256,12 @@ impl<T: Transport> HubSession<T> {
         self.reply(id, &Message::HelloOk(ok))
     }
 
-    /// The spoke confirmed it shredded what it held: the pin can go.
-    fn wipe_done(&mut self) -> Result<Flow> {
+    /// The spoke confirmed the command (it shredded what it held, or forgot
+    /// the pin): ours can go.
+    fn delivered_done(&mut self) -> Result<Flow> {
         let gid = self.spoke()?.gid.clone();
         self.store.unpin_device(&gid)?;
-        self.report.closed_by = Some(control::ControlOutcome::Wiped);
+        self.report.closed_by = self.delivered;
         Ok(Flow::Close)
     }
 
@@ -450,18 +460,12 @@ impl<T: Transport> HubSession<T> {
     fn on_ping(&mut self, id: u32) -> Result<Flow> {
         let gid = self.spoke()?.gid.clone();
         let dev = self.store.device(&gid)?;
-        if dev
-            .as_ref()
-            .is_some_and(|d| d.state == DeviceState::WipePending)
-        {
+        if dev.is_some() {
             // Marked while the spoke is connected: deliver it now.
-            self.wipe_delivered = true;
-            return self.reply(
-                id,
-                &Message::Control(wire::Control::Wipe {
-                    reason: "wipe".into(),
-                }),
-            );
+            if let Some(ctl) = control::pending_for(self.store.as_ref(), &gid)?.pop() {
+                self.delivered = Some(outcome_of(&ctl));
+                return self.reply(id, &Message::Control(ctl));
+            }
         }
         let since = dev.map_or(0, |d| d.push_seq);
         let dirty = !self.store.changes_since(since, 1)?.changes.is_empty()

@@ -935,7 +935,9 @@ export type DeviceState =
  *  "Unpair and wipe" was chosen; waiting for the device to be reachable
  *  so it can delete what it holds from this one (doc 07 §3.5).
  */
-"wipePending";
+"wipePending" | 
+/**  Unpaired here; waiting for the device to be reachable to tell it. */
+"unpairPending";
 
 /**
  *  What an export wrote or an import took: counts and the file's name (never

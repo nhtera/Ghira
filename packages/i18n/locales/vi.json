@@ -954,6 +954,7 @@
       "wipeTitle": "Huỷ ghép và xoá dữ liệu trên {{device}}?",
       "wipeBody": "Từ giờ {{device}} không đồng bộ với máy tính này được nữa. Chúng tôi cũng yêu cầu máy đó xoá các cuộc họp đã chia sẻ với máy tính này, nhưng việc đó chỉ xảy ra khi máy đó vào lại Wi-Fi của bạn và mở {{app}}.",
       "wipeHonest": "Trước lúc đó, ai mở khoá được điện thoại và mở {{app}} vẫn đọc được những gì đang có trên máy. Cuộc họp trên máy tính này không bị ảnh hưởng.",
+      "unpairPending": "Đang huỷ ghép nối… {{device}} sẽ được báo khi nó vào Wi-Fi của bạn và mở {{app}}.",
       "wipePending": "Đang chờ xoá. Hãy mở {{app}} trên {{device}} để hoàn tất.",
       "wipeDone": "{{device}} đã xoá các cuộc họp đã đồng bộ.",
       "unpairedBy": "{{device}} đã huỷ ghép",

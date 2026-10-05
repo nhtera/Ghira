@@ -521,8 +521,9 @@ fn a_hub_that_refuses_the_handshake_twice_has_unpaired_the_phone() {
     let phone = phone(&hub);
     pair(&hub, &phone);
     let spoke_gid = phone.store().sync_device_gid().unwrap();
-    // The desktop forgets the phone.
-    hub.svc.unpair(&spoke_gid).unwrap();
+    // The desktop forgets the phone without telling it (the fallback when
+    // nothing was delivered).
+    hub.store().unpin_device(&spoke_gid).unwrap();
     // The hub keeps listening (another phone is being paired), so the phone
     // is refused rather than finding nobody there.
     let _ = code_for(&hub);

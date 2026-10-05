@@ -36,6 +36,7 @@ export function DevicesList({ devices, offline, onChanged }: { devices: DeviceRo
   };
 
   const status = (d: DeviceRow) => {
+    if (d.state === "unpairPending") return t("settings.sync.unpairPending", { app: APP_NAME, device: d.name });
     if (d.state === "wipePending") return t("settings.sync.wipePending", { app: APP_NAME, device: d.name });
     if (d.lastSeenMs == null) return t("settings.sync.neverSynced");
     const when = whenAgo(d.lastSeenMs, now, i18n.language as Locale, t("settings.sync.justNow"));

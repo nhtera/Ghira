@@ -678,7 +678,9 @@ export type DeviceState =
  *  "Unpair and wipe" was chosen; waiting for the device to be reachable
  *  so it can delete what it holds from this one (doc 07 §3.5).
  */
-"wipePending";
+"wipePending" | 
+/**  Unpaired here; waiting for the device to be reachable to tell it. */
+"unpairPending";
 
 export type DeviceTier = {
 	/**  `iPhone16,1` style machine identifier (`SIMULATOR_MODEL_IDENTIFIER` on the simulator). */

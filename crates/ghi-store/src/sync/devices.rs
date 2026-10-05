@@ -66,6 +66,7 @@ fn device_from_row(r: &Row) -> rusqlite::Result<Device> {
         state: match state.as_str() {
             "paired" => DeviceState::Paired,
             "wipe_pending" => DeviceState::WipePending,
+            "unpair_pending" => DeviceState::UnpairPending,
             _ => return Err(bad("device state")),
         },
         paired_at: r.get(7)?,
@@ -75,6 +76,11 @@ fn device_from_row(r: &Row) -> rusqlite::Result<Device> {
         pull_feed_id: r.get(11)?,
         pull_seq: r.get(12)?,
     })
+}
+
+/// Settings key of when a pin moved to `unpair_pending` (ms).
+fn unpair_since_key(gid: &str) -> String {
+    format!("sync.unpair_since:{gid}")
 }
 
 /// Settings key of a peer's remembered mass-delete confirmation (D13).
@@ -102,6 +108,10 @@ pub enum DeviceState {
     Paired,
     /// Only a session that delivers `Wipe` is allowed.
     WipePending,
+    /// The user unpaired it here; only a session that delivers `Unpair` is
+    /// allowed (then the pin goes), or the wait ends
+    /// ([`Store::expire_unpair_pending`]).
+    UnpairPending,
 }
 
 /// A paired peer.
@@ -237,6 +247,10 @@ impl Store {
             "DELETE FROM settings WHERE key = ?1",
             [mass_delete_key(gid)],
         )?;
+        tx.execute(
+            "DELETE FROM settings WHERE key = ?1",
+            [unpair_since_key(gid)],
+        )?;
         tx.commit()?;
         Ok(())
     }
@@ -251,6 +265,48 @@ impl Store {
             return Err(not_found(gid));
         }
         Ok(())
+    }
+
+    /// Moves a paired pin to `unpair_pending` (the user unpaired it here and
+    /// the peer is to be told). A pin already waiting for a wipe or an unpair
+    /// is left as it is.
+    pub fn set_unpair_pending(&self, gid: &str) -> Result<()> {
+        if self.device(gid)?.is_none() {
+            return Err(not_found(gid));
+        }
+        let n = self.conn().execute(
+            "UPDATE devices SET state = 'unpair_pending' WHERE gid = ?1 AND state = 'paired'",
+            [gid],
+        )?;
+        if n > 0 {
+            self.set_setting(&unpair_since_key(gid), &serde_json::json!(now_ms()))?;
+        }
+        Ok(())
+    }
+
+    /// Drops the pins that have waited `max_age_ms` or more in
+    /// `unpair_pending` (the peer never came back). Returns their gids.
+    pub fn expire_unpair_pending(&self, max_age_ms: i64) -> Result<Vec<String>> {
+        let now = now_ms();
+        let mut gone = Vec::new();
+        for d in self.devices()? {
+            if d.state != DeviceState::UnpairPending {
+                continue;
+            }
+            // No stamp (it was lost): the wait starts now.
+            let since = match self.get_setting(&unpair_since_key(&d.gid))? {
+                Some(v) => v.as_i64().unwrap_or(now),
+                None => {
+                    self.set_setting(&unpair_since_key(&d.gid), &serde_json::json!(now))?;
+                    now
+                }
+            };
+            if now.saturating_sub(since) >= max_age_ms {
+                self.unpin_device(&d.gid)?;
+                gone.push(d.gid);
+            }
+        }
+        Ok(gone)
     }
 
     /// Puts a `wipe_pending` pin back to `paired`: "Delete everything" queued

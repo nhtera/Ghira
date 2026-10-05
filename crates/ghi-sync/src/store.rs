@@ -48,6 +48,7 @@ pub trait SyncStore: Send + Sync {
     fn pin_device(&self, device: &NewDevice, pair_psk: &[u8; 32]) -> Result<Device>;
     fn unpin_device(&self, gid: &str) -> Result<()>;
     fn set_wipe_pending(&self, gid: &str) -> Result<()>;
+    fn set_unpair_pending(&self, gid: &str) -> Result<()>;
     fn touch_device(&self, gid: &str, addr: Option<&str>) -> Result<()>;
     fn pair_psk(&self, gid: &str) -> Result<Zeroizing<[u8; 32]>>;
     fn set_cursors(
@@ -193,6 +194,9 @@ impl SyncStore for Store {
     }
     fn set_wipe_pending(&self, gid: &str) -> Result<()> {
         Store::set_wipe_pending(self, gid)
+    }
+    fn set_unpair_pending(&self, gid: &str) -> Result<()> {
+        Store::set_unpair_pending(self, gid)
     }
     fn touch_device(&self, gid: &str, addr: Option<&str>) -> Result<()> {
         Store::touch_device(self, gid, addr)

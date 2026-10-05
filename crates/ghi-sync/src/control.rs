@@ -4,7 +4,8 @@
 //! `Unpair` deletes the pin and the pair PSK; data stays. `Wipe` shreds every
 //! meeting exchanged with the sender, locally and without tombstones, then
 //! unpairs, and is answered with `WipeDone`. A device in `wipe_pending` only
-//! takes part in a session that delivers `Wipe`.
+//! takes part in a session that delivers `Wipe`; so does one in
+//! `unpair_pending` for `Unpair` (the desktop unpaired a phone that was away).
 
 use ghi_store::StoreError;
 use ghi_store::sync::devices::DeviceState;
@@ -52,13 +53,14 @@ pub fn apply_control(
     }
 }
 
-/// The command a session must deliver first to `device_gid` (`wipe_pending`),
-/// if any.
+/// The command a session must deliver first to `device_gid`
+/// (`wipe_pending` or `unpair_pending`), if any.
 pub fn pending_for(store: &dyn SyncStore, device_gid: &str) -> Result<Vec<Control>> {
     Ok(match store.device(device_gid)? {
         Some(d) if d.state == DeviceState::WipePending => vec![Control::Wipe {
             reason: "wipe".to_string(),
         }],
+        Some(d) if d.state == DeviceState::UnpairPending => vec![Control::Unpair],
         _ => Vec::new(),
     })
 }
@@ -242,6 +244,44 @@ mod tests {
         assert!(!s.ping().unwrap());
         assert_eq!(s.report().closed_by, Some(ControlOutcome::Wiped));
         assert!(phone.device_ids().is_empty() && phone.row("h1").is_none());
+        drop(s);
+        server.join().unwrap().unwrap();
+        assert!(hub.device_ids().is_empty());
+    }
+
+    #[test]
+    fn an_unpair_is_delivered_on_reconnect_then_the_pin_goes_on_both_sides() {
+        use crate::store::SyncStore;
+        let (hub, phone) = rig();
+        hub.set_unpair_pending("phone-a").unwrap();
+        assert!(matches!(
+            pending_for(hub.as_ref(), "phone-a").unwrap().as_slice(),
+            [wire::Control::Unpair]
+        ));
+        let (mut s, server) = connected(&hub, &phone);
+        phone.put_local(meeting("late"));
+        let rep = s.run_once().unwrap();
+        assert_eq!(rep.closed_by, Some(ControlOutcome::Unpaired));
+        assert_eq!((rep.rows_pushed, rep.rows_pulled), (0, 0));
+        drop(s);
+        let hub_rep = server.join().unwrap().unwrap();
+        assert_eq!(hub_rep.closed_by, Some(ControlOutcome::Unpaired));
+        assert!(hub.device_ids().is_empty() && phone.device_ids().is_empty());
+        assert!(phone.row("h1").is_some(), "an unpair keeps the data");
+        assert!(hub.row("late").is_none());
+    }
+
+    #[test]
+    fn an_unpair_reaches_a_phone_that_is_already_connected_on_its_next_ping() {
+        use crate::store::SyncStore;
+        let (hub, phone) = rig();
+        let (mut s, server) = connected(&hub, &phone);
+        s.run_once().unwrap();
+        assert!(!s.ping().unwrap());
+        hub.set_unpair_pending("phone-a").unwrap();
+        assert!(!s.ping().unwrap());
+        assert_eq!(s.report().closed_by, Some(ControlOutcome::Unpaired));
+        assert!(phone.device_ids().is_empty());
         drop(s);
         server.join().unwrap().unwrap();
         assert!(hub.device_ids().is_empty());

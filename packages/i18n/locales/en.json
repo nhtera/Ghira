@@ -977,6 +977,7 @@
       "wipeTitle": "Unpair {{device}} and wipe it?",
       "wipeBody": "{{device}} can’t sync with this computer from now on. We also ask it to delete the meetings it shared with this computer, but that only happens the next time it is on your Wi-Fi with {{app}} open.",
       "wipeHonest": "Until then, anyone who can unlock that phone and open {{app}} can still read what is on it. Meetings on this computer aren’t touched.",
+      "unpairPending": "Unpairing… {{device}} will be told the next time it is on your Wi-Fi with {{app}} open.",
       "wipePending": "Waiting to wipe. Open {{app}} on {{device}} to finish.",
       "wipeDone": "{{device}} deleted its synced meetings.",
       "unpairedBy": "Unpaired by {{device}}",

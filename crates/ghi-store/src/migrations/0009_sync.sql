@@ -5,7 +5,7 @@
 -- Additive only: new tables, and columns that are NULL or defaulted.
 
 -- Paired devices (pins). `role`: the peer's role. `state` 'wipe_pending' means
--- only a session that delivers Wipe is allowed. `static_pub` is the peer's
+-- only a session that delivers Wipe is allowed; 'unpair_pending' the same for Unpair. `static_pub` is the peer's
 -- X25519 key. `pair_psk_wrapped` is wrapped by the KeyRing (AAD `device:<gid>`).
 -- State 'known' is a device this one has no pairing with: it wrote a row that
 -- reached us through the hub (or was unpaired later), kept only so `origin`
@@ -21,7 +21,7 @@ CREATE TABLE devices (
     static_pub       BLOB UNIQUE,
     key_alg          TEXT NOT NULL DEFAULT 'x25519',
     pair_psk_wrapped BLOB,
-    state            TEXT NOT NULL DEFAULT 'paired' CHECK (state IN ('paired', 'wipe_pending', 'known')),
+    state            TEXT NOT NULL DEFAULT 'paired' CHECK (state IN ('paired', 'wipe_pending', 'unpair_pending', 'known')),
     paired_at        INTEGER NOT NULL,
     last_seen        INTEGER,
     last_addr        TEXT,

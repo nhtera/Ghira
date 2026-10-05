@@ -546,6 +546,17 @@ impl SyncStore for FakeSyncStore {
         d.state = DeviceState::WipePending;
         Ok(())
     }
+    fn set_unpair_pending(&self, gid: &str) -> Res<()> {
+        let mut g = self.g();
+        let (d, _) = g
+            .devices
+            .get_mut(gid)
+            .ok_or_else(|| not_found("device", gid))?;
+        if d.state == DeviceState::Paired {
+            d.state = DeviceState::UnpairPending;
+        }
+        Ok(())
+    }
     fn touch_device(&self, gid: &str, addr: Option<&str>) -> Res<()> {
         let mut g = self.g();
         let (d, _) = g
