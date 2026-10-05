@@ -12,6 +12,7 @@ import { useLive } from "../state/live";
 import { QuitDialog } from "./quit-dialog";
 import { LockGate } from "./lock-gate";
 import { useImportListeners } from "../features/import/import-store";
+import { MassDeleteDialog } from "../features/sync/mass-delete-dialog";
 
 /** Main window only: files dropped on the window or the Dock (D10) and import
  * progress are kept even before the import screen opens. */
@@ -96,6 +97,8 @@ export function RootView() {
       {/* Here, not in the shell: quitting must ask during onboarding's test too. */}
       {!panel && <QuitDialog />}
       {!panel && <ImportListeners />}
+      {/* Here, not in Settings: another device's mass delete asks wherever the user is. */}
+      {!panel && <MassDeleteDialog />}
     </>
   );
 }

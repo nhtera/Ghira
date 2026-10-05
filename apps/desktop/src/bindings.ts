@@ -322,11 +322,14 @@ export const commands = {
 	 */
 	exportEverything: (password: string) => typedError<string | null, string>(__TAURI_INVOKE("export_everything", { password })),
 	/**
-	 *  "Delete all data": everything goes (meetings, audio, keys, settings),
-	 *  then the app restarts into onboarding. The UI asks for a typed
-	 *  confirmation first.
+	 *  "Delete all data": everything goes (meetings, audio, keys, settings), then
+	 *  the app restarts into onboarding. The UI asks for a typed confirmation
+	 *  first. With `everywhere` and paired phones, each is queued to delete what
+	 *  it got from this computer and this waits for the phones seen a moment ago
+	 *  (`sync_delete_everywhere_status` says for whom; `sync_delete_everywhere_skip`
+	 *  ends the wait); the sync identity is destroyed with the data.
 	 */
-	deleteAllData: () => typedError<null, string>(__TAURI_INVOKE("delete_all_data")),
+	deleteAllData: (everywhere: boolean) => typedError<null, string>(__TAURI_INVOKE("delete_all_data", { everywhere })),
 	/**  Files staged by a drop that the import screen hasn't shown yet (read once). */
 	takeDroppedFiles: () => __TAURI_INVOKE<StagedFile[]>("take_dropped_files"),
 	/**
@@ -563,7 +566,17 @@ export const commands = {
 	syncConflictResolve: (gid: string, useIt: boolean) => typedError<null, string>(__TAURI_INVOKE("sync_conflict_resolve", { gid, useIt })),
 	/**  Answers a [`SyncEvent::NeedsConfirm`]: apply the other device's mass delete or refuse it. */
 	syncConfirmMassDelete: (accept: boolean) => typedError<null, string>(__TAURI_INVOKE("sync_confirm_mass_delete", { accept })),
+	/**
+	 *  Where "Delete everything" stands: waiting for paired devices to take their
+	 *  wipe, or finished.
+	 */
 	syncDeleteEverywhereStatus: () => typedError<DeleteEverywhereStatus, string>(__TAURI_INVOKE("sync_delete_everywhere_status")),
+	/**
+	 *  "Delete here only": stops the wait for paired devices during "Delete
+	 *  everything"; the data goes at once and the devices that were not reached
+	 *  keep their copies.
+	 */
+	syncDeleteEverywhereSkip: () => typedError<null, string>(__TAURI_INVOKE("sync_delete_everywhere_skip")),
 };
 
 /** Events */

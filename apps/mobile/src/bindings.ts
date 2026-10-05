@@ -337,6 +337,10 @@ export const commands = {
 	syncConflictResolve: (gid: string, useIt: boolean) => typedError<null, string>(__TAURI_INVOKE("sync_conflict_resolve", { gid, useIt })),
 	/**  Answers a [`SyncEvent::NeedsConfirm`]: apply the other device's mass delete or refuse it. */
 	syncConfirmMassDelete: (accept: boolean) => typedError<null, string>(__TAURI_INVOKE("sync_confirm_mass_delete", { accept })),
+	/**
+	 *  Where "Delete everything" stands: waiting for paired devices to take their
+	 *  wipe, or finished.
+	 */
 	syncDeleteEverywhereStatus: () => typedError<DeleteEverywhereStatus, string>(__TAURI_INVOKE("sync_delete_everywhere_status")),
 	/**
 	 *  Phone: starts the camera to scan the desktop's code (the scan arrives as

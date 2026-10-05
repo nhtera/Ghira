@@ -31,7 +31,7 @@ serde = { version = "1", features = ["derive"] }
 specta = "=2.0.0-rc.25"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 specta-typescript = "=0.0.12"
-ghi-app = { path = "../../../crates/ghi-app", features = ["local-llm", "embeddings", "voice", "specta"] }
+ghi-app = { path = "../../../crates/ghi-app", features = ["local-llm", "embeddings", "voice", "specta", "mdns"] }
 ghi-audio = { path = "../../../crates/ghi-audio" }
 ghi-core = { path = "../../../crates/ghi-core", features = ["specta", "voice"] }
 ghi-diag = { path = "../../../crates/ghi-diag" }

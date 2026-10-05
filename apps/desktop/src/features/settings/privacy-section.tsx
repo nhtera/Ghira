@@ -173,21 +173,24 @@ function DeleteCard() {
   const waiting = useDeleteEverywhereStatus(busy && paired.length > 0);
   // One call only: a second one would hit the store mid-wipe. On success the
   // app restarts, so the busy state stays; on failure it is released.
-  const run = async () => {
+  // `everywhere`: paired devices are asked to delete what they got from here
+  // first (the core waits only for devices that are within reach).
+  const run = async (everywhere: boolean) => {
     if (busy) return;
     setAsking(false);
     setBusy(true);
-    const r = await ipc.commands.deleteAllData();
+    const r = await ipc.commands.deleteAllData(everywhere);
     if (r.status === "error") {
       fail(r.error);
       setBusy(false);
     }
   };
-  // "Delete here only": sync goes off first, so nobody is waited for.
+  // "Delete here only": before the call, no wipe is sent; while the core waits
+  // for a device, the wait ends and the data goes now.
   const hereOnly = async () => {
-    const off = await ipc.commands.syncSetEnabled(false);
-    if (off.status === "error") return fail(off.error);
-    if (!busy) void run();
+    if (!busy) return void run(false);
+    const r = await ipc.commands.syncDeleteEverywhereSkip();
+    if (r.status === "error") fail(r.error);
   };
   return (
     <Card title={t("settings.privacy.dangerTitle")} hint={t("settings.privacy.dangerBody")}>
@@ -202,14 +205,14 @@ function DeleteCard() {
             e.preventDefault();
             if (!deleteWordMatches(typed, word) || busy) return;
             if (paired.length > 0) setAsking(true);
-            else void run();
+            else void run(false);
           }}
         >
           <label className="flex flex-col gap-1 text-small font-semibold">
             {t("settings.privacy.typeToConfirm", { word })}
             <input autoFocus autoComplete="off" className={cn(inputCls, "font-normal")} value={typed} disabled={busy} onChange={(e) => setTyped(e.target.value)} />
           </label>
-          {asking && <DeleteEverywhereAsk devices={paired} onEverywhere={() => void run()} onHereOnly={() => void hereOnly()} onCancel={() => setAsking(false)} />}
+          {asking && <DeleteEverywhereAsk devices={paired} onEverywhere={() => void run(true)} onHereOnly={() => void hereOnly()} onCancel={() => setAsking(false)} />}
           {busy && waiting?.state === "waiting" && <DeleteWaiting names={waiting.waitingFor} onHereOnly={() => void hereOnly()} />}
           <div className="flex gap-2">
             <Button type="submit" variant="danger" disabled={busy || asking || !deleteWordMatches(typed, word)}>

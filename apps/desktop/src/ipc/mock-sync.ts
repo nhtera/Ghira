@@ -63,6 +63,7 @@ type SyncCommands = Pick<
   | "syncConflictResolve"
   | "syncConfirmMassDelete"
   | "syncDeleteEverywhereStatus"
+  | "syncDeleteEverywhereSkip"
 >;
 
 export interface SyncMock {
@@ -159,6 +160,11 @@ export function createSyncMock(): SyncMock {
       return ok(null);
     },
     syncDeleteEverywhereStatus: () => ok(deleteStatus),
+    // "Delete here only" while the core waits: the wait is over.
+    syncDeleteEverywhereSkip: () => {
+      deleteStatus = { state: "done", waitingFor: [] };
+      return ok(null);
+    },
   };
 
   return {

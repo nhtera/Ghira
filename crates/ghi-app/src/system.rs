@@ -357,30 +357,60 @@ pub fn patch_settings(
     c: &Core,
     patch: SettingsPatch,
 ) -> Result<AppSettings, String> {
-    let r = (|| {
-        // One change at a time: two patches can't lose each other's fields.
-        static WRITING: Mutex<()> = Mutex::new(());
-        let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
-        let cur = load_settings(c)?;
-        let s = enforce(
-            apply_patch(&cur, patch),
-            crate::core::voice_ready(&c.models()),
-        );
-        let retention_changed = s.audio_retention_days != cur.audio_retention_days;
-        let v = serde_json::to_value(&s).map_err(|e| e.to_string())?;
-        c.store()?
-            .set_setting(SETTINGS_KEY, &v)
-            .map_err(|e| e.to_string())?;
-        *c.settings_cache().lock().unwrap_or_else(|e| e.into_inner()) = Some(s.clone());
-        if retention_changed {
-            apply_retention(c, s.audio_retention_days)?;
-        }
-        Ok(s)
-    })();
+    let r = patch_settings_core(c, patch);
     // The app's own reaction to a settings change (the desktop re-registers
     // its global shortcuts).
     c.settings_changed(app);
     r
+}
+
+/// The settings that sync between paired devices (doc 07 §7.1, last writer
+/// wins per key): the keys are the serde names of the `AppSettings` fields,
+/// the same as `ghi_store::sync::settings::SYNCED_KEYS`.
+fn changed_synced_keys(
+    before: &AppSettings,
+    after: &AppSettings,
+) -> Vec<(&'static str, serde_json::Value)> {
+    let (Ok(b), Ok(a)) = (serde_json::to_value(before), serde_json::to_value(after)) else {
+        return Vec::new();
+    };
+    ghi_store::sync::settings::SYNCED_KEYS
+        .iter()
+        .filter_map(|k| {
+            let v = a.get(*k)?;
+            (b.get(*k) != Some(v)).then(|| (*k, v.clone()))
+        })
+        .collect()
+}
+
+/// [`patch_settings`] without the app's reaction.
+pub fn patch_settings_core(c: &Core, patch: SettingsPatch) -> Result<AppSettings, String> {
+    // One change at a time: two patches can't lose each other's fields.
+    static WRITING: Mutex<()> = Mutex::new(());
+    let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
+    let cur = load_settings(c)?;
+    let s = enforce(
+        apply_patch(&cur, patch),
+        crate::core::voice_ready(&c.models()),
+    );
+    let retention_changed = s.audio_retention_days != cur.audio_retention_days;
+    let v = serde_json::to_value(&s).map_err(|e| e.to_string())?;
+    let store = c.store()?;
+    store
+        .set_setting(SETTINGS_KEY, &v)
+        .map_err(|e| e.to_string())?;
+    // What a paired device should see too (the allowlist; LWW per key). A
+    // failure here must not lose the local change.
+    for (key, value) in changed_synced_keys(&cur, &s) {
+        if let Err(e) = store.put_synced(key, &value.to_string()) {
+            log::warn!("synced setting {key} not recorded: {e}");
+        }
+    }
+    *c.settings_cache().lock().unwrap_or_else(|e| e.into_inner()) = Some(s.clone());
+    if retention_changed {
+        apply_retention(c, s.audio_retention_days)?;
+    }
+    Ok(s)
 }
 
 /// `cur` with the fields `patch` sets, each checked or clamped.

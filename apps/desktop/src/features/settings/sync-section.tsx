@@ -10,7 +10,6 @@ import { APP_NAME } from "@ghi/i18n";
 import { ipc } from "../../ipc";
 import { DevicesList } from "../sync/devices-list";
 import { errorKey } from "../sync/logic";
-import { MassDeleteDialog } from "../sync/mass-delete-dialog";
 import { PairSheet } from "../sync/pair-sheet";
 import { useSyncEvents, useSyncStatus } from "../sync/use-sync";
 import { Card, Note, Row, SwitchRow, useFail } from "./parts";
@@ -60,7 +59,6 @@ export function SyncSection() {
 
   return (
     <div className="flex flex-col">
-      <MassDeleteDialog />
       <SwitchRow label={t("settings.sync.toggle")} hint={t("settings.sync.toggleHint")} checked={enabled} onChange={(v) => void toggle(v)} testId="sync-toggle" />
       {enabled && (
         <>

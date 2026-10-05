@@ -187,6 +187,7 @@ fn main() {
             "sync_conflict_resolve",
             "sync_confirm_mass_delete",
             "sync_delete_everywhere_status",
+            "sync_delete_everywhere_skip",
         ]),
     ))
     .expect("failed to run tauri-build");

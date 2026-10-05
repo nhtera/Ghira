@@ -11,7 +11,7 @@ import { PrivacySection } from "../settings/privacy-section";
 import { renderSettings } from "../settings/test-utils";
 import { ConflictBanner } from "./conflict-banner";
 import { announceDeleted } from "./delete-notice";
-import { useMassDelete } from "./mass-delete-dialog";
+import { MassDeleteDialog, useMassDelete } from "./mass-delete-dialog";
 
 type Hooks = {
   syncSet(s: string): void;
@@ -97,7 +97,12 @@ describe("Settings > Sync", () => {
   it("asks before applying another device's mass delete", async () => {
     mock().syncSet("paired");
     const user = userEvent.setup();
-    renderSettings(<SyncSection />);
+    renderSettings(
+      <>
+        <SyncSection />
+        <MassDeleteDialog />
+      </>,
+    );
     await screen.findByTestId("device-device-iphone");
     mock().syncSet("needsConfirm");
     const dialog = await screen.findByRole("dialog", { name: "iPhone 16 deleted 12 meetings" });
@@ -205,7 +210,7 @@ describe("delete everything with paired devices", () => {
     await user.type(screen.getByLabelText("Type DELETE to confirm"), "DELETE{Enter}");
   };
 
-  it("asks first, and Delete here only turns sync off before deleting", async () => {
+  it("asks first, and Delete here only deletes without a wipe", async () => {
     mock().syncSet("paired");
     const user = userEvent.setup();
     const del = vi.spyOn(ipc.commands, "deleteAllData");
@@ -217,7 +222,8 @@ describe("delete everything with paired devices", () => {
     expect(del).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Delete here only" }));
     await waitFor(() => expect(del).toHaveBeenCalledTimes(1));
-    expect(off).toHaveBeenCalledWith(false);
+    expect(del).toHaveBeenCalledWith(false);
+    expect(off).not.toHaveBeenCalled();
   });
 
   it("Delete everywhere waits for a device that is out of reach", async () => {
@@ -227,12 +233,17 @@ describe("delete everything with paired devices", () => {
     renderSettings(<PrivacySection />);
     await waitFor(() => expect(screen.getByTestId("strict-offline-local-note")).toBeTruthy());
     await typeWord(user);
+    const skip = vi.spyOn(ipc.commands, "syncDeleteEverywhereSkip");
     await user.click(await screen.findByRole("button", { name: "Delete everywhere" }));
     expect(del).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledWith(true);
     mock().syncSetDeleteEverywhere("waiting", ["iPhone 16"]);
     const waiting = await screen.findByTestId("delete-waiting", {}, { timeout: 3000 });
     expect(within(waiting).getByText("Waiting for iPhone 16…")).toBeTruthy();
-    expect(within(waiting).getByRole("button", { name: "Delete here only" })).toBeTruthy();
+    // Skipping ends the wait in the core; the delete already running goes on (no second call).
+    await user.click(within(waiting).getByRole("button", { name: "Delete here only" }));
+    await waitFor(() => expect(skip).toHaveBeenCalledTimes(1));
+    expect(del).toHaveBeenCalledTimes(1);
   });
 
   it("does not ask when nobody is paired", async () => {

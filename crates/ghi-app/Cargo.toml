@@ -25,6 +25,8 @@ voice = ["ghi-core/voice"]
 # TypeScript types for the apps (tauri-specta). The commands and DTOs always
 # carry their specta derives; this switches on the core's.
 specta = ["ghi-core/specta"]
+# Advertise the hub over mDNS (the desktop; the phone browses natively instead).
+mdns = ["ghi-net/mdns"]
 # `Core::for_test`, for the apps' own harness tests.
 test-support = []
 default = ["local-llm", "embeddings", "voice", "specta"]

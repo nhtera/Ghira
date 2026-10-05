@@ -30,6 +30,7 @@ mod people_cmd;
 mod recovery_cmd;
 mod settings_cmd;
 mod speakers_cmd;
+mod sync_cmd;
 mod system;
 mod tray;
 mod update_cmd;
@@ -448,7 +449,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             ghi_app::sync_cmd::sync_conflicts,
             ghi_app::sync_cmd::sync_conflict_resolve,
             ghi_app::sync_cmd::sync_confirm_mass_delete,
-            ghi_app::sync_cmd::sync_delete_everywhere_status
+            ghi_app::sync_cmd::sync_delete_everywhere_status,
+            ghi_app::sync_cmd::sync_delete_everywhere_skip
         ])
         .events(tauri_specta::collect_events![
             core::CoreEvent,
@@ -521,6 +523,10 @@ pub fn run() {
             let detection = Arc::new(system::Detection::default());
             system::spawn_detection(app.handle().clone(), core.clone(), detection.clone());
             system::spawn_retention(core.clone());
+            // LAN sync with paired phones (phase 15): its listener exists only
+            // while sync is on, someone is paired and the app is unlocked.
+            let sync = sync_cmd::start(app.handle(), &core);
+            app.manage(sync);
             app.manage(core);
             app.manage(detection);
             app.manage(tokens);
@@ -584,6 +590,8 @@ pub fn run() {
                 request_quit(app);
                 return;
             }
+            app.state::<Arc<ghi_app::sync_service::SyncService>>()
+                .stop();
             core.shutdown(Duration::from_secs(5));
         }
         // Last chance (e.g. the system logging out): save the recording so
@@ -594,6 +602,8 @@ pub fn run() {
             if core.recording() {
                 let _ = core.stop();
             }
+            app.state::<Arc<ghi_app::sync_service::SyncService>>()
+                .stop();
             core.shutdown(Duration::from_secs(2));
             diag.release();
         }

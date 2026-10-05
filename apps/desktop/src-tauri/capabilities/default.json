@@ -134,6 +134,7 @@
     "allow-sync-conflict-resolve",
     "allow-sync-confirm-mass-delete",
     "allow-sync-delete-everywhere-status",
+    "allow-sync-delete-everywhere-skip",
     "allow-ask-all-meetings",
     "allow-related-meetings",
     "allow-list-people",

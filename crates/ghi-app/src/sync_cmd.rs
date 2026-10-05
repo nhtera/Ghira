@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! LAN sync between the desktop and a phone (phase 15, doc 07): the commands
-//! and DTOs both apps' UI use. This is the contract (slice 15-B): until the
-//! session layer is wired in (15-J) the commands answer an honest empty state
-//! (sync off, nobody paired) or the typed error [`NOT_AVAILABLE`]; the UI
-//! slices build against the mocks meanwhile.
+//! and DTOs both apps' UI use. The commands run on the app's
+//! [`SyncService`] (managed state, see `sync_service.rs`); an app without one
+//! (the phone, until its wiring lands) gets an honest empty state (sync off,
+//! nobody paired) or the typed error [`NOT_AVAILABLE`].
 //!
 //! The desktop registers the hub side (`sync_pair_open`/`sync_pair_close`);
 //! the phone registers the spoke side (`sync_pair_scan_*`, `sync_lease_revoke`).
 //! Everything else is common. Events and errors carry codes only, never
 //! meeting content, names of meetings or keys (doc 07 §5.3 `Error{code}`).
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_specta::Event;
+
+use crate::sync_service::SyncService;
 
 /// The error a command returns while its part of sync isn't wired in yet.
 pub const NOT_AVAILABLE: &str = "sync_not_available";
@@ -183,97 +187,168 @@ pub enum SyncEvent {
     },
 }
 
+/// The service behind the commands, when the app runs one (the desktop does;
+/// the phone's wiring is 15-J2, until then its commands answer the empty
+/// state or [`NOT_AVAILABLE`]).
+fn service(app: &tauri::AppHandle) -> Option<Arc<SyncService>> {
+    use tauri::Manager;
+    app.try_state::<Arc<SyncService>>()
+        .map(|s| s.inner().clone())
+}
+
+/// Runs `f` on the service off the async runtime's workers, or `without`
+/// when the app has no service.
+async fn with_service<T: Send + 'static>(
+    app: &tauri::AppHandle,
+    f: impl FnOnce(Arc<SyncService>) -> Result<T, String> + Send + 'static,
+    without: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    match service(app) {
+        Some(s) => tauri::async_runtime::spawn_blocking(move || f(s))
+            .await
+            .map_err(|e| e.to_string())?,
+        None => without(),
+    }
+}
+
 /// Whether sync is on, who is paired and what is waiting.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_status() -> Result<SyncStatus, String> {
-    Ok(SyncStatus::default())
+pub async fn sync_status(app: tauri::AppHandle) -> Result<SyncStatus, String> {
+    with_service(&app, |s| s.status(), || Ok(SyncStatus::default())).await
 }
 
 /// Turns sync on or off. Turning it on creates this device's identity.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_set_enabled(enabled: bool) -> Result<SyncStatus, String> {
-    if enabled {
-        return Err(NOT_AVAILABLE.into());
-    }
-    Ok(SyncStatus::default())
+pub async fn sync_set_enabled(app: tauri::AppHandle, enabled: bool) -> Result<SyncStatus, String> {
+    with_service(
+        &app,
+        move |s| s.set_enabled(enabled),
+        move || {
+            if enabled {
+                Err(NOT_AVAILABLE.into())
+            } else {
+                Ok(SyncStatus::default())
+            }
+        },
+    )
+    .await
 }
 
 /// Desktop: opens the pairing window and returns the QR code to show.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_pair_open() -> Result<PairOffer, String> {
-    Err(NOT_AVAILABLE.into())
+pub async fn sync_pair_open(app: tauri::AppHandle) -> Result<PairOffer, String> {
+    with_service(&app, |s| s.pair_open(), || Err(NOT_AVAILABLE.into())).await
 }
 
 /// Desktop: closes the pairing window (the code stops working).
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_pair_close() -> Result<(), String> {
-    Ok(())
+pub async fn sync_pair_close(app: tauri::AppHandle) -> Result<(), String> {
+    with_service(&app, |s| s.pair_close(), || Ok(())).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_devices() -> Result<Vec<DeviceRow>, String> {
-    Ok(Vec::new())
+pub async fn sync_devices(app: tauri::AppHandle) -> Result<Vec<DeviceRow>, String> {
+    with_service(&app, |s| s.devices(), || Ok(Vec::new())).await
 }
 
 /// Forgets a device. Meetings already synced stay on both.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_unpair(gid: String) -> Result<(), String> {
-    let _ = gid;
-    Err(NOT_AVAILABLE.into())
+pub async fn sync_unpair(app: tauri::AppHandle, gid: String) -> Result<(), String> {
+    with_service(&app, move |s| s.unpair(&gid), || Err(NOT_AVAILABLE.into())).await
 }
 
 /// Forgets a device and has it delete what it got from this one.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_unpair_and_wipe(gid: String) -> Result<(), String> {
-    let _ = gid;
-    Err(NOT_AVAILABLE.into())
+pub async fn sync_unpair_and_wipe(app: tauri::AppHandle, gid: String) -> Result<(), String> {
+    with_service(
+        &app,
+        move |s| s.unpair_and_wipe(&gid),
+        || Err(NOT_AVAILABLE.into()),
+    )
+    .await
 }
 
 /// Syncs now instead of waiting for the next change.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_now() -> Result<(), String> {
-    Err(NOT_AVAILABLE.into())
+pub async fn sync_now(app: tauri::AppHandle) -> Result<(), String> {
+    with_service(&app, |s| s.now(), || Err(NOT_AVAILABLE.into())).await
 }
 
 /// The conflict copies of a meeting.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_conflicts(meeting: String) -> Result<Vec<ConflictCopy>, String> {
-    let _ = meeting;
-    Ok(Vec::new())
+pub async fn sync_conflicts(
+    app: tauri::AppHandle,
+    meeting: String,
+) -> Result<Vec<ConflictCopy>, String> {
+    with_service(&app, move |s| s.conflicts(&meeting), || Ok(Vec::new())).await
 }
 
 /// Takes the copy (`use_it`) in place of what is there, or dismisses it.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_conflict_resolve(gid: String, use_it: bool) -> Result<(), String> {
-    let _ = (gid, use_it);
-    Err(NOT_AVAILABLE.into())
+pub async fn sync_conflict_resolve(
+    app: tauri::AppHandle,
+    gid: String,
+    use_it: bool,
+) -> Result<(), String> {
+    with_service(
+        &app,
+        move |s| s.conflict_resolve(&gid, use_it),
+        || Err(NOT_AVAILABLE.into()),
+    )
+    .await
 }
 
 /// Answers a [`SyncEvent::NeedsConfirm`]: apply the other device's mass delete or refuse it.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_confirm_mass_delete(accept: bool) -> Result<(), String> {
-    let _ = accept;
-    Err(NOT_AVAILABLE.into())
+pub async fn sync_confirm_mass_delete(app: tauri::AppHandle, accept: bool) -> Result<(), String> {
+    with_service(
+        &app,
+        move |s| s.confirm_mass_delete(accept),
+        || Err(NOT_AVAILABLE.into()),
+    )
+    .await
 }
 
+/// Where "Delete everything" stands: waiting for paired devices to take their
+/// wipe, or finished.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_delete_everywhere_status() -> Result<DeleteEverywhereStatus, String> {
-    Ok(DeleteEverywhereStatus {
-        state: DeleteEverywhereState::Idle,
-        waiting_for: Vec::new(),
-    })
+pub async fn sync_delete_everywhere_status(
+    app: tauri::AppHandle,
+) -> Result<DeleteEverywhereStatus, String> {
+    match service(&app) {
+        Some(s) => Ok(s.delete_everywhere_status()),
+        None => Ok(DeleteEverywhereStatus {
+            state: DeleteEverywhereState::Idle,
+            waiting_for: Vec::new(),
+        }),
+    }
+}
+
+/// "Delete here only": stops the wait for paired devices during "Delete
+/// everything"; the data goes at once and the devices that were not reached
+/// keep their copies.
+#[tauri::command]
+#[specta::specta]
+pub async fn sync_delete_everywhere_skip(app: tauri::AppHandle) -> Result<(), String> {
+    match service(&app) {
+        Some(s) => {
+            s.delete_everywhere_skip();
+            Ok(())
+        }
+        None => Err(NOT_AVAILABLE.into()),
+    }
 }
 
 /// Phone: starts the camera to scan the desktop's code (the scan arrives as
@@ -318,17 +393,5 @@ mod tests {
         .unwrap();
         assert_eq!(json["type"], "error");
         assert_eq!(json["code"], "upgradeRequired");
-    }
-
-    #[test]
-    fn stubs_answer_the_typed_error() {
-        use tauri::async_runtime::block_on;
-        assert_eq!(block_on(sync_now()), Err(NOT_AVAILABLE.to_string()));
-        assert_eq!(
-            block_on(sync_set_enabled(true)),
-            Err(NOT_AVAILABLE.to_string())
-        );
-        assert!(block_on(sync_set_enabled(false)).is_ok());
-        assert!(block_on(sync_devices()).unwrap().is_empty());
     }
 }

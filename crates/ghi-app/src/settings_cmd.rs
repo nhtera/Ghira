@@ -36,24 +36,37 @@ pub async fn vocabulary(core: CoreState<'_>) -> Result<Vocabulary, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn set_vocabulary(core: CoreState<'_>, terms: Vec<String>) -> Result<Vocabulary, String> {
-    blocking(&core, move |c| {
-        let store = c.store()?;
-        let mut out: Vec<String> = Vec::new();
-        for t in terms {
-            let t: String = t.trim().chars().take(80).collect();
-            if !t.is_empty() && !out.iter().any(|o| ghi_text::fold(o) == ghi_text::fold(&t)) {
-                out.push(t);
-            }
+    blocking(&core, move |c| store_terms(&*c.store()?, terms)).await
+}
+
+pub(crate) fn store_terms(
+    store: &ghi_store::store::Store,
+    terms: Vec<String>,
+) -> Result<Vocabulary, String> {
+    let mut out: Vec<String> = Vec::new();
+    for t in terms {
+        let t: String = t.trim().chars().take(80).collect();
+        if !t.is_empty() && !out.iter().any(|o| ghi_text::fold(o) == ghi_text::fold(&t)) {
+            out.push(t);
         }
-        if out.len() > MAX_TERMS {
-            return Err(format!("at most {MAX_TERMS} terms"));
-        }
-        store
-            .set_setting(TERMS_SETTING, &serde_json::json!(out))
-            .map_err(|e| e.to_string())?;
-        vocabulary_of(&store)
-    })
-    .await
+    }
+    if out.len() > MAX_TERMS {
+        return Err(format!("at most {MAX_TERMS} terms"));
+    }
+    let value = serde_json::json!(out);
+    store
+        .set_setting(TERMS_SETTING, &value)
+        .map_err(|e| e.to_string())?;
+    sync_setting(store, TERMS_SETTING, &value);
+    vocabulary_of(store)
+}
+
+/// Records a vocabulary change for the paired devices (the allowlist, last
+/// writer wins). The local change stands whatever happens here.
+fn sync_setting(store: &ghi_store::store::Store, key: &str, value: &serde_json::Value) {
+    if let Err(e) = store.put_synced(key, &value.to_string()) {
+        log::warn!("synced setting {key} not recorded: {e}");
+    }
 }
 
 /// Removes a learned name from the vocabulary (it stays removed).
@@ -71,9 +84,11 @@ pub async fn ignore_learned_term(core: CoreState<'_>, term: String) -> Result<Vo
         if !ignored.iter().any(|i| ghi_text::fold(i) == folded) && ignored.len() < 2000 {
             ignored.push(term);
         }
+        let value = serde_json::json!(ignored);
         store
-            .set_setting(IGNORED_SETTING, &serde_json::json!(ignored))
+            .set_setting(IGNORED_SETTING, &value)
             .map_err(|e| e.to_string())?;
+        sync_setting(&store, IGNORED_SETTING, &value);
         vocabulary_of(&store)
     })
     .await

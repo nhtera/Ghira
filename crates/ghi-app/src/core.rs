@@ -72,6 +72,9 @@ pub struct Core {
     hooks: CoreHooks,
     /// The launch lock check ran (see [`CoreHooks::gate_launch`]).
     launch_checked: std::sync::atomic::AtomicBool,
+    /// The app's sync service (phase 15): told when the lock changes and
+    /// before everything is deleted. Weak: the service holds the core.
+    sync: Mutex<std::sync::Weak<crate::sync_service::SyncService>>,
 }
 
 /// See [`Core::set_settings_hook`].
@@ -502,6 +505,7 @@ impl Core {
             events,
             hooks,
             launch_checked: std::sync::atomic::AtomicBool::new(false),
+            sync: Mutex::new(std::sync::Weak::new()),
         }
     }
 
@@ -775,6 +779,21 @@ impl Core {
         }
         self.locked
             .store(locked, std::sync::atomic::Ordering::Release);
+        // Sync's listener exists only while the app is unlocked (doc 07
+        // §2.4): the service follows on its own thread (the phone calls this
+        // from its main thread).
+        if let Some(s) = self.sync_service() {
+            s.poke();
+        }
+    }
+
+    /// Registers the app's sync service (`SyncService::new` does).
+    pub fn attach_sync(&self, service: &Arc<crate::sync_service::SyncService>) {
+        *lock(&self.sync) = Arc::downgrade(service);
+    }
+
+    pub fn sync_service(&self) -> Option<Arc<crate::sync_service::SyncService>> {
+        lock(&self.sync).upgrade()
     }
 
     /// The app's data directory (store, models, updates, diagnostics).
@@ -790,6 +809,18 @@ impl Core {
     /// every meeting and removes the database, audio, snapshots and cloud
     /// keys; a fresh key ring is saved. The app restarts into onboarding.
     pub fn delete_everything(&self) -> Result<(), String> {
+        self.delete_everything_with(&|| Ok(()))
+    }
+
+    /// [`Core::delete_everything`] after `prepare`, which runs once nothing
+    /// can start a recording any more and the store is still usable: the
+    /// sync service queues the wipe of paired devices and waits for them
+    /// there (`SyncService::delete_everywhere_prepare`). If `prepare` fails
+    /// nothing is deleted.
+    pub fn delete_everything_with(
+        &self,
+        prepare: &dyn Fn() -> Result<(), String>,
+    ) -> Result<(), String> {
         use std::sync::atomic::Ordering;
         if self.locked() {
             return Err("the app is locked".into());
@@ -799,6 +830,7 @@ impl Core {
         if lock(&self.session).is_some() {
             return Err("stop the recording first".into());
         }
+        prepare()?;
         if self.deleting.swap(true, Ordering::AcqRel) {
             return Err("all data is already being deleted".into());
         }
@@ -808,12 +840,19 @@ impl Core {
             // Nothing was deleted: the next `store()` opens it again, with
             // its job runner, once the last user has let go.
             *lock(&self.settings) = None;
+            if let Some(s) = self.sync_service() {
+                s.resume();
+            }
         }
         self.deleting.store(false, Ordering::Release);
         r
     }
 
     fn delete_locked(&self) -> Result<(), String> {
+        // Closes the listener and ends the sessions: they hold the store.
+        if let Some(s) = self.sync_service() {
+            s.stop_for_delete();
+        }
         self.shutdown(std::time::Duration::from_secs(5));
         *lock(&self.runner) = None;
         *lock(&self.llm) = None;
@@ -842,6 +881,11 @@ impl Core {
                 // The data is already gone; a key left behind is removable
                 // in Settings → AI.
                 let _ = s.delete(&format!("provider-{p}"));
+            }
+            // The sync identity goes with the data: paired devices refuse
+            // this device from now on (doc 07 §3.5).
+            if let Err(e) = ghi_sync::identity::Identity::delete(s.as_ref()) {
+                log::warn!("removing the sync identity failed: {e}");
             }
         }
         *lock(&self.settings) = None;
@@ -1061,6 +1105,7 @@ impl Core {
             for p in crate::cloud_cmd::PROVIDERS {
                 let _ = s.delete(&format!("provider-{p}"));
             }
+            let _ = ghi_sync::identity::Identity::delete(s.as_ref());
         }
         *lock(&self.settings) = None;
         *lock(&self.open_problem) = None;
@@ -1104,6 +1149,9 @@ impl Core {
             None => self.desktop_handlers(&store, &models)?,
         };
         let runner = JobRunner::new(store.clone(), self.events.clone(), handlers);
+        // Jobs a paired phone leased to this device run under the lease's
+        // fence (doc 07 §8); jobs without a lease never ask it.
+        runner.set_fence(crate::sync_service::lease_fence(store.clone()));
         if self.hooks.handlers.is_none() {
             // Light machines search by keywords only (no embedding model).
             let _ = ghi_core::index_job::set_enabled(

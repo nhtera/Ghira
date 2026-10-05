@@ -71,18 +71,27 @@ fn today() -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
-/// "Delete all data": everything goes (meetings, audio, keys, settings),
-/// then the app restarts into onboarding. The UI asks for a typed
-/// confirmation first.
+/// "Delete all data": everything goes (meetings, audio, keys, settings), then
+/// the app restarts into onboarding. The UI asks for a typed confirmation
+/// first. With `everywhere` and paired phones, each is queued to delete what
+/// it got from this computer and this waits for the phones seen a moment ago
+/// (`sync_delete_everywhere_status` says for whom; `sync_delete_everywhere_skip`
+/// ends the wait); the sync identity is destroyed with the data.
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_all_data(
     app: AppHandle,
     core: CoreState<'_>,
     imports: tauri::State<'_, Arc<crate::import_cmd::Imports>>,
+    sync: tauri::State<'_, Arc<ghi_app::sync_service::SyncService>>,
+    everywhere: bool,
 ) -> Result<(), String> {
     imports.cancel_all();
-    blocking(&core, move |c| c.delete_everything()).await?;
+    let sync = sync.inner().clone();
+    blocking(&core, move |c| {
+        c.delete_everything_with(&|| sync.delete_everywhere_prepare(everywhere))
+    })
+    .await?;
     app.restart();
 }
 
