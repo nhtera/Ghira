@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `ghi sync serve|pair|run|status`: LAN sync between two data directories
+//! `ghi sync serve|pair|run|status|export|import`: LAN sync between two data directories
 //! (phase 15, doc 07). `serve` is the hub (listener on the machine's private
 //! addresses, mDNS with the `mdns` feature), `pair` and `run` are a spoke.
+//! `export` and `import` are the fallback for devices that can't reach each
+//! other: a passphrase-sealed file (doc 07 §10), the passphrase from a TTY
+//! prompt, `GHI_EXPORT_PASSPHRASE`, or the first line of stdin, never an
+//! argument and never printed.
 //!
 //! The pairing code carries a one-time secret, so `serve` prints it only with
 //! `--print-qr` (stdout, one line); otherwise it writes an SVG next to the
@@ -46,6 +50,12 @@ pub enum Action {
     Run(RunArgs),
     /// Paired devices and sync cursors; no secrets (`ghi.sync-status/1`).
     Status(StatusArgs),
+    /// Writes a passphrase-sealed file with meetings, their audio and keys,
+    /// for a device that can't sync over the network (`ghi.sync-export/1`).
+    Export(ExportArgs),
+    /// Merges a sealed export file into this store; the same merge as a sync,
+    /// no pairing needed (`ghi.sync-import/1`).
+    Import(ImportArgs),
 }
 
 #[derive(Debug, Args)]
@@ -104,12 +114,36 @@ pub struct StatusArgs {
     pub dir: PathBuf,
 }
 
+#[derive(Debug, Args)]
+pub struct ExportArgs {
+    /// The data directory to export from.
+    #[arg(long)]
+    pub dir: PathBuf,
+    /// The file to write.
+    #[arg(long)]
+    pub out: PathBuf,
+    /// A meeting to export (repeatable; default: every finished meeting).
+    #[arg(long = "meeting")]
+    pub meetings: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ImportArgs {
+    /// The data directory to import into.
+    #[arg(long)]
+    pub dir: PathBuf,
+    /// The export file.
+    pub file: PathBuf,
+}
+
 pub fn run(action: &Action) -> Result<(), ErrorDoc> {
     match action {
         Action::Serve(a) => serve(a),
         Action::Pair(a) => pair(a),
         Action::Run(a) => run_once(a),
         Action::Status(a) => status(&a.dir),
+        Action::Export(a) => export(a),
+        Action::Import(a) => import(a),
     }
 }
 
@@ -424,5 +458,119 @@ fn status(dir: &Path) -> Result<(), ErrorDoc> {
         "device_gid": store.sync_device_gid().map_err(store_error)?,
         "feed_id": store.feed_id().map_err(store_error)?,
         "devices": list,
+    }))
+}
+
+/// The export passphrase: `GHI_EXPORT_PASSPHRASE`, else a prompt on the
+/// terminal (no echo; asked twice when `confirm`), else the first line of stdin.
+fn passphrase(confirm: bool) -> Result<zeroize::Zeroizing<String>, ErrorDoc> {
+    use std::io::IsTerminal;
+    if let Some(p) = std::env::var_os("GHI_EXPORT_PASSPHRASE").filter(|p| !p.is_empty()) {
+        let p = p
+            .into_string()
+            .map_err(|_| bad("GHI_EXPORT_PASSPHRASE is not valid text"))?;
+        return Ok(zeroize::Zeroizing::new(p));
+    }
+    if !std::io::stdin().is_terminal() {
+        return crate::cmd::store::read_secret_line("passphrase");
+    }
+    let first = prompt_secret("Passphrase: ")?;
+    if confirm && *first != *prompt_secret("Again: ")? {
+        return Err(bad("the passphrases differ"));
+    }
+    Ok(first)
+}
+
+/// One line from the terminal with echo off, prompt on stderr.
+fn prompt_secret(prompt: &str) -> Result<zeroize::Zeroizing<String>, ErrorDoc> {
+    use std::io::BufRead;
+    eprint!("{prompt}");
+    let _ = std::io::stderr().flush();
+    let echo = EchoOff::new();
+    let mut line = zeroize::Zeroizing::new(String::new());
+    let read = std::io::stdin().lock().read_line(&mut line);
+    drop(echo);
+    eprintln!();
+    read.map_err(|e| bad(format!("reading the passphrase: {e}")))?;
+    let len = line.trim_end_matches(['\r', '\n']).len();
+    line.truncate(len);
+    if line.is_empty() {
+        return Err(bad("empty passphrase"));
+    }
+    Ok(line)
+}
+
+/// Terminal echo off while alive (a no-op where the terminal can't be set).
+struct EchoOff {
+    #[cfg(unix)]
+    saved: Option<libc::termios>,
+}
+
+impl EchoOff {
+    #[cfg(unix)]
+    fn new() -> Self {
+        // SAFETY: a zeroed termios is a valid out-parameter for tcgetattr,
+        // and both calls only touch the stdin terminal.
+        unsafe {
+            let mut t: libc::termios = std::mem::zeroed();
+            if libc::tcgetattr(libc::STDIN_FILENO, &mut t) != 0 {
+                return EchoOff { saved: None };
+            }
+            let saved = t;
+            t.c_lflag &= !libc::ECHO;
+            if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSAFLUSH, &t) != 0 {
+                return EchoOff { saved: None };
+            }
+            EchoOff { saved: Some(saved) }
+        }
+    }
+    #[cfg(not(unix))]
+    fn new() -> Self {
+        EchoOff {}
+    }
+}
+
+#[cfg(unix)]
+impl Drop for EchoOff {
+    fn drop(&mut self) {
+        if let Some(t) = &self.saved {
+            // SAFETY: restores the attributes read in `new`.
+            unsafe {
+                libc::tcsetattr(libc::STDIN_FILENO, libc::TCSAFLUSH, t);
+            }
+        }
+    }
+}
+
+fn export(a: &ExportArgs) -> Result<(), ErrorDoc> {
+    let pass = passphrase(true)?;
+    let store = open_store(&a.dir)?;
+    let only = (!a.meetings.is_empty()).then_some(a.meetings.as_slice());
+    let r = ghi_sync::export::export_for_device(&store, only, &pass, &a.out).map_err(sync_error)?;
+    crate::emit(&json!({
+        "schema": "ghi.sync-export/1",
+        "file": a.out.display().to_string(),
+        "meetings": r.meetings,
+        "tombstones": r.tombstones,
+        "tracks": r.tracks,
+        "audio_bytes": r.audio_bytes,
+    }))
+}
+
+fn import(a: &ImportArgs) -> Result<(), ErrorDoc> {
+    let pass = passphrase(false)?;
+    let store = open_store(&a.dir)?;
+    let r = ghi_sync::export::import_from_device(&store, &a.file, &pass).map_err(|e| match e {
+        // A wrong passphrase or a damaged file is the user's to fix.
+        ghi_sync::SyncError::Store(e) => store_error(e),
+        e => sync_error(e),
+    })?;
+    crate::emit(&json!({
+        "schema": "ghi.sync-import/1",
+        "meetings": r.meetings,
+        "refused": r.refused,
+        "tombstones": r.tombstones,
+        "tracks": r.tracks,
+        "audio_bytes": r.audio_bytes,
     }))
 }

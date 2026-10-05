@@ -39,6 +39,7 @@ use crate::bundle::{
     STREAM_PREFIX_LEN, stream_cipher, stream_open, stream_seal, sync_dir, sync_file,
 };
 use crate::rowcrypt::{Dek, TAG_LEN};
+use crate::store::Store;
 use crate::{Result, StoreError};
 
 const MAGIC: &[u8; 4] = b"GHIX";
@@ -619,6 +620,219 @@ fn clean_stale(dir: &Path, prefixes: &[&str], max_age: std::time::Duration) -> R
         }
     }
     Ok(())
+}
+
+// ------------------------------------------------- sync export (slice 15-M)
+
+/// The device row ("Export file", state `known`: no key, never connects) that
+/// an import from a sealed export file applies its rows as. A fixed gid, so
+/// the same file applied twice, or on two devices, is the same sender.
+pub const FILE_ORIGIN_GID: &str = "0f11e000-0000-4000-8000-000000000001";
+
+/// A finished audio track that can go into a sync export file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportTrack {
+    pub meeting_gid: String,
+    pub track_gid: String,
+    /// The bundle file, verbatim.
+    pub path: PathBuf,
+    /// Audio pages (the final record not counted).
+    pub pages: u64,
+}
+
+impl Store {
+    /// The meetings a sync export covers: `None` is every finished meeting;
+    /// a list is checked (each must exist, hold a key and not be recording).
+    pub fn sync_export_meetings(&self, only: Option<&[String]>) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let live = "dek_wrapped <> zeroblob(length(dek_wrapped))
+                    AND gid NOT IN (SELECT gid FROM tombstones)";
+        let Some(only) = only else {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT gid FROM meetings WHERE status <> 'recording' AND {live}
+                 ORDER BY started_at, id"
+            ))?;
+            let rows = stmt.query_map([], |r| r.get(0))?;
+            return Ok(rows.collect::<rusqlite::Result<_>>()?);
+        };
+        let mut out: Vec<String> = Vec::new();
+        for gid in only {
+            crate::store::check_gid(gid)?;
+            if out.contains(gid) {
+                continue;
+            }
+            let status: Option<String> = rusqlite::OptionalExtension::optional(conn.query_row(
+                &format!("SELECT status FROM meetings WHERE gid = ?1 AND {live}"),
+                [gid],
+                |r| r.get(0),
+            ))?;
+            match status.as_deref() {
+                None => {
+                    return Err(StoreError::NotFound {
+                        kind: "meeting",
+                        gid: gid.clone(),
+                    });
+                }
+                Some("recording") => {
+                    return Err(StoreError::Invalid("a meeting is still recording".into()));
+                }
+                Some(_) => out.push(gid.clone()),
+            }
+        }
+        Ok(out)
+    }
+
+    /// `(sync_log kind, gid)` of every row of `meetings` and of the folders,
+    /// people and tags they point at, parents first (the order records must
+    /// be applied in). Rows with a tombstone are left out.
+    pub fn sync_export_rows(&self, meetings: &[String]) -> Result<Vec<(&'static str, String)>> {
+        let conn = self.conn();
+        let mut ids = Vec::new();
+        for gid in meetings {
+            ids.push(Store::meeting_ref(&conn, gid)?.id);
+        }
+        let mut out = Vec::new();
+        for (table, kind) in crate::migrate::SYNC_TABLES {
+            // Per table: the gids that belong to one meeting (`?1` is its id).
+            let of_meeting = match table {
+                "folders" => {
+                    "SELECT x.gid FROM folders x JOIN meetings m ON m.folder_id = x.id
+                     WHERE m.id = ?1"
+                }
+                "persons" => {
+                    "SELECT x.gid FROM persons x JOIN speakers s ON s.person_id = x.id
+                     WHERE s.meeting_id = ?1 ORDER BY s.id"
+                }
+                "tags" => {
+                    "SELECT x.gid FROM tags x JOIN meeting_tags l ON l.tag_id = x.id
+                     WHERE l.meeting_id = ?1 ORDER BY x.gid"
+                }
+                "meetings" => "SELECT x.gid FROM meetings x WHERE x.id = ?1",
+                "tracks" => "SELECT x.gid FROM tracks x WHERE x.meeting_id = ?1 ORDER BY x.id",
+                "speakers" => "SELECT x.gid FROM speakers x WHERE x.meeting_id = ?1 ORDER BY x.id",
+                "segments" => "SELECT x.gid FROM segments x WHERE x.meeting_id = ?1 ORDER BY x.id",
+                "notes_blocks" => {
+                    "SELECT x.gid FROM notes_blocks x WHERE x.meeting_id = ?1 ORDER BY x.id"
+                }
+                "action_items" => {
+                    "SELECT x.gid FROM action_items x WHERE x.meeting_id = ?1 ORDER BY x.id"
+                }
+                "marks" => "SELECT x.gid FROM marks x WHERE x.meeting_id = ?1 ORDER BY x.id",
+                "meeting_tags" => {
+                    "SELECT x.gid FROM meeting_tags x WHERE x.meeting_id = ?1 ORDER BY x.gid"
+                }
+                "conflict_copies" => {
+                    "SELECT x.gid FROM conflict_copies x WHERE x.meeting_id = ?1 ORDER BY x.id"
+                }
+                // Voice profiles never leave the device; settings are not meeting data.
+                _ => continue,
+            };
+            let mut seen = std::collections::HashSet::new();
+            for id in &ids {
+                let mut stmt = conn.prepare_cached(&format!(
+                    "SELECT g.gid FROM ({of_meeting}) g
+                     WHERE g.gid NOT IN (SELECT gid FROM tombstones)"
+                ))?;
+                let rows = stmt.query_map([id], |r| r.get::<_, String>(0))?;
+                for gid in rows {
+                    let gid = gid?;
+                    if seen.insert(gid.clone()) {
+                        out.push((kind, gid));
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// The tombstones a sync export carries. With `all` every tombstone of
+    /// this device; otherwise only those of rows below a meeting (segments,
+    /// notes, ... deleted here), never a meeting's or a folder's: exporting
+    /// one meeting must not delete others on the receiver.
+    pub fn sync_export_tombstones(
+        &self,
+        all: bool,
+    ) -> Result<Vec<crate::sync::records::SyncTombstone>> {
+        use crate::sync::records::{SyncTombstone, TombCause};
+        let own = self.sync_device_gid()?;
+        let conn = self.conn();
+        let filter = if all {
+            ""
+        } else {
+            "WHERE t.kind NOT IN ('meeting', 'folder', 'tag', 'person', 'voice_profile')"
+        };
+        let mut stmt = conn.prepare(&format!(
+            "SELECT t.gid, t.kind, t.lamport,
+                    COALESCE((SELECT d.gid FROM devices d WHERE d.id = t.origin), ?1), t.cause
+             FROM tombstones t {filter} ORDER BY t.lamport, t.gid"
+        ))?;
+        let rows = stmt.query_map([&own], |r| {
+            let cause: Option<String> = r.get(4)?;
+            Ok(SyncTombstone {
+                gid: r.get(0)?,
+                kind: r.get(1)?,
+                lamport: r.get(2)?,
+                origin: r.get(3)?,
+                cause: cause.as_deref().and_then(TombCause::parse),
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The finished audio tracks of `meetings` whose bundle is here and
+    /// authentic to its final record. Others (audio deleted by retention, a
+    /// cut-off file) are left out.
+    pub fn sync_export_tracks(&self, meetings: &[String]) -> Result<Vec<ExportTrack>> {
+        let mut out = Vec::new();
+        for meeting_gid in meetings {
+            let rows: Vec<(String, String)> = {
+                let conn = self.conn();
+                let mut stmt = conn.prepare(
+                    "SELECT t.gid, t.kind FROM tracks t JOIN meetings m ON m.id = t.meeting_id
+                     WHERE m.gid = ?1 AND t.page_count > 0
+                       AND t.gid NOT IN (SELECT gid FROM tombstones) ORDER BY t.id",
+                )?;
+                let rows = stmt.query_map([meeting_gid], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                rows.collect::<rusqlite::Result<_>>()?
+            };
+            for (track_gid, kind) in rows {
+                let kind = match kind.as_str() {
+                    "mic" => crate::store::TrackKind::Mic,
+                    "system" => crate::store::TrackKind::System,
+                    "file" => crate::store::TrackKind::File,
+                    _ => continue,
+                };
+                let path = self.bundle_path(meeting_gid, kind)?;
+                let opened = {
+                    let conn = self.conn();
+                    let m = Store::meeting_ref(&conn, meeting_gid)?;
+                    let dek = self.dek(&conn, m.id)?;
+                    crate::bundle::BundleReader::open(&path, &dek, &Store::bundle_aad(&track_gid))
+                };
+                let Ok(reader) = opened else { continue };
+                if !reader.complete() {
+                    continue;
+                }
+                out.push(ExportTrack {
+                    meeting_gid: meeting_gid.clone(),
+                    track_gid,
+                    path,
+                    pages: u64::from(reader.page_count()),
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// The "Export file" device an import applies as (made on first use).
+    pub fn sync_file_origin(&self) -> Result<String> {
+        self.conn().execute(
+            "INSERT OR IGNORE INTO devices (gid, name, platform, role, state, paired_at)
+             VALUES (?1, 'Export file', 'file', 'spoke', 'known', 0)",
+            [FILE_ORIGIN_GID],
+        )?;
+        Ok(FILE_ORIGIN_GID.to_string())
+    }
 }
 
 #[cfg(test)]

@@ -105,8 +105,3 @@ impl From<ghi_store::StoreError> for SyncError {
 }
 
 pub type Result<T, E = SyncError> = std::result::Result<T, E>;
-
-/// The error every W0 stub returns.
-pub(crate) fn not_yet<T>(what: &'static str) -> Result<T> {
-    Err(SyncError::NotYet(what))
-}
