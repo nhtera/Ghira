@@ -212,7 +212,9 @@ pub fn decide(cands: &[Candidate]) -> Decision {
 #[derive(Debug, Default)]
 pub struct Policy {
     /// Room mode with one cluster in the whole meeting: a lone voice is
-    /// suggested, never applied.
+    /// suggested, never applied, unless it is Me (a phone recording of a
+    /// talk is not labelled with the speaker's name, but the owner's own
+    /// voice at `T_HIGH` in the same language is).
     pub single_cluster: bool,
     /// The person who is Me.
     pub me_person: Option<String>,
@@ -245,7 +247,7 @@ pub fn resolve(
                     .any(|o| o.person_gid == c.person_gid && c.score - o.score < MARGIN)
         });
         let is_me = policy.me_person.as_deref() == Some(c.person_gid.as_str());
-        if policy.single_cluster
+        if (policy.single_cluster && !is_me)
             || !enough.get(i).copied().unwrap_or(false)
             || rival
             || (policy.file_source && is_me)
@@ -648,7 +650,12 @@ mod tests {
             applied(&ds)[0]
         };
         assert!(base(&|_| {}));
-        assert!(!base(&|p| p.single_cluster = true));
+        // A lone voice is applied only when it is Me.
+        assert!(base(&|p| p.single_cluster = true));
+        assert!(!base(&|p| {
+            p.single_cluster = true;
+            p.me_person = Some("someone else".into());
+        }));
         assert!(!base(&|p| p.file_source = true));
         assert!(!base(&|p| {
             p.linked.insert("me".into());

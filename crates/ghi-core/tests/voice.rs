@@ -951,9 +951,11 @@ fn two_clusters_that_match_me_equally_only_suggest() {
     assert!(store.speakers(&meeting).unwrap().iter().all(|s| !s.is_me));
 }
 
-/// H2: a meeting with one voice in a room: suggest only.
+/// H2 (amended 2026-10-05, owner default with veto): a meeting with one
+/// voice in a room only suggests a person, but the owner's own voice at
+/// T_HIGH in the same language is applied as Me.
 #[test]
-fn a_lone_voice_in_a_room_is_only_suggested() {
+fn a_lone_voice_in_a_room_is_me_when_it_matches() {
     let (_tmp, store) = open_store();
     enroll_me(&store, A);
     let script = Script {
@@ -972,7 +974,7 @@ fn a_lone_voice_in_a_room_is_only_suggested() {
     let meeting = record(&store, &runner, Mode::Room, audio, 8.0);
     assert_eq!(runner.run_pending(), 1);
     let a = speaker_at(&store, &meeting, 1_000);
-    assert!(!a.is_me && a.suggestion.is_some(), "{a:?}");
+    assert!(a.is_me && a.suggestion.is_none(), "{a:?}");
 }
 
 /// H2: under 2 windows and 6 s of speech is not enough to apply.
