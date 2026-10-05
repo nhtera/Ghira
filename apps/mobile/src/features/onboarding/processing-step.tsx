@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // M1 step 5: where new recordings are processed by default. This phone; My
-// computer waits for pairing (phase 15); cloud is chosen per meeting.
+// computer once one is paired (the step before); cloud is chosen per meeting.
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MobileSettings, ProcessingTarget } from "../../bindings";
 import { ipc } from "../../ipc";
 import { PhoneButton } from "@ghi/ui";
 import { TargetPicker } from "../record/target-picker";
+import { NeedPair, useDesktopTarget } from "../sync";
 import { StepLayout } from "./step-layout";
 
 export function ProcessingStep({ onNext }: { onNext: () => void }) {
@@ -14,6 +15,7 @@ export function ProcessingStep({ onNext }: { onNext: () => void }) {
   const [settings, setSettings] = useState<MobileSettings | null>(null);
   const [target, setTarget] = useState<ProcessingTarget>("phone");
   const [recordOnly, setRecordOnly] = useState(false);
+  const desktop = useDesktopTarget();
 
   useEffect(() => {
     let alive = true;
@@ -57,10 +59,11 @@ export function ProcessingStep({ onNext }: { onNext: () => void }) {
       <TargetPicker
         value={target}
         onChange={setTarget}
-        disabled={
-          recordOnly ? ["phone", "desktop", "cloud"] : ["desktop", "cloud"]
-        }
+        disabled={desktop.disabled(recordOnly)}
       />
+      {desktop.available && !desktop.paired && !recordOnly && (
+        <NeedPair link={false} className="text-ios-footnote m-0 mt-2 text-muted" />
+      )}
     </StepLayout>
   );
 }

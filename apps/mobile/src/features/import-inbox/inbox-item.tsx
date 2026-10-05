@@ -11,6 +11,7 @@ import type {
 import { formatBytes } from "../models/format-bytes";
 import { knownError } from "../settings/api";
 import { Btn } from "../settings/controls";
+import { NeedPair, useDesktopTarget } from "../sync";
 import { ChoiceGroup } from "./choice-group";
 
 export function InboxRow({
@@ -29,6 +30,7 @@ export function InboxRow({
   const [target, setTarget] = useState<ProcessingTarget>(
     item.target === "desktop" ? "phone" : item.target,
   );
+  const desktop = useDesktopTarget();
   const size =
     item.sizeBytes == null
       ? t("mobile.inbox.unknownSize")
@@ -84,10 +86,11 @@ export function InboxRow({
               {
                 value: "desktop",
                 label: t("mobile.import.target.desktop"),
-                disabled: true,
+                disabled: !desktop.paired,
               },
             ]}
           />
+          {desktop.available && !desktop.paired && <NeedPair link={false} />}
           {error && (
             <p role="alert" className="text-ios-footnote m-0 text-rec-ink">
               {t(`mobile.settings.error.${knownError(error)}`)}

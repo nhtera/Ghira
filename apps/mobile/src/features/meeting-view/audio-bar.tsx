@@ -106,3 +106,19 @@ export function AudioBar({ audio, wave, segments, speakers }: AudioBarProps) {
     </div>
   );
 }
+
+/** The audio lives on the paired computer: say where, and that the notes and transcript are here. */
+export function AudioOnDevice({ device }: { device: string }) {
+  const { t } = useTranslation();
+  return (
+    <div role="group" aria-label={t("mobile.detail.listen")} data-testid="audio-on-device" className="flex items-center gap-3 border-t border-line bg-surface px-5 pt-2.5 pb-3">
+      <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
+        <Icon name="laptop_mac" size={24} className="size-6" />
+      </span>
+      <div className="flex min-w-0 flex-col">
+        <p className="text-ios-subhead m-0 font-semibold break-words">{t("mobile.sync.audioOnDevice", { device })}</p>
+        <p className="text-ios-footnote m-0 text-muted">{t("mobile.sync.audioOnDeviceHint")}</p>
+      </div>
+    </div>
+  );
+}

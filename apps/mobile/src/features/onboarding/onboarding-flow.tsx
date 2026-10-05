@@ -24,17 +24,16 @@ import { LanguagesStep } from "./languages-step";
 import { MicStep } from "./mic-step";
 import { ModelsStep } from "./models-step";
 import { ProcessingStep } from "./processing-step";
-import { resumeStep, STEPS } from "./state";
+import { PairStep } from "./pair-step";
+import { resumeStep, STEPS, stepsFor } from "./state";
 import { VoiceStep } from "./voice-step";
 
-const SCREENS: Record<
-  Exclude<OnboardingStep, "pair">,
-  ComponentType<{ onNext: () => void }>
-> = {
+const SCREENS: Record<OnboardingStep, ComponentType<{ onNext: () => void }>> = {
   languages: LanguagesStep,
   micPriming: MicStep,
   voice: VoiceStep,
   consent: ConsentStep,
+  pair: PairStep,
   processing: ProcessingStep,
   models: ModelsStep,
   done: DoneStep,
@@ -44,6 +43,8 @@ export function OnboardingFlow() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [index, setIndex] = useState<number | null>(null);
+  // The steps depend on the core: pairing is a step only when it is available.
+  const [steps, setSteps] = useState<readonly OnboardingStep[]>(STEPS);
   // The setup could not be read or saved: say so, never start over silently.
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -58,8 +59,10 @@ export function OnboardingFlow() {
       (r) => {
         if (!alive) return;
         if (r.status === "ok") {
+          const list = stepsFor(r.data.syncAvailable);
           setFailed(false);
-          setIndex(STEPS.indexOf(resumeStep(r.data)));
+          setSteps(list);
+          setIndex(list.indexOf(resumeStep(r.data)));
         } else setFailed(true);
       },
       () => alive && setFailed(true),
@@ -80,7 +83,7 @@ export function OnboardingFlow() {
 
   const next = useCallback(async () => {
     if (index === null) return;
-    const step = STEPS[index];
+    const step = steps[index];
     const saved = await ipc.commands.onboardingCompleteStep(step).catch(() => null);
     if (saved?.status !== "ok") return setFailed(true);
     setFailed(false);
@@ -91,7 +94,7 @@ export function OnboardingFlow() {
       setDir("next");
       setIndex(index + 1);
     }
-  }, [index, navigate]);
+  }, [index, navigate, steps]);
 
   const back = useCallback(() => {
     setDir("prev");
@@ -107,12 +110,12 @@ export function OnboardingFlow() {
       </main>
     );
   }
-  const Screen = SCREENS[STEPS[index] as keyof typeof SCREENS];
+  const Screen = SCREENS[steps[index]];
   return (
-    <main ref={root} data-screen="onboarding" data-step={STEPS[index]} className="flex h-full flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
-      <p id={stepId} className="sr-only">{t("mobile.onboarding.step", { current: index + 1, total: STEPS.length })}</p>
+    <main ref={root} data-screen="onboarding" data-step={steps[index]} className="flex h-full flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
+      <p id={stepId} className="sr-only">{t("mobile.onboarding.step", { current: index + 1, total: steps.length })}</p>
       <div aria-hidden="true" data-testid="onboarding-progress" className="flex gap-1.5 px-6 pt-4">
-        {STEPS.map((s, i) => (
+        {steps.map((s, i) => (
           <span key={s} data-done={i <= index} className={cn("h-1 flex-1 rounded-sm", i <= index ? "bg-accent" : "bg-line2")} />
         ))}
       </div>
@@ -125,7 +128,7 @@ export function OnboardingFlow() {
       </div>
       {failed && <Banner variant="warning" title={t("mobile.onboarding.loadError")} className="mx-6" />}
       <div
-        key={STEPS[index]}
+        key={steps[index]}
         data-testid="onboarding-page"
         onTouchStart={(e) => {
           const p = e.touches[0];

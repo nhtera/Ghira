@@ -10,7 +10,7 @@
 import { cn, Icon, PrivacyIndicator, type PrivacyState } from "@ghi/ui";
 import { formatClock } from "@ghi/i18n";
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { RecordPhase } from "../../bindings";
 import { ipc } from "../../ipc";
@@ -18,6 +18,7 @@ import { CalendarCard, useCurrentEvent } from "../calendar";
 import { CallNoticeSheet } from "../consent/call-notice-sheet";
 import { ConsentSheet } from "../consent/consent-sheet";
 import { SensitiveBadge, SensitiveSheet } from "../sensitive";
+import { NeedPair, useDesktopTarget } from "../sync";
 import { DiscardSheet } from "./discard-sheet";
 import { InterruptionSheet } from "./interruption-sheet";
 import { LiveTranscript, TurnAnnouncer } from "./live-transcript";
@@ -51,6 +52,11 @@ export function RecordScreen() {
   const navigate = useNavigate();
   const { setup, patch } = useRecordSetup();
   const rec = useRecord(setup);
+  const desktop = useDesktopTarget();
+  // A saved "my computer" outlives its pairing: fall back to this phone.
+  useEffect(() => {
+    if (desktop.available && desktop.ready && !desktop.paired && setup.target === "desktop") patch({ target: "phone" });
+  }, [desktop.available, desktop.ready, desktop.paired, setup.target, patch]);
   const { model } = rec;
   const [sheet, setSheet] = useState<"consent" | "call" | null>(null);
   // Chosen in the start sheet, for that one recording.
@@ -159,7 +165,12 @@ export function RecordScreen() {
             {t("mobile.privacy.audioStaysLine")}
           </p>
           {calendarEvent && <CalendarCard event={calendarEvent} />}
-          {!setup.recordOnlyDevice && <TargetPicker value={setup.target} onChange={(target) => patch({ target })} disabled={["desktop", "cloud"]} className="shrink-0" />}
+          {!setup.recordOnlyDevice && (
+            <div className="flex shrink-0 flex-col gap-1.5">
+              <TargetPicker value={setup.target} onChange={(target) => patch({ target })} disabled={desktop.disabled()} className="shrink-0" />
+              {desktop.available && !desktop.paired && <NeedPair />}
+            </div>
+          )}
         </div>
       )}
 

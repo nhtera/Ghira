@@ -5,9 +5,8 @@ import type { OnboardingState, OnboardingStep } from "../../bindings";
 import { ipc } from "../../ipc";
 
 /**
- * The steps in order. `pair` is phase 15 (QR pairing with a computer): it has no
- * screen yet, so it never shows, whatever `syncAvailable` says. The optional
- * voice step comes after the models: its speaker model downloads there.
+ * The steps in order without pairing. The optional voice step comes after the
+ * models: its speaker model downloads there.
  */
 export const STEPS: readonly OnboardingStep[] = [
   "languages",
@@ -19,11 +18,24 @@ export const STEPS: readonly OnboardingStep[] = [
   "done",
 ];
 
+/**
+ * The steps this build shows: `pair` (phase 15, QR pairing with a computer)
+ * sits before the processing step, and only when the core says pairing is
+ * available (`syncAvailable`).
+ */
+export function stepsFor(syncAvailable: boolean): readonly OnboardingStep[] {
+  if (!syncAvailable) return STEPS;
+  const at = STEPS.indexOf("processing");
+  return [...STEPS.slice(0, at), "pair", ...STEPS.slice(at)];
+}
+
 /** The first step not completed yet; the last one when all are. */
 export function resumeStep(
-  state: Pick<OnboardingState, "completed">,
+  state: Pick<OnboardingState, "completed"> & { syncAvailable?: boolean },
 ): OnboardingStep {
-  return STEPS.find((s) => !state.completed.includes(s)) ?? "done";
+  return (
+    stepsFor(state.syncAvailable ?? false).find((s) => !state.completed.includes(s)) ?? "done"
+  );
 }
 
 /** The store is not open yet (locked, still starting): the lock gate or a retry sorts it out. */

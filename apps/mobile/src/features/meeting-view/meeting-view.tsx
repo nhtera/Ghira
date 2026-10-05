@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import type { Citation } from "../../bindings";
 import { useLocale, useMeetingWhen } from "../meeting-list/format";
 import { ActionsPanel } from "./actions-panel";
-import { AudioBar } from "./audio-bar";
+import { AudioBar, AudioOnDevice } from "./audio-bar";
 import { NotesPanel } from "./notes-panel";
 import { speakerOf, transcriptSpeaker } from "./notes-model";
 import { QuoteSheet } from "./quote-sheet";
@@ -24,6 +24,7 @@ import { useWindowEvent } from "./use-window-event";
 import { useMeeting } from "./use-meeting";
 import { Switch } from "../settings/controls";
 import { SensitiveBadge, SensitiveRow, SensitiveSheet } from "../sensitive";
+import { ConflictBanner, ProcessHereSheet, RefiningBanner, useMeetingSync } from "../sync";
 
 export type MeetingTab = "notes" | "actions" | "transcript";
 const TABS: MeetingTab[] = ["notes", "actions", "transcript"];
@@ -40,6 +41,8 @@ export function MeetingView({
   const when = useMeetingWhen();
   const navigate = useNavigate();
   const m = useMeeting(id);
+  const sync = useMeetingSync(id, m.detail, m.chip, m.reload);
+  const [taking, setTaking] = useState(false);
   const audio = useAudio(id, m.detail?.durationMs ?? null);
   const wave = useWaveform(id, Boolean(m.detail?.audioAvailable));
   const ready = m.status === "ready" && Boolean(m.detail);
@@ -58,6 +61,7 @@ export function MeetingView({
     setQuote(null);
     setSharing(false);
     setAsking(false);
+    setTaking(false);
   });
 
   const back = () => void navigate({ to: "/meetings" });
@@ -149,13 +153,23 @@ export function MeetingView({
               .join(" · ")}
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            {m.chip && <SyncChip chip={m.chip} />}
+            {m.chip && <SyncChip chip={m.chip} device={sync.device ?? undefined} />}
             <PrivacyIndicator
               state={detail.cloudUsed ? "cloudMeeting" : "local"}
             />
             {detail.sensitive && <SensitiveBadge />}
           </div>
         </div>
+        {sync.conflict && (
+          <ConflictBanner
+            device={sync.conflict.device}
+            text={sync.conflict.text}
+            busy={sync.busy}
+            error={sync.error}
+            onUse={() => void sync.resolve(true)}
+            onDismiss={() => void sync.resolve(false)}
+          />
+        )}
         <div className="sticky top-0 z-10 bg-surface px-4 pt-1 pb-2">
           <div
             role="tablist"
@@ -181,6 +195,15 @@ export function MeetingView({
             ))}
           </div>
         </div>
+        {tab === "transcript" && sync.leaseOpen && sync.device && (
+          <RefiningBanner
+            device={sync.device}
+            onProcessHere={() => {
+              sync.clearError();
+              setTaking(true);
+            }}
+          />
+        )}
         <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
           {tab === "notes" && (
             <>
@@ -239,6 +262,9 @@ export function MeetingView({
           )}
           {tab === "transcript" && (
             <TranscriptPanel
+              // The banner above moves the list: start it afresh when the lease opens or closes.
+              key={String(sync.leaseOpen)}
+              readOnly={sync.leaseOpen}
               segments={m.transcript.segments}
               speakers={detail.speakers}
               scroller={scroller}
@@ -257,14 +283,24 @@ export function MeetingView({
           )}
         </div>
       </div>
-      {detail.audioAvailable && (
+      {detail.audioAvailable ? (
         <AudioBar
           audio={audio}
           wave={wave}
           segments={m.transcript.segments}
           speakers={detail.speakers}
         />
+      ) : (
+        sync.audioOnDevice && sync.device && <AudioOnDevice device={sync.device} />
       )}
+      <ProcessHereSheet
+        open={taking && sync.device !== null}
+        device={sync.device ?? ""}
+        busy={sync.busy}
+        error={sync.error}
+        onCancel={() => setTaking(false)}
+        onConfirm={() => void sync.processHere().then((ok) => ok && setTaking(false))}
+      />
       <QuoteSheet
         citation={quote?.citation ?? null}
         speaker={quoteSpeaker}

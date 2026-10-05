@@ -11,6 +11,10 @@
       "unpairedBy": "Unpaired by {{device}}. Pair again to keep syncing.",
       "wipeAsked": "{{device}} asked this phone to delete the meetings they shared. They’ve been deleted here.",
       "scan": {
+        "viewfinder": "Camera: looking for a code",
+        "looking": "Looking for a code",
+        "start": "Scan the code",
+        "tryAgain": "Try again",
         "cameraOff": "The camera is off for {{app}}. Turn it on in Settings to scan the code.",
         "invalid": "That isn’t a {{app}} code.",
         "expired": "That code has expired. Show a new one on your computer.",
@@ -40,6 +44,47 @@
         "storageFull": "There isn’t enough storage space to finish syncing.",
         "locked": "Unlock {{app}} to sync.",
         "internal": "Sync stopped because of a problem. Try again."
+      },
+      "pairNow": "Pair a computer",
+      "screen": {
+        "pairedHeader": "Paired computer",
+        "lastSynced": "Last synced {{when}}",
+        "neverSynced": "Not synced yet",
+        "syncNow": "Sync now",
+        "syncing": "Syncing…",
+        "pending_one": "{{count}} item waiting to send",
+        "pending_other": "{{count}} items waiting to send",
+        "localOnly": "Local network only",
+        "localOnlyBody": "Syncing stays on your Wi-Fi and never goes through the internet. Voice profiles stay on each device.",
+        "off": "Pair a computer to move meetings between this phone and {{app}} on your Mac or PC. Your computer shows the code under Settings → Sync.",
+        "unpairAndWipe": "Unpair and delete on {{device}}",
+        "unpairAndWipeTitle": "Unpair and delete on {{device}}?",
+        "unpairAndWipeBody": "{{device}} deletes the copies it got from this phone the next time they connect on the same Wi-Fi. Until then they stay there. This can’t be undone.",
+        "wipePending": "Waiting for {{device}} to delete the meetings it got from this phone. Keep both on the same Wi-Fi.",
+        "wipeDone": "{{device}} deleted them. This phone is unpaired.",
+        "unpairedNotice": "Unpaired from {{device}}."
+      },
+      "hotspot": {
+        "title": "Can’t find your computer?",
+        "body": "Some Wi-Fi networks, like offices and guest networks, stop devices from seeing each other. Turn on Personal Hotspot on this iPhone, connect your computer to it, and scan again.",
+        "export": "Still not working? Your computer can export meetings to a file for another device."
+      },
+      "lease": {
+        "confirmTitle": "Process on this phone now?",
+        "confirmBody": "{{device}} stops refining this meeting and this phone takes over. The transcript can be edited again once it’s done.",
+        "confirm": "Process here",
+        "failed": "Couldn’t take the job back. Try again."
+      },
+      "conflict": {
+        "label": "Their version",
+        "failed": "Couldn’t save your choice. Try again."
+      },
+      "deleteAll": {
+        "also": "Also delete on {{device}}",
+        "alsoHint": "If {{device}} is reachable it deletes the meetings from this phone too. If it isn’t, it keeps them.",
+        "waitingTitle": "Waiting for {{device}}…",
+        "waitingBody": "Keep both on the same Wi-Fi. Until {{device}} hears from this phone it keeps its copies.",
+        "hereOnly": "Delete here only"
       }
     }
   }

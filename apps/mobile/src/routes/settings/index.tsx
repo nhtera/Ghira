@@ -9,6 +9,7 @@ import { CalendarScreen } from "./calendar";
 import { CloudScreen } from "./cloud";
 import { ConsentScreen } from "./consent";
 import { SettingsHome } from "./home";
+import { SyncScreen } from "./sync/sync-screen";
 import { LicensesScreen } from "./licenses";
 import { PrivacyScreen } from "./privacy";
 import { RequestLogScreen } from "./request-log";
@@ -23,6 +24,7 @@ export function settingsRoutes(parent: AnyRoute) {
     at("/models", ModelsScreen),
     at("/voice", VoiceScreen),
     at("/calendar", CalendarScreen),
+    at("/sync", SyncScreen),
     at("/privacy", PrivacyScreen),
     at("/privacy/log", RequestLogScreen),
     at("/vocabulary", VocabularyScreen),

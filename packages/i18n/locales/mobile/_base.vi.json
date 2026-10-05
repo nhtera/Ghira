@@ -98,7 +98,7 @@
       "body": "Trên máy tính, mở {{app}} → Cài đặt → Đồng bộ rồi quét mã hiển thị ở đó.",
       "paired": "Đã ghép với {{device}}",
       "scanning": "đang tìm mã",
-      "syncNote": "Hồ sơ giọng nói và ghi chú đồng bộ qua Wi-Fi.",
+      "syncNote": "Cuộc họp, ghi chú và bản ghi đồng bộ qua Wi-Fi. Hồ sơ giọng nói ở lại trên từng thiết bị.",
       "title": "Ghép nối với máy tính",
       "wifiNote": "Hai thiết bị cần cùng mạng Wi-Fi. Không có gì đi qua internet."
     },

@@ -11,6 +11,10 @@
       "unpairedBy": "{{device}} đã huỷ ghép. Hãy ghép lại để tiếp tục đồng bộ.",
       "wipeAsked": "{{device}} đã yêu cầu điện thoại này xoá các cuộc họp đã chia sẻ. Chúng đã được xoá khỏi máy.",
       "scan": {
+        "viewfinder": "Camera: đang tìm mã",
+        "looking": "Đang tìm mã",
+        "start": "Quét mã",
+        "tryAgain": "Thử lại",
         "cameraOff": "Camera đang tắt với {{app}}. Bật trong Cài đặt để quét mã.",
         "invalid": "Đây không phải mã của {{app}}.",
         "expired": "Mã đã hết hạn. Hãy tạo mã mới trên máy tính.",
@@ -40,6 +44,46 @@
         "storageFull": "Không đủ dung lượng để đồng bộ xong.",
         "locked": "Mở khoá {{app}} để đồng bộ.",
         "internal": "Đồng bộ dừng vì có lỗi. Bạn thử lại nhé."
+      },
+      "pairNow": "Ghép nối máy tính",
+      "screen": {
+        "pairedHeader": "Máy tính đã ghép",
+        "lastSynced": "Đồng bộ lần cuối {{when}}",
+        "neverSynced": "Chưa đồng bộ",
+        "syncNow": "Đồng bộ ngay",
+        "syncing": "Đang đồng bộ…",
+        "pending_other": "{{count}} mục đang chờ gửi",
+        "localOnly": "Chỉ trong mạng nội bộ",
+        "localOnlyBody": "Đồng bộ chỉ diễn ra trong mạng Wi-Fi của bạn, không đi qua internet. Hồ sơ giọng nói ở lại trên từng thiết bị.",
+        "off": "Ghép nối máy tính để chuyển cuộc họp giữa điện thoại này và {{app}} trên Mac hoặc PC. Máy tính hiển thị mã trong Cài đặt → Đồng bộ.",
+        "unpairAndWipe": "Huỷ ghép và xoá trên {{device}}",
+        "unpairAndWipeTitle": "Huỷ ghép và xoá trên {{device}}?",
+        "unpairAndWipeBody": "{{device}} sẽ xoá các bản đã nhận từ điện thoại này ở lần kết nối tới trên cùng Wi-Fi. Trước đó chúng vẫn nằm ở đó. Không thể hoàn tác.",
+        "wipePending": "Đang chờ {{device}} xoá các cuộc họp nhận từ điện thoại này. Giữ hai máy trên cùng Wi-Fi.",
+        "wipeDone": "{{device}} đã xoá xong. Điện thoại này đã huỷ ghép.",
+        "unpairedNotice": "Đã huỷ ghép với {{device}}."
+      },
+      "hotspot": {
+        "title": "Không tìm thấy máy tính?",
+        "body": "Một số mạng Wi-Fi, như mạng văn phòng hoặc mạng khách, không cho các thiết bị thấy nhau. Hãy bật Điểm truy cập cá nhân trên iPhone này, kết nối máy tính vào đó rồi quét lại.",
+        "export": "Vẫn không được? Máy tính có thể xuất cuộc họp ra một tệp để mở trên thiết bị khác."
+      },
+      "lease": {
+        "confirmTitle": "Xử lý ngay trên điện thoại này?",
+        "confirmBody": "{{device}} sẽ dừng xử lý cuộc họp này và điện thoại này làm tiếp. Bản ghi sửa lại được khi xử lý xong.",
+        "confirm": "Xử lý tại đây",
+        "failed": "Chưa lấy lại được công việc. Hãy thử lại."
+      },
+      "conflict": {
+        "label": "Phiên bản bên kia",
+        "failed": "Chưa lưu được lựa chọn. Hãy thử lại."
+      },
+      "deleteAll": {
+        "also": "Xoá cả trên {{device}}",
+        "alsoHint": "Nếu kết nối được, {{device}} cũng xoá các cuộc họp từ điện thoại này. Nếu không, máy đó vẫn giữ lại.",
+        "waitingTitle": "Đang chờ {{device}}…",
+        "waitingBody": "Giữ hai máy trên cùng Wi-Fi. Cho đến khi {{device}} nhận được tin, máy đó vẫn giữ các bản của nó.",
+        "hereOnly": "Chỉ xoá ở đây"
       }
     }
   }

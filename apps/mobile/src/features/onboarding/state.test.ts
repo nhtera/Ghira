@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { isTransient, resumeStep, STEPS } from "./state";
+import { isTransient, resumeStep, STEPS, stepsFor } from "./state";
 
 describe("resumeStep", () => {
   it("starts at the first step", () => {
@@ -16,7 +16,7 @@ describe("resumeStep", () => {
     );
   });
 
-  it("ends on done, and ignores the pair step", () => {
+  it("ends on done, and ignores the pair step while sync is unavailable", () => {
     expect(resumeStep({ completed: [...STEPS] })).toBe("done");
     expect(
       resumeStep({
@@ -24,6 +24,26 @@ describe("resumeStep", () => {
       }),
     ).toBe("processing");
     expect(STEPS).not.toContain("pair");
+  });
+});
+
+describe("stepsFor", () => {
+  it("is the plain list without sync", () => {
+    expect(stepsFor(false)).toEqual(STEPS);
+  });
+
+  it("puts pair right before processing with sync", () => {
+    const steps = stepsFor(true);
+    expect(steps.indexOf("pair")).toBe(steps.indexOf("processing") - 1);
+    expect(steps.indexOf("pair")).toBe(steps.indexOf("consent") + 1);
+    expect(steps.filter((s) => s !== "pair")).toEqual(STEPS);
+  });
+
+  it("resumes at pair when it is the first step missing", () => {
+    const completed = ["languages", "micPriming", "consent"] as const;
+    expect(resumeStep({ completed: [...completed], syncAvailable: true })).toBe("pair");
+    expect(resumeStep({ completed: [...completed], syncAvailable: false })).toBe("processing");
+    expect(resumeStep({ completed: [...completed, "pair"], syncAvailable: true })).toBe("processing");
   });
 });
 

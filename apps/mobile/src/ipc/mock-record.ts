@@ -21,6 +21,7 @@ import type {
   TierClass,
 } from "../bindings";
 import type { Commands } from "./ipc";
+import { isSyncAvailable, isSyncPaired } from "./mock-sync";
 
 const ok = <T>(data: T) => ({ status: "ok" as const, data });
 const fail = (error: string) => ({ status: "error" as const, error });
@@ -99,7 +100,7 @@ const SAMPLE = [
   "Okay, then we ship the build on Monday and review the feedback.",
 ];
 
-const ORDER: OnboardingStep[] = ["languages", "micPriming", "consent", "processing", "models", "voice", "done"];
+const ORDER: OnboardingStep[] = ["languages", "micPriming", "consent", "pair", "processing", "models", "voice", "done"];
 
 const defaults: GhiRecordMock = {
   mic: "notDetermined",
@@ -287,7 +288,7 @@ hooks.seed = (phase, n = 0) => {
 const next = (step: OnboardingStep): OnboardingState => {
   if (!completed.includes(step)) completed = [...completed, step].sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
   persist();
-  return { completed, syncAvailable: false };
+  return { completed, syncAvailable: isSyncAvailable() };
 };
 
 function emitModel(item: MobileModelItem) {
@@ -297,7 +298,7 @@ function emitModel(item: MobileModelItem) {
 
 export const recordCommands: Partial<Commands> = {
   // First launch
-  onboardingState: async () => (hooks.failOnboarding ? fail(hooks.failOnboarding) : ok({ completed, syncAvailable: false })),
+  onboardingState: async () => (hooks.failOnboarding ? fail(hooks.failOnboarding) : ok({ completed, syncAvailable: isSyncAvailable() })),
   onboardingCompleteStep: async (step) => ok(next(step)),
   micPermission: async () => hooks.mic,
   requestMicPermission: async () => {
@@ -399,7 +400,7 @@ export const recordCommands: Partial<Commands> = {
     if (enrolling) return fail("micInUse");
     if (!start.consentAcknowledged) return fail("consent");
     if (hooks.callActive && !start.callAcknowledged) return fail("callActive");
-    if (start.target === "desktop") return fail("pairingNotAvailable");
+    if (start.target === "desktop" && !isSyncPaired()) return fail("pairingNotAvailable");
     if (session.phase !== "idle" && session.phase !== "done") return fail("alreadyRecording");
     // Below the live tier it always records, without a transcript.
     recordOnly = hooks.tier === "recordOnly";

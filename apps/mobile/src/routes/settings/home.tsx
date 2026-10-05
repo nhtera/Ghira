@@ -11,6 +11,7 @@ import { unwrap, useResource } from "../../features/settings/api";
 import { ChoiceRow, ErrorLine } from "../../features/settings/controls";
 import { Page } from "../../features/settings/page";
 import { useAppSettings, useMobileSettings } from "../../features/settings/use-settings";
+import { useDesktopTarget } from "../../features/sync";
 
 const LANGUAGES: MeetingLanguage[] = ["auto", "en", "vi"];
 const loadModels = async () => unwrap(await ipc.commands.modelsStatus());
@@ -25,6 +26,7 @@ export function SettingsHome() {
   const models = useResource(loadModels);
   const voice = useResource(loadVoice);
   const calendar = useResource(loadCalendar);
+  const desktop = useDesktopTarget();
 
   const allReady = models.data ? models.data.items.every((m) => m.state === "ready") : undefined;
   const modelsValue = allReady === undefined ? undefined : allReady ? t("mobile.settings.status.ready") : t("mobile.settings.status.needsDownload");
@@ -38,13 +40,22 @@ export function SettingsHome() {
       {app.settings && mobile.settings && (
         <>
           <ErrorLine code={app.saveError ?? mobile.saveError} fallback="mobile.settings.saveFailed" />
-          <ListSection header={t("mobile.target.finalOn")} footer={t("mobile.target.hintPhone")}>
+          <ListSection
+            header={t("mobile.target.finalOn")}
+            footer={mobile.settings.defaultTarget === "desktop" && desktop.device ? t("mobile.target.hintDesktop", { device: desktop.device.name }) : t("mobile.target.hintPhone")}
+          >
             <ChoiceRow
               title={t("mobile.target.phone")}
               selected={mobile.settings.defaultTarget === "phone"}
               onPress={() => void mobile.save({ ...mobile.settings!, defaultTarget: "phone" })}
             />
-            <ChoiceRow title={t("mobile.target.desktop")} subtitle={t("mobile.settings.desktopLater")} selected={false} disabled onPress={() => undefined} />
+            <ChoiceRow
+              title={t("mobile.target.desktop")}
+              subtitle={desktop.device ? desktop.device.name : t("mobile.settings.desktopLater")}
+              selected={desktop.paired && mobile.settings.defaultTarget === "desktop"}
+              disabled={!desktop.paired}
+              onPress={() => void mobile.save({ ...mobile.settings!, defaultTarget: "desktop" })}
+            />
           </ListSection>
           <ListSection header={t("mobile.settings.language.header")} footer={t("mobile.settings.language.footer")}>
             {LANGUAGES.map((l) => (
@@ -62,6 +73,14 @@ export function SettingsHome() {
               <ListRow title={t("mobile.inbox.title")} value={t("mobile.inbox.none")} trailing={<span aria-hidden="true" className="size-5 shrink-0" />} />
             )}
             <ListRow title={t("mobile.settings.rows.calendar")} value={calendarValue} chevron onPress={() => go("/settings/calendar")} />
+            {desktop.available && (
+              <ListRow
+                title={t("mobile.sync.row")}
+                value={desktop.ready ? (desktop.device ? desktop.device.name : t("mobile.sync.notPaired")) : undefined}
+                chevron
+                onPress={() => go("/settings/sync")}
+              />
+            )}
           </ListSection>
           <ListSection header={t("mobile.settings.section.privacy")}>
             <ListRow title={t("mobile.settings.rows.privacy")} value={app.settings.appLock ? t("mobile.settings.status.on") : undefined} chevron onPress={() => go("/settings/privacy")} />

@@ -98,7 +98,7 @@
       "body": "On your computer, open {{app}} → Settings → Sync and scan the code shown there.",
       "paired": "Paired with {{device}}",
       "scanning": "looking for a code",
-      "syncNote": "Voice profiles and notes sync over Wi-Fi.",
+      "syncNote": "Meetings, notes and transcripts sync over Wi-Fi. Voice profiles stay on each device.",
       "title": "Pair with your computer",
       "wifiNote": "Both devices need to be on the same Wi-Fi. Nothing goes through the internet."
     },

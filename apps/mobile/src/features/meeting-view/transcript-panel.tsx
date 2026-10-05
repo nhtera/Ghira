@@ -40,6 +40,8 @@ export type TranscriptPanelProps = {
   onSave: (segment: string, text: string) => Promise<boolean>;
   /** The transcript is not there yet (waiting for models) or empty. */
   empty: string;
+  /** A final pass is writing it elsewhere: lines can be read and played, not edited. */
+  readOnly?: boolean;
 };
 
 const ESTIMATE = 96;
@@ -55,6 +57,7 @@ export function TranscriptPanel({
   onPlay,
   onSave,
   empty,
+  readOnly = false,
 }: TranscriptPanelProps) {
   const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement>(null);
@@ -213,17 +216,19 @@ export function TranscriptPanel({
                         })}
                       </Button>
                     )}
-                    <Button
-                      icon="edit"
-                      className="min-h-ios-target px-4"
-                      onClick={() => {
-                        setDraft(s.text);
-                        setSaveFailed(false);
-                        setEditing(s.gid);
-                      }}
-                    >
-                      {t("mobile.detail.edit")}
-                    </Button>
+                    {!readOnly && (
+                      <Button
+                        icon="edit"
+                        className="min-h-ios-target px-4"
+                        onClick={() => {
+                          setDraft(s.text);
+                          setSaveFailed(false);
+                          setEditing(s.gid);
+                        }}
+                      >
+                        {t("mobile.detail.edit")}
+                      </Button>
+                    )}
                   </div>
                 )}
               </>
