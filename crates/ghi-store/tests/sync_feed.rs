@@ -188,6 +188,74 @@ fn cursors_and_feed_id_survive_a_reopen() {
     assert_eq!(store.pull_cursor_for(&p.gid, "other-feed").unwrap(), 0);
 }
 
+// A write logs only when a synced field changes.
+
+/// Gids the feed has logged since `cursor`, and the new cursor.
+fn logged_since(store: &Store, cursor: i64) -> (Vec<String>, i64) {
+    let b = store.changes_since(cursor, 256).unwrap();
+    assert!(!b.more);
+    (gids(&b.changes), b.upto_seq)
+}
+
+#[test]
+fn local_bookkeeping_does_not_relog_rows() {
+    let (_tmp, store) = open();
+    let a = finished(&store, "Một");
+    let b = finished(&store, "Hai");
+    let c = finished(&store, "Ba");
+    let (all, mut cur) = logged_since(&store, 0);
+    assert!(all.contains(&a) && all.contains(&b) && all.contains(&c));
+
+    // A delete rotates the wrap secret and re-wraps every other meeting key.
+    store.delete_meeting(&c).unwrap();
+    let (after, next) = logged_since(&store, cur);
+    cur = next;
+    assert!(!after.contains(&a) && !after.contains(&b), "{after:?}");
+
+    // `mark_clean` only moves `base_*`.
+    store.mark_clean(&a, 0).unwrap();
+    let lam: i64 = store
+        .changes_since(0, 256)
+        .unwrap()
+        .changes
+        .iter()
+        .find_map(|c| match &c.record {
+            Record::Meeting(m) if m.gid == a => Some(m.version.lamport),
+            _ => None,
+        })
+        .unwrap();
+    store.mark_clean(&a, lam).unwrap();
+    assert!(logged_since(&store, cur).0.is_empty());
+}
+
+#[test]
+fn synced_field_changes_log_exactly_that_row() {
+    let (_tmp, store) = open();
+    let a = finished(&store, "Một");
+    let b = finished(&store, "Hai");
+    let (_, mut cur) = logged_since(&store, 0);
+
+    store.set_meeting_title(&a, "Tiêu đề mới").unwrap();
+    let (got, next) = logged_since(&store, cur);
+    assert_eq!(got, vec![a.clone()]);
+    cur = next;
+
+    // Monotone fields change without a Lamport bump but still sync.
+    store.set_consent_confirmed(&b, true).unwrap();
+    let (got, next) = logged_since(&store, cur);
+    assert_eq!(got, vec![b.clone()]);
+    cur = next;
+
+    store.extend_meeting_duration(&a, 5_000_000).unwrap();
+    let (got, next) = logged_since(&store, cur);
+    assert_eq!(got, vec![a.clone()]);
+    cur = next;
+
+    // No change, no log.
+    store.extend_meeting_duration(&a, 1).unwrap();
+    assert!(logged_since(&store, cur).0.is_empty());
+}
+
 #[test]
 fn a_new_feed_id_resets_every_cursor() {
     let (_tmp, store) = open();

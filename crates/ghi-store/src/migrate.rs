@@ -103,6 +103,20 @@ pub(crate) const SYNC_TABLES: [(&str, &str); 14] = [
     ("synced_settings", "setting"),
 ];
 
+/// Columns that never go on the wire (or are derived from ones that do): an
+/// UPDATE touching only these does not log. `id` is a local rowid.
+const LOCAL_ONLY_COLUMNS: [&str; 9] = [
+    "id",
+    "dek_wrapped",
+    "key_wrapped",
+    "base_lamport",
+    "base_origin",
+    "index_gen",
+    "name_key",
+    "suggest_person_id",
+    "suggest_score",
+];
+
 /// `kind` of a tombstone's `sync_log` row.
 pub(crate) const TOMBSTONE_LOG_KIND: &str = "tombstone";
 
@@ -165,17 +179,35 @@ fn sync_v9(tx: &Transaction) -> rusqlite::Result<()> {
          SELECT '{TOMBSTONE_LOG_KIND}', gid FROM tombstones ORDER BY lamport, gid;"
     ))?;
     for (table, kind) in SYNC_TABLES {
-        for event in ["INSERT", "UPDATE"] {
-            tx.execute_batch(&format!(
-                "CREATE TRIGGER sync_log_{table}_{} AFTER {event} ON {table}
-                 WHEN NOT EXISTS (SELECT 1 FROM tombstones WHERE gid = NEW.gid)
-                 BEGIN
-                     DELETE FROM sync_log WHERE gid = NEW.gid;
-                     INSERT INTO sync_log (kind, gid) VALUES ('{kind}', NEW.gid);
-                 END;",
-                event.to_lowercase()
-            ))?;
-        }
+        let body = format!(
+            "BEGIN
+                 DELETE FROM sync_log WHERE gid = NEW.gid;
+                 INSERT INTO sync_log (kind, gid) VALUES ('{kind}', NEW.gid);
+             END;"
+        );
+        tx.execute_batch(&format!(
+            "CREATE TRIGGER sync_log_{table}_insert AFTER INSERT ON {table}
+             WHEN NOT EXISTS (SELECT 1 FROM tombstones WHERE gid = NEW.gid)
+             {body}"
+        ))?;
+        // An update logs only when a column that goes on the wire changed:
+        // key re-wraps, `base_*`, `index_gen` and other local bookkeeping
+        // must not re-send the row. Monotone fields change without a
+        // `lamport` bump, so every synced column is compared.
+        let changed: Vec<String> = tx
+            .prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))?
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .filter(|c| !LOCAL_ONLY_COLUMNS.contains(&c.as_str()))
+            .map(|c| format!("NEW.{c} IS NOT OLD.{c}"))
+            .collect();
+        tx.execute_batch(&format!(
+            "CREATE TRIGGER sync_log_{table}_update AFTER UPDATE ON {table}
+             WHEN ({}) AND NOT EXISTS (SELECT 1 FROM tombstones WHERE gid = NEW.gid)
+             {body}",
+            changed.join(" OR ")
+        ))?;
     }
     // A local write moves `lamport`; the version then belongs to this device
     // (`origin` NULL), not to the peer that wrote the row before. The merge

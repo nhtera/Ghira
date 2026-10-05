@@ -884,15 +884,27 @@ impl Store {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         let id = Store::meeting_ref(&tx, gid)?.id;
-        for (table, _) in crate::migrate::SYNC_TABLES {
+        for (table, kind) in crate::migrate::SYNC_TABLES {
             let via = match table {
                 "meetings" => "id = ?1",
                 "tracks" | "speakers" | "segments" | "notes_blocks" | "action_items" | "marks"
                 | "meeting_tags" | "conflict_copies" => "meeting_id = ?1",
                 _ => continue,
             };
-            // A no-op UPDATE still fires the AFTER UPDATE trigger.
-            tx.execute(&format!("UPDATE {table} SET gid = gid WHERE {via}"), [id])?;
+            // The UPDATE triggers log only real changes, so log directly.
+            let live =
+                format!("FROM {table} WHERE {via} AND gid NOT IN (SELECT gid FROM tombstones)");
+            tx.execute(
+                &format!("DELETE FROM sync_log WHERE gid IN (SELECT gid {live})"),
+                [id],
+            )?;
+            let order = if table == "meeting_tags" { "gid" } else { "id" };
+            tx.execute(
+                &format!(
+                    "INSERT INTO sync_log (kind, gid) SELECT '{kind}', gid {live} ORDER BY {order}"
+                ),
+                [id],
+            )?;
         }
         tx.commit()?;
         Ok(())
