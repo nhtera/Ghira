@@ -8,9 +8,9 @@
 use std::fmt;
 
 use ghi_store::keys::secrets::SecretStore;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-use crate::{Result, SyncError, not_yet};
+use crate::{Result, SyncError};
 
 /// The [`SecretStore`] account of the identity.
 pub const IDENTITY_ACCOUNT: &str = "ghira.sync.identity";
@@ -94,15 +94,72 @@ impl Identity {
         })
     }
 
-    /// Reads the identity from the secret store, creating it if there is none.
-    pub fn load_or_create(_secrets: &dyn SecretStore, _device_gid: &str) -> Result<Self> {
-        not_yet("identity::Identity::load_or_create")
+    /// The identity in the secret store, if one was created.
+    pub fn load(secrets: &dyn SecretStore) -> Result<Option<Self>> {
+        let Some(blob) = secrets.get(IDENTITY_ACCOUNT)? else {
+            return Ok(None);
+        };
+        // version 1: 0x01 || x25519 secret (32) || device_gid (16, UUID bytes)
+        let ok = blob.len() == 1 + 32 + 16 && blob[0] == BLOB_VERSION;
+        if !ok {
+            return Err(SyncError::Wire(
+                "the stored sync identity is unreadable".into(),
+            ));
+        }
+        let mut secret = [0u8; 32];
+        secret.copy_from_slice(&blob[1..33]);
+        let mut gid = [0u8; 16];
+        gid.copy_from_slice(&blob[33..49]);
+        let secret = StaticSecret(secret);
+        let public = public_of(&secret)?;
+        Ok(Some(Self {
+            device_gid: uuid::Uuid::from_bytes(gid).to_string(),
+            secret,
+            public,
+        }))
     }
 
-    /// Destroys the identity ("Delete everything").
-    pub fn delete(_secrets: &dyn SecretStore) -> Result<()> {
-        not_yet("identity::Identity::delete")
+    /// Reads the identity from the secret store, creating it if there is none.
+    /// `device_gid` is the gid to create it under (the one in the settings;
+    /// empty = a new one); an existing identity keeps its own.
+    pub fn load_or_create(secrets: &dyn SecretStore, device_gid: &str) -> Result<Self> {
+        if let Some(id) = Self::load(secrets)? {
+            return Ok(id);
+        }
+        let mut id = Self::generate()?;
+        if !device_gid.is_empty() {
+            id.device_gid = uuid::Uuid::parse_str(device_gid)
+                .map_err(|_| SyncError::Wire("the device gid is not a UUID".into()))?
+                .to_string();
+        }
+        let gid = uuid::Uuid::parse_str(&id.device_gid)
+            .map_err(|_| SyncError::Wire("the device gid is not a UUID".into()))?;
+        let mut blob = Zeroizing::new(Vec::with_capacity(49));
+        blob.push(BLOB_VERSION);
+        blob.extend_from_slice(id.secret.as_bytes());
+        blob.extend_from_slice(gid.as_bytes());
+        secrets.set(IDENTITY_ACCOUNT, &blob)?;
+        Ok(id)
     }
+
+    /// Destroys the identity ("Delete everything"). No error if there is none.
+    pub fn delete(secrets: &dyn SecretStore) -> Result<()> {
+        secrets.delete(IDENTITY_ACCOUNT)?;
+        Ok(())
+    }
+}
+
+const BLOB_VERSION: u8 = 1;
+
+/// The X25519 public key of `secret`.
+fn public_of(secret: &StaticSecret) -> Result<[u8; 32]> {
+    use snow::params::DHChoice;
+    use snow::resolvers::{CryptoResolver, DefaultResolver};
+    let mut dh = DefaultResolver
+        .resolve_dh(&DHChoice::Curve25519)
+        .ok_or_else(|| SyncError::Noise("no X25519".into()))?;
+    dh.set(secret.as_bytes());
+    <[u8; 32]>::try_from(dh.pubkey()).map_err(|_| SyncError::Noise("unexpected key length".into()))
 }
 
 #[cfg(test)]
@@ -136,5 +193,49 @@ mod tests {
         let mut psk = Psk::from_bytes([5; 32]);
         psk.zeroize();
         assert_eq!(psk.as_bytes(), &[0; 32]);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn create_load_destroy_with_the_file_store() {
+        use ghi_store::keys::secrets::FileSecrets;
+        let dir = tempfile::tempdir().unwrap();
+        let secrets = FileSecrets::new(dir.path());
+        assert!(Identity::load(&secrets).unwrap().is_none());
+
+        let gid = ghi_store::new_gid();
+        let made = Identity::load_or_create(&secrets, &gid).unwrap();
+        assert_eq!(made.device_gid, gid);
+        let again = Identity::load_or_create(&secrets, "").unwrap();
+        assert_eq!(again.device_gid, gid);
+        assert_eq!(again.public, made.public);
+        assert_eq!(again.secret.as_bytes(), made.secret.as_bytes());
+        // Another gid does not replace an existing identity.
+        let other = Identity::load_or_create(&secrets, &ghi_store::new_gid()).unwrap();
+        assert_eq!(other.device_gid, gid);
+
+        Identity::delete(&secrets).unwrap();
+        assert!(Identity::load(&secrets).unwrap().is_none());
+        Identity::delete(&secrets).unwrap();
+        let fresh = Identity::load_or_create(&secrets, "").unwrap();
+        assert_ne!(fresh.public, made.public);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_bad_gid_or_a_corrupt_blob_is_an_error_not_a_new_identity() {
+        use ghi_store::keys::secrets::FileSecrets;
+        let dir = tempfile::tempdir().unwrap();
+        let secrets = FileSecrets::new(dir.path());
+        assert!(Identity::load_or_create(&secrets, "not-a-uuid").is_err());
+        assert!(Identity::load(&secrets).unwrap().is_none());
+        secrets.set(IDENTITY_ACCOUNT, b"junk").unwrap();
+        assert!(Identity::load_or_create(&secrets, "").is_err());
+    }
+
+    #[test]
+    fn the_public_key_matches_what_noise_made() {
+        let id = Identity::generate().unwrap();
+        assert_eq!(public_of(&id.secret).unwrap(), id.public);
     }
 }

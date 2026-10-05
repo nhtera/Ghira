@@ -86,4 +86,51 @@ mod tests {
     fn the_pattern_parses() {
         assert!(noise_params().is_ok());
     }
+
+    /// Noise over real sockets on the private LAN address in
+    /// `GHI_SYNC_LAN_IP` (no loopback bypass: skipped without it).
+    #[test]
+    fn noise_over_lan_sockets() {
+        use crate::identity::{Identity, Psk, StaticSecret};
+        let ip = std::env::var("GHI_SYNC_LAN_IP")
+            .ok()
+            .and_then(|v| v.trim().parse::<std::net::IpAddr>().ok())
+            .filter(|ip| ghi_net::is_lan(*ip));
+        let Some(ip) = ip else {
+            eprintln!("SKIPPED: set GHI_SYNC_LAN_IP to a private LAN address to run this test");
+            return;
+        };
+        struct One([u8; 32]);
+        impl PskResolver for One {
+            fn psk_for(&self, _: &[u8; 32]) -> Option<Psk> {
+                Some(Psk::from_bytes(self.0))
+            }
+        }
+        let (hub, phone) = (Identity::generate().unwrap(), Identity::generate().unwrap());
+        let listener = ghi_net::lan::Listener::bind(&[ip], 0).unwrap();
+        let addr = std::net::SocketAddr::new(ip, listener.port());
+        let hub_secret = StaticSecret::from_bytes(*hub.secret.as_bytes());
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener
+                .accept_timeout(Duration::from_secs(5))
+                .unwrap()
+                .unwrap();
+            let mut t = NoiseTransport::respond(stream, &hub_secret, &One([5; 32]), &[1]).unwrap();
+            let got = t.recv().unwrap();
+            t.send(&got).unwrap();
+        });
+        let stream = ghi_net::lan::connect(addr, ghi_net::lan::CONNECT_TIMEOUT).unwrap();
+        let mut t = NoiseTransport::initiate(
+            stream,
+            &phone.secret,
+            &hub.public,
+            &Psk::from_bytes([5; 32]),
+            &[1],
+        )
+        .unwrap();
+        let msg = vec![9u8; 300_000];
+        t.send(&msg).unwrap();
+        assert_eq!(t.recv().unwrap(), msg);
+        server.join().unwrap();
+    }
 }

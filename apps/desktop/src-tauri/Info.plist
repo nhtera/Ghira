@@ -10,5 +10,11 @@
   <string>Ghira records the call audio from your meeting app so both sides of the conversation are transcribed. Audio stays on this Mac.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>
   <string>Ghira reads event titles, times and attendees to name your meetings. Calendar data stays on this Mac.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Ghira finds your iPhone on this Wi-Fi to sync your meetings. Nothing leaves your local network.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_ghi._tcp</string>
+  </array>
 </dict>
 </plist>
