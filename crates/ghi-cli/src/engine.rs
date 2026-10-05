@@ -9,9 +9,29 @@ use std::path::PathBuf;
 
 use crate::contract::{Engine, ErrorCode, ErrorDoc, Pass};
 
+/// The recognizer `transcribe` runs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum AsrEngine {
+    /// Nemotron 3.5 (streaming; the live engine).
+    #[default]
+    Nemo,
+    /// Whisper large-v3-turbo, the optional final-pass engine (feature `whisper`;
+    /// offline: it decodes the file after Silero VAD, whatever `--pass` says).
+    Whisper,
+}
+
 /// Engine flags shared by the engine commands (not part of the harness contract).
 #[derive(Debug, Clone, Default, clap::Args)]
 pub struct EngineArgs {
+    /// transcribe: the recognizer.
+    #[arg(long, value_enum, default_value_t)]
+    pub asr: AsrEngine,
+    /// Whisper model (default: the registry's whisper-large-v3-turbo).
+    #[arg(long)]
+    pub whisper_model: Option<PathBuf>,
+    /// Silero VAD model for Whisper (default: the registry's silero-vad).
+    #[arg(long)]
+    pub vad_model: Option<PathBuf>,
     /// ASR model GGUF (default: the registry's nemotron-3.5-asr).
     #[arg(long)]
     pub asr_model: Option<PathBuf>,
@@ -29,6 +49,8 @@ pub struct EngineArgs {
 
 pub const ASR_MODEL: &str = "nemotron-3.5-asr";
 pub const DIAR_MODEL: &str = "nemotron-3-diarization";
+pub const WHISPER_MODEL: &str = "whisper-large-v3-turbo";
+pub const VAD_MODEL: &str = "silero-vad";
 
 /// Streaming chunk per pass (doc 05 §1.1): 560 ms live, 1120 ms final.
 pub fn asr_chunk_ms(pass: Pass) -> u32 {
@@ -87,18 +109,20 @@ pub fn model_path(id: &str, explicit: Option<&PathBuf>) -> Result<(PathBuf, Engi
 }
 
 /// Engines listed by `ghi version --json`.
+#[allow(unused_mut, clippy::vec_init_then_push)]
 pub fn engines() -> Vec<Engine> {
+    let mut list = Vec::new();
     #[cfg(feature = "nemo")]
-    {
-        vec![Engine {
-            name: "nemo-speech".into(),
-            version: ghi_speech::nemo::engine_version(),
-        }]
-    }
-    #[cfg(not(feature = "nemo"))]
-    {
-        Vec::new()
-    }
+    list.push(Engine {
+        name: "nemo-speech".into(),
+        version: ghi_speech::nemo::engine_version(),
+    });
+    #[cfg(feature = "whisper")]
+    list.push(Engine {
+        name: "whisper.cpp".into(),
+        version: ghi_speech::whisper::engine_version(),
+    });
+    list
 }
 
 #[cfg(not(feature = "nemo"))]
@@ -107,6 +131,21 @@ pub fn unavailable(command: &str) -> ErrorDoc {
         ErrorCode::EngineUnavailable,
         format!("{command}: ghi was built without speech engines (cargo feature `nemo`)"),
     )
+}
+
+#[cfg(feature = "whisper")]
+pub fn load_whisper(args: &EngineArgs) -> Result<(ghi_speech::whisper::Whisper, Engine), ErrorDoc> {
+    let (model, engine) = model_path(WHISPER_MODEL, args.whisper_model.as_ref())?;
+    let (vad_model, _) = model_path(VAD_MODEL, args.vad_model.as_ref())?;
+    let forced_cpu = std::env::var("GHI_DEVICE").is_ok_and(|d| d.eq_ignore_ascii_case("cpu"));
+    let whisper = ghi_speech::whisper::Whisper::new(&ghi_speech::whisper::WhisperConfig {
+        model,
+        vad_model,
+        gpu: !(args.cpu || forced_cpu) && cfg!(target_os = "macos"),
+        threads: 0,
+    })
+    .map_err(speech_error)?;
+    Ok((whisper, engine))
 }
 
 pub fn speech_error(e: ghi_speech::SpeechError) -> ErrorDoc {

@@ -160,7 +160,13 @@ fn transcribe(
             asr.push(block, SAMPLE_RATE).map_err(|e| e.to_string())?;
             collect(&mut asr, &mut out)?;
         }
-        asr.finish().map_err(|e| e.to_string())?;
+        // Engines that decode at the end (Whisper) stop mid-chunk on preemption.
+        if !asr
+            .finish_abortable(&|| ctx.preempted())
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(None);
+        }
         collect(&mut asr, &mut out)?;
         ctx.progress(
             Some(Stage::ImprovingTranscript),
@@ -383,7 +389,13 @@ impl FinalPassJob {
         tracks.sort_by_key(|t| t.index());
         for t in tracks {
             let me = call && t == Track::Mic && diar_track != Track::Mic;
-            let Some(finals) = transcribe(engines.as_ref(), &pcm[&t], language, self.chunk_s, ctx)?
+            let Some(finals) = transcribe(
+                engines.as_ref(),
+                &pcm[&t],
+                language,
+                engines.final_chunk_s().unwrap_or(self.chunk_s),
+                ctx,
+            )?
             else {
                 return restart();
             };

@@ -52,6 +52,10 @@ pub struct Model {
     /// that serve the pinned file as `<base>/<file>`. The hash still decides.
     #[serde(default)]
     pub mirrors: Vec<String>,
+    /// Not part of any tier's required set: fetched only when asked for by id
+    /// (`fetch-models.sh <id>`), never by a plain `fetch-models.sh`.
+    #[serde(default)]
+    pub optional: bool,
 }
 
 #[derive(Deserialize)]

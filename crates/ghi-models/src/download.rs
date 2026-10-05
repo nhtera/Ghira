@@ -140,6 +140,7 @@ mod tests {
             license: "MIT".into(),
             chat_format: None,
             mirrors,
+            optional: false,
         }
     }
 

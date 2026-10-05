@@ -2,11 +2,83 @@
 //! With `--features nemo`, links the NeMo-Speech.cpp shared C library installed
 //! by `tools/scripts/build-nemo.sh` (or `$NEMO_SPEECH_DIR`), and compiles a C
 //! layout check for the hand-written FFI structs.
+//!
+//! With `--features whisper`, links the static whisper.cpp + ggml installed by
+//! `tools/scripts/build-whisper.sh` (or `$WHISPER_CPP_DIR`) and compiles the
+//! C shim over its API (`src/whisper/shim.c`).
 
 fn main() {
     println!("cargo:rerun-if-env-changed=NEMO_SPEECH_DIR");
+    println!("cargo:rerun-if-env-changed=WHISPER_CPP_DIR");
     #[cfg(feature = "nemo")]
     nemo();
+    #[cfg(feature = "whisper")]
+    whisper();
+}
+
+/// Static, so its ggml never meets NeMo's patched `@rpath/libggml.0.dylib`.
+#[cfg(feature = "whisper")]
+fn whisper() {
+    use std::path::PathBuf;
+
+    let dir = std::env::var_os("WHISPER_CPP_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+            manifest.join("../../target/whisper/install")
+        });
+    let lib = dir.join("lib");
+    let include = dir.join("include");
+    if !include.join("whisper.h").is_file() {
+        panic!(
+            "whisper.cpp not found in {}: run tools/scripts/build-whisper.sh or set WHISPER_CPP_DIR",
+            dir.display()
+        );
+    }
+    println!(
+        "cargo:rerun-if-changed={}",
+        include.join("whisper.h").display()
+    );
+    println!("cargo:rustc-link-search=native={}", lib.display());
+    // Backends exist only where the build had them (Metal and Accelerate on a Mac).
+    for name in [
+        "whisper",
+        "ggml",
+        "ggml-cpu",
+        "ggml-metal",
+        "ggml-blas",
+        "ggml-base",
+    ] {
+        if lib.join(format!("lib{name}.a")).is_file() {
+            println!("cargo:rustc-link-lib=static={name}");
+        }
+    }
+    match std::env::var("CARGO_CFG_TARGET_OS").as_deref() {
+        Ok("macos") => {
+            for f in ["Accelerate", "Foundation", "Metal", "MetalKit"] {
+                println!("cargo:rustc-link-lib=framework={f}");
+            }
+            println!("cargo:rustc-link-lib=c++");
+            // ggml-metal uses `@available`, which clang lowers to a call into
+            // its runtime (`__isPlatformVersionAtLeast`); rustc does not link it.
+            if let Ok(out) = std::process::Command::new("xcrun")
+                .args(["clang", "--print-resource-dir"])
+                .output()
+            {
+                let res = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                println!("cargo:rustc-link-search=native={res}/lib/darwin");
+                println!("cargo:rustc-link-lib=static=clang_rt.osx");
+            }
+        }
+        Ok("windows") => {}
+        _ => println!("cargo:rustc-link-lib=stdc++"),
+    }
+    println!("cargo:rerun-if-changed=src/whisper/shim.c");
+    cc::Build::new()
+        .file("src/whisper/shim.c")
+        .include(&include)
+        .warnings(true)
+        .compile("ghi_whisper_shim");
 }
 
 #[cfg(feature = "nemo")]

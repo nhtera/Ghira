@@ -21,6 +21,12 @@ pub trait SpeechEngines: Send + Sync {
     fn diar(&self) -> Result<BoxDiar>;
     /// The ASR chunk this engine was loaded with (ms).
     fn chunk_ms(&self) -> u32;
+    /// A chunk length (seconds) the final pass should use instead of its own:
+    /// an engine that decodes at the end of a chunk (Whisper) wants short ones,
+    /// so a recording can preempt the pass quickly.
+    fn final_chunk_s(&self) -> Option<f64> {
+        None
+    }
 }
 
 #[cfg(feature = "nemo")]
@@ -83,6 +89,77 @@ mod nemo {
 
         fn chunk_ms(&self) -> u32 {
             self.chunk_ms
+        }
+    }
+}
+
+#[cfg(all(feature = "nemo", feature = "whisper"))]
+pub use whisper_final::WhisperFinalEngines;
+
+/// The final pass with Whisper reading and NeMo (Sortformer) still diarizing.
+/// Only the NeMo diarizer is loaded: with Whisper on, the Nemotron ASR stays
+/// out of memory. Not for live capture (Whisper does not stream).
+#[cfg(all(feature = "nemo", feature = "whisper"))]
+mod whisper_final {
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use ghi_speech::nemo::{Device, DiarConfig, Diarizer};
+    use ghi_speech::whisper::{Whisper, WhisperConfig, WhisperOptions};
+
+    use super::{BoxAsr, BoxDiar, Result, SpeechEngines};
+
+    pub struct WhisperFinalEngines {
+        asr: Arc<Whisper>,
+        diar: Arc<Diarizer>,
+        chunk_ms: u32,
+    }
+
+    impl WhisperFinalEngines {
+        pub fn load(
+            whisper_model: &Path,
+            vad_model: &Path,
+            diar_model: &Path,
+            chunk_ms: u32,
+            device: Device,
+        ) -> Result<Self> {
+            let asr = Whisper::new(&WhisperConfig {
+                model: whisper_model.to_path_buf(),
+                vad_model: vad_model.to_path_buf(),
+                gpu: device == Device::Gpu,
+                threads: 0,
+            })?;
+            let diar = Diarizer::new(&DiarConfig {
+                model: diar_model.to_path_buf(),
+                device,
+                preset: Some("v3-streaming".into()),
+            })?;
+            Ok(Self {
+                asr: Arc::new(asr),
+                diar: Arc::new(diar),
+                chunk_ms,
+            })
+        }
+    }
+
+    impl SpeechEngines for WhisperFinalEngines {
+        fn asr(&self, language: Option<&str>) -> Result<BoxAsr> {
+            let opts = WhisperOptions {
+                language: language.map(str::to_string),
+            };
+            Ok(Box::new(self.asr.stream_owned(&opts)))
+        }
+
+        fn diar(&self) -> Result<BoxDiar> {
+            Ok(Box::new(self.diar.stream_owned()?))
+        }
+
+        fn chunk_ms(&self) -> u32 {
+            self.chunk_ms
+        }
+
+        fn final_chunk_s(&self) -> Option<f64> {
+            Some(120.0)
         }
     }
 }

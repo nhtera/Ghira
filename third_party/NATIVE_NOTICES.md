@@ -15,6 +15,14 @@ when the NeMo-Speech.cpp pin or its build options change.
 | protobuf-lite (inside SentencePiece) | same | BSD-3-Clause | `.../sentencepiece-src/third_party/protobuf-lite/LICENSE` |
 | darts-clone (inside SentencePiece) | same | BSD-2-Clause | `.../sentencepiece-src/third_party/darts_clone/LICENSE` |
 
+The optional Whisper final pass (cargo feature `whisper`, desktop and CLI only) links
+whisper.cpp **statically** (`tools/scripts/build-whisper.sh`), with the ggml it bundles, so
+it never meets NeMo's patched `libggml.0.dylib`:
+
+| Component | Version | License | License text |
+|---|---|---|---|
+| whisper.cpp, with its bundled ggml (static) | `third_party/whisper.cpp` submodule, tag v1.9.4 | MIT | `third_party/whisper.cpp/LICENSE` (also `target/whisper/install/share/licenses/whisper.cpp/`) |
+
 The texts of SentencePiece and its bundled libraries (also esaxx, MIT), SQLCipher,
 libopus and OpenSSL are vendored in `third_party/licenses/` because their sources
 only exist in the build tree or the cargo registry; `tools/scripts/gen-licenses.mjs`
@@ -39,4 +47,5 @@ miniaudio (mic capture is off). `build-nemo.sh` asserts HTTP, gRPC and
 Flashlight are OFF.
 
 Models are downloaded, never bundled; their licenses are in
-`crates/ghi-models/registry.toml` (Nemotron models: OpenMDW-1.1).
+`crates/ghi-models/registry.toml` (Nemotron models: OpenMDW-1.1; Whisper
+large-v3-turbo and Silero VAD: MIT).

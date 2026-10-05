@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Speech engines behind backend-neutral stream traits (RT-15).
 //!
-//! Backends: `nemo` (NeMo-Speech.cpp over FFI, feature `nemo`); `voice`
+//! Backends: `nemo` (NeMo-Speech.cpp over FFI, feature `nemo`); `whisper`
+//! (whisper.cpp, static, the optional final-pass ASR, feature `whisper`); `voice`
 //! (speaker embeddings, CAM++ over tract, feature `voice`). The `sherpa`
 //! backend (sherpa-onnx: zipformer-vi fallback, speaker embeddings) is not
 //! built yet. Audio is mono `f32` PCM; the engines resample 8–96 kHz input.
@@ -10,6 +11,8 @@
 pub mod nemo;
 #[cfg(feature = "voice")]
 pub mod voice;
+#[cfg(feature = "whisper")]
+pub mod whisper;
 
 /// Crate version, used by `ghi --version` and the About screen.
 pub fn version() -> &'static str {
@@ -69,6 +72,12 @@ pub struct SpeakerSegment {
 pub trait AsrStream {
     fn push(&mut self, pcm: &[f32], sample_rate: u32) -> Result<()>;
     fn finish(&mut self) -> Result<()>;
+    /// [`AsrStream::finish`] for engines that work at the end (Whisper decodes
+    /// everything then): stops early and returns `false` once `abort` says so,
+    /// leaving no results. Streaming engines finish at once.
+    fn finish_abortable(&mut self, _abort: &(dyn Fn() -> bool + Sync)) -> Result<bool> {
+        self.finish().map(|()| true)
+    }
     /// The next available result, or `None` when more audio is needed.
     fn next_result(&mut self) -> Result<Option<AsrResult>>;
 }

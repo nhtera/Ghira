@@ -12,6 +12,9 @@ links = "nemo_speech_asr_c"
 [features]
 # Link NeMo-Speech.cpp. Build it first: tools/scripts/build-nemo.sh
 nemo = ["dep:cc"]
+# Whisper large-v3-turbo final-pass ASR (whisper.cpp, static). Build it first:
+# tools/scripts/build-whisper.sh
+whisper = ["dep:cc"]
 # Speaker embeddings (CAM++ over tract, pure Rust): fbank + `VoiceEmbedder`.
 voice = ["dep:tract-onnx", "dep:realfft"]
 

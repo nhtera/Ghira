@@ -4,6 +4,7 @@
 Sets (all free to download for this use, see LICENCES below):
 
   fleurs-vi   Google FLEURS Vietnamese, test utterances     ASR only, CC-BY-4.0
+  fleurs-en   Google FLEURS English (en_us), test utterances ASR only, CC-BY-4.0
   ami-sdm     AMI meetings, far-field mic Array1-01          diarization, CC-BY-4.0
   voxconverse VoxConverse test files                         diarization, CC-BY-4.0
   vimedcss    ViMedCSS Vietnamese-English code-switch speech ASR only, CC-BY-4.0
@@ -41,7 +42,7 @@ import yaml
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "data"
 UA = "ghi-eval-fetch/0.1 (+https://github.com/ghira)"
 TIMEOUT = 60
-ALL_SETS = ("fleurs-vi", "ami-sdm", "voxconverse", "vimedcss")
+ALL_SETS = ("fleurs-vi", "fleurs-en", "ami-sdm", "voxconverse", "vimedcss")
 DEFAULT_SETS = ("fleurs-vi", "ami-sdm")
 
 # --- Sources, pinned to immutable revisions -------------------------------------------------
@@ -52,6 +53,10 @@ FLEURS_TSV = f"{FLEURS_BASE}/test.tsv"
 FLEURS_TSV_SHA256 = "eb744c2be5f677b49c35527d428a4f647294bd0f67abd790c296e91efaaffb93"
 FLEURS_TAR = f"{FLEURS_BASE}/audio/test.tar.gz"  # ~544 MB; streamed, we stop after N files
 FLEURS_SMALL_N = 25
+FLEURS_EN_BASE = f"https://huggingface.co/datasets/google/fleurs/resolve/{FLEURS_REV}/data/en_us"
+FLEURS_EN_TSV = f"{FLEURS_EN_BASE}/test.tsv"
+FLEURS_EN_TSV_SHA256 = "74c046239374deeb60fa63f258f907388093a32bcaa3140965f70ef05c79f7ca"
+FLEURS_EN_TAR = f"{FLEURS_EN_BASE}/audio/test.tar.gz"  # ~290 MB; streamed, we stop after N files
 
 AMI_REV = "2509d8933721023fab4def2618aabd5c28eb82e9"  # BUTSpeechFIT/AMI-diarization-setup
 AMI_RTTM = (
@@ -141,6 +146,14 @@ VIMED_SMALL_N = 30
 VIMED_FULL_N = 1614
 
 LICENCES = {
+    "fleurs-en": {
+        "licence": "CC-BY-4.0",
+        "attribution": (
+            'FLEURS (Conneau et al., "FLEURS: Few-shot Learning Evaluation of Universal '
+            'Representations of Speech", 2022), Google, CC BY 4.0, via '
+            "https://huggingface.co/datasets/google/fleurs"
+        ),
+    },
     "fleurs-vi": {
         "licence": "CC-BY-4.0",
         "attribution": (
@@ -184,6 +197,7 @@ LICENCES = {
 }
 
 SIZES = {
+    "fleurs-en": "small ~20 MB (25 utterances, ~5 min); full ~290 MB",
     "fleurs-vi": "small ~20 MB (25 utterances, ~5 min); full ~544 MB",
     "ami-sdm": "small ~60 MB (2 meetings, ~31 min); full ~700 MB (16 meetings)",
     "voxconverse": "small ~15 MB (7 files, ~7 min; the host is slow, allow ~10 min); full ~4.3 GB zip (232 files)",
@@ -469,10 +483,20 @@ def write_notice(set_dir: Path, key: str) -> None:
 
 
 def fetch_fleurs(out: Path, subset: str, **_) -> None:
-    set_dir = out / "fleurs-vi"
+    _fleurs(out, subset, "fleurs-vi", "vi", FLEURS_TSV, FLEURS_TSV_SHA256, FLEURS_TAR)
+
+
+def fetch_fleurs_en(out: Path, subset: str, **_) -> None:
+    _fleurs(out, subset, "fleurs-en", "en", FLEURS_EN_TSV, FLEURS_EN_TSV_SHA256, FLEURS_EN_TAR)
+
+
+def _fleurs(
+    out: Path, subset: str, name: str, lang: str, tsv_url: str, tsv_sha: str, tar_url: str
+) -> None:
+    set_dir = out / name
     n_max = None if subset == "full" else FLEURS_SMALL_N
     tsv = set_dir / "test.tsv"
-    fetch_small(FLEURS_TSV, tsv, FLEURS_TSV_SHA256)
+    fetch_small(tsv_url, tsv, tsv_sha)
     rows: dict[str, str] = {}  # id -> normalized transcript
     for line in tsv.read_text(encoding="utf-8").splitlines():
         cols = line.split("\t")
@@ -482,8 +506,8 @@ def fetch_fleurs(out: Path, subset: str, **_) -> None:
     (set_dir / "audio").mkdir(parents=True, exist_ok=True)
     have = len(list((set_dir / "audio").glob("*.wav")))
     if n_max is None or have < n_max:
-        log(f"  streaming {FLEURS_TAR} (stops after {n_max or 'all'} files)")
-        stream = http_stream(FLEURS_TAR)
+        log(f"  streaming {tar_url} (stops after {n_max or 'all'} files)")
+        stream = http_stream(tar_url)
         try:
             with tarfile.open(fileobj=stream, mode="r|gz") as tar:
                 count = 0
@@ -510,14 +534,14 @@ def fetch_fleurs(out: Path, subset: str, **_) -> None:
                 "id": fid,
                 "audio": f"audio/{fid}.wav",
                 "ref": f"refs/{fid}.txt",
-                "lang": "vi",
+                "lang": lang,
                 "setting": "other",
                 "playback": "na",
                 "speakers": 1,
             }
         )
-    write_manifest(set_dir, "fleurs-vi", files)
-    write_notice(set_dir, "fleurs-vi")
+    write_manifest(set_dir, name, files)
+    write_notice(set_dir, name)
 
 
 def fetch_ami(out: Path, subset: str, **_) -> None:
@@ -711,6 +735,7 @@ def fetch_vimedcss(out: Path, subset: str, **_) -> None:
 
 FETCHERS = {
     "fleurs-vi": fetch_fleurs,
+    "fleurs-en": fetch_fleurs_en,
     "ami-sdm": fetch_ami,
     "voxconverse": fetch_voxconverse,
     "vimedcss": fetch_vimedcss,
@@ -720,9 +745,12 @@ FETCHERS = {
 def plan(name: str, subset: str, with_hyp: bool, out: Path) -> list[str]:
     """Human-readable list of what a real run would download (no network)."""
     dest = out / name
-    if name == "fleurs-vi":
+    if name in ("fleurs-vi", "fleurs-en"):
         n = "all" if subset == "full" else FLEURS_SMALL_N
-        lines = [FLEURS_TSV, f"{FLEURS_TAR}  (streamed, first {n} files kept)"]
+        tsv, tar = (
+            (FLEURS_TSV, FLEURS_TAR) if name == "fleurs-vi" else (FLEURS_EN_TSV, FLEURS_EN_TAR)
+        )
+        lines = [tsv, f"{tar}  (streamed, first {n} files kept)"]
     elif name == "ami-sdm":
         ids = AMI_TEST if subset == "full" else AMI_SMALL
         lines = [AMI_RTTM.format(id=i) for i in ids] + [AMI_WAV.format(id=i) for i in ids]

@@ -40,6 +40,10 @@ cargo deny check licenses bans advisories sources
 cargo clippy -p ghi-speech -p ghi-cli --all-targets --features ghi-cli/nemo -- -D warnings
 cargo test -p ghi-speech -p ghi-cli --features ghi-cli/nemo
 cargo test -p ghi-desktop --features nemo -- --ignored real_models --nocapture  # real-model Core harness (minutes; needs cargo build -p ghi-llm-worker; skips without models)
+# Whisper final pass (optional; needs tools/scripts/build-whisper.sh and fetch-models.sh whisper-large-v3-turbo silero-vad):
+cargo clippy -p ghi-speech -p ghi-core -p ghi-cli --all-targets --features ghi-cli/nemo,ghi-cli/whisper -- -D warnings
+cargo test -p ghi-speech --features whisper && cargo test -p ghi-core --features nemo,whisper --test whisper_real -- --ignored --nocapture  # NeMo + Whisper in one process
+ghi transcribe x.wav --asr whisper --lang vi --pass final   # CLI; the app: setting asr_final = "whisper" (debug builds: GHI_ASR_FINAL=whisper), build with ghi-desktop --features nemo,whisper; fetch-models.sh skips `optional` models: name them
 # speaker embedder (phase 14c; parity tests skip without fetch-models.sh campplus-zh-en):
 cargo clippy -p ghi-speech --features voice --all-targets -- -D warnings
 cargo test -p ghi-speech --features voice
@@ -198,6 +202,16 @@ licenses are generated: `pnpm gen:licenses:mobile` (`src/generated/licenses.json
 
 Speech engines: `crates/ghi-speech` (NeMo-Speech.cpp FFI, feature `nemo`); models
 pinned in `crates/ghi-models/registry.toml`; decision record `Plans/docs/06`.
+Optional final-pass ASR (feature `whisper`, desktop + CLI, not mobile): Whisper
+large-v3-turbo q5 + Silero VAD over a pinned `third_party/whisper.cpp` built STATIC
+(`tools/scripts/build-whisper.sh`; never shared, NeMo ships its own patched dynamic ggml).
+`ghi-speech/src/whisper`: `shim.c` (flat C face; no hand-written whisper structs),
+`plan.rs` (VAD grouping <= 29 s, DTW words, hallucination guard; model-free tests),
+`WhisperFinalEngines` in `ghi-core` (Whisper reads, NeMo diarizes), picked in
+`ghi-app` `final_engines()` when store setting `asr_final` = `whisper` (default `nemo`;
+`GHI_ASR_FINAL` overrides in debug builds; no settings UI yet) and both models are installed,
+else (or on any load failure) NeMo. Preemption aborts a decode mid-window (`AsrStream::finish_abortable`);
+`./tools/scripts/check-no-ggml-export.sh <binary>` guards that ggml stays private.
 
 Eval kit: `tools/eval` (`ghi-eval`, Python 3.11 + uv). The data, `ghi` CLI and
 report contract is `tools/eval/docs/formats.md`. Recordings, transcripts and

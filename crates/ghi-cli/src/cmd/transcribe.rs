@@ -27,13 +27,71 @@ pub fn run(args: &Args) -> Result<(), ErrorDoc> {
     run_with_audio(args, &audio)
 }
 
+fn run_with_audio(args: &Args, audio: &Audio) -> Result<(), ErrorDoc> {
+    if args.engine.asr == engine::AsrEngine::Whisper {
+        return run_whisper(args, audio);
+    }
+    run_nemo(args, audio)
+}
+
+#[cfg(not(feature = "whisper"))]
+fn run_whisper(_args: &Args, _audio: &Audio) -> Result<(), ErrorDoc> {
+    Err(ErrorDoc::new(
+        crate::contract::ErrorCode::EngineUnavailable,
+        "transcribe: ghi was built without Whisper (cargo feature `whisper`)".to_owned(),
+    ))
+}
+
+/// Whisper decodes the whole file offline (VAD groups), so `--stream` has
+/// nothing to stream and is refused.
+#[cfg(feature = "whisper")]
+fn run_whisper(args: &Args, audio: &Audio) -> Result<(), ErrorDoc> {
+    use std::time::Instant;
+
+    use ghi_speech::whisper::WhisperOptions;
+
+    use crate::contract::ErrorCode;
+
+    if args.stream {
+        return Err(ErrorDoc::new(
+            ErrorCode::Internal,
+            "transcribe: --stream is not available with --asr whisper".to_owned(),
+        ));
+    }
+    if audio.sample_rate != ghi_speech::whisper::SAMPLE_RATE {
+        return Err(ErrorDoc::new(
+            ErrorCode::Internal,
+            format!(
+                "transcribe: --asr whisper needs 16 kHz audio, got {} Hz",
+                audio.sample_rate
+            ),
+        ));
+    }
+    let started = Instant::now();
+    let (whisper, engine_info) = engine::load_whisper(args.engine)?;
+    let results = whisper
+        .recognize(
+            &audio.samples,
+            &WhisperOptions {
+                language: language_code(args.lang).map(str::to_owned),
+            },
+        )
+        .map_err(engine::speech_error)?;
+    let mut builder = TranscriptBuilder::default();
+    for r in &results {
+        builder.add(r);
+    }
+    let doc = builder.finish(args, audio, engine_info, started.elapsed().as_secs_f64());
+    crate::emit(&doc)
+}
+
 #[cfg(not(feature = "nemo"))]
-fn run_with_audio(_args: &Args, _audio: &Audio) -> Result<(), ErrorDoc> {
+fn run_nemo(_args: &Args, _audio: &Audio) -> Result<(), ErrorDoc> {
     Err(engine::unavailable("transcribe"))
 }
 
 #[cfg(feature = "nemo")]
-fn run_with_audio(args: &Args, audio: &Audio) -> Result<(), ErrorDoc> {
+fn run_nemo(args: &Args, audio: &Audio) -> Result<(), ErrorDoc> {
     use std::io::Write;
     use std::time::Instant;
 

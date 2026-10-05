@@ -176,6 +176,25 @@ def test_fleurs(fps, tmp_path, monkeypatch):
     assert fps.FLEURS_TAR not in fps.net.requests
 
 
+def test_fleurs_en(fps, tmp_path, monkeypatch):
+    monkeypatch.setattr(fps, "FLEURS_SMALL_N", 1)
+    tsv = b"1\t111.wav\tRaw one.\traw one\tp h\t10\tMALE\n"
+    monkeypatch.setattr(fps, "FLEURS_EN_TSV_SHA256", sha(tsv))
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        data = float_wav_bytes(0.5)
+        info = tarfile.TarInfo("test/111.wav")
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+    fps.net.files[fps.FLEURS_EN_TSV] = tsv
+    fps.net.files[fps.FLEURS_EN_TAR] = buf.getvalue()
+
+    assert fps.main(["--sets", "fleurs-en", "--out", str(tmp_path)]) == 0
+    m = check_manifest(tmp_path / "fleurs-en", {"fleurs_111"})
+    assert m["files"][0]["lang"] == "en"
+    assert (tmp_path / "fleurs-en/refs/fleurs_111.txt").read_text() == "raw one\n"
+
+
 def test_pinned_hash_mismatch_aborts(fps, tmp_path):
     fps.net.files[fps.FLEURS_TSV] = b"tampered"
     with pytest.raises(SystemExit, match="SHA-256 mismatch"):

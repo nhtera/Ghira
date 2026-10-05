@@ -356,6 +356,71 @@ fn engines(
     Err("this build has no speech engines".into())
 }
 
+/// Store setting choosing the final pass's recognizer: `"nemo"` (default) or
+/// `"whisper"`. `GHI_ASR_FINAL` overrides it in debug builds. No settings UI yet.
+pub const ASR_FINAL_KEY: &str = "asr_final";
+
+/// Whether the final pass should read with Whisper: this build has it, the
+/// setting asks for it and both of its models are installed.
+#[cfg(all(feature = "nemo", feature = "whisper"))]
+fn whisper_final_wanted(models: &Path, store: &Store) -> bool {
+    // The dev override works in debug builds only (a release app follows the setting).
+    let env = if cfg!(debug_assertions) {
+        std::env::var("GHI_ASR_FINAL").ok()
+    } else {
+        None
+    };
+    let chosen = env.or_else(|| {
+        let v = store.get_setting(ASR_FINAL_KEY).ok().flatten()?;
+        v.as_str().map(str::to_string)
+    });
+    chosen.is_some_and(|c| c.eq_ignore_ascii_case("whisper"))
+        && ghi_models::installed(models, &["whisper-large-v3-turbo", "silero-vad"])
+}
+
+/// An optional model's path, verified. Unlike [`checked_model`] a bad file is
+/// not remembered as "damaged": the UI's re-download offer is for the models
+/// the app needs, and this one is only used when chosen.
+#[cfg(all(feature = "nemo", feature = "whisper"))]
+fn optional_model(models: &Path, id: &str) -> Result<PathBuf, String> {
+    let m = ghi_models::find(id).ok_or_else(|| format!("{id} is not in the registry"))?;
+    let p = ghi_models::path_in(models, &m);
+    ghi_models::verify_for_load(&p, &m).map_err(|e| format!("model {id}: {e}"))?;
+    Ok(p)
+}
+
+#[cfg(all(feature = "nemo", feature = "whisper"))]
+fn whisper_engines(models: &Path) -> Result<Arc<dyn ghi_core::engines::SpeechEngines>, String> {
+    let e = ghi_core::engines::WhisperFinalEngines::load(
+        &optional_model(models, "whisper-large-v3-turbo")?,
+        &optional_model(models, "silero-vad")?,
+        &checked_model(models, &preset().speech_models[1])?,
+        1120,
+        ghi_speech::nemo::Device::Gpu,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(Arc::new(e))
+}
+
+/// Speech engines for the final pass: Whisper for the words (NeMo still
+/// diarizes) when chosen, else [`engines`] at 1120 ms. If Whisper cannot be
+/// used (a bad file, a load failure) this pass falls back to NeMo.
+fn final_engines(
+    models: &Path,
+    store: &Store,
+) -> Result<Arc<dyn ghi_core::engines::SpeechEngines>, String> {
+    #[cfg(all(feature = "nemo", feature = "whisper"))]
+    if whisper_final_wanted(models, store) {
+        log::info!("speech models load asr=whisper-large-v3-turbo diar=nemotron-3-diarization");
+        match whisper_engines(models) {
+            Ok(e) => return Ok(e),
+            Err(e) => log::warn!("whisper final pass unavailable, using NeMo: {e}"),
+        }
+    }
+    let _ = store;
+    engines(models, 1120)
+}
+
 impl Core {
     /// Starts forwarding core events to the webview.
     /// `on_event` also sees every event (the tray follows the session).
@@ -827,7 +892,8 @@ impl Core {
             Arc::new(ghi_core::final_pass::FinalPassJob {
                 engines: {
                     let models = models.clone();
-                    Arc::new(move || engines(&models, 1120))
+                    let store = store.clone();
+                    Arc::new(move || final_engines(&models, &store))
                 },
                 chunk_s: 600.0,
                 ready: Arc::new(move || speech_ready(&speech_models)),

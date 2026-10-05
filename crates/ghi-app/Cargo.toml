@@ -17,6 +17,9 @@ local-llm = []
 embeddings = []
 # Speech engines (NeMo-Speech.cpp; tools/scripts/build-nemo.sh first).
 nemo = ["ghi-core/nemo", "ghi-speech/nemo"]
+# Whisper large-v3-turbo as an optional final-pass ASR (tools/scripts/build-whisper.sh;
+# needs `nemo` too, for diarization). Chosen by the `asr_final` setting.
+whisper = ["ghi-core/whisper", "ghi-speech/whisper"]
 # The speaker model (voice profiles).
 voice = ["ghi-core/voice"]
 # TypeScript types for the apps (tauri-specta). The commands and DTOs always

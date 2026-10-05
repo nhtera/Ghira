@@ -126,6 +126,23 @@ jobs:
           cargo clippy --locked -p ghi-speech -p ghi-cli --all-targets --features ghi-cli/nemo -- -D warnings
           ./tools/scripts/fetch-models.sh
           cargo test --locked -p ghi-speech -p ghi-cli --features ghi-cli/nemo
+      # The optional Whisper final pass: static whisper.cpp, built and linted
+      # (its unit tests need no model; the real-model tests are #[ignore]d).
+      - name: Whisper final pass (build, lint, unit tests)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          WHISPER_BUILD_ROOT: ${{ runner.temp }}/whisper
+          NEMO_SPEECH_DIR: ${{ runner.temp }}/nemo/install
+          GHI_DEVICE: cpu
+        run: |
+          git submodule update --init --depth 1 third_party/whisper.cpp
+          ./tools/scripts/build-whisper.sh
+          export WHISPER_CPP_DIR="$WHISPER_BUILD_ROOT/install"
+          cargo clippy --locked -p ghi-speech -p ghi-core -p ghi-cli --all-targets --features ghi-cli/nemo,ghi-cli/whisper -- -D warnings
+          cargo test --locked -p ghi-speech --features whisper
+          cargo build --release --locked -p ghi-cli --features nemo,whisper
+          ./tools/scripts/check-no-ggml-export.sh target/release/ghi
 
   # iOS app (phases 7, 16): the simulator build, the Rust tests on the simulator,
   # the mobile UI on WebKit, the XCUITest flows with scripted engines (no models),

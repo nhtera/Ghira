@@ -119,6 +119,7 @@ function jsSection() {
 // SQLCipher, libopus and OpenSSL texts are vendored in third_party/licenses/
 // (their sources only exist inside the build tree / the cargo registry).
 const NEMO = "third_party/NeMo-Speech.cpp";
+const WHISPER = "third_party/whisper.cpp";
 const VENDORED = "third_party/licenses";
 
 function addVerbatim(id, name, raw) {
@@ -142,6 +143,10 @@ function nativeSection() {
       texts: [["MIT", "MIT License (ggml)", () => read(`${NEMO}/ggml/LICENSE`)]] },
     { name: "parakeet.cpp (derived code in NeMo-Speech.cpp)", version: "1675ee5b", license: "MIT", url: "https://github.com/jason-ni/parakeet.cpp",
       texts: [["MIT", "MIT License", () => `${parakeetNotice()}\n${nemoMit()}`]] },
+    // The optional Whisper final pass is desktop-only: static whisper.cpp with the ggml it
+    // bundles (one MIT LICENSE covers both).
+    { name: "whisper.cpp and its bundled ggml (static)", version: "v1.9.4", license: "MIT", url: "https://github.com/ggml-org/whisper.cpp", desktopOnly: true,
+      texts: [["MIT", "MIT License (whisper.cpp, ggml)", () => read(`${WHISPER}/LICENSE`)]] },
     { name: "SentencePiece (static)", version: "17d7580d", license: "Apache-2.0", url: sp, texts: [["Apache-2.0", "Apache License 2.0", () => read(`${VENDORED}/sentencepiece.LICENSE.txt`)]] },
     { name: "Abseil (in SentencePiece)", version: "bundled with SentencePiece", license: "Apache-2.0", url: "https://github.com/abseil/abseil-cpp", texts: [["Apache-2.0", "Apache License 2.0", () => read(`${VENDORED}/abseil.LICENSE.txt`)]] },
     { name: "protobuf-lite (in SentencePiece)", version: "bundled with SentencePiece", license: "BSD-3-Clause", url: "https://github.com/protocolbuffers/protobuf", texts: [["BSD-3-Clause", "BSD 3-Clause (Google)", () => read(`${VENDORED}/protobuf-lite.LICENSE.txt`)]] },
@@ -173,6 +178,12 @@ function modelsSection() {
   }
   // OpenMDW-1.1 has no text in the repo (third_party/NATIVE_NOTICES.md only names it),
   // so the model card url is the reference. Others reuse a stored text.
+  // A model with its own text in third_party/licenses/<id>.LICENSE.txt (its real
+  // copyright holder) uses that; the others reuse a stored text for the licence id.
+  const own = (m) => {
+    const f = `${VENDORED}/${m.id}.LICENSE.txt`;
+    return existsSync(f) ? [addVerbatim(m.license, `${m.license} (${m.repo})`, read(f))] : null;
+  };
   const stored = (id) => Object.entries(licenses).filter(([, l]) => l.id === id).map(([k]) => k).sort();
   // The phone ships the speech models only (asr, diarization, voice).
   return models
@@ -184,7 +195,7 @@ function modelsSection() {
         name: m.repo,
         license: m.license,
         url,
-        licenseKeys: stored(m.license).slice(0, 1),
+        licenseKeys: own(m) ?? stored(m.license).slice(0, 1),
       };
     })
     .sort((a, b) => (a.id < b.id ? -1 : 1));
