@@ -61,8 +61,12 @@ export APPLE_DEVELOPMENT_TEAM="${APPLE_DEVELOPMENT_TEAM:-0000000000}"
 
 (cd "$mobile/src-tauri/gen/apple" && xcodegen generate --quiet)
 cd "$mobile"
+# Only this build's outputs are checked below (not a stale app of the other target).
+started="$(mktemp)"
+trap 'rm -f "$started"' EXIT
+out_dir=arm64; [[ "$target" == aarch64-sim ]] && out_dir=arm64-sim
 CI=true pnpm tauri ios build ${profile[@]+"${profile[@]}"} --features "$features" --target "$target"
-outputs="$(find "$mobile/src-tauri/gen/apple/build" -maxdepth 3 \( -name '*.ipa' -o -name '*.app' \) -newer "$mobile/src-tauri/gen/apple/project.yml" -print)"
+outputs="$(find "$mobile/src-tauri/gen/apple/build/$out_dir" -maxdepth 2 \( -name '*.ipa' -o -name '*.app' \) -newer "$started" -print)"
 echo "$outputs"
 # Every build without --test-hooks (device, --release included) must be free of them.
 if [[ $hooks == 0 ]]; then
