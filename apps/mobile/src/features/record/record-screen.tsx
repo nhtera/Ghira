@@ -99,13 +99,14 @@ export function RecordScreen() {
   );
 
   return (
-    <section data-screen="record" className="flex h-full flex-col gap-3 overflow-hidden px-4 pt-[calc(var(--safe-top)+12px)] pb-4">
+    <section data-screen="record" className="flex h-full flex-col gap-3 overflow-hidden bg-surface px-5 pt-[calc(var(--safe-top)+12px)] pb-4">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <h1 className="text-ios-title2 m-0">{t(active ? "mobile.record.title" : "mobile.record.titleIdle")}</h1>
-        <PrivacyIndicator state={privacyState(model)} />
+        <h1 className={cn("m-0", active ? "text-ios-title2" : "text-ios-headline font-bold")}>{t(active ? "mobile.record.title" : "mobile.record.titleIdle")}</h1>
+        {/* The design's idle frame has no pill: the note under the ring says the audio stays here. */}
+        {active && <PrivacyIndicator state={privacyState(model)} />}
       </header>
 
-      <div className="relative shrink-0">
+      <div className={cn("relative shrink-0", !active && "pt-7")}>
         <p
           role="timer"
           data-testid="timer"
@@ -151,10 +152,10 @@ export function RecordScreen() {
         </>
       ) : (
         // The design puts the ring right under the clock; what follows scrolls at big text sizes.
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pt-2">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pt-[18px]">
           <div className="flex shrink-0 justify-center">{controls}</div>
-          <p className="text-ios-callout m-0 flex shrink-0 items-center gap-3 rounded-2xl bg-accent-soft px-4 py-3.5 font-semibold text-accent">
-            <Icon name="mic" size={24} className="size-6 shrink-0" />
+          <p className="text-ios-callout m-0 mt-3.5 flex shrink-0 items-center gap-2.5 rounded-[14px] bg-accent-soft p-3.5 font-semibold text-accent">
+            <Icon name="speaker_phone" size={24} className="size-6 shrink-0" />
             {t("mobile.privacy.audioStaysLine")}
           </p>
           {calendarEvent && <CalendarCard event={calendarEvent} />}

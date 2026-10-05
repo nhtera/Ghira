@@ -9,6 +9,8 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 export type PhoneButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost" | "danger";
   icon?: IconName;
+  /** regular: 52 pt, 18 px. small: 52 pt, 16 px (the design's own button text; long labels). compact: 44 pt, 17 px (Cancel, Stop and save). */
+  size?: "regular" | "small" | "compact";
   /** Hug the label instead of filling the row. */
   inline?: boolean;
 };
@@ -21,12 +23,19 @@ const VARIANT = {
   danger: "bg-transparent text-rec-ink active:bg-sunk",
 };
 
+const SIZE = {
+  regular: "text-ios-headline min-h-ios-button py-3",
+  small: "text-ios-subhead min-h-ios-button py-3",
+  compact: "text-ios-callout min-h-ios-target py-1.5",
+};
+
 export const PhoneButton = forwardRef<HTMLButtonElement, PhoneButtonProps>(
   function PhoneButton(
     {
       variant = "primary",
       icon,
       inline,
+      size = "regular",
       className,
       children,
       type = "button",
@@ -39,8 +48,9 @@ export const PhoneButton = forwardRef<HTMLButtonElement, PhoneButtonProps>(
         ref={ref}
         type={type}
         className={cn(
-          "text-ios-headline inline-flex min-h-ios-button items-center justify-center gap-2.5 rounded-(--ios-radius-group) py-3 text-center font-semibold",
-          inline ? "min-w-40 px-6" : "w-full px-5",
+          "inline-flex items-center justify-center gap-2.5 rounded-(--ios-radius-group) text-center font-semibold",
+          SIZE[size],
+          inline ? "min-w-40 px-6" : "w-full px-4",
           "disabled:cursor-not-allowed disabled:opacity-50",
           VARIANT[variant],
           className,

@@ -5,6 +5,7 @@ import { ListRow, ListSection } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
 import type { MeetingLanguage } from "../../bindings";
 import { ipc } from "../../ipc";
+import { openInbox, useWaitingCount } from "../../features/import-inbox";
 import { useGo } from "../../features/settings/go";
 import { unwrap, useResource } from "../../features/settings/api";
 import { ChoiceRow, ErrorLine } from "../../features/settings/controls";
@@ -29,6 +30,7 @@ export function SettingsHome() {
   const modelsValue = allReady === undefined ? undefined : allReady ? t("mobile.settings.status.ready") : t("mobile.settings.status.needsDownload");
   const voiceValue = voice.data ? (voice.data.meProfile ? t("mobile.settings.status.set") : t("mobile.settings.status.notSet")) : undefined;
   const calendarValue = calendar.data ? (calendar.data.connected ? t("mobile.settings.calendar.connected") : t("mobile.settings.calendar.off")) : undefined;
+  const waitingImports = useWaitingCount();
   const failed = app.loadError ?? mobile.loadError;
 
   return (
@@ -53,6 +55,11 @@ export function SettingsHome() {
             <ListRow title={t("mobile.settings.rows.models")} value={modelsValue} chevron onPress={() => go("/settings/models")} />
             <ListRow title={t("mobile.settings.rows.vocab")} chevron onPress={() => go("/settings/vocabulary")} />
             <ListRow title={t("mobile.settings.rows.voice")} value={voiceValue} chevron onPress={() => go("/settings/voice")} />
+            {waitingImports > 0 ? (
+              <ListRow title={t("mobile.inbox.title")} value={String(waitingImports)} chevron onPress={openInbox} />
+            ) : (
+              <ListRow title={t("mobile.inbox.title")} value={t("mobile.inbox.none")} />
+            )}
             <ListRow title={t("mobile.settings.rows.calendar")} value={calendarValue} chevron onPress={() => go("/settings/calendar")} />
           </ListSection>
           <ListSection header={t("mobile.settings.section.privacy")}>

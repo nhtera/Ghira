@@ -305,7 +305,10 @@ final class GhiAudio {
 
 @_cdecl("ghi_swift_init")
 public func ghiSwiftInit() {
-    DispatchQueue.main.async { GhiAudio.shared.install() }
+    DispatchQueue.main.async {
+        GhiAudio.shared.install()
+        WebViewInsets.install()
+    }
 }
 
 @_cdecl("ghi_swift_audio_start")

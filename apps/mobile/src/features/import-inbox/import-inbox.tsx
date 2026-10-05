@@ -6,6 +6,7 @@
 // shows while the app is locked (inbox_list refuses).
 import { Banner, Icon, Sheet } from "@ghi/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type {
   InboxItem,
@@ -14,6 +15,8 @@ import type {
 } from "../../bindings";
 import { ipc } from "../../ipc";
 import { LOCKED_EVENT, UNLOCKED_EVENT } from "../app-lock/events";
+import { bannerVisible, hiddenAfter } from "./banner-state";
+import { OPEN_INBOX_EVENT, setWaitingCount, useNoticeSlot } from "./inbox-bus";
 import { InboxRow } from "./inbox-item";
 
 const TOAST_MS = 4000;
@@ -23,8 +26,11 @@ export function ImportInbox() {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState(false);
+  // How many were waiting when the banner was closed (null: it was not).
+  const [hidden, setHidden] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const importing = useRef(new Set<string>());
+  const noticeSlot = useNoticeSlot();
 
   const refresh = useCallback(async () => {
     const r = await ipc.commands.inboxList().catch(() => null);
@@ -82,6 +88,19 @@ export function ImportInbox() {
 
   const waiting = items.filter((i) => i.state === "pending").length;
   const sheetOpen = open && items.length > 0;
+  useEffect(() => {
+    setWaitingCount(waiting);
+  }, [waiting]);
+  // Settings → Waiting to import opens the same sheet.
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_INBOX_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_INBOX_EVENT, onOpen);
+  }, []);
+  const showBanner = bannerVisible(waiting, hidden);
+  // Follow the count down, so the next arrival is "more" than what was closed.
+  if (hiddenAfter(waiting, hidden) !== hidden)
+    setHidden(hiddenAfter(waiting, hidden));
 
   const confirm = async (
     item: InboxItem,
@@ -102,46 +121,51 @@ export function ImportInbox() {
 
   return (
     <>
-      {(waiting > 0 || (toast && !sheetOpen)) && (
-        <div className="pointer-events-none fixed inset-x-0 top-0 z-30 flex flex-col gap-2 px-3 pt-safe">
-          {waiting > 0 && (
-            <div className="pointer-events-auto mt-2">
-              <Banner
-                variant="info"
-                icon="inbox"
-                title={t("mobile.inbox.waiting", { count: waiting })}
-                action={{
-                  label: t("mobile.inbox.review"),
-                  onPress: () => setOpen(true),
-                }}
-              />
-            </div>
-          )}
-          {toast && !sheetOpen && (
-            <div
-              role="status"
-              className="pointer-events-auto mt-2 flex items-center gap-2 rounded-(--ios-radius-group) bg-surface2 py-1 ps-3 pe-1 text-ink shadow-float"
-            >
-              <Icon
-                name="check_circle"
-                size={20}
-                className="shrink-0 text-accent"
-              />
-              <span className="text-ios-subhead flex-1">
-                {t("mobile.inbox.added")}
-              </span>
-              <button
-                type="button"
-                aria-label={t("mobile.inbox.closeToast")}
-                onClick={() => setToast(false)}
-                className="grid min-h-ios-target min-w-ios-target place-items-center text-muted"
+      {noticeSlot &&
+        (showBanner || (toast && !sheetOpen)) &&
+        createPortal(
+          <div className="flex flex-col gap-2 px-3 pb-2">
+            {showBanner && (
+              <div>
+                <Banner
+                  variant="info"
+                  icon="inbox"
+                  title={t("mobile.inbox.waiting", { count: waiting })}
+                  action={{
+                    label: t("mobile.inbox.review"),
+                    onPress: () => setOpen(true),
+                  }}
+                  onDismiss={() => setHidden(waiting)}
+                  dismissLabel={t("mobile.inbox.hide")}
+                />
+              </div>
+            )}
+            {toast && !sheetOpen && (
+              <div
+                role="status"
+                className="flex items-center gap-2 rounded-(--ios-radius-group) bg-surface2 py-1 ps-3 pe-1 text-ink shadow-float"
               >
-                <Icon name="close" size={20} />
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+                <Icon
+                  name="check_circle"
+                  size={20}
+                  className="shrink-0 text-accent"
+                />
+                <span className="text-ios-subhead flex-1">
+                  {t("mobile.inbox.added")}
+                </span>
+                <button
+                  type="button"
+                  aria-label={t("mobile.inbox.closeToast")}
+                  onClick={() => setToast(false)}
+                  className="grid min-h-ios-target min-w-ios-target place-items-center text-muted"
+                >
+                  <Icon name="close" size={20} />
+                </button>
+              </div>
+            )}
+          </div>,
+          noticeSlot,
+        )}
       <Sheet
         open={sheetOpen}
         onOpenChange={setOpen}

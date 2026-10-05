@@ -483,6 +483,28 @@ test("a long meeting stays smooth: 1,500 lines, only a window of them in the DOM
   expect(more).toBeLessThan(2000);
 });
 
+test("a long partial landing while a finger rests on the list keeps following the newest text", async ({ page }) => {
+  await openRecord(page);
+  await live(page);
+  await addLines(page, 30);
+  const log_ = page.getByRole("log", { name: "Live transcript" });
+  // The finger moved a little a moment ago (any touch counts as the user's for a while).
+  await log_.evaluate((el) => el.dispatchEvent(new Event("touchmove", { bubbles: true })));
+  // One utterance that goes on for minutes: the partial row grows by several screens.
+  for (let k = 1; k <= 6; k += 1) {
+    await page.evaluate((words) => window.__ghiRecord!.addPartial(Array.from({ length: words }, (_, i) => `word${i}`).join(" ")), 150 * k);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  }
+  await expect(page.getByRole("button", { name: "Latest" })).toHaveCount(0);
+  const box = await page.getByTestId("partial").evaluate((el) => {
+    const list = el.closest("[role=log]")!.getBoundingClientRect();
+    const end = el.getBoundingClientRect();
+    return { bottomGap: list.bottom - end.bottom };
+  });
+  // The newest text is at the end of the list (not scrolled away below it).
+  expect(Math.abs(box.bottomGap)).toBeLessThan(40);
+});
+
 test("sustained levels and partials stay cheap: 20 s of 10 levels/s, 3 partials/s, a line every 4 s", async ({ page }) => {
   await openRecord(page);
   await live(page);

@@ -249,7 +249,9 @@
       "unknownSize": "Size unknown",
       "added": "Added to {{app}}",
       "desktopDisabled": "Pair a computer first",
-      "closeToast": "Dismiss"
+      "closeToast": "Dismiss",
+      "hide": "Hide notice",
+      "none": "None"
     },
     "cloudSheet": {
       "title": "Improve with cloud",

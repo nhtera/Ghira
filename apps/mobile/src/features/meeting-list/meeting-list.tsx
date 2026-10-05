@@ -89,8 +89,8 @@ export function MeetingList() {
 
   const indicator = list.refreshing || pull > 0;
   return (
-    <section data-screen="meetings" className="flex h-full flex-col">
-      <NavBar title={t("mobile.meetings.title")} collapsed={collapsed} />
+    <section data-screen="meetings" className="flex h-full flex-col bg-surface">
+      <NavBar title={t("mobile.meetings.title")} collapsed={collapsed} className="bg-surface" />
       <div
         ref={scrollRef}
         onTouchStart={touchStart}
@@ -207,7 +207,7 @@ export function MeetingList() {
                   }}
                 >
                   {item.type === "header" ? (
-                    <h2 className="text-ios-caption1 m-0 bg-bg px-4 pt-3 pb-1.5 font-semibold tracking-[0.06em] text-muted uppercase">
+                    <h2 className="text-ios-caption1 m-0 bg-surface px-4 pt-3 pb-1.5 font-semibold tracking-[0.06em] text-muted uppercase">
                       {dayLabel(item.day)}
                     </h2>
                   ) : (

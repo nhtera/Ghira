@@ -20,6 +20,8 @@ export type SheetProps = {
   /** A glyph above the title (decorative; the title says it). */
   icon?: IconName;
   description?: ReactNode;
+  /** The description in ink rather than muted (a message to read, not a caption). */
+  strongDescription?: boolean;
   children?: ReactNode;
   /** Pinned under the scrolling content (primary actions). */
   footer?: ReactNode;
@@ -31,6 +33,10 @@ export type SheetProps = {
   handleLabel: string;
   /** false: Escape, the scrim and swiping down do nothing (consent). */
   dismissible?: boolean;
+  /** false: no close X (the sheet has its own Cancel; swiping down still closes it). */
+  closeButton?: boolean;
+  /** A taller medium detent (62% instead of 55%) for a sheet whose content is just over half. */
+  tall?: boolean;
 };
 
 /** A swipe shorter than this (px) counts as a tap. */
@@ -55,6 +61,7 @@ function SheetContent({
   title,
   icon,
   description,
+  strongDescription,
   children,
   footer,
   detent: initial = "medium",
@@ -62,6 +69,8 @@ function SheetContent({
   closeLabel,
   handleLabel,
   dismissible,
+  closeButton = true,
+  tall,
   block,
   onOpenChange,
 }: Omit<SheetProps, "open" | "dismissible"> & { dismissible: boolean; block: (e: Event) => void }) {
@@ -124,7 +133,7 @@ function SheetContent({
       className={cn(
         "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-(--ios-radius-sheet) border border-b-0 border-line2 bg-surface text-ink shadow-float outline-none",
         "data-[state=closed]:animate-[ios-sheet-out_var(--motion-base)_var(--ease)] data-[state=open]:animate-[ios-sheet-in_var(--motion-slow)_var(--ease)]",
-        large ? "h-[calc(100dvh-var(--safe-top)-0.75rem)]" : "max-h-[55dvh]",
+        large ? "h-[calc(100dvh-var(--safe-top)-0.75rem)]" : tall ? "max-h-[calc(62dvh+var(--safe-bottom,0px))]" : "max-h-[calc(55dvh+var(--safe-bottom,0px))]",
       )}
     >
       <div className="relative shrink-0">
@@ -162,17 +171,17 @@ function SheetContent({
         >
           <span aria-hidden="true" className="h-[5px] w-9 rounded-[3px] bg-line2" />
         </button>
-        {dismissible && (
+        {dismissible && closeButton && (
           <RD.Close aria-label={closeLabel} className="absolute top-0 right-1 grid min-h-ios-target min-w-ios-target place-items-center rounded-full text-muted">
             <Icon name="close" size={22} />
           </RD.Close>
         )}
       </div>
-      <div ref={scroller} tabIndex={overflows ? 0 : undefined} className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
-        {icon && <Icon name={icon} size={32} className="mb-3 size-8 text-muted" />}
+      <div ref={scroller} tabIndex={overflows ? 0 : undefined} className="min-h-0 flex-1 overflow-y-auto px-5 pb-2">
+        {icon && <Icon name={icon} size={32} className="mb-2 size-8 text-muted" />}
         <RD.Title className="text-ios-title3 m-0 pe-8">{title}</RD.Title>
-        {description && <RD.Description className="text-ios-callout m-0 mt-2 text-muted">{description}</RD.Description>}
-        <div className="mt-3">{children}</div>
+        {description && <RD.Description className={cn("text-ios-callout m-0 mt-2", strongDescription ? "text-ink" : "text-muted")}>{description}</RD.Description>}
+        <div className="mt-2.5">{children}</div>
       </div>
       {footer && (
         <div data-sheet-footer className="flex shrink-0 flex-col gap-1 px-5 pt-3 pb-safe">

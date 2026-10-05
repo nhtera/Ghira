@@ -32,33 +32,32 @@ export function CallNoticeSheet({
       icon="phone_disabled"
       title={t("mobile.callLimit.title")}
       description={t("mobile.callLimit.body")}
+      strongDescription
+      closeButton={false}
+      tall
       closeLabel={t("mobile.sheet.close")}
       handleLabel={t("mobile.sheet.handle")}
       footer={
         <>
-          <PhoneButton icon="speaker_phone" onClick={onConfirm}>
+          <PhoneButton icon="speaker_phone" size="small" onClick={onConfirm}>
             {t("mobile.callLimit.useRoom")}
           </PhoneButton>
-          <PhoneButton variant="ghost" onClick={onCancel}>
+          <PhoneButton variant="ghost" size="compact" onClick={onCancel}>
             {t("mobile.common.cancel")}
           </PhoneButton>
         </>
       }
     >
-      <div className="flex flex-col gap-3 rounded-(--ios-radius-group) bg-sunk px-4 py-3">
-        <p className="text-ios-callout m-0 flex items-start gap-3 text-ink">
-          <Icon name="speaker_phone" size={24} className="mt-0.5 size-6 shrink-0 text-accent" />
-          {t("mobile.record.callNotice.steps")}
-        </p>
-        <p className="text-ios-callout m-0 flex items-start gap-3 text-ink">
-          <Icon name="campaign" size={24} className="mt-0.5 size-6 shrink-0 text-accent" />
+      <div className="flex flex-col items-start rounded-xl bg-sunk px-3 pt-2.5 pb-0.5 text-muted">
+        <p className="text-ios-subhead m-0 flex items-start gap-2.5">
+          <Icon name="campaign" size={22} className="size-[1.375rem] shrink-0 text-accent" />
           {t("mobile.callLimit.consent")}
         </p>
+        <CopyConsentButton language={language} compact className="-mb-0.5 ms-8" />
       </div>
-      <CopyConsentButton language={language} className="mt-3" />
       {sensitive && (
-        <div className="mt-3 rounded-(--ios-radius-group) bg-sunk px-4 py-3">
-          <SensitiveRow checked={sensitive.checked} onChange={sensitive.onChange} />
+        <div className="mt-1">
+          <SensitiveRow stacked checked={sensitive.checked} onChange={sensitive.onChange} />
         </div>
       )}
     </Sheet>

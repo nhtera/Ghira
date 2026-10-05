@@ -124,7 +124,7 @@ export function MeetingRowView({
         onTouchEnd={end}
         onTouchCancel={end}
         style={{ transform: `translateX(${offset}px)` }}
-        className={`relative bg-bg ${drag === null ? "transition-transform duration-(--motion-base) motion-reduce:transition-none" : ""}`}
+        className={`relative bg-surface ${drag === null ? "transition-transform duration-(--motion-base) motion-reduce:transition-none" : ""}`}
       >
         <button
           type="button"

@@ -22,6 +22,91 @@ test("waiting files raise a banner; Review opens the choices", async ({ page }) 
   await expectAccessible(page);
 });
 
+test("the banner can be hidden; a new waiting file brings it back", async ({ page }) => {
+  await seed(page, [item("standup"), item("review")]);
+  const banner = page.getByRole("status").filter({ hasText: "files are waiting to import" });
+  await expect(banner).toBeVisible();
+  const hide = banner.getByRole("button", { name: "Hide notice" });
+  expect((await hide.boundingBox())!.width).toBeGreaterThanOrEqual(44);
+  await hide.click();
+  await expect(banner).toHaveCount(0);
+  // Same files, still waiting: it stays hidden.
+  await seed(page, [item("standup"), item("review")]);
+  await expect(banner).toHaveCount(0);
+  // One more arrives: back.
+  await seed(page, [item("standup"), item("review"), item("retro")]);
+  await expect(page.getByRole("status").filter({ hasText: "3 files are waiting to import" })).toBeVisible();
+});
+
+test("Settings lists the waiting files after the banner is hidden, and opens the same sheet", async ({ page }) => {
+  // None waiting: the row says so and does nothing.
+  await expect(page.getByText("None", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Waiting to import/ })).toHaveCount(0);
+  await seed(page, [item("standup"), item("review")]);
+  await page.getByRole("status").filter({ hasText: "files are waiting to import" }).getByRole("button", { name: "Hide notice" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "files are waiting to import" })).toHaveCount(0);
+  const row = page.getByRole("button", { name: /Waiting to import/ });
+  await expect(row).toContainText("2");
+  await row.click();
+  const dialog = page.getByRole("dialog", { name: "Waiting to import" });
+  await expect(dialog.getByText("standup.m4a")).toBeVisible();
+  await expect(dialog.getByText("review.m4a")).toBeVisible();
+  // One can be imported from here.
+  await dialog.getByRole("listitem").filter({ hasText: "standup.m4a" }).getByRole("button", { name: "Import" }).click();
+  await expect(dialog.getByText("standup.m4a")).toHaveCount(0);
+});
+
+test("the banner sits above the screen's content, not over it (iPhone safe areas)", async ({ page }) => {
+  // A notched iPhone: 59 pt of status bar, 34 pt of home indicator.
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty("--safe-top", "59px");
+    document.documentElement.style.setProperty("--safe-bottom", "34px");
+  });
+  await seed(page, [item("standup"), item("review")]);
+  const banner = page.getByRole("status").filter({ hasText: "files are waiting to import" });
+  await expect(banner).toBeVisible();
+  for (const [route, content] of [
+    ["#/record", () => page.getByRole("heading", { level: 1 })],
+    ["#/record", () => page.getByRole("timer")],
+    ["#/meetings", () => page.getByRole("heading", { level: 1, name: "Meetings" })],
+    ["#/search", () => page.getByRole("heading", { level: 1, name: "Search" })],
+  ] as const) {
+    await page.evaluate((r) => (window.location.hash = r), route);
+    await expect(content()).toBeVisible();
+    const b = (await banner.boundingBox())!;
+    const c = (await content().boundingBox())!;
+    expect(b.y, "below the status bar").toBeGreaterThanOrEqual(59);
+    expect(c.y, `${route} content starts under the banner`).toBeGreaterThanOrEqual(b.y + b.height);
+  }
+  // The strip wears the screen's background: no seam on any tab, light or dark.
+  for (const dark of [false, true]) {
+    await page.emulateMedia({ colorScheme: dark ? "dark" : "light" });
+    for (const [route, screen] of [
+      ["#/settings", "settings"],
+      ["#/record", "record"],
+      ["#/meetings", "meetings"],
+    ] as const) {
+      await page.evaluate((r) => (window.location.hash = r), route);
+      await expect(page.locator(`[data-notices]`)).toBeVisible();
+      const [slot, page_] = await page.evaluate((name) => {
+        const bg = (el: Element | null) => (el ? getComputedStyle(el).backgroundColor : "");
+        const screenEl = document.querySelector(`[data-screen=${name}]`) ?? document.querySelector("main > *");
+        const own = bg(screenEl);
+        // A screen with no background of its own shows the page's.
+        const shown = own === "rgba(0, 0, 0, 0)" ? bg(document.body) : own;
+        return [bg(document.querySelector("[data-notices]")), shown];
+      }, screen);
+      expect(slot, `${screen} ${dark ? "dark" : "light"}`).toBe(page_);
+    }
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+  // Hidden: the screen gets its own top inset back.
+  await banner.getByRole("button", { name: "Hide notice" }).click();
+  await expect(banner).toHaveCount(0);
+  await page.evaluate(() => (window.location.hash = "#/record"));
+  expect((await page.getByRole("heading", { level: 1 }).boundingBox())!.y).toBeGreaterThanOrEqual(59);
+});
+
 test("confirming imports the file, shows the toast, and nothing else was imported", async ({ page }) => {
   await seed(page, [item("standup"), item("review")]);
   await page.getByRole("button", { name: "Review" }).click();

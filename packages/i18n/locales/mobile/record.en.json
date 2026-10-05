@@ -104,9 +104,6 @@
         "modelsMissingAction": "Download models",
         "thermal": "The phone is too hot to transcribe. Recording continues."
       },
-      "callNotice": {
-        "steps": "Put the call on speakerphone and set the phone down where it can hear everyone. {{app}} records the room."
-      },
       "more": "More actions",
       "discard": {
         "menu_one": "Discard the last {{count}} minute…",

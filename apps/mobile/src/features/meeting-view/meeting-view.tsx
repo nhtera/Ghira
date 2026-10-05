@@ -69,8 +69,9 @@ export function MeetingView({
 
   if (m.status !== "ready" || !m.detail) {
     return (
-      <section data-screen="meeting" className="flex h-full flex-col">
+      <section data-screen="meeting" className="flex h-full flex-col bg-surface">
         <NavBar
+          className="bg-surface"
           large={false}
           title={t("mobile.meetings.title")}
           onBack={back}
@@ -113,8 +114,9 @@ export function MeetingView({
   const cite = (citation: Citation, key: string) => setQuote({ citation, key });
 
   return (
-    <section data-screen="meeting" className="flex h-full flex-col">
+    <section data-screen="meeting" className="flex h-full flex-col bg-surface">
       <NavBar
+        className="bg-surface"
         // Empty until the heading below has scrolled away: the hidden copy would take the back label's room.
         title={collapsed ? title : ""}
         collapsed={collapsed}
@@ -154,7 +156,7 @@ export function MeetingView({
             {detail.sensitive && <SensitiveBadge />}
           </div>
         </div>
-        <div className="sticky top-0 z-10 bg-bg px-4 pt-1 pb-2">
+        <div className="sticky top-0 z-10 bg-surface px-4 pt-1 pb-2">
           <div
             role="tablist"
             aria-label={t("mobile.detail.tabs")}

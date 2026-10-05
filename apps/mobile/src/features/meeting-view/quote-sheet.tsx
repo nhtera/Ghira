@@ -29,7 +29,9 @@ export function QuoteSheet({
   const time = at === null ? null : formatClock(at, { pad: true });
   const canPlay = audio && at !== null && !citation?.missing;
   const color =
-    speaker && speaker.colorSlot > 0 ? `var(--s${speaker.colorSlot})` : undefined;
+    speaker && speaker.colorSlot > 0
+      ? `var(--s${speaker.colorSlot})`
+      : undefined;
   return (
     <Sheet
       open={citation !== null}
@@ -39,16 +41,19 @@ export function QuoteSheet({
       handleLabel={t("mobile.sheet.handle")}
       footer={
         canPlay && time ? (
-          <PhoneButton
-            variant="primary"
-            icon="play_arrow"
-            onClick={() => {
-              onPlay(at);
-              onClose();
-            }}
-          >
-            {t("mobile.detail.playFrom", { time })}
-          </PhoneButton>
+          // Room under the button of its own: the sheet's safe-area padding is 0 where there is no home indicator, and the button must never touch the edge.
+          <div className="pb-4">
+            <PhoneButton
+              variant="primary"
+              icon="play_arrow"
+              onClick={() => {
+                onPlay(at);
+                onClose();
+              }}
+            >
+              {t("mobile.detail.playFrom", { time })}
+            </PhoneButton>
+          </div>
         ) : undefined
       }
     >

@@ -42,8 +42,8 @@ export function SearchScreen({ autoFocus = false }: { autoFocus?: boolean }) {
   };
 
   return (
-    <section data-screen="search" className="flex h-full flex-col">
-      <NavBar title={t("mobile.search.title")} collapsed={collapsed} />
+    <section data-screen="search" className="flex h-full flex-col bg-surface">
+      <NavBar title={t("mobile.search.title")} collapsed={collapsed} className="bg-surface" />
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto">
         <LargeTitle ref={titleRef}>{t("mobile.search.title")}</LargeTitle>
         <form
@@ -52,7 +52,7 @@ export function SearchScreen({ autoFocus = false }: { autoFocus?: boolean }) {
             e.preventDefault();
             remember(text);
           }}
-          className="sticky top-0 z-10 bg-bg px-4 pb-2"
+          className="sticky top-0 z-10 bg-surface px-4 pb-2"
         >
           <div className="flex min-h-ios-target items-center gap-2 rounded-(--ios-radius-group) bg-sunk px-3">
             <Icon

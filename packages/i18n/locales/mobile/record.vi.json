@@ -103,9 +103,6 @@
         "modelsMissingAction": "Tải mô hình",
         "thermal": "Điện thoại quá nóng để chép lời. Ghi âm vẫn tiếp tục."
       },
-      "callNotice": {
-        "steps": "Hãy bật loa ngoài cho cuộc gọi và đặt điện thoại nơi nghe được mọi người. {{app}} ghi âm cả phòng."
-      },
       "more": "Thêm tác vụ",
       "discard": {
         "menu_other": "Bỏ {{count}} phút vừa rồi…",

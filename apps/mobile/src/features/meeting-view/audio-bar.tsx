@@ -35,7 +35,7 @@ export function AudioBar({ audio, wave, segments, speakers }: AudioBarProps) {
   };
   const played = total > 0 ? (Math.min(audio.timeMs, total) / total) * BARS : 0;
   return (
-    <div role="group" aria-label={t("mobile.detail.listen")} className="flex items-center gap-3 border-t border-line bg-bg px-5 pt-2.5 pb-3">
+    <div role="group" aria-label={t("mobile.detail.listen")} className="flex items-center gap-3 border-t border-line bg-surface px-5 pt-2.5 pb-3">
       <button
         type="button"
         onClick={() => void audio.toggle()}

@@ -15,15 +15,15 @@ function Demo({ initial }: { initial: string }) {
       value={value}
       onChange={setValue}
       items={[
-        { id: "meetings", label: t("mobile.tabs.meetings"), icon: "format_list_bulleted", iconSelected: "format_list_bulleted_fill" },
-        { id: "record", label: t("mobile.tabs.record"), icon: "mic", iconSelected: "mic_fill", emphasized: true },
-        { id: "search", label: t("mobile.tabs.search"), icon: "search", iconSelected: "search_fill" },
-        { id: "settings", label: t("mobile.tabs.settings"), icon: "settings", iconSelected: "settings_fill" },
+        { id: "meetings", label: t("mobile.tabs.meetings"), icon: "event_note" },
+        { id: "record", label: t("mobile.tabs.record"), icon: "radio_button_checked", emphasized: true },
+        { id: "search", label: t("mobile.tabs.search"), icon: "search" },
+        { id: "settings", label: t("mobile.tabs.settings"), icon: "settings" },
       ]}
     />
   );
 }
 
 export const MeetingsSelected: Story = { render: () => <Demo initial="meetings" /> };
-export const RecordSelected: Story = { render: () => <Demo initial="record" />, note: "Record is a filled circle, accent when selected." };
+export const RecordSelected: Story = { render: () => <Demo initial="record" />, note: "Record shares the line of the other tabs and turns red when selected." };
 export const SettingsSelected: Story = { render: () => <Demo initial="settings" /> };

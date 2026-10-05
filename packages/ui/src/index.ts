@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // @ghi/ui: tokens, primitives and the brief §7 components.
 export { cn } from "./utils/cn";
+export { setTextScale } from "./utils/text-scale";
 export * from "./tokens/tokens";
 export * from "./tokens/color-math";
 export * from "./platform/platform";

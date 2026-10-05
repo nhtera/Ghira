@@ -76,6 +76,9 @@ for (const look of LOOKS) {
     await open(page, look, { callActive: true });
     await page.getByRole("button", { name: /record room|ghi phòng họp/i }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
+    // The design's height at default English text; large for the longer Vietnamese and at big text.
+    if (look.lang === "en" && !look.id.endsWith("200")) await expect(page.getByRole("dialog")).toHaveAttribute("data-detent", "medium");
+    await expect(page.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
     await expect(page).toHaveScreenshot(`record-call-notice-${look.id}.png`, { animations: "disabled" });
   });
 }

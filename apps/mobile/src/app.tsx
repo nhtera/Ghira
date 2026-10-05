@@ -4,7 +4,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { initMobileI18n } from "@ghi/i18n/mobile";
-import { PlatformProvider } from "@ghi/ui";
+import { PlatformProvider, setTextScale } from "@ghi/ui";
 import { makeRouter } from "./router";
 import { browserOverrides, deviceLanguage } from "./state/language";
 
@@ -16,7 +16,7 @@ export function App() {
   useEffect(() => {
     document.documentElement.lang = language;
     document.documentElement.dataset.platform = "ios";
-    if (overrides.scale) document.documentElement.style.setProperty("--ghi-text-scale", String(overrides.scale));
+    if (overrides.scale) setTextScale(overrides.scale);
   }, [language, overrides]);
   // The dev browser has a desktop user agent; the phone is always "ios".
   return (

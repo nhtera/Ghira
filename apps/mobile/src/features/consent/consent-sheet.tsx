@@ -3,7 +3,7 @@
 // Offers a short message to copy; starting needs the explicit confirm, so the
 // closing the sheet never starts one. With a phone call
 // active the M6 notice takes its place (CallNoticeSheet).
-import { PhoneButton, Sheet } from "@ghi/ui";
+import { cn, Icon, PhoneButton, Sheet } from "@ghi/ui";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingLanguage } from "../../bindings";
@@ -25,7 +25,7 @@ export async function writeClipboard(text: string): Promise<boolean> {
  * closes (it mounts with the sheet). The text is fetched when the sheet opens so
  * the tap itself writes to the clipboard (WebKit wants it inside the gesture).
  */
-export function CopyConsentButton({ language, className }: { language: MeetingLanguage; className?: string }) {
+export function CopyConsentButton({ language, className, compact }: { language: MeetingLanguage; className?: string; compact?: boolean }) {
   const { t } = useTranslation();
   const [message, setMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -36,19 +36,24 @@ export function CopyConsentButton({ language, className }: { language: MeetingLa
       alive = false;
     };
   }, [language]);
+  const copy = () => message !== null && void writeClipboard(message).then(setCopied);
+  const label = copied ? t("mobile.record.consent.copied") : t("mobile.record.consent.copy");
+  const icon = copied ? "check" : "content_copy";
+  if (compact)
+    return (
+      <button
+        type="button"
+        disabled={message === null}
+        onClick={copy}
+        className={cn("text-ios-callout inline-flex min-h-ios-target items-center gap-2 font-semibold text-accent disabled:opacity-50", className)}
+      >
+        <Icon name={icon} size={20} className="size-5" />
+        {label}
+      </button>
+    );
   return (
-    <PhoneButton
-      variant="secondary"
-      icon={copied ? "check" : "content_copy"}
-      disabled={message === null}
-      onClick={() =>
-        message !== null && void writeClipboard(message).then(setCopied)
-      }
-      className={className}
-    >
-      {copied
-        ? t("mobile.record.consent.copied")
-        : t("mobile.record.consent.copy")}
+    <PhoneButton variant="secondary" icon={icon} disabled={message === null} onClick={copy} className={className}>
+      {label}
     </PhoneButton>
   );
 }
@@ -78,7 +83,7 @@ export function ConsentSheet({ language, open, onCancel, onConfirm, sensitive }:
           <PhoneButton onClick={onConfirm}>
             {t("mobile.record.consent.confirm")}
           </PhoneButton>
-          <PhoneButton variant="ghost" onClick={onCancel}>
+          <PhoneButton variant="ghost" size="compact" onClick={onCancel}>
             {t("mobile.common.cancel")}
           </PhoneButton>
         </>

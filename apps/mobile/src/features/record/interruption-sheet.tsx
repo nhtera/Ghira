@@ -45,7 +45,7 @@ export function InterruptionSheet({
           <PhoneButton icon="play_arrow" onClick={onResume}>
             {t("mobile.record.resumeRecording")}
           </PhoneButton>
-          <PhoneButton variant="danger" icon="stop" onClick={onStop}>
+          <PhoneButton variant="danger" size="compact" icon="stop" onClick={onStop}>
             {t("mobile.record.stopAndSave")}
           </PhoneButton>
         </>

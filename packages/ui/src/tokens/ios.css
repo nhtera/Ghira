@@ -50,6 +50,9 @@
 
 /* One root size drives the rem scale. data-platform and --ghi-text-scale are
    set on <html> (the app's shell, the gallery), so rem follows. */
+:root[data-platform="ios"][data-large-text] {
+  --ios-hyphens: auto;
+}
 :root[data-platform="ios"] {
   font-size: calc(16px * var(--ghi-text-scale, 1));
   /* The text scale is ours; WebKit must not resize text on its own. */
@@ -57,9 +60,9 @@
 }
 
 @utility text-ios-large-title {
-  /* Words wrap at spaces first; a word too long for the line hyphenates (lang is set on <html>) or breaks rather than clipping at 200% text. */
+  /* Words wrap at spaces first; at large text (data-large-text on <html>) a word too long for the line hyphenates (lang is set on <html>), and anything longer breaks rather than clipping. */
   overflow-wrap: break-word;
-  hyphens: auto;
+  hyphens: var(--ios-hyphens, manual);
   font-size: var(--ios-large-title);
   font-weight: 700;
   line-height: 1.15;
@@ -70,12 +73,13 @@
   }
 }
 @utility text-ios-title1 {
-  /* Words wrap at spaces first; a word too long for the line hyphenates (lang is set on <html>) or breaks rather than clipping at 200% text. */
+  /* Words wrap at spaces first; at large text (data-large-text on <html>) a word too long for the line hyphenates (lang is set on <html>), and anything longer breaks rather than clipping. */
   overflow-wrap: break-word;
-  hyphens: auto;
+  hyphens: var(--ios-hyphens, manual);
   font-size: var(--ios-title1);
   font-weight: 700;
   line-height: 1.2;
+  letter-spacing: -0.01em;
   &:lang(vi) {
     line-height: 1.35;
   }

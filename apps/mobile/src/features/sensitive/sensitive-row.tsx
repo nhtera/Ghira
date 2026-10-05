@@ -10,22 +10,25 @@ export function SensitiveRow({
   onChange,
   disabled,
   hint,
+  stacked,
 }: {
   checked: boolean;
   onChange: (on: boolean) => void;
   disabled?: boolean;
   /** Replaces the promise (why the switch is off-limits). */
   hint?: string;
+  /** The promise under the label and switch, full width (a tight sheet). */
+  stacked?: boolean;
 }) {
   const { t } = useTranslation();
   const id = useId();
   return (
-    <div className="flex items-center justify-between gap-3" data-testid="sensitive-row">
-      <div className="min-w-0">
+    <div className={stacked ? "flex flex-wrap items-center justify-between gap-x-3" : "flex items-center justify-between gap-3"} data-testid="sensitive-row">
+      <div className={stacked ? "contents" : "min-w-0"}>
         <p id={id} className="text-ios-subhead m-0">
           {t("mobile.sensitive.label")}
         </p>
-        <p className="text-ios-footnote m-0 text-muted">{hint ?? t("mobile.sensitive.hint")}</p>
+        <p className={stacked ? "text-ios-footnote order-last m-0 w-full text-muted" : "text-ios-footnote m-0 text-muted"}>{hint ?? t("mobile.sensitive.hint")}</p>
       </div>
       <Switch checked={checked} onChange={onChange} labelledBy={id} disabled={disabled} />
     </div>

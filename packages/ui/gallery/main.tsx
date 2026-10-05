@@ -12,6 +12,7 @@ import { initMobileI18n } from "@ghi/i18n/mobile";
 import "../src/styles.css";
 import { PlatformProvider, type AppPlatform } from "../src/platform/platform";
 import { TooltipProvider } from "../src/primitives/tooltip";
+import { setTextScale } from "../src/utils/text-scale";
 import { ToastProvider } from "../src/primitives/toast";
 import { applyTheme } from "../src/theme/theme";
 import type { Story, StoryMeta } from "../src/story";
@@ -41,7 +42,7 @@ document.documentElement.lang = lang;
 document.documentElement.dataset.platform = platform;
 if (platform === "ios") {
   const scale = Number(q.get("scale"));
-  if (scale > 0) document.documentElement.style.setProperty("--ghi-text-scale", String(scale));
+  if (scale > 0) setTextScale(scale);
 }
 const i18n = platform === "ios" ? initMobileI18n(lang) : initI18n(lang);
 

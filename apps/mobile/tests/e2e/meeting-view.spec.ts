@@ -137,6 +137,26 @@ test.describe("meeting view", () => {
     ).toHaveAttribute("aria-valuetext", "0:00 / 31:00");
   });
 
+  for (const [name, opts] of [
+    ["en", {}],
+    ["en dark", { dark: true }],
+    ["vi 200%", { lang: "vi" as const, scale: 2 }],
+    ["vi 200% dark", { lang: "vi" as const, scale: 2, dark: true }],
+  ] as const) {
+    test(`the quote sheet's Play button is fully on screen (${name})`, async ({ page }) => {
+      await openMeetings(page, "/meetings/m-notes", opts);
+      await page.getByRole("button", { name: /01:30/ }).first().click();
+      const play = page.getByRole("button", { name: /01:30/ }).last();
+      await expect(play).toBeVisible();
+      const box = (await play.boundingBox())!;
+      const view = page.viewportSize()!;
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      // Not touching the bottom edge either.
+      expect(box.y + box.height).toBeLessThanOrEqual(view.height - 12);
+      expect(box.x + box.width).toBeLessThanOrEqual(view.width);
+    });
+  }
+
   test("tapping and dragging the waveform seeks", async ({ page }) => {
     await openMeetings(page, "/meetings/m-notes");
     const seek = page.getByTestId("audio-seek");
