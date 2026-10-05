@@ -9,11 +9,14 @@ import { ipc } from "../../ipc";
 import { MIN_PASSWORD, RETENTION_DAYS, deleteWord, deleteWordMatches, passwordIssue, passwordStrength, retentionDeletes } from "./logic";
 import { AppLockCard } from "./app-lock-card";
 import { MyVoiceCard } from "./my-voice-card";
+import { DeleteEverywhereAsk, DeleteWaiting, useDeleteEverywhereStatus } from "../sync/delete-everywhere";
+import { useSyncStatus } from "../sync/use-sync";
 import { Card, Note, Row, Switch, SwitchRow, inputCls, useFail, useSettings } from "./parts";
 
 export function PrivacySection() {
   const { t } = useTranslation();
   const { settings, patch } = useSettings();
+  const { data: sync } = useSyncStatus();
   return (
     <div className="flex flex-col">
       <Card>
@@ -29,6 +32,11 @@ export function PrivacySection() {
           <Switch checked={false} onChange={() => {}} label={t("settings.privacy.learnVoices")} disabled />
         </Row>
         {settings && <SwitchRow label={t("settings.privacy.strictOffline")} hint={t("settings.privacy.strictOfflineHint")} checked={settings.strictOffline} onChange={(v) => void patch({ strictOffline: v })} testId="strict-offline" />}
+        {sync?.enabled && (
+          <div data-testid="strict-offline-local-note">
+            <Note icon="wifi">{t("settings.sync.localOnly")}</Note>
+          </div>
+        )}
       </Card>
       <ExportCard />
       <DeleteCard />
@@ -159,16 +167,27 @@ function DeleteCard() {
   const [typed, setTyped] = useState("");
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const { data: sync } = useSyncStatus();
+  const paired = sync?.enabled ? sync.paired.map((d) => d.name) : [];
+  const waiting = useDeleteEverywhereStatus(busy && paired.length > 0);
   // One call only: a second one would hit the store mid-wipe. On success the
   // app restarts, so the busy state stays; on failure it is released.
   const run = async () => {
     if (busy) return;
+    setAsking(false);
     setBusy(true);
     const r = await ipc.commands.deleteAllData();
     if (r.status === "error") {
       fail(r.error);
       setBusy(false);
     }
+  };
+  // "Delete here only": sync goes off first, so nobody is waited for.
+  const hereOnly = async () => {
+    const off = await ipc.commands.syncSetEnabled(false);
+    if (off.status === "error") return fail(off.error);
+    if (!busy) void run();
   };
   return (
     <Card title={t("settings.privacy.dangerTitle")} hint={t("settings.privacy.dangerBody")}>
@@ -181,15 +200,19 @@ function DeleteCard() {
           className="flex max-w-sm flex-col gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            if (deleteWordMatches(typed, word) && !busy) void run();
+            if (!deleteWordMatches(typed, word) || busy) return;
+            if (paired.length > 0) setAsking(true);
+            else void run();
           }}
         >
           <label className="flex flex-col gap-1 text-small font-semibold">
             {t("settings.privacy.typeToConfirm", { word })}
             <input autoFocus autoComplete="off" className={cn(inputCls, "font-normal")} value={typed} disabled={busy} onChange={(e) => setTyped(e.target.value)} />
           </label>
+          {asking && <DeleteEverywhereAsk devices={paired} onEverywhere={() => void run()} onHereOnly={() => void hereOnly()} onCancel={() => setAsking(false)} />}
+          {busy && waiting?.state === "waiting" && <DeleteWaiting names={waiting.waitingFor} onHereOnly={() => void hereOnly()} />}
           <div className="flex gap-2">
-            <Button type="submit" variant="danger" disabled={busy || !deleteWordMatches(typed, word)}>
+            <Button type="submit" variant="danger" disabled={busy || asking || !deleteWordMatches(typed, word)}>
               {t("settings.privacy.deleteEverything")}
             </Button>
             <Button
@@ -197,6 +220,7 @@ function DeleteCard() {
               disabled={busy}
               onClick={() => {
                 setOpen(false);
+                setAsking(false);
                 setTyped("");
               }}
             >

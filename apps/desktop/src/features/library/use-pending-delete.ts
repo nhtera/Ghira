@@ -7,6 +7,7 @@ import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useToast } from "@ghi/ui";
 import { ipc } from "../../ipc";
+import { announceDeleted } from "../sync/delete-notice";
 import { MEETINGS_KEY } from "./use-meetings";
 
 export const UNDO_MS = 6000;
@@ -28,13 +29,19 @@ export function usePendingDelete(onDeleted?: (id: string) => void) {
         committed = true;
         const failed: string[] = [];
         let error = "";
+        const gone: string[] = [];
         for (const id of ids) {
           const r = await ipc.commands.deleteMeeting(id);
           if (r.status === "error") {
             failed.push(id);
             error = r.error;
-          } else onDeleted?.(id);
+          } else {
+            gone.push(id);
+            onDeleted?.(id);
+          }
         }
+        // Paired phones get the tombstone at the next sync: say so.
+        if (gone.length) void announceDeleted(show, t);
         if (failed.length) {
           unhide(failed);
           show({

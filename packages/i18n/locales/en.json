@@ -956,12 +956,7 @@
       "whatSyncs": "What syncs",
       "phoneRecordings": "Send phone recordings here for the final pass",
       "notes": "Notes and transcripts, both ways",
-      "voiceProfiles": "Voice profiles",
-      "voiceProfilesHint": "Lets your phone name speakers too.",
       "localOnly": "Local network only. Nothing goes through the internet.",
-      "soonTitle": "Sync between your devices is coming",
-      "soonBody": "Your meetings stay on this computer for now.",
-      "laterNote": "Phone sync isn’t available yet. These controls are off until then.",
       "toggle": "Sync with my phone",
       "toggleHint": "Keeps your meetings in step with your phone over your own Wi-Fi.",
       "pairCountdown": "This code works for {{time}} more.",
@@ -992,7 +987,7 @@
       "editedOn": "Edited on {{device}}",
       "useThis": "Use this",
       "dismiss": "Dismiss",
-      "deletedHere": "Deleted here. It will be deleted on {{device}} the next time you sync.",
+      "deletedHere": "Deleted here. It will be deleted on {{device}} at the next sync.",
       "deletedEverywhere": "Deleted on all devices",
       "deleteEverywhereAsk": "Also delete on your paired devices?",
       "deleteEverywhere": "Delete everywhere",
@@ -1011,7 +1006,20 @@
         "storageFull": "There isn’t enough storage space to finish syncing.",
         "locked": "Unlock {{app}} to sync.",
         "internal": "Sync stopped because of a problem. Try again."
-      }
+      },
+      "voiceStay": "Voice profiles stay on each device.",
+      "justNow": "just now",
+      "platform": {
+        "ios": "iPhone",
+        "mac": "Mac",
+        "windows": "Windows PC"
+      },
+      "pairQrAlt": "Pairing code for your phone",
+      "pairLoading": "Getting a code…",
+      "pairDone": "Done",
+      "pairedHint": "Syncing starts now. You can unpair any time.",
+      "exportInsteadSoon": "Not available yet.",
+      "deleteEverywhereBody": "Devices that can’t be reached right now keep their copies."
     },
     "shortcuts": {
       "startStop": "Start or stop recording",

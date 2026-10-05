@@ -9,7 +9,8 @@
 //   conflict       paired, and the meeting has a conflict copy
 //   needsConfirm   paired, the phone deleted 12 meetings and waits for an answer
 //   error          paired, the last session failed (code "unreachable")
-// Other hooks: syncSimulatePaired, syncSimulateWipeDone, syncSetDeleteEverywhere.
+// Other hooks: syncSimulatePaired, syncSimulateWipeDone, syncSimulateProgress,
+// syncSetDeleteEverywhere.
 import type { ConflictCopy, DeleteEverywhereStatus, DeviceRow, SyncEvent, SyncStatus } from "../bindings";
 import type { Commands } from "./ipc";
 
@@ -71,6 +72,7 @@ export interface SyncMock {
     syncSet(state: MockSyncState): void;
     syncSimulatePaired(): void;
     syncSimulateWipeDone(): void;
+    syncSimulateProgress(pending: number): void;
     syncSetDeleteEverywhere(state: DeleteEverywhereStatus["state"], waitingFor?: string[]): void;
   };
 }
@@ -177,6 +179,7 @@ export function createSyncMock(): SyncMock {
         state = devices.length === 0 ? "pairing" : "paired";
         emit({ type: "wipeDone", gid: d.gid });
       },
+      syncSimulateProgress: (pending) => emit({ type: "progress", pending }),
       syncSetDeleteEverywhere: (s, waitingFor = []) => {
         deleteStatus = { state: s, waitingFor };
       },

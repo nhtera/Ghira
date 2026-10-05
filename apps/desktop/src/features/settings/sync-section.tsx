@@ -1,37 +1,126 @@
 // SPDX-License-Identifier: Apache-2.0
-// Settings → Sync: the design's section with every control disabled until
-// phone sync (phase 15) is built.
+// Settings → Sync (phase 15): the on/off switch, "Pair a phone" (QR sheet),
+// paired devices, what syncs, "Local network only", and what to do when the
+// phone can't be found (hotspot / Internet Sharing, then export).
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Note, Row, Switch } from "./parts";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button, useToast } from "@ghi/ui";
+import { APP_NAME } from "@ghi/i18n";
+import { ipc } from "../../ipc";
+import { DevicesList } from "../sync/devices-list";
+import { errorKey } from "../sync/logic";
+import { MassDeleteDialog } from "../sync/mass-delete-dialog";
+import { PairSheet } from "../sync/pair-sheet";
+import { useSyncEvents, useSyncStatus } from "../sync/use-sync";
+import { Card, Note, Row, SwitchRow, useFail } from "./parts";
 
 export function SyncSection() {
   const { t } = useTranslation();
-  const toggles = [
-    { key: "phoneRecordings", on: false },
-    { key: "notes", on: false },
-    { key: "voiceProfiles", on: false, hint: true },
-    { key: "localOnly", on: false },
-  ] as const;
+  const { show } = useToast();
+  const fail = useFail();
+  const client = useQueryClient();
+  const { data: status, refetch } = useSyncStatus();
+  const [pairing, setPairing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const pairButton = useRef<HTMLButtonElement>(null);
+
+  // The wipe event arrives after the device left the list: remember the names.
+  const names = useRef(new Map<string, string>());
+  useEffect(() => {
+    status?.paired.forEach((d) => names.current.set(d.gid, d.name));
+  }, [status]);
+
+  useSyncEvents((e) => {
+    if (e.type === "unpaired" && e.byPeer) show({ title: t("settings.sync.unpairedBy", { device: e.name }) });
+    if (e.type === "wipeDone") {
+      const name = names.current.get(e.gid);
+      if (name) show({ tone: "success", title: t("settings.sync.wipeDone", { device: name }) });
+    }
+  });
+
+  if (!status) return null;
+  const enabled = status.enabled;
+  const pending = status.pendingOnPhone > 0;
+  // Nobody paired yet, or the last session could not reach the phone.
+  const noDiscovery = enabled && (status.paired.length === 0 || status.lastErrorCode === "unreachable");
+
+  const toggle = async (on: boolean) => {
+    const r = await ipc.commands.syncSetEnabled(on);
+    if (r.status === "error") return fail(r.error);
+    client.setQueryData(["sync-status"], r.data);
+  };
+  const syncNow = async () => {
+    setBusy(true);
+    const r = await ipc.commands.syncNow();
+    setBusy(false);
+    if (r.status === "error") fail(r.error);
+    void refetch();
+  };
+
   return (
-    <div className="flex flex-col gap-5">
-      <Note icon="schedule">{t("settings.sync.laterNote")}</Note>
-      <section className="flex items-start gap-5 border-b border-line pb-5" aria-disabled>
-        <div
-          aria-hidden
-          className="grid size-[104px] shrink-0 place-items-center rounded-xl border border-line2 bg-[repeating-linear-gradient(135deg,var(--color-surface2)_0_8px,var(--color-sunk)_8px_16px)]"
-        />
-        <div className="min-w-0">
-          <h3 className="m-0 text-[14px] font-semibold">{t("settings.sync.pairTitle")}</h3>
-        </div>
-      </section>
-      <section className="flex flex-col">
-        <h3 className="m-0 text-[13px] font-semibold">{t("settings.sync.whatSyncs")}</h3>
-        {toggles.map((x) => (
-          <Row key={x.key} label={t(`settings.sync.${x.key}`)} hint={"hint" in x ? t("settings.sync.voiceProfilesHint") : undefined}>
-            <Switch checked={x.on} onChange={() => {}} label={t(`settings.sync.${x.key}`)} disabled />
+    <div className="flex flex-col">
+      <MassDeleteDialog />
+      <SwitchRow label={t("settings.sync.toggle")} hint={t("settings.sync.toggleHint")} checked={enabled} onChange={(v) => void toggle(v)} testId="sync-toggle" />
+      {enabled && (
+        <>
+          <Row label={t("settings.sync.pairTitle")} hint={t("settings.sync.pairBody", { app: APP_NAME })}>
+            <Button ref={pairButton} variant="primary" icon="mobile" onClick={() => setPairing(true)}>
+              {t("settings.sync.pairTitle")}
+            </Button>
           </Row>
-        ))}
-      </section>
+          <Card title={t("settings.sync.pairedDevices")}>
+            {status.paired.length === 0 ? (
+              <p className="text-small m-0 text-muted">{t("settings.sync.noDevices")}</p>
+            ) : (
+              <DevicesList devices={status.paired} offline={status.lastErrorCode != null} onChanged={() => void refetch()} />
+            )}
+            {pending && <Note icon="phone_paused">{t("settings.sync.openOnPhone", { app: APP_NAME })}</Note>}
+            {status.lastErrorCode && (
+              <p role="alert" data-testid="sync-error" className="text-small m-0 text-warn">
+                {t(`settings.sync.error.${errorKey(status.lastErrorCode)}`, { app: APP_NAME })}
+              </p>
+            )}
+            {status.paired.length > 0 && (
+              <div>
+                <Button size="sm" icon="sync" disabled={busy} onClick={() => void syncNow()}>
+                  {t("settings.sync.syncNow")}
+                </Button>
+              </div>
+            )}
+          </Card>
+          <Card title={t("settings.sync.whatSyncs")}>
+            <ul className="m-0 flex list-disc flex-col gap-1 ps-5 text-[13.5px]">
+              <li>{t("settings.sync.phoneRecordings")}</li>
+              <li>{t("settings.sync.notes")}</li>
+            </ul>
+            <Note icon="info">{t("settings.sync.voiceStay")}</Note>
+          </Card>
+          {noDiscovery && (
+            <Card title={t("settings.sync.hotspotTitle")} hint={t("settings.sync.hotspotBody")}>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button icon="ios_share" disabled aria-describedby="export-instead-hint">
+                  {t("settings.sync.exportInstead")}
+                </Button>
+                <span id="export-instead-hint" className="text-small text-muted">
+                  {t("settings.sync.exportInsteadHint")} {t("settings.sync.exportInsteadSoon")}
+                </span>
+              </div>
+            </Card>
+          )}
+        </>
+      )}
+      <div className="mt-5">
+        <Note icon="wifi">{t("settings.sync.localOnly")}</Note>
+      </div>
+      <PairSheet
+        open={pairing}
+        onOpenChange={(o) => {
+          setPairing(o);
+          // The sheet is unmounted with its dialog: give focus back to the button.
+          if (!o) requestAnimationFrame(() => pairButton.current?.focus());
+        }}
+      />
     </div>
   );
 }

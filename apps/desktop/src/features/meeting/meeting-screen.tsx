@@ -29,6 +29,7 @@ import { NotesTab } from "../notes/notes-tab";
 import { TranscriptTab } from "../transcript/transcript-tab";
 import { useProcessing } from "../processing/processing-store";
 import { MeetingProcessing } from "../processing/meeting-processing";
+import { ConflictBanner } from "../sync/conflict-banner";
 import { MeetingHeader } from "./meeting-header";
 import { MeetingToolbar } from "./meeting-toolbar";
 import { inProgress } from "../library/meeting-status";
@@ -213,6 +214,7 @@ export function MeetingScreen({
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <MeetingHeader detail={detail} />
           {detail.status === "failed" && <FailedBanner detail={detail} />}
+          <ConflictBanner meeting={id} />
           <MeetingToolbar
             detail={detail}
             onExport={() => setExporting(true)}

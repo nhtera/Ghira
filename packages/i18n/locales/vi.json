@@ -933,12 +933,7 @@
       "whatSyncs": "Đồng bộ những gì",
       "phoneRecordings": "Gửi bản ghi âm từ điện thoại về đây để xử lý cuối",
       "notes": "Ghi chú và bản ghi, hai chiều",
-      "voiceProfiles": "Hồ sơ giọng nói",
-      "voiceProfilesHint": "Để điện thoại cũng gọi được tên người nói.",
       "localOnly": "Chỉ qua mạng nội bộ. Không qua internet.",
-      "soonTitle": "Đồng bộ giữa các thiết bị sắp có",
-      "soonBody": "Hiện tại cuộc họp chỉ nằm trên máy này.",
-      "laterNote": "Chưa có đồng bộ với điện thoại. Các tuỳ chọn này tạm tắt cho đến khi có.",
       "toggle": "Đồng bộ với điện thoại",
       "toggleHint": "Giữ cuộc họp trên hai máy khớp nhau qua Wi-Fi của bạn.",
       "pairCountdown": "Mã còn dùng được {{time}}.",
@@ -969,7 +964,7 @@
       "editedOn": "Sửa trên {{device}}",
       "useThis": "Dùng bản này",
       "dismiss": "Bỏ qua",
-      "deletedHere": "Đã xoá ở đây. Cuộc họp sẽ bị xoá trên {{device}} ở lần đồng bộ tới.",
+      "deletedHere": "Đã xoá ở đây. Cuộc họp sẽ bị xoá trên {{device}} ở lần đồng bộ tiếp theo.",
       "deletedEverywhere": "Đã xoá trên mọi thiết bị",
       "deleteEverywhereAsk": "Xoá luôn trên các thiết bị đã ghép?",
       "deleteEverywhere": "Xoá ở mọi nơi",
@@ -987,7 +982,20 @@
         "storageFull": "Không đủ dung lượng để đồng bộ xong.",
         "locked": "Mở khoá {{app}} để đồng bộ.",
         "internal": "Đồng bộ dừng vì có lỗi. Bạn thử lại nhé."
-      }
+      },
+      "voiceStay": "Hồ sơ giọng nói ở lại trên từng thiết bị.",
+      "justNow": "vừa xong",
+      "platform": {
+        "ios": "iPhone",
+        "mac": "Mac",
+        "windows": "Máy Windows"
+      },
+      "pairQrAlt": "Mã ghép nối cho điện thoại",
+      "pairLoading": "Đang tạo mã…",
+      "pairDone": "Xong",
+      "pairedHint": "Đồng bộ bắt đầu ngay. Bạn có thể huỷ ghép bất cứ lúc nào.",
+      "exportInsteadSoon": "Chưa có.",
+      "deleteEverywhereBody": "Thiết bị nào chưa kết nối được vẫn giữ bản của nó."
     },
     "shortcuts": {
       "startStop": "Bắt đầu hoặc dừng ghi",
