@@ -617,6 +617,12 @@ fn export_all_and_import_on_a_new_device() {
     );
     assert!(!dest.join("master.key").exists() && !dest.join("keyring.bin").exists());
     assert_eq!(moved.get_meeting(&m).unwrap().title, "Họp chuyển máy");
+    // Peers hold cursors into the source's change feed: the copy draws its own.
+    assert_ne!(
+        moved.get_setting("sync.feed_id").unwrap(),
+        store.get_setting("sync.feed_id").unwrap(),
+        "an imported database gets a new feed id"
+    );
     assert_eq!(
         moved.search(&SearchQuery::new("mang theo")).unwrap().len(),
         1

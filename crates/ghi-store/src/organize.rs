@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::rowcrypt::{self, open_text, row_aad, seal_text};
 use crate::store::{NewSegment, Segment, Store, insert_segments, now_ms};
+use crate::tombstones::Cause;
 use crate::{Result, StoreError, db, fold, new_gid, tombstones};
 
 pub const MAX_FOLDER_NAME: usize = 60;
@@ -230,7 +231,7 @@ impl Store {
         let mut stmt = conn.prepare_cached(
             "SELECT f.gid, f.name, f.created_at,
                     (SELECT count(*) FROM meetings m WHERE m.folder_id = f.id)
-             FROM folders f ORDER BY f.name_key, f.id",
+             FROM folders f ORDER BY f.name_key, f.gid",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(Folder {
@@ -260,6 +261,7 @@ impl Store {
             });
         }
         let (gid, now) = (new_gid(), now_ms());
+        tombstones::assert_live(&tx, &gid)?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tx.execute(
             "INSERT INTO folders (gid, name, name_key, created_at, lamport)
@@ -302,7 +304,7 @@ impl Store {
         let tx = conn.transaction()?;
         let id = find(&tx, "folders", "folder", folder_gid)?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
-        tombstones::write(&tx, folder_gid, "folder", lamport)?;
+        tombstones::write(&tx, folder_gid, "folder", lamport, Cause::User)?;
         // Explicit, so the meetings' lamport moves (sync sees the change).
         let cleared = tx.execute(
             "UPDATE meetings SET folder_id = NULL, lamport = ?1 WHERE folder_id = ?2",
@@ -353,7 +355,7 @@ impl Store {
              FROM tags t
              LEFT JOIN (SELECT tag_id, count(*) AS n FROM meeting_tags GROUP BY tag_id) c
                     ON c.tag_id = t.id
-             ORDER BY t.name_key, t.id",
+             ORDER BY t.name_key, t.gid",
         )?;
         let rows = stmt.query_map([], tag_row)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -382,6 +384,7 @@ impl Store {
             });
         }
         let (gid, now) = (new_gid(), now_ms());
+        tombstones::assert_live(&tx, &gid)?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tx.execute(
             "INSERT INTO tags (gid, name, name_key, created_at, lamport)
@@ -429,8 +432,9 @@ impl Store {
             "SELECT gid FROM meeting_tags WHERE tag_id = ?1",
             [id],
             lamport,
+            Cause::User,
         )?;
-        tombstones::write(&tx, tag_gid, "tag", lamport)?;
+        tombstones::write(&tx, tag_gid, "tag", lamport, Cause::User)?;
         let links: usize = tx.query_row(
             "SELECT count(*) FROM meeting_tags WHERE tag_id = ?1",
             [id],
@@ -475,10 +479,12 @@ impl Store {
                     max: MAX_TAGS_PER_MEETING,
                 });
             }
+            let link_gid = new_gid();
+            tombstones::assert_live(&tx, &link_gid)?;
             tx.execute(
                 "INSERT INTO meeting_tags (meeting_id, tag_id, gid, lamport)
                  VALUES (?1, ?2, ?3, ?4)",
-                params![m, tag, new_gid(), lamport],
+                params![m, tag, link_gid, lamport],
             )?;
             added += 1;
         }
@@ -506,7 +512,7 @@ impl Store {
                 )
                 .optional()?;
             if let Some(link) = link {
-                tombstones::write(&tx, &link, "meeting_tag", lamport)?;
+                tombstones::write(&tx, &link, "meeting_tag", lamport, Cause::User)?;
                 tx.execute(
                     "DELETE FROM meeting_tags WHERE meeting_id = ?1 AND tag_id = ?2",
                     params![m, tag],
@@ -533,7 +539,7 @@ impl Store {
              LEFT JOIN (SELECT tag_id, count(*) AS n FROM meeting_tags GROUP BY tag_id) c
                     ON c.tag_id = t.id
              WHERE m.gid IN (SELECT value FROM json_each(?1))
-             ORDER BY m.id, t.name_key, t.id",
+             ORDER BY m.gid, t.name_key, t.gid",
         )?;
         let rows = stmt.query_map([want], |r| {
             Ok((
@@ -673,11 +679,43 @@ impl Store {
         segs: Vec<NewSegment>,
         overlap_gids: &[String],
     ) -> Result<i64> {
+        self.replace_transcript_inner(meeting_gid, segs, overlap_gids, None, None)
+    }
+
+    /// [`Store::replace_transcript_marked`] at a fencing `epoch` (doc 07 §8).
+    /// With `lease` (a job uuid) the same transaction moves that lease
+    /// `granted -> done`; if it is no longer granted (revoked, expired),
+    /// nothing is written and the result is [`StoreError::Fenced`].
+    pub fn replace_transcript_marked_epoch(
+        &self,
+        meeting_gid: &str,
+        segs: Vec<NewSegment>,
+        overlap_gids: &[String],
+        epoch: i64,
+        lease: Option<&str>,
+    ) -> Result<i64> {
+        self.replace_transcript_inner(meeting_gid, segs, overlap_gids, Some(epoch), lease)
+    }
+
+    /// The one replace-transcript transaction. `epoch` `None` keeps the
+    /// meeting's current one; otherwise the meeting takes `max(current, epoch)`
+    /// and the new segments carry it.
+    pub(crate) fn replace_transcript_inner(
+        &self,
+        meeting_gid: &str,
+        segs: Vec<NewSegment>,
+        overlap_gids: &[String],
+        epoch: Option<i64>,
+        lease: Option<&str>,
+    ) -> Result<i64> {
         let mut conn = self.conn();
         let m = Store::meeting_ref(&conn, meeting_gid)?;
         let dek = self.dek(&conn, m.id)?;
         let new_version = m.version + 1;
         let tx = conn.transaction()?;
+        if let Some(job) = lease {
+            crate::store::finish_lease(&tx, job)?;
+        }
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tombstones::write_where(
             &tx,
@@ -685,6 +723,7 @@ impl Store {
             "SELECT gid FROM segments WHERE meeting_id = ?1 AND version < ?2",
             params![m.id, new_version],
             lamport,
+            Cause::Transcript,
         )?;
         tx.execute(
             "DELETE FROM segments_fts WHERE rowid IN (SELECT id FROM segments WHERE meeting_id = ?1)",
@@ -692,8 +731,10 @@ impl Store {
         )?;
         tx.execute("DELETE FROM segments WHERE meeting_id = ?1", [m.id])?;
         tx.execute(
-            "UPDATE meetings SET transcript_version = ?1, lamport = ?2 WHERE id = ?3",
-            params![new_version, lamport, m.id],
+            "UPDATE meetings SET transcript_version = ?1, lamport = ?2,
+                 transcript_epoch = MAX(transcript_epoch, COALESCE(?4, transcript_epoch))
+             WHERE id = ?3",
+            params![new_version, lamport, m.id, epoch],
         )?;
         insert_segments(&tx, &dek, m.id, new_version, &segs)?;
         mark_in(&tx, m.id, overlap_gids)?;

@@ -10,6 +10,7 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::rowcrypt::{self, row_aad, seal_text};
 use crate::store::{Store, TrackKind, id_of};
+use crate::tombstones::Cause;
 use crate::{Result, StoreError, fold, new_gid, tombstones};
 use crate::{embeddings, people};
 
@@ -254,6 +255,7 @@ impl Store {
             [meeting_id],
             |r| r.get(0),
         )?;
+        tombstones::assert_live(&tx, &gid)?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tx.execute(
             "INSERT INTO speakers (gid, meeting_id, label_idx, color_slot, is_me, lamport)
@@ -428,6 +430,7 @@ impl Store {
             "SELECT gid FROM segments WHERE meeting_id = ?1 AND t1_ms > ?2",
             params![m.id, t_cut_ms],
             lamport,
+            Cause::Discard,
         )?;
         tx.execute(
             "DELETE FROM segments_fts WHERE rowid IN
@@ -445,6 +448,7 @@ impl Store {
             "SELECT gid FROM marks WHERE meeting_id = ?1 AND t_ms >= ?2",
             params![m.id, t_cut_ms],
             lamport,
+            Cause::Discard,
         )?;
         rep.marks = tx.execute(
             "DELETE FROM marks WHERE meeting_id = ?1 AND t_ms >= ?2",
@@ -452,7 +456,14 @@ impl Store {
         )?;
 
         // Notes and action items citing anything after the cut.
-        tombstones::write_where(&tx, "note", NOTES_CITING, params![m.id, t_cut_ms], lamport)?;
+        tombstones::write_where(
+            &tx,
+            "note",
+            NOTES_CITING,
+            params![m.id, t_cut_ms],
+            lamport,
+            Cause::Discard,
+        )?;
         tx.execute(
             &format!("DELETE FROM notes_fts WHERE rowid IN (SELECT id FROM notes_blocks WHERE gid IN ({NOTES_CITING}))"),
             params![m.id, t_cut_ms],
@@ -472,6 +483,7 @@ impl Store {
             ACTIONS_CITING,
             params![m.id, t_cut_ms],
             lamport,
+            Cause::Discard,
         )?;
         rep.action_items = tx.execute(
             &format!("DELETE FROM action_items WHERE gid IN ({ACTIONS_CITING})"),
@@ -625,14 +637,23 @@ impl Store {
         drop(conn);
         let kept = crate::bundle::truncate(&path, &dek, &Store::bundle_aad(&track_gid), keep)?;
         // The recorded page count guards against a cut-off file; it is now shorter on purpose.
-        self.conn().execute(
-            "UPDATE tracks SET page_count = ?1 WHERE gid = ?2 AND page_count > ?1",
-            params![kept, track_gid],
+        // `cut_pages` (min-merged by sync) remembers the cut; the track's
+        // version moves so the change goes out.
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        tx.execute(
+            "UPDATE tracks SET page_count = MIN(page_count, ?1),
+                 cut_pages = MIN(COALESCE(cut_pages, ?1), ?1), lamport = ?3
+             WHERE gid = ?2",
+            params![kept, track_gid, lamport],
         )?;
+        tx.commit()?;
         Ok(kept)
     }
 
-    /// Records the SHA-256 (hex) of an imported file.
+    /// Records the SHA-256 (hex) of an imported file. `source_hash` is
+    /// immutable once set (doc 07 §7.4), so the meeting's Lamport stays.
     pub fn set_source_hash(&self, meeting_gid: &str, sha256_hex: &str) -> Result<()> {
         if sha256_hex.len() != 64 || !sha256_hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err(StoreError::Invalid(
@@ -672,7 +693,14 @@ const ORPHANS: &str = "SELECT gid FROM speakers s WHERE s.meeting_id = ?1
      AND NOT EXISTS (SELECT 1 FROM speakers o WHERE o.merged_into = s.id)";
 
 fn remove_orphans(tx: &rusqlite::Transaction, meeting_id: i64, lamport: i64) -> Result<usize> {
-    tombstones::write_where(tx, "speaker", ORPHANS, params![meeting_id], lamport)?;
+    tombstones::write_where(
+        tx,
+        "speaker",
+        ORPHANS,
+        params![meeting_id],
+        lamport,
+        Cause::Discard,
+    )?;
     Ok(tx.execute(
         &format!("DELETE FROM speakers WHERE gid IN ({ORPHANS})"),
         params![meeting_id],

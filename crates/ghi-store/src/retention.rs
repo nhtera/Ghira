@@ -17,6 +17,7 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::rowcrypt::{self, row_aad};
 use crate::store::{Store, now_ms};
+use crate::tombstones::Cause;
 use crate::{Result, StoreError, tombstones};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -26,7 +27,9 @@ pub struct RetentionReport {
 }
 
 impl Store {
-    /// Deletes the audio of meetings whose `audio_retained_until <= now_ms`.
+    /// Deletes the audio of meetings whose `audio_retained_until <= now_ms`,
+    /// except those with a final pass queued or running or an open sync lease
+    /// (doc 07 §7.8).
     pub fn retention_sweep(&self, now_ms_: i64) -> Result<RetentionReport> {
         let due: Vec<(i64, String)> = {
             let conn = self.conn();
@@ -36,6 +39,8 @@ impl Store {
                    AND EXISTS (SELECT 1 FROM tracks t WHERE t.meeting_id = m.id)
                    AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.meeting_id = m.id
                        AND j.kind = 'final_pass' AND j.state IN ('queued', 'running'))
+                   AND NOT EXISTS (SELECT 1 FROM leases l WHERE l.meeting_gid = m.gid
+                       AND l.state IN ('offered', 'granted', 'running', 'revoking'))
                  ORDER BY m.id",
             )?;
             let rows = stmt.query_map([now_ms_], |r| Ok((r.get(0)?, r.get(1)?)))?;
@@ -82,6 +87,7 @@ impl Store {
             "SELECT gid FROM tracks WHERE meeting_id = ?1",
             [id],
             lamport,
+            Cause::Retention,
         )?;
         let n = tx.execute("DELETE FROM tracks WHERE meeting_id = ?1", params![id])?;
         tx.execute("DELETE FROM waveforms WHERE meeting_id = ?1", params![id])?;
@@ -99,14 +105,20 @@ impl Store {
     /// The next [`Store::retention_sweep`] deletes what is past it.
     pub fn apply_retention_days(&self, days: Option<u32>) -> Result<usize> {
         let ms = days.map(|d| i64::from(d) * 86_400_000);
-        let conn = self.conn();
-        Ok(conn.execute(
-            "UPDATE meetings SET audio_retained_until =
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        // `audio_retained_until` is in the meeting's LWW group (doc 07 §7.4):
+        // a changed row takes a new Lamport, so the new policy wins on peers.
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        let n = tx.execute(
+            "UPDATE meetings SET lamport = ?2, audio_retained_until =
                  CASE WHEN ?1 IS NULL THEN NULL ELSE MAX(started_at, created_at) + ?1 END
              WHERE audio_retained_until IS NOT
                  (CASE WHEN ?1 IS NULL THEN NULL ELSE MAX(started_at, created_at) + ?1 END)",
-            params![ms],
-        )?)
+            params![ms, lamport],
+        )?;
+        tx.commit()?;
+        Ok(n)
     }
 
     /// The cached waveform of a meeting's audio (see [`Store::set_waveform`]).

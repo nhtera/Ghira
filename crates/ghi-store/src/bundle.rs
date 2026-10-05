@@ -622,6 +622,264 @@ impl BundleReader {
     }
 }
 
+// ---------------------------------------------------------------- raw import
+
+/// The header of a bundle file as sent to a peer (magic ‖ version ‖ nonce
+/// prefix): what [`RawImport::begin`] checks and a receiver pins the pages to.
+pub fn raw_header(path: &Path) -> Result<Vec<u8>> {
+    let file = File::open(path)?;
+    let prefix = read_header(&file)?;
+    let mut h = Vec::with_capacity(HEADER_LEN as usize);
+    h.extend_from_slice(MAGIC);
+    h.push(VERSION);
+    h.extend_from_slice(&prefix);
+    Ok(h)
+}
+
+/// Up to `max` records of a bundle starting at record `from`, as the sealed
+/// ciphertexts the file holds (no length prefix), the final record included.
+/// Pages are not opened here: the receiver verifies each one.
+pub fn raw_records(path: &Path, from: u32, max: u32) -> Result<Vec<Vec<u8>>> {
+    let file = File::open(path)?;
+    let file_len = file.metadata()?.len();
+    read_header(&file)?;
+    let records = scan_records(&file, file_len);
+    let mut out = Vec::new();
+    for &(off, len) in records.iter().skip(from as usize).take(max as usize) {
+        let mut ct = vec![0u8; len as usize];
+        read_exact_at(&file, &mut ct, off + 4)?;
+        out.push(ct);
+    }
+    Ok(out)
+}
+
+/// Receives a bundle another device sealed (doc 07 §7.7), record by record.
+///
+/// Records are stored **verbatim**: the receiver never seals under the
+/// sender's nonce prefix, so no (prefix, index) pair is ever used for two
+/// plaintexts. Every record is opened with the track's AUDIO subkey, its page
+/// index and aad before it is appended, so a `.part` file holds only
+/// authentic records of one sender prefix, in order. It lives at
+/// `<bundle>.part` until [`RawImport::finish`] renames it into place.
+pub struct RawImport {
+    file: File,
+    part: PathBuf,
+    dest: PathBuf,
+    cipher: XChaCha20Poly1305,
+    aad: Vec<u8>,
+    prefix: [u8; PREFIX_LEN],
+    /// Offsets of the verified records (the final one included).
+    offsets: Vec<u64>,
+    pos: u64,
+    /// The final record has been verified.
+    complete: bool,
+    unsynced: u32,
+}
+
+/// What [`RawImport::begin`] found.
+pub enum RawBegin {
+    /// The bundle is already here and complete: nothing to receive, whatever
+    /// prefix the sender's copy has (a local cut re-seals under a new prefix).
+    Complete { pages: u32 },
+    /// A `.part` to continue (empty, or with `have` verified pages).
+    Resume(RawImport),
+}
+
+/// Records are written to disk and made durable this often.
+const RAW_SYNC_EVERY: u32 = 64;
+
+/// `<bundle>.part`.
+pub fn part_path(bundle: &Path) -> PathBuf {
+    let mut p = bundle.as_os_str().to_owned();
+    p.push(".part");
+    PathBuf::from(p)
+}
+
+impl RawImport {
+    /// Starts or resumes receiving the bundle that will live at `dest`.
+    /// `header` is the sender's file header; `aad` is the same value the
+    /// readers use (the track gid binding). A complete `dest` is reported as
+    /// [`RawBegin::Complete`]. Otherwise an existing `.part` with the same
+    /// header is re-verified record by record and cut back to its last
+    /// authentic one; a `.part` with another header (the sender cut its track
+    /// and sealed it again) or no valid header is restarted from nothing.
+    pub fn begin(dest: &Path, key: &Dek, aad: &[u8], header: &[u8]) -> Result<RawBegin> {
+        if header.len() != HEADER_LEN as usize || &header[..4] != MAGIC || header[4] != VERSION {
+            return Err(StoreError::Invalid(
+                "not a Ghira audio bundle header".into(),
+            ));
+        }
+        let mut prefix = [0u8; PREFIX_LEN];
+        prefix.copy_from_slice(&header[5..]);
+        let cipher = stream_cipher(&key.subkey(AUDIO_INFO));
+
+        if dest.exists()
+            && let Ok(r) = BundleReader::open(dest, key, aad)
+            && r.complete()
+        {
+            return Ok(RawBegin::Complete {
+                pages: r.page_count(),
+            });
+        }
+
+        let part = part_path(dest);
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&part)?;
+        let mut me = RawImport {
+            part,
+            dest: dest.to_path_buf(),
+            aad: header_aad(&prefix, aad),
+            cipher,
+            prefix,
+            offsets: Vec::new(),
+            pos: HEADER_LEN,
+            complete: false,
+            unsynced: 0,
+            file: file.try_clone()?,
+        };
+        let len = file.metadata()?.len();
+        let mut on_disk = [0u8; HEADER_LEN as usize];
+        let same_header =
+            len >= HEADER_LEN && read_exact_at(&file, &mut on_disk, 0).is_ok() && on_disk == header;
+        if same_header {
+            me.verify_existing(len)?;
+        } else {
+            file.set_len(0)?;
+            file.write_all(header)?;
+            sync_file(&file, true)?;
+            if let Some(dir) = me.part.parent() {
+                sync_dir(if dir.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    dir
+                })?;
+            }
+        }
+        use std::io::Seek;
+        me.file.seek(std::io::SeekFrom::Start(me.pos))?;
+        Ok(RawBegin::Resume(me))
+    }
+
+    /// Re-verifies the records of an existing `.part`, keeps the contiguous
+    /// authentic prefix and cuts the rest off.
+    fn verify_existing(&mut self, file_len: u64) -> Result<()> {
+        for (off, len) in scan_records(&self.file, file_len) {
+            if self.complete {
+                break;
+            }
+            let mut ct = vec![0u8; len as usize];
+            read_exact_at(&self.file, &mut ct, off + 4)?;
+            match self.open_record(&ct) {
+                Ok(last) => {
+                    self.offsets.push(off);
+                    self.pos = off + 4 + u64::from(len);
+                    self.complete = last;
+                }
+                Err(_) => break,
+            }
+        }
+        if self.pos < file_len {
+            self.file.set_len(self.pos)?;
+            sync_file(&self.file, true)?;
+        }
+        Ok(())
+    }
+
+    /// Opens `ct` as the next record. `Ok(true)` if it is the final one.
+    fn open_record(&self, ct: &[u8]) -> Result<bool> {
+        if !(TAG_LEN..=MAX_PAGE_LEN + TAG_LEN).contains(&ct.len()) {
+            return Err(StoreError::Decrypt);
+        }
+        let index = u32::try_from(self.offsets.len())
+            .ok()
+            .filter(|&i| i < u32::MAX)
+            .ok_or_else(|| StoreError::Invalid("too many pages".into()))?;
+        let aad = page_aad(&self.aad, index);
+        if stream_open(&self.cipher, &self.prefix, index, false, &aad, ct).is_ok() {
+            return Ok(false);
+        }
+        stream_open(&self.cipher, &self.prefix, index, true, &aad, ct)?;
+        Ok(true)
+    }
+
+    /// Verified audio pages, contiguous from the start (the final record is
+    /// not a page). What the receiver acks as `have`.
+    pub fn have(&self) -> u32 {
+        self.offsets.len() as u32 - u32::from(self.complete)
+    }
+
+    /// The final record has arrived: [`RawImport::finish`] can run.
+    pub fn is_complete(&self) -> bool {
+        self.complete
+    }
+
+    /// Verifies and appends records, in order. On the first record that does
+    /// not authenticate (wrong bytes, index, key or aad) it stops with
+    /// [`StoreError::Decrypt`]: the records before it stay, it and the rest
+    /// are not written. Syncs every 64 records.
+    pub fn push<R: AsRef<[u8]>>(&mut self, records: &[R]) -> Result<()> {
+        for ct in records {
+            let ct = ct.as_ref();
+            if self.complete {
+                return Err(StoreError::Invalid(
+                    "the final record was already received".into(),
+                ));
+            }
+            let last = self.open_record(ct)?;
+            let mut rec = Vec::with_capacity(4 + ct.len());
+            rec.extend_from_slice(&(ct.len() as u32).to_le_bytes());
+            rec.extend_from_slice(ct);
+            if let Err(e) = self.file.write_all(&rec) {
+                // Half a record may be on disk: cut it off, then report.
+                let _ = self.file.set_len(self.pos);
+                return Err(e.into());
+            }
+            self.offsets.push(self.pos);
+            self.pos += rec.len() as u64;
+            self.complete = last;
+            self.unsynced += 1;
+            if self.unsynced >= RAW_SYNC_EVERY {
+                self.sync(false)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Flushes what was received (`durable`: survive power loss).
+    pub fn sync(&mut self, durable: bool) -> Result<()> {
+        sync_file(&self.file, durable)?;
+        self.unsynced = 0;
+        Ok(())
+    }
+
+    /// Requires the final record, then makes the file durable, writes the
+    /// index, renames `.part` to the bundle path atomically and syncs the
+    /// directory. Returns the number of audio pages.
+    pub fn finish(self) -> Result<u32> {
+        if !self.complete {
+            return Err(StoreError::Invalid("the final record is missing".into()));
+        }
+        sync_file(&self.file, true)?;
+        let pages = self.have();
+        fs::rename(&self.part, &self.dest)?;
+        // Any index of an older file at this path is stale now.
+        let _ = fs::remove_file(index_path(&self.dest));
+        let _ = write_index(&self.dest, &self.offsets, self.pos);
+        if let Some(dir) = self.dest.parent() {
+            sync_dir(if dir.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                dir
+            })?;
+        }
+        Ok(pages)
+    }
+}
+
 /// Outcome of [`recover`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recovered {

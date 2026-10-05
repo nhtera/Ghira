@@ -398,7 +398,7 @@ impl Store {
             }
             sql.push_str("))");
         }
-        sql.push_str(" ORDER BY bm25(segments_fts), s.id LIMIT ?");
+        sql.push_str(" ORDER BY bm25(segments_fts), s.gid LIMIT ?");
         args.push(Value::Integer(fetch));
         let mut stmt = conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params_from_iter(args), |r| {
@@ -435,7 +435,7 @@ impl Store {
         );
         let mut args: Vec<Value> = vec![Value::Text(parsed.fts.clone())];
         push_meeting_filters(&mut sql, &mut args, f);
-        sql.push_str(" ORDER BY bm25(notes_fts), n.id LIMIT ?");
+        sql.push_str(" ORDER BY bm25(notes_fts), n.gid LIMIT ?");
         args.push(Value::Integer(fetch));
         let mut stmt = conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params_from_iter(args), |r| {

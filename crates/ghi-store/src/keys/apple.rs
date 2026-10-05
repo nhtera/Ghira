@@ -7,7 +7,9 @@
 //!
 //! - `Protection { app_lock: true }`: the data-protection keychain with a
 //!   `SecAccessControl` of `userPresence` (Touch ID / Face ID / password) and
-//!   `WhenPasscodeSetThisDeviceOnly`. On macOS this needs a signed app with
+//!   `WhenUnlockedThisDeviceOnly` (the protection class the code sets, with
+//!   or without `userPresence`; so the item never syncs or restores to
+//!   another device). On macOS this needs a signed app with
 //!   the keychain entitlements; an unsigned process gets
 //!   `errSecMissingEntitlement` (-34018), reported as a clear
 //!   [`StoreError::Keystore`]. This path is verified in the signed app

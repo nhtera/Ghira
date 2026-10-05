@@ -96,6 +96,13 @@ pub enum StoreError {
         kind: &'static str,
         max: usize,
     },
+    /// The gid was deleted (it has a tombstone), so no row may use it again.
+    Tombstoned {
+        gid: String,
+    },
+    /// A result commit lost its lease (revoked or already done): nothing was
+    /// written.
+    Fenced,
     /// A phase 15 sync entry point whose body has not landed yet.
     NotYet(&'static str),
 }
@@ -124,6 +131,8 @@ impl fmt::Display for StoreError {
             StoreError::Invalid(what) => write!(f, "invalid input: {what}"),
             StoreError::Limit { kind, max } => write!(f, "limit reached: at most {max} {kind}"),
             StoreError::Duplicate { kind } => write!(f, "a {kind} with that name already exists"),
+            StoreError::Tombstoned { gid } => write!(f, "{gid} was deleted"),
+            StoreError::Fenced => f.write_str("the job's lease is no longer granted"),
             StoreError::NotYet(what) => write!(f, "not implemented yet: {what}"),
             StoreError::IndexStale => f.write_str("the meeting changed while it was indexed"),
         }
@@ -148,5 +157,31 @@ pub type Result<T, E = StoreError> = std::result::Result<T, E>;
 
 /// A new globally unique id for a syncable row (UUIDv7: time-ordered).
 pub fn new_gid() -> String {
+    #[cfg(test)]
+    if let Some(g) = forced_gids::next() {
+        return g;
+    }
     uuid::Uuid::now_v7().to_string()
+}
+
+/// Unit tests queue gids that `new_gid` hands out next (per thread), to prove
+/// that an insert path refuses a tombstoned one.
+#[cfg(test)]
+pub(crate) mod forced_gids {
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+
+    thread_local!(static QUEUE: RefCell<VecDeque<String>> = const { RefCell::new(VecDeque::new()) });
+
+    pub fn push(gid: &str) {
+        QUEUE.with(|q| q.borrow_mut().push_back(gid.to_string()));
+    }
+
+    pub fn clear() {
+        QUEUE.with(|q| q.borrow_mut().clear());
+    }
+
+    pub(super) fn next() -> Option<String> {
+        QUEUE.with(|q| q.borrow_mut().pop_front())
+    }
 }

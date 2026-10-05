@@ -14,6 +14,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::fold;
 use crate::rowcrypt::{open_text, row_aad, seal_text};
 use crate::store::{Store, id_of};
+use crate::tombstones::Cause;
 use crate::voice::VoiceConsent;
 use crate::{Result, StoreError, new_gid, tombstones};
 
@@ -93,11 +94,13 @@ pub(crate) fn find_or_create_person(
     {
         return Ok(id);
     }
+    let new_person = new_gid();
+    tombstones::assert_live(conn, &new_person)?;
     conn.execute(
         "INSERT INTO persons (gid, name, color_slot, lamport, is_me, created_at, name_key)
          VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)",
         params![
-            new_gid(),
+            new_person,
             name,
             color_slot,
             lamport,
@@ -124,6 +127,12 @@ pub(crate) fn persons_of_meeting(conn: &Connection, meeting_id: i64) -> Result<V
 /// away) and no voice
 /// profile (with a tombstone). Returns how many went.
 pub(crate) fn gc_persons(conn: &Connection, ids: &[i64]) -> Result<usize> {
+    gc_persons_with(conn, ids, true)
+}
+
+/// [`gc_persons`], optionally without the tombstones (a local wipe relays
+/// nothing).
+pub(crate) fn gc_persons_with(conn: &Connection, ids: &[i64], tombstone: bool) -> Result<usize> {
     let mut removed = 0;
     for id in ids {
         let gid: Option<String> = conn
@@ -137,8 +146,10 @@ pub(crate) fn gc_persons(conn: &Connection, ids: &[i64]) -> Result<usize> {
             )
             .optional()?;
         if let Some(gid) = gid {
-            let lamport = Store::alloc_lamport(conn, 1)?;
-            tombstones::write(conn, &gid, "person", lamport)?;
+            if tombstone {
+                let lamport = Store::alloc_lamport(conn, 1)?;
+                tombstones::write(conn, &gid, "person", lamport, Cause::User)?;
+            }
             conn.execute("DELETE FROM persons WHERE id = ?1", [id])?;
             removed += 1;
         }
@@ -225,7 +236,7 @@ impl Store {
                  FROM speakers s
                  WHERE s.display_name_ct IS NOT NULL AND s.person_id IS NULL
                    AND s.is_me = 0 AND s.not_person = 0 AND s.merged_into IS NULL
-                 ORDER BY s.id",
+                 ORDER BY s.gid",
             )?
             .query_map([], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
@@ -265,7 +276,7 @@ impl Store {
     pub fn people_overview(&self) -> Result<Vec<PersonOverview>> {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(&format!(
-            "{OVERVIEW} ORDER BY p.is_me DESC, 7 DESC, p.name COLLATE NOCASE, p.id"
+            "{OVERVIEW} ORDER BY p.is_me DESC, 7 DESC, p.name COLLATE NOCASE, p.gid"
         ))?;
         let rows = stmt.query_map([], overview_row)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -296,7 +307,7 @@ impl Store {
                 "SELECT m.id, m.gid, m.title_ct, m.started_at, m.duration_ms FROM meetings m
                  WHERE EXISTS (SELECT 1 FROM speakers s WHERE s.meeting_id = m.id
                                AND s.person_id = ?1 AND s.merged_into IS NULL)
-                 ORDER BY m.started_at DESC, m.id DESC LIMIT ?2",
+                 ORDER BY m.started_at DESC, m.gid DESC LIMIT ?2",
             )?
             .query_map(params![pid, limit as i64], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
@@ -342,7 +353,7 @@ impl Store {
                  JOIN speakers s ON s.id = a.owner_speaker_id
                  JOIN meetings m ON m.id = a.meeting_id
                  WHERE s.person_id = ?1 AND s.merged_into IS NULL AND a.done = 0
-                 ORDER BY m.started_at DESC, m.id DESC, a.id",
+                 ORDER BY m.started_at DESC, m.gid DESC, a.ord, a.gid",
             )?
             .query_map([pid], |r| {
                 Ok((
@@ -451,7 +462,7 @@ impl Store {
             .prepare(
                 "SELECT s.id, s.gid, s.meeting_id, s.display_name_ct, m.gid
                  FROM speakers s JOIN meetings m ON m.id = s.meeting_id
-                 WHERE s.person_id = ?1 ORDER BY m.id, s.id",
+                 WHERE s.person_id = ?1 ORDER BY m.gid, s.gid",
             )?
             .query_map([from], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
@@ -514,7 +525,7 @@ impl Store {
             tx.query_row("SELECT gid FROM persons WHERE id = ?1", [from], |r| {
                 r.get(0)
             })?;
-        tombstones::write(&tx, &from_person_gid, "person", lamport)?;
+        tombstones::write(&tx, &from_person_gid, "person", lamport, Cause::User)?;
         tx.execute("DELETE FROM persons WHERE id = ?1", [from])?;
         tx.commit()?;
         drop(conn);
@@ -562,7 +573,7 @@ impl Store {
                 "SELECT s.id, s.gid, s.meeting_id, m.gid, s.label_idx, s.display_name_ct
                  FROM speakers s JOIN meetings m ON m.id = s.meeting_id
                  WHERE s.person_id = ?1
-                 ORDER BY m.id, s.merged_into IS NOT NULL, s.label_idx, s.id",
+                 ORDER BY m.gid, s.merged_into IS NOT NULL, s.label_idx, s.gid",
             )?
             .query_map([pid], |r| {
                 Ok((

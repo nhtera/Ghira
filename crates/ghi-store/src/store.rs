@@ -42,7 +42,7 @@ use crate::keys::{KeyRing, KeyStore, Protection};
 use crate::migrate::{self, Migration};
 use crate::recovery::{self, RecoveryPhrase};
 use crate::rowcrypt::{Dek, open_text, row_aad, seal_text};
-use crate::tombstones;
+use crate::tombstones::{self, Cause};
 use crate::{Result, StoreError, backup, db, export, new_gid};
 
 /// File name of the database inside the data directory.
@@ -667,6 +667,7 @@ impl Store {
             new.mode
         };
         let tx = conn.transaction()?;
+        tombstones::assert_live(&tx, &gid)?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tx.execute(
             "INSERT INTO meetings (gid, title_ct, started_at, source, mode, lang, template, sensitive,
@@ -745,7 +746,7 @@ impl Store {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(&format!(
             "{MEETING_SELECT} WHERE dek_wrapped <> zeroblob(length(dek_wrapped))
-             ORDER BY started_at DESC, id DESC LIMIT ?1 OFFSET ?2"
+             ORDER BY started_at DESC, gid DESC LIMIT ?1 OFFSET ?2"
         ))?;
         let rows = stmt
             .query_map(params![limit as i64, offset as i64], meeting_from_row)?
@@ -771,13 +772,13 @@ impl Store {
     }
 
     pub fn set_meeting_status(&self, gid: &str, status: &str) -> Result<()> {
-        self.update_meeting(gid, "status = ?1", status)
+        self.update_meeting_monotone(gid, "status = ?1", status)
     }
 
     /// Records that the user confirmed everyone's consent to recording
     /// (the voiceprint and cloud gates read it).
     pub fn set_consent_confirmed(&self, gid: &str, confirmed: bool) -> Result<()> {
-        self.update_meeting(gid, "consent_confirmed = ?1", i64::from(confirmed))
+        self.update_meeting_monotone(gid, "consent_confirmed = ?1", i64::from(confirmed))
     }
 
     /// "Never send to cloud" for this meeting: every cloud request is refused.
@@ -829,19 +830,67 @@ impl Store {
     }
 
     /// Records the final duration and marks the meeting `done`.
+    ///
+    /// Sync (doc 07 §7.4): status and duration merge by rank and max, so this
+    /// does not move the meeting's Lamport; the meeting's rows are logged
+    /// again, so a peer that held them back while it recorded gets them now.
     pub fn finish_meeting(&self, gid: &str, duration_ms: i64) -> Result<()> {
-        self.update_meeting(gid, "duration_ms = ?1, status = 'done'", duration_ms)
+        self.update_meeting_monotone(gid, "duration_ms = ?1, status = 'done'", duration_ms)?;
+        self.relog_meeting_rows(gid)
     }
 
     /// Raises the recorded duration to `duration_ms` (the final pass measures
     /// the audio; recovery of a meeting without lines left it short).
     pub fn extend_meeting_duration(&self, gid: &str, duration_ms: i64) -> Result<()> {
-        self.update_meeting(gid, "duration_ms = MAX(duration_ms, ?1)", duration_ms)
+        self.update_meeting_monotone(gid, "duration_ms = MAX(duration_ms, ?1)", duration_ms)
     }
 
     /// Sets when the audio is deleted by [`Store::retention_sweep`] (`None` = keep).
     pub fn set_audio_retained_until(&self, gid: &str, until: Option<i64>) -> Result<()> {
         self.update_meeting(gid, "audio_retained_until = ?1", until)
+    }
+
+    /// [`Store::update_meeting`] for a field that merges by rank, max or OR
+    /// (status, duration, consent): `meetings.lamport` stays, so such a change
+    /// never makes a concurrent title edit look like a conflict.
+    fn update_meeting_monotone(
+        &self,
+        gid: &str,
+        set: &str,
+        value: impl rusqlite::ToSql,
+    ) -> Result<()> {
+        let n = self.conn().execute(
+            &format!("UPDATE meetings SET {set} WHERE gid = ?2"),
+            params![value, gid],
+        )?;
+        if n == 0 {
+            return Err(StoreError::NotFound {
+                kind: "meeting",
+                gid: gid.to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Writes the meeting's rows to `sync_log` again (the `sync_log` triggers
+    /// fire on any UPDATE, and an `INSERT OR REPLACE` there moves the entry to
+    /// the end), parents first.
+    pub(crate) fn relog_meeting_rows(&self, gid: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let id = Store::meeting_ref(&tx, gid)?.id;
+        for (table, _) in crate::migrate::SYNC_TABLES {
+            let via = match table {
+                "meetings" => "id = ?1",
+                "tracks" | "speakers" | "segments" | "notes_blocks" | "action_items" | "marks"
+                | "meeting_tags" | "conflict_copies" => "meeting_id = ?1",
+                _ => continue,
+            };
+            // A no-op UPDATE still fires the AFTER UPDATE trigger.
+            tx.execute(&format!("UPDATE {table} SET gid = gid WHERE {via}"), [id])?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     fn update_meeting(&self, gid: &str, set: &str, value: impl rusqlite::ToSql) -> Result<()> {
@@ -886,6 +935,7 @@ impl Store {
             return Ok(gid);
         }
         let gid = new_gid();
+        tombstones::assert_live(&tx, &gid)?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tx.execute(
             "INSERT INTO persons (gid, name, color_slot, lamport, created_at, name_key)
@@ -915,6 +965,7 @@ impl Store {
                 None => None,
             }
         };
+        tombstones::assert_live(&tx, &gid)?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tx.execute(
             "INSERT INTO speakers (gid, meeting_id, label_idx, display_name_ct, person_id, color_slot, is_me, lamport)
@@ -982,7 +1033,7 @@ impl Store {
              FROM speakers s LEFT JOIN persons p ON p.id = s.person_id
              LEFT JOIN speakers t ON t.id = s.merged_into
              LEFT JOIN persons sp ON sp.id = s.suggest_person_id
-             WHERE s.meeting_id = ?1 ORDER BY s.label_idx, s.id",
+             WHERE s.meeting_id = ?1 ORDER BY s.label_idx, s.gid",
         )?;
         let rows = stmt
             .query_map([m.id], |r| {
@@ -1059,7 +1110,7 @@ impl Store {
              FROM speakers s JOIN meetings m ON m.id = s.meeting_id
              WHERE s.display_name_ct IS NOT NULL AND s.merged_into IS NULL
                AND m.gid IN (SELECT value FROM json_each(?1))
-             ORDER BY m.id, s.label_idx, s.id",
+             ORDER BY m.gid, s.label_idx, s.gid",
         )?;
         let rows = stmt
             .query_map([want], |r| {
@@ -1093,7 +1144,7 @@ impl Store {
              FROM speakers s JOIN meetings m ON m.id = s.meeting_id
              WHERE (s.display_name_ct IS NOT NULL OR s.is_me = 1) AND s.merged_into IS NULL
                AND m.gid IN (SELECT value FROM json_each(?1))
-             ORDER BY m.id, s.label_idx, s.id",
+             ORDER BY m.gid, s.label_idx, s.gid",
         )?;
         let rows = stmt
             .query_map([want], |r| {
@@ -1196,8 +1247,9 @@ impl Store {
             "SELECT m.id, m.gid, b.gid, b.body_ct
              FROM notes_blocks b JOIN meetings m ON m.id = b.meeting_id
              WHERE b.kind = 'tldr' AND m.gid IN (SELECT value FROM json_each(?1))
-               AND b.id = (SELECT MIN(id) FROM notes_blocks
-                           WHERE meeting_id = b.meeting_id AND kind = 'tldr')",
+               AND b.gid = (SELECT gid FROM notes_blocks
+                            WHERE meeting_id = b.meeting_id AND kind = 'tldr'
+                            ORDER BY ord, gid LIMIT 1)",
         )?;
         let rows = stmt
             .query_map([want], |r| {
@@ -1232,9 +1284,11 @@ impl Store {
         let dek = self.dek(&conn, m.id)?;
         let tx = conn.transaction()?;
         let track_gid = new_gid();
+        tombstones::assert_live(&tx, &track_gid)?;
+        let track_lamport = Store::alloc_lamport(&tx, 1)?;
         let inserted = tx.execute(
-            "INSERT INTO tracks (gid, meeting_id, kind, page_count) VALUES (?1, ?2, ?3, 0)",
-            params![track_gid, m.id, kind.as_str()],
+            "INSERT INTO tracks (gid, meeting_id, kind, page_count, lamport) VALUES (?1, ?2, ?3, 0, ?4)",
+            params![track_gid, m.id, kind.as_str(), track_lamport],
         );
         match inserted {
             Err(rusqlite::Error::SqliteFailure(e, _))
@@ -1266,9 +1320,66 @@ impl Store {
         mut writer: BundleWriter,
     ) -> Result<u32> {
         let pages = writer.finish()?;
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        tx.execute(
+            "UPDATE tracks SET page_count = ?1, lamport = ?4 WHERE kind = ?2 AND meeting_id = (SELECT id FROM meetings WHERE gid = ?3)",
+            params![pages, kind.as_str(), meeting_gid, lamport],
+        )?;
+        tx.commit()?;
+        Ok(pages)
+    }
+
+    /// Starts or resumes receiving a track's audio from a peer (doc 07 §7.7).
+    /// The `tracks` row must exist (its record came first) and the track must
+    /// not be tombstoned. `header` is the sender's bundle header
+    /// ([`crate::bundle::raw_header`]). A complete local track answers
+    /// [`crate::bundle::RawBegin::Complete`] whatever the sender's prefix.
+    pub fn raw_import_begin(
+        &self,
+        meeting_gid: &str,
+        kind: TrackKind,
+        header: &[u8],
+    ) -> Result<crate::bundle::RawBegin> {
+        check_gid(meeting_gid)?;
         let conn = self.conn();
-        conn.execute(
-            "UPDATE tracks SET page_count = ?1 WHERE kind = ?2 AND meeting_id = (SELECT id FROM meetings WHERE gid = ?3)",
+        let m = Store::meeting_ref(&conn, meeting_gid)?;
+        let dek = self.dek(&conn, m.id)?;
+        let track_gid: String = conn
+            .query_row(
+                "SELECT gid FROM tracks WHERE meeting_id = ?1 AND kind = ?2",
+                params![m.id, kind.as_str()],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound {
+                kind: "track",
+                gid: format!("{meeting_gid}/{}", kind.as_str()),
+            })?;
+        tombstones::assert_live(&conn, &track_gid)?;
+        drop(conn);
+        fs::create_dir_all(self.bundle_dir(meeting_gid)?)?;
+        crate::bundle::RawImport::begin(
+            &self.bundle_path(meeting_gid, kind)?,
+            &dek,
+            &Store::bundle_aad(&track_gid),
+            header,
+        )
+    }
+
+    /// Completes a raw import: the bundle is in place, and the track's page
+    /// count (which guards against a cut-off file) is recorded. Returns it.
+    pub fn raw_import_finish(
+        &self,
+        meeting_gid: &str,
+        kind: TrackKind,
+        import: crate::bundle::RawImport,
+    ) -> Result<u32> {
+        let pages = import.finish()?;
+        self.conn().execute(
+            "UPDATE tracks SET page_count = ?1
+             WHERE kind = ?2 AND meeting_id = (SELECT id FROM meetings WHERE gid = ?3)",
             params![pages, kind.as_str(), meeting_gid],
         )?;
         Ok(pages)
@@ -1310,7 +1421,7 @@ impl Store {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT t.kind, t.page_count FROM tracks t JOIN meetings m ON m.id = t.meeting_id
-             WHERE m.gid = ?1 ORDER BY t.id",
+             WHERE m.gid = ?1 ORDER BY t.gid",
         )?;
         let rows = stmt.query_map([meeting_gid], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
@@ -1401,31 +1512,22 @@ impl Store {
     /// them). Citations are time anchors, so they still resolve against the new
     /// version. Returns the new version.
     pub fn replace_transcript(&self, meeting_gid: &str, segs: Vec<NewSegment>) -> Result<i64> {
-        let mut conn = self.conn();
-        let m = Store::meeting_ref(&conn, meeting_gid)?;
-        let dek = self.dek(&conn, m.id)?;
-        let new_version = m.version + 1;
-        let tx = conn.transaction()?;
-        let lamport = Store::alloc_lamport(&tx, 1)?;
-        tombstones::write_where(
-            &tx,
-            "segment",
-            "SELECT gid FROM segments WHERE meeting_id = ?1 AND version < ?2",
-            params![m.id, new_version],
-            lamport,
-        )?;
-        tx.execute(
-            "DELETE FROM segments_fts WHERE rowid IN (SELECT id FROM segments WHERE meeting_id = ?1)",
-            [m.id],
-        )?;
-        tx.execute("DELETE FROM segments WHERE meeting_id = ?1", [m.id])?;
-        tx.execute(
-            "UPDATE meetings SET transcript_version = ?1, lamport = ?2 WHERE id = ?3",
-            params![new_version, lamport, m.id],
-        )?;
-        insert_segments(&tx, &dek, m.id, new_version, &segs)?;
-        tx.commit()?;
-        Ok(new_version)
+        self.replace_transcript_inner(meeting_gid, segs, &[], None, None)
+    }
+
+    /// [`Store::replace_transcript`] at a fencing `epoch` (doc 07 §8): the new
+    /// segments and the meeting carry it. With `lease` (a job uuid), the same
+    /// transaction moves that lease `granted -> done`; if it is no longer
+    /// granted (revoked, expired), nothing is written and the result is
+    /// [`StoreError::Fenced`].
+    pub fn replace_transcript_epoch(
+        &self,
+        meeting_gid: &str,
+        segs: Vec<NewSegment>,
+        epoch: i64,
+        lease: Option<&str>,
+    ) -> Result<i64> {
+        self.replace_transcript_inner(meeting_gid, segs, &[], Some(epoch), lease)
     }
 
     /// Segments of the current transcript version, in time order.
@@ -1450,7 +1552,7 @@ impl Store {
             "SELECT s.gid, s.version, sp.gid, s.t0_ms, s.t1_ms, s.text_ct, s.lang, s.confidence, s.edited,
                     s.overlap
              FROM segments s LEFT JOIN speakers sp ON sp.id = s.speaker_id
-             WHERE s.meeting_id = ?1 AND s.version = ?2 {extra_where} ORDER BY s.t0_ms, s.id"
+             WHERE s.meeting_id = ?1 AND s.version = ?2 {extra_where} ORDER BY s.t0_ms, s.gid"
         ))?;
         let rows = stmt
             .query_map(args, |r| {
@@ -1508,7 +1610,7 @@ impl Store {
         let m = Store::meeting_ref(&conn, meeting_gid)?;
         let mut stmt = conn.prepare_cached(
             "SELECT s.gid, w.t0_ms, w.t1_ms, w.conf FROM words w JOIN segments s ON s.id = w.segment_id
-             WHERE s.meeting_id = ?1 AND s.version = ?2 ORDER BY s.id, w.idx",
+             WHERE s.meeting_id = ?1 AND s.version = ?2 ORDER BY s.gid, w.idx",
         )?;
         let mut out: HashMap<String, Vec<Word>> = HashMap::new();
         let rows = stmt.query_map(params![m.id, m.version], |r| {
@@ -1559,7 +1661,7 @@ impl Store {
         let tx = conn.transaction()?;
         let first = Store::alloc_lamport(&tx, ids.len().max(1) as i64)?;
         for (n, (id, gid)) in ids.iter().enumerate() {
-            tombstones::write(&tx, gid, "note", first + n as i64)?;
+            tombstones::write(&tx, gid, "note", first + n as i64, Cause::User)?;
             tx.execute("DELETE FROM notes_fts WHERE rowid = ?1", [id])?;
             tx.execute("DELETE FROM notes_blocks WHERE id = ?1", [id])?;
         }
@@ -1634,7 +1736,7 @@ impl Store {
         let dek = self.dek(&conn, m.id)?;
         let mut stmt = conn.prepare_cached(
             "SELECT gid, kind, provenance, body_ct, anchors_json, pinned FROM notes_blocks
-             WHERE meeting_id = ?1 ORDER BY id",
+             WHERE meeting_id = ?1 ORDER BY ord, gid",
         )?;
         let rows = stmt
             .query_map([m.id], |r| {
@@ -1707,7 +1809,7 @@ impl Store {
         let id = id_of(&conn, "notes_blocks", note_gid)?;
         let tx = conn.transaction()?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
-        tombstones::write(&tx, note_gid, "note", lamport)?;
+        tombstones::write(&tx, note_gid, "note", lamport, Cause::User)?;
         tx.execute("DELETE FROM notes_fts WHERE rowid = ?1", [id])?;
         tx.execute("DELETE FROM notes_blocks WHERE id = ?1", [id])?;
         tx.commit()?;
@@ -1766,10 +1868,46 @@ impl Store {
         blocks: Vec<NewNoteBlock>,
         actions: Vec<NewActionItem>,
     ) -> Result<ReplacedNotes> {
+        self.replace_ai_notes_inner(meeting_gid, blocks, actions, None, None)
+    }
+
+    /// [`Store::replace_ai_notes`] at a fencing `epoch` (doc 07 §8): the
+    /// meeting's `ai_epoch` becomes `max(current, epoch)` and the new rows
+    /// carry it. With `lease` (a job uuid) the same transaction moves that
+    /// lease `granted -> done`; if it is no longer granted nothing is written
+    /// and the result is [`StoreError::Fenced`].
+    pub fn replace_ai_notes_epoch(
+        &self,
+        meeting_gid: &str,
+        blocks: Vec<NewNoteBlock>,
+        actions: Vec<NewActionItem>,
+        epoch: i64,
+        lease: Option<&str>,
+    ) -> Result<ReplacedNotes> {
+        self.replace_ai_notes_inner(meeting_gid, blocks, actions, Some(epoch), lease)
+    }
+
+    fn replace_ai_notes_inner(
+        &self,
+        meeting_gid: &str,
+        blocks: Vec<NewNoteBlock>,
+        actions: Vec<NewActionItem>,
+        epoch: Option<i64>,
+        lease: Option<&str>,
+    ) -> Result<ReplacedNotes> {
         let mut conn = self.conn();
         let m = Store::meeting_ref(&conn, meeting_gid)?;
         let dek = self.dek(&conn, m.id)?;
         let tx = conn.transaction()?;
+        if let Some(job) = lease {
+            finish_lease(&tx, job)?;
+        }
+        if let Some(e) = epoch {
+            tx.execute(
+                "UPDATE meetings SET ai_epoch = MAX(ai_epoch, ?1) WHERE id = ?2",
+                params![e, m.id],
+            )?;
+        }
         let mut out = ReplacedNotes::default();
         let old_blocks: Vec<(i64, String)> = tx
             .prepare(
@@ -1796,7 +1934,7 @@ impl Store {
         if out.removed > 0 {
             let first = Store::alloc_lamport(&tx, out.removed as i64)?;
             for (n, (id, gid)) in old_blocks.iter().enumerate() {
-                tombstones::write(&tx, gid, "note", first + n as i64)?;
+                tombstones::write(&tx, gid, "note", first + n as i64, Cause::Regenerate)?;
                 tx.execute("DELETE FROM notes_fts WHERE rowid = ?1", [id])?;
                 tx.execute("DELETE FROM notes_blocks WHERE id = ?1", [id])?;
             }
@@ -1806,6 +1944,7 @@ impl Store {
                     gid,
                     "action_item",
                     first + (old_blocks.len() + n) as i64,
+                    Cause::Regenerate,
                 )?;
                 tx.execute("DELETE FROM action_items WHERE id = ?1", [id])?;
             }
@@ -1850,10 +1989,10 @@ impl Store {
                 now_ms()
             ],
         )?;
-        let lamport = Store::alloc_lamport(&tx, 1)?;
+        // `cloud_used` only ever turns on (OR when merged): no Lamport bump.
         tx.execute(
-            "UPDATE meetings SET cloud_used = 1, lamport = ?1 WHERE id = ?2",
-            params![lamport, m.id],
+            "UPDATE meetings SET cloud_used = 1 WHERE id = ?1",
+            params![m.id],
         )?;
         tx.commit()?;
         Ok(())
@@ -1890,7 +2029,7 @@ impl Store {
             "SELECT a.gid, a.text_ct, sp.gid, a.due, a.done, a.anchor_json,
                     a.due_text_ct, a.anchors_json, a.provenance
              FROM action_items a LEFT JOIN speakers sp ON sp.id = a.owner_speaker_id
-             WHERE a.meeting_id = ?1 ORDER BY a.id",
+             WHERE a.meeting_id = ?1 ORDER BY a.ord, a.gid",
         )?;
         let rows = stmt
             .query_map([m.id], |r| {
@@ -1996,7 +2135,7 @@ impl Store {
         let id = id_of(&conn, "action_items", action_gid)?;
         let tx = conn.transaction()?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
-        tombstones::write(&tx, action_gid, "action_item", lamport)?;
+        tombstones::write(&tx, action_gid, "action_item", lamport, Cause::User)?;
         tx.execute("DELETE FROM action_items WHERE id = ?1", [id])?;
         tx.commit()?;
         Ok(())
@@ -2009,6 +2148,7 @@ impl Store {
         let mut conn = self.conn();
         let m = Store::meeting_ref(&conn, meeting_gid)?;
         let tx = conn.transaction()?;
+        tombstones::assert_live(&tx, &gid)?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
         tx.execute(
             "INSERT INTO marks (gid, meeting_id, t_ms, tag, lamport) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -2022,7 +2162,7 @@ impl Store {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT k.gid, k.t_ms, k.tag FROM marks k JOIN meetings m ON m.id = k.meeting_id
-             WHERE m.gid = ?1 ORDER BY k.t_ms, k.id",
+             WHERE m.gid = ?1 ORDER BY k.t_ms, k.gid",
         )?;
         let rows = stmt.query_map([meeting_gid], |r| {
             Ok(Mark {
@@ -2070,7 +2210,18 @@ impl Store {
     /// - On SSDs/APFS, freed blocks may survive; this is a crypto-shred,
     ///   not a physical wipe.
     pub fn delete_meeting(&self, gid: &str) -> Result<()> {
-        let deleted = self.delete_meeting_before_rotation(gid);
+        self.delete_meeting_inner(gid, true)
+    }
+
+    /// [`Store::delete_meeting`] without tombstones: the same shred, files and
+    /// wrap rotation, but nothing is recorded for sync to relay. For a Wipe
+    /// ordered by a peer (doc 07 §3.5): the other devices keep their copies.
+    pub fn delete_meeting_local(&self, gid: &str) -> Result<()> {
+        self.delete_meeting_inner(gid, false)
+    }
+
+    fn delete_meeting_inner(&self, gid: &str, tombstone: bool) -> Result<()> {
+        let deleted = self.delete_before_rotation(gid, tombstone);
         // The key is gone either way: rotate so no earlier copy can unwrap it.
         // `true`: if another delete's rotation finished meanwhile, this key
         // was re-wrapped under that rotation's new secret, so start another.
@@ -2082,6 +2233,10 @@ impl Store {
     /// wrap-secret rotation). Public only so tests can simulate a crash there.
     #[doc(hidden)]
     pub fn delete_meeting_before_rotation(&self, gid: &str) -> Result<()> {
+        self.delete_before_rotation(gid, true)
+    }
+
+    fn delete_before_rotation(&self, gid: &str, tombstone: bool) -> Result<()> {
         check_gid(gid)?;
         Store::meeting_ref(&self.conn(), gid)?;
         // Start the rotation first: a crash anywhere below leaves the ring
@@ -2091,13 +2246,15 @@ impl Store {
             let mut conn = self.conn();
             let m = Store::meeting_ref(&conn, gid)?;
             let tx = conn.transaction()?;
-            let lamport = Store::alloc_lamport(&tx, 1)?;
-            tombstones::write_children(&tx, m.id, lamport)?;
-            tombstones::write(&tx, gid, "meeting", lamport)?;
+            if tombstone {
+                let lamport = Store::alloc_lamport(&tx, 1)?;
+                tombstones::write_children(&tx, m.id, lamport, Cause::Meeting)?;
+                tombstones::write(&tx, gid, "meeting", lamport, Cause::Meeting)?;
+            }
             tx.commit()?;
         }
         self.shred_key(gid)?;
-        self.finish_delete(gid)
+        self.finish_delete_with(gid, tombstone)
     }
 
     /// Step 2 of [`Store::delete_meeting`], on its own. Public only so tests
@@ -2126,6 +2283,10 @@ impl Store {
 
     /// Steps 3-5 of [`Store::delete_meeting`] (files, rows, compaction).
     fn finish_delete(&self, gid: &str) -> Result<()> {
+        self.finish_delete_with(gid, true)
+    }
+
+    fn finish_delete_with(&self, gid: &str, tombstone: bool) -> Result<()> {
         remove_dir_if_exists(&self.bundle_dir(gid)?)?;
         let mut conn = self.conn();
         let m = Store::meeting_ref(&conn, gid)?;
@@ -2148,7 +2309,7 @@ impl Store {
             )?;
         }
         tx.execute("DELETE FROM meetings WHERE id = ?1", [m.id])?;
-        crate::people::gc_persons(&tx, &persons)?;
+        crate::people::gc_persons_with(&tx, &persons, tombstone)?;
         tx.commit()?;
         migrate::purge_snapshots(&snapshots_dir(&self.dir))?;
         compact_locked(&conn)
@@ -2401,7 +2562,16 @@ impl Store {
             let _ = keystore.delete();
             return Err(e);
         }
-        Store::open(dest, keystore, protection)
+        let store = Store::open(dest, keystore, protection)?;
+        // The restored database carries its source's feed id, and peers hold
+        // cursors into that feed: a new id makes them start over (doc 07 §7.2).
+        store.reset_feed_id()?;
+        Ok(store)
+    }
+
+    /// Draws a new `settings['sync.feed_id']`.
+    pub(crate) fn reset_feed_id(&self) -> Result<()> {
+        self.set_setting("sync.feed_id", &serde_json::Value::String(new_gid()))
     }
 
     /// "Delete everything": shreds every meeting key, closes and removes the
@@ -2440,7 +2610,105 @@ impl Store {
     }
 }
 
+#[cfg(test)]
+mod hygiene_tests;
+
 // ------------------------------------------------------------------ helpers
+
+/// Compare-and-set `granted -> done` for a job's lease, inside the commit
+/// transaction of its result (doc 07 §8). No row changed means the lease was
+/// revoked or has expired: the caller drops the transaction.
+pub(crate) fn finish_lease(tx: &Transaction, job_uuid: &str) -> Result<()> {
+    let n = tx.execute(
+        "UPDATE leases SET state = 'done' WHERE job_uuid = ?1 AND state = 'granted'",
+        [job_uuid],
+    )?;
+    if n == 0 {
+        return Err(StoreError::Fenced);
+    }
+    Ok(())
+}
+
+/// The `ord` for a new note or action item of `meeting_id`: after the last one.
+fn next_ord(tx: &Transaction, table: &'static str, meeting_id: i64) -> Result<String> {
+    let last: Option<String> = tx
+        .query_row(
+            &format!(
+                "SELECT ord FROM {table} WHERE meeting_id = ?1 ORDER BY ord DESC, gid DESC LIMIT 1"
+            ),
+            [meeting_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(ord_between(last.as_deref(), None))
+}
+
+const ORD_ALPHABET: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+fn ord_digit(b: u8) -> usize {
+    ORD_ALPHABET.iter().position(|&c| c == b).unwrap_or(0)
+}
+
+/// A fractional index strictly between `a` and `b` (`None`: no bound on that
+/// side), as base-62 strings that sort as bytes. `a < b` is required when both
+/// are given. Used to append a row (`ord_between(last, None)`) and to move one
+/// between two neighbours without renumbering the others, which other devices
+/// may be editing at the same time. Equal results from two devices tie-break
+/// on the row gid.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn ord_between(a: Option<&str>, b: Option<&str>) -> String {
+    let (a, b) = (a.unwrap_or("").as_bytes(), b.map(str::as_bytes));
+    if let (Some(&last), None) = (a.last(), b) {
+        // Appending: the next value of the last digit keeps ords short.
+        let mut out = a.to_vec();
+        match ord_digit(last) {
+            d if d < 61 && ORD_ALPHABET.contains(&last) => {
+                let n = out.len() - 1;
+                out[n] = ORD_ALPHABET[d + 1];
+            }
+            _ => out.push(ORD_ALPHABET[31]),
+        }
+        return String::from_utf8(out).unwrap_or_default();
+    }
+    String::from_utf8(ord_mid(a, b)).unwrap_or_default()
+}
+
+fn ord_mid(a: &[u8], b: Option<&[u8]>) -> Vec<u8> {
+    if let Some(b) = b {
+        // Share the common prefix, then split the first differing digit.
+        let n = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+        if n > 0 {
+            let mut out = b[..n].to_vec();
+            out.extend(ord_mid(&a[n..], Some(&b[n..])));
+            return out;
+        }
+    }
+    let da = a.first().map_or(0, |&c| ord_digit(c));
+    let db = b.map_or(62, |b| b.first().map_or(0, |&c| ord_digit(c)));
+    if db - da > 1 {
+        return vec![ORD_ALPHABET[(da + db) / 2]];
+    }
+    if let Some(b) = b
+        && da == db
+        && !b.is_empty()
+    {
+        // `a` ran out and `b` goes on with a zero digit: keep it and go
+        // deeper (shortening would end in a zero, which nothing is between).
+        let mut out = vec![b[0]];
+        out.extend(ord_mid(a.get(1..).unwrap_or(&[]), Some(&b[1..])));
+        return out;
+    }
+    match b {
+        // Adjacent digits and a longer `b`: its first digit alone is above `a`.
+        Some(b) if b.len() > 1 => vec![b[0]],
+        // Otherwise keep `a`'s digit and go deeper, with no upper bound.
+        _ => {
+            let mut out = vec![ORD_ALPHABET[da]];
+            out.extend(ord_mid(a.get(1..).unwrap_or(&[]), None));
+            out
+        }
+    }
+}
 
 /// FTS `optimize` on both indexes, then vacuum and truncate the WAL.
 fn insert_note_block(
@@ -2453,11 +2721,13 @@ fn insert_note_block(
     let body = fold::nfc(&new.body);
     let ct = seal_text(dek, &body, &row_aad("notes_blocks", "body_ct", &gid));
     let anchors_json = to_json(&new.anchors)?;
+    tombstones::assert_live(tx, &gid)?;
     let lamport = Store::alloc_lamport(tx, 1)?;
+    let ord = next_ord(tx, "notes_blocks", meeting_id)?;
     tx.execute(
-        "INSERT INTO notes_blocks (gid, meeting_id, kind, provenance, body_ct, anchors_json, pinned, lamport)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![gid, meeting_id, new.kind, new.provenance.as_str(), ct, anchors_json, new.pinned, lamport],
+        "INSERT INTO notes_blocks (gid, meeting_id, kind, provenance, body_ct, anchors_json, pinned, lamport, ord, epoch)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, (SELECT ai_epoch FROM meetings WHERE id = ?2))",
+        params![gid, meeting_id, new.kind, new.provenance.as_str(), ct, anchors_json, new.pinned, lamport, ord],
     )?;
     let id = tx.last_insert_rowid();
     let norm = fold::fold(&body);
@@ -2496,11 +2766,14 @@ fn insert_action_item(
         Some(s) => Some(id_of(tx, "speakers", s)?),
         None => None,
     };
+    tombstones::assert_live(tx, &gid)?;
     let lamport = Store::alloc_lamport(tx, 1)?;
+    let ord = next_ord(tx, "action_items", meeting_id)?;
     tx.execute(
         "INSERT INTO action_items (gid, meeting_id, text_ct, owner_speaker_id, due, anchor_json,
-                                   lamport, provenance, due_text_ct, anchors_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                                   lamport, provenance, due_text_ct, anchors_json, ord, epoch)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                 (SELECT ai_epoch FROM meetings WHERE id = ?2))",
         params![
             gid,
             meeting_id,
@@ -2511,7 +2784,8 @@ fn insert_action_item(
             lamport,
             new.provenance.as_str(),
             due_ct,
-            anchors_json
+            anchors_json,
+            ord
         ],
     )?;
     Ok(ActionItem {
@@ -2632,8 +2906,9 @@ pub(crate) fn insert_segments(
     crate::embeddings::bump_index_gen(tx, meeting_id)?;
     let mut speakers: HashMap<String, i64> = HashMap::new();
     let mut ins = tx.prepare_cached(
-        "INSERT INTO segments (gid, meeting_id, version, speaker_id, t0_ms, t1_ms, text_ct, lang, confidence, lamport, edited)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO segments (gid, meeting_id, version, speaker_id, t0_ms, t1_ms, text_ct, lang, confidence, lamport, edited, epoch)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                 (SELECT transcript_epoch FROM meetings WHERE id = ?2))",
     )?;
     let mut fts =
         tx.prepare_cached("INSERT INTO segments_fts (rowid, text_norm) VALUES (?1, ?2)")?;
@@ -2669,6 +2944,9 @@ pub(crate) fn insert_segments(
             }
             None => new_gid(),
         };
+        // A deleted gid stays dead, also when the caller supplies it (a
+        // replaced transcript's own lines included).
+        tombstones::assert_live(tx, &gid)?;
         let text = fold::nfc(&s.text);
         let ct = seal_text(dek, &text, &row_aad("segments", "text_ct", &gid));
         ins.execute(params![

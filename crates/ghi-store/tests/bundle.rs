@@ -385,3 +385,217 @@ fn pages_cannot_move_between_files_tracks_or_meetings() {
     let raw = ghi_store::rowcrypt::open(&key(), &ab[ra[0].0 + 4..ra[0].1], AAD);
     assert!(raw.is_err());
 }
+
+// ------------------------------------------------------------- raw import
+
+mod raw {
+    use super::*;
+    use ghi_store::bundle::{RawBegin, RawImport, part_path, raw_header, raw_records};
+
+    fn resume(dest: &Path, header: &[u8]) -> RawImport {
+        match RawImport::begin(dest, &key(), AAD, header).unwrap() {
+            RawBegin::Resume(r) => r,
+            RawBegin::Complete { .. } => panic!("expected a part to resume"),
+        }
+    }
+
+    /// A finished sender bundle of `pages` pages: its path, header and every
+    /// record (the final one included).
+    fn sender(dir: &tempfile::TempDir, pages: u32) -> (PathBuf, Vec<u8>, Vec<Vec<u8>>) {
+        let path = fresh(dir, "sender.ghb");
+        write_bundle(&path, pages, true);
+        let header = raw_header(&path).unwrap();
+        let recs = raw_records(&path, 0, u32::MAX).unwrap();
+        assert_eq!(recs.len() as u32, pages + 1);
+        (path, header, recs)
+    }
+
+    #[test]
+    fn a_round_trip_is_byte_identical_to_the_senders_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let (src, header, recs) = sender(&dir, 150);
+        let dest = fresh(&dir, "recv.ghb");
+        let mut imp = resume(&dest, &header);
+        assert_eq!(imp.have(), 0);
+        // In batches, as a session would send them (past the 64-record sync).
+        for chunk in recs.chunks(40) {
+            imp.push(chunk).unwrap();
+        }
+        assert!(imp.is_complete());
+        assert_eq!(imp.have(), 150);
+        assert!(part_path(&dest).exists() && !dest.exists());
+        assert_eq!(imp.finish().unwrap(), 150);
+        assert!(!part_path(&dest).exists());
+        assert_eq!(fs::read(&dest).unwrap(), fs::read(&src).unwrap());
+        let r = BundleReader::open(&dest, &key(), AAD).unwrap();
+        assert!(r.complete());
+        assert_eq!(r.page(7).unwrap(), payload(7));
+        assert!(index_path(&dest).exists());
+    }
+
+    #[test]
+    fn a_flipped_byte_is_rejected_and_the_part_ends_at_the_last_good_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_src, header, mut recs) = sender(&dir, 20);
+        let dest = fresh(&dir, "recv.ghb");
+        let mut imp = resume(&dest, &header);
+        let k = 5usize;
+        imp.push(&recs[..k]).unwrap();
+        assert_eq!(imp.have(), k as u32);
+        let mid = recs[k + 3].len() / 2;
+        recs[k + 3][mid] ^= 1;
+        let err = imp.push(&recs[k..k + 8]).unwrap_err();
+        assert!(matches!(err, StoreError::Decrypt));
+        // Records k..=k+2 were appended; k+3 and later were not.
+        assert_eq!(imp.have(), (k + 3) as u32);
+        let good: u64 = HEADER as u64
+            + recs[..k + 3]
+                .iter()
+                .map(|r| 4 + r.len() as u64)
+                .sum::<u64>();
+        assert_eq!(fs::metadata(part_path(&dest)).unwrap().len(), good);
+        assert!(imp.finish().is_err(), "no final record yet");
+        // The rest, clean, resumes from there.
+        let mut imp = resume(&dest, &header);
+        assert_eq!(imp.have(), (k + 3) as u32);
+        recs[k + 3][mid] ^= 1;
+        imp.push(&recs[k + 3..]).unwrap();
+        assert_eq!(imp.finish().unwrap(), 20);
+    }
+
+    #[test]
+    fn a_page_out_of_position_or_under_another_key_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_src, header, recs) = sender(&dir, 6);
+        let dest = fresh(&dir, "recv.ghb");
+        let mut imp = resume(&dest, &header);
+        imp.push(&recs[..2]).unwrap();
+        // Page 4 where page 2 belongs; the same record twice.
+        assert!(imp.push(&recs[4..5]).is_err());
+        assert!(imp.push(&recs[1..2]).is_err());
+        assert_eq!(imp.have(), 2);
+        drop(imp);
+        // Another track's aad (a mic page cannot stand in for a system page).
+        let other = RawImport::begin(&fresh(&dir, "x.ghb"), &key(), b"other-track", &header);
+        let RawBegin::Resume(mut other) = other.unwrap() else {
+            panic!()
+        };
+        assert!(other.push(&recs[..1]).is_err());
+        let wrong_key = Dek::from_bytes([7; 32]);
+        let RawBegin::Resume(mut wk) =
+            RawImport::begin(&fresh(&dir, "y.ghb"), &wrong_key, AAD, &header).unwrap()
+        else {
+            panic!()
+        };
+        assert!(wk.push(&recs[..1]).is_err());
+    }
+
+    #[test]
+    fn a_killed_import_resumes_from_what_was_verified() {
+        let dir = tempfile::tempdir().unwrap();
+        let (src, header, recs) = sender(&dir, 30);
+        let dest = fresh(&dir, "recv.ghb");
+        let mut imp = resume(&dest, &header);
+        imp.push(&recs[..12]).unwrap();
+        imp.sync(true).unwrap();
+        // The process dies: the handle is gone, and half of a record is on disk.
+        drop(imp);
+        let mut part = fs::OpenOptions::new()
+            .append(true)
+            .open(part_path(&dest))
+            .unwrap();
+        use std::io::Write;
+        part.write_all(&(recs[12].len() as u32).to_le_bytes())
+            .unwrap();
+        part.write_all(&recs[12][..10]).unwrap();
+        drop(part);
+
+        let mut imp = resume(&dest, &header);
+        assert_eq!(imp.have(), 12, "re-verified, the torn tail cut off");
+        imp.push(&recs[12..]).unwrap();
+        assert_eq!(imp.finish().unwrap(), 30);
+        assert_eq!(fs::read(&dest).unwrap(), fs::read(&src).unwrap());
+    }
+
+    #[test]
+    fn a_damaged_part_is_cut_back_to_its_last_authentic_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_src, header, recs) = sender(&dir, 10);
+        let dest = fresh(&dir, "recv.ghb");
+        let mut imp = resume(&dest, &header);
+        imp.push(&recs[..8]).unwrap();
+        imp.sync(true).unwrap();
+        drop(imp);
+        let mut bytes = fs::read(part_path(&dest)).unwrap();
+        let rs = records(&bytes);
+        let (a, b) = rs[5];
+        bytes[(a + b) / 2] ^= 0x40;
+        fs::write(part_path(&dest), &bytes).unwrap();
+        assert_eq!(resume(&dest, &header).have(), 5);
+    }
+
+    #[test]
+    fn a_different_prefix_starts_over_and_the_same_one_resumes() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_a, header_a, recs_a) = sender(&dir, 10);
+        let dest = fresh(&dir, "recv.ghb");
+        let mut imp = resume(&dest, &header_a);
+        imp.push(&recs_a[..6]).unwrap();
+        imp.sync(true).unwrap();
+        drop(imp);
+        assert_eq!(resume(&dest, &header_a).have(), 6, "same prefix resumes");
+
+        // The sender cut its track: same pages, sealed again under a new prefix.
+        let other = fresh(&dir, "resealed.ghb");
+        write_bundle(&other, 10, true);
+        let header_b = raw_header(&other).unwrap();
+        assert_ne!(header_a, header_b);
+        let imp = resume(&dest, &header_b);
+        assert_eq!(imp.have(), 0);
+        assert_eq!(fs::metadata(part_path(&dest)).unwrap().len(), HEADER as u64);
+        assert_eq!(fs::read(part_path(&dest)).unwrap(), header_b);
+    }
+
+    #[test]
+    fn a_complete_local_track_is_complete_whatever_the_senders_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_a, header_a, recs_a) = sender(&dir, 4);
+        let dest = fresh(&dir, "recv.ghb");
+        let mut imp = resume(&dest, &header_a);
+        imp.push(&recs_a).unwrap();
+        imp.finish().unwrap();
+        // Another prefix: a part is not started, the track is reported complete.
+        let other = fresh(&dir, "resealed.ghb");
+        write_bundle(&other, 3, true);
+        let header_b = raw_header(&other).unwrap();
+        match RawImport::begin(&dest, &key(), AAD, &header_b).unwrap() {
+            RawBegin::Complete { pages } => assert_eq!(pages, 4),
+            RawBegin::Resume(_) => panic!("complete track must not restart"),
+        }
+        assert!(!part_path(&dest).exists());
+    }
+
+    #[test]
+    fn a_bad_header_or_a_second_final_record_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_a, header, recs) = sender(&dir, 3);
+        let dest = fresh(&dir, "recv.ghb");
+        let mut bad = header.clone();
+        bad[0] = b'X';
+        assert!(RawImport::begin(&dest, &key(), AAD, &bad).is_err());
+        assert!(RawImport::begin(&dest, &key(), AAD, &header[..10]).is_err());
+        assert!(!part_path(&dest).exists());
+        let mut imp = resume(&dest, &header);
+        imp.push(&recs).unwrap();
+        assert!(
+            imp.push(&recs[..1]).is_err(),
+            "nothing after the final record"
+        );
+        // Resuming a part that already holds the final record keeps it.
+        drop(imp);
+        let imp = resume(&dest, &header);
+        assert!(imp.is_complete());
+        assert_eq!(imp.have(), 3);
+        imp.finish().unwrap();
+    }
+}

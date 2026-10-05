@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::rowcrypt::{self, Dek};
 use crate::store::{Store, compact_locked, id_of, now_ms};
+use crate::tombstones::Cause;
 use crate::{Result, StoreError, new_gid, tombstones};
 
 /// Exemplars kept per profile, model and language (the newest).
@@ -402,11 +403,12 @@ impl Store {
             )
             .optional()?;
         if let Some((old_id, old_gid)) = &old {
-            tombstones::write(&tx, old_gid, "voice_profile", lamport)?;
+            tombstones::write(&tx, old_gid, "voice_profile", lamport, Cause::User)?;
             zero_key(&tx, *old_id)?;
             tx.execute("DELETE FROM voice_profiles WHERE id = ?1", [old_id])?;
         }
         let now = now_ms();
+        tombstones::assert_live(&tx, &gid)?;
         tx.execute(
             "INSERT INTO voice_profiles
                  (gid, person_id, is_me, consent_json, key_wrapped, created_at,
@@ -632,7 +634,7 @@ impl Store {
     fn profiles_of(&self, model: &str, me: bool) -> Result<Vec<VoiceProfile>> {
         let conn = self.conn();
         let ids: Vec<i64> = conn
-            .prepare_cached("SELECT id FROM voice_profiles WHERE is_me = ?1 ORDER BY id")?
+            .prepare_cached("SELECT id FROM voice_profiles WHERE is_me = ?1 ORDER BY gid")?
             .query_map([me], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?;
         let mut out = Vec::new();
@@ -776,7 +778,7 @@ impl Store {
             let tx = conn.transaction()?;
             let lamport = Store::alloc_lamport(&tx, 1)?;
             // The tombstone and the zeroed key commit together.
-            tombstones::write(&tx, profile_gid, "voice_profile", lamport)?;
+            tombstones::write(&tx, profile_gid, "voice_profile", lamport, Cause::User)?;
             zero_key(&tx, id)?;
             tx.commit()?;
             self.voice_keys().remove(&id);
@@ -927,7 +929,7 @@ impl Store {
             .prepare_cached(
                 "SELECT s.gid, v.model, v.lang, v.dim, v.vec_ct
                  FROM speaker_voices v JOIN speakers s ON s.id = v.speaker_id
-                 WHERE s.meeting_id = ?1 ORDER BY s.label_idx, s.id",
+                 WHERE s.meeting_id = ?1 ORDER BY s.label_idx, s.gid",
             )?
             .query_map([m.id], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
@@ -1092,7 +1094,7 @@ impl Store {
             "UPDATE voice_profiles SET updated_at = ?1, lamport = ?2 WHERE id = ?3",
             params![now_ms(), lamport, into_id],
         )?;
-        tombstones::write(tx, &from_gid, "voice_profile", lamport)?;
+        tombstones::write(tx, &from_gid, "voice_profile", lamport, Cause::User)?;
         tx.execute(
             "UPDATE voice_profiles SET key_wrapped = zeroblob(length(key_wrapped)) WHERE id = ?1",
             [from_id],
