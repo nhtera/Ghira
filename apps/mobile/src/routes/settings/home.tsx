@@ -58,7 +58,8 @@ export function SettingsHome() {
             {waitingImports > 0 ? (
               <ListRow title={t("mobile.inbox.title")} value={String(waitingImports)} chevron onPress={openInbox} />
             ) : (
-              <ListRow title={t("mobile.inbox.title")} value={t("mobile.inbox.none")} />
+              // A chevron-wide spacer keeps "None" in line with the values of the rows around it.
+              <ListRow title={t("mobile.inbox.title")} value={t("mobile.inbox.none")} trailing={<span aria-hidden="true" className="size-5 shrink-0" />} />
             )}
             <ListRow title={t("mobile.settings.rows.calendar")} value={calendarValue} chevron onPress={() => go("/settings/calendar")} />
           </ListSection>

@@ -42,6 +42,11 @@ test("Settings lists the waiting files after the banner is hidden, and opens the
   // None waiting: the row says so and does nothing.
   await expect(page.getByText("None", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Waiting to import/ })).toHaveCount(0);
+  // ...and its value lines up with the values of the chevron rows around it.
+  const right = (l: import("@playwright/test").Locator) => l.evaluate((el) => el.getBoundingClientRect().right);
+  const none = await right(page.getByText("None", { exact: true }));
+  const calendar = await right(page.getByRole("button", { name: /Calendar/ }).getByText("Off", { exact: true }));
+  expect(Math.abs(none - calendar)).toBeLessThan(1);
   await seed(page, [item("standup"), item("review")]);
   await page.getByRole("status").filter({ hasText: "files are waiting to import" }).getByRole("button", { name: "Hide notice" }).click();
   await expect(page.getByRole("status").filter({ hasText: "files are waiting to import" })).toHaveCount(0);

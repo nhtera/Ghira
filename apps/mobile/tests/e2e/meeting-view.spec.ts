@@ -328,6 +328,22 @@ test.describe("meeting view", () => {
     ).toBeChecked();
   });
 
+  test("the switches keep the card's padding on the right", async ({ page }) => {
+    await openMeetings(page, "/meetings/m-notes");
+    for (const name of ["Never send to cloud", "Sensitive meeting"]) {
+      const sw = page.getByRole("switch", { name });
+      await expect(sw).toBeVisible();
+      // A long hint must not squeeze the 51 pt track past the card's padding.
+      const gap = await sw.evaluate((el) => {
+        const track = el.firstElementChild!.getBoundingClientRect();
+        const card = el.closest(".bg-surface2")!.getBoundingClientRect();
+        const pad = parseFloat(getComputedStyle(el.closest(".bg-surface2")!).paddingRight);
+        return { right: card.right - track.right, pad };
+      });
+      expect(gap.right).toBeGreaterThanOrEqual(gap.pad - 0.5);
+    }
+  });
+
   test("audio that cannot start can be tried again", async ({ page }) => {
     await openMeetings(page, "/meetings/m-notes");
     await mock(page, "failAudio", true);

@@ -25,7 +25,7 @@ export function Switch({
       aria-labelledby={labelledBy}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className="grid min-h-ios-target min-w-ios-target place-items-center disabled:opacity-50"
+      className="grid min-h-ios-target min-w-ios-target shrink-0 place-items-center disabled:opacity-50"
     >
       <span
         aria-hidden="true"
