@@ -8,6 +8,24 @@ final class GhiLiveActivity {
     static let shared = GhiLiveActivity()
     private let queue = DispatchQueue(label: "ghira.live-activity")
     private var activity: Activity<RecordingAttributes>?
+    /// Timer bookkeeping (on `queue`): start, time spent paused so far, and when the current pause began.
+    private var startedAt = Date()
+    private var pausedTotal: TimeInterval = 0
+    private var pausedAt: Date?
+
+    /// Content state for `phase`: freezes the elapsed time while paused/interrupted and
+    /// moves the timer's start forward by the paused time when capture resumes.
+    private func state(phase: ActivityPhase, marks: Int) -> RecordingAttributes.ContentState {
+        let pausing = phase == .paused || phase == .interrupted
+        if pausing, pausedAt == nil { pausedAt = Date() }
+        if !pausing, let began = pausedAt {
+            pausedTotal += Date().timeIntervalSince(began)
+            pausedAt = nil
+        }
+        let start = startedAt.addingTimeInterval(pausedTotal)
+        let frozen = pausedAt.map { max(0, $0.timeIntervalSince(start)) }
+        return .init(phase: phase, marks: marks, timerStart: start, frozen: frozen)
+    }
     /// Updates and the end run one after another, in the order they were asked for.
     private var last: Task<Void, Never>?
 
@@ -29,10 +47,13 @@ final class GhiLiveActivity {
             // End activities a crashed or killed session left behind (iOS
             // caps how many an app may have).
             self.endAll()
-            let state = RecordingAttributes.ContentState(phase: phase, marks: 0)
+            self.startedAt = Date()
+            self.pausedTotal = 0
+            self.pausedAt = nil
+            let state = self.state(phase: phase, marks: 0)
             do {
                 self.activity = try Activity.request(
-                    attributes: RecordingAttributes(startedAt: Date()),
+                    attributes: RecordingAttributes(startedAt: self.startedAt),
                     content: .init(state: state, staleDate: nil)
                 )
             } catch {
@@ -57,7 +78,7 @@ final class GhiLiveActivity {
     func update(phase: ActivityPhase, marks: Int) {
         queue.async {
             guard let activity = self.activity else { return }
-            let state = RecordingAttributes.ContentState(phase: phase, marks: marks)
+            let state = self.state(phase: phase, marks: marks)
             self.chain { await activity.update(.init(state: state, staleDate: nil)) }
         }
     }

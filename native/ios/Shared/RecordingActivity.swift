@@ -14,6 +14,11 @@ struct RecordingAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var phase: ActivityPhase
         var marks: Int
+        /// The timer's start, moved forward by the time spent paused, so a
+        /// running `Text(timerInterval:)` continues from the right value.
+        var timerStart: Date?
+        /// Elapsed seconds while paused or interrupted: shown static (the timer freezes).
+        var frozen: TimeInterval?
     }
 
     var startedAt: Date
