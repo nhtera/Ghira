@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// The phone app's text button (full width by default) at phone size: 52 pt tall at least (the design; 44 pt is the hit-target floor), the label wraps
+// The phone app's text button (full width by default) at phone size: 56 pt tall at least (the design scaled to a phone; 44 pt is the hit-target floor), the label wraps
 // instead of clipping (Vietnamese is long, text goes to 200%). The desktop
 // Button is a 36 px control that never wraps.
 import { Icon, type IconName } from "../../icons/icon";
@@ -9,7 +9,7 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 export type PhoneButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost" | "danger";
   icon?: IconName;
-  /** regular: 52 pt, 18 px. small: 52 pt, 16 px (the design's own button text; long labels). compact: 44 pt, 17 px (Cancel, Stop and save). */
+  /** regular: 56 pt, 18 px. small: 56 pt, 16 px (the design's own button text; long labels). compact: 44 pt, 17 px (Cancel, Stop and save). */
   size?: "regular" | "small" | "compact";
   /** Hug the label instead of filling the row. */
   inline?: boolean;

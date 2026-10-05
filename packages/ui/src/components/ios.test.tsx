@@ -250,7 +250,7 @@ describe("iOS variants of shared components", () => {
 });
 
 describe("PhoneButton", () => {
-  it("is a 52 pt button that fills the row, wraps its label and reports taps", async () => {
+  it("is a 56 pt button that fills the row, wraps its label and reports taps", async () => {
     const onClick = vi.fn();
     ios(<PhoneButton onClick={onClick}>Start recording a long meeting</PhoneButton>);
     const b = screen.getByRole("button", { name: "Start recording a long meeting" });

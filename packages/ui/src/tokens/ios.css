@@ -34,9 +34,9 @@
   --ios-caption2: 0.6875rem;
 
   --ios-radius-group: 14px;
-  /* Primary buttons and choice rows: 52 pt at Large (the design), growing with text. */
-  --ios-button: 3.25rem;
-  --ios-row: 3.5rem;
+  /* Primary buttons and choice rows: 56 pt (button) and 60 pt (row) at Large, the design scaled to a phone, growing with text. */
+  --ios-button: 3.5rem;
+  --ios-row: 3.75rem;
   --ios-radius-sheet: 22px;
   --ios-nav-h: 44px;
   --ios-tab-h: 49px;
