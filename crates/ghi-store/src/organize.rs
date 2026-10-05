@@ -951,3 +951,51 @@ fn decode_track_speakers(b: &[u8]) -> Result<Vec<TrackSpeaker>> {
     }
     Ok(out)
 }
+
+impl Store {
+    /// The paired device that recorded the meeting (`devices.id`); `None`: this
+    /// device (or an import). A meeting with a peer origin is processed only
+    /// under a lease (doc 07 §8).
+    pub fn meeting_audio_origin(&self, meeting_gid: &str) -> Result<Option<i64>> {
+        let conn = self.conn();
+        Store::meeting_ref(&conn, meeting_gid)?;
+        Ok(conn.query_row(
+            "SELECT audio_origin FROM meetings WHERE gid = ?1",
+            [meeting_gid],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Marks a meeting as recorded by a peer. Tests only (sync apply sets it
+    /// in production).
+    #[doc(hidden)]
+    pub fn set_meeting_audio_origin_for_tests(
+        &self,
+        meeting_gid: &str,
+        origin: Option<i64>,
+    ) -> Result<()> {
+        self.conn().execute(
+            "UPDATE meetings SET audio_origin = ?1 WHERE gid = ?2",
+            params![origin, meeting_gid],
+        )?;
+        Ok(())
+    }
+
+    /// Inserts a holder lease row in `state`. Tests only (the sync layer
+    /// opens leases in production).
+    #[doc(hidden)]
+    pub fn insert_lease_for_tests(
+        &self,
+        job_uuid: &str,
+        meeting_gid: &str,
+        epoch: i64,
+        state: &str,
+    ) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO leases (job_uuid, meeting_gid, role, epoch, state, ttl_ms)
+             VALUES (?1, ?2, 'holder', ?3, ?4, 1000)",
+            params![job_uuid, meeting_gid, epoch, state],
+        )?;
+        Ok(())
+    }
+}

@@ -10,7 +10,10 @@
 //! - an import that was still decoding is deleted (the file can be imported
 //!   again; decoding is not resumable);
 //! - a meeting marked `processing` with no job at all (a crash between the
-//!   import marking it and queueing its final pass) gets its final pass.
+//!   import marking it and queueing its final pass) gets its final pass;
+//! - a meeting a peer recorded (`audio_origin`), or one with an open lease, is
+//!   left alone: its pass runs under that lease (doc 07 §8), so queueing
+//!   one here would process it twice.
 
 use ghi_store::store::Store;
 
@@ -30,6 +33,13 @@ pub struct Recovered {
 
 fn err(e: ghi_store::StoreError) -> String {
     e.to_string()
+}
+
+/// Whether the meeting's processing belongs to a lease: a peer recorded it
+/// (this device has no audio of its own to process), or a lease is open.
+fn leased_elsewhere(store: &Store, gid: &str) -> Result<bool, String> {
+    Ok(store.meeting_audio_origin(gid).map_err(err)?.is_some()
+        || store.lease_any_open_for(gid).map_err(err)?)
 }
 
 /// The desktop: notes and final pass for what a crash left.
@@ -90,6 +100,9 @@ pub fn recover_with_kinds(store: &Store, kinds: &[&'static str]) -> Result<Recov
             }
         }
         for m in page.iter().filter(|m| m.status == "processing") {
+            if leased_elsewhere(store, &m.gid)? {
+                continue;
+            }
             let busy = [NOTES_LIVE_JOB, FINAL_PASS_JOB, NOTES_FINAL_JOB]
                 .iter()
                 .try_fold(false, |busy, kind| {
@@ -276,6 +289,58 @@ mod tests {
         recover(&store).unwrap();
         assert_eq!(store.get_meeting(&gid).unwrap().status, "ready");
         assert!(store.jobs_for_meeting(&gid).unwrap().is_empty());
+    }
+
+    /// A `processing` meeting with audio and no job.
+    fn processing_with_audio(store: &Store) -> String {
+        let gid = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        let mut w = store.open_track(&gid, TrackKind::Mic).unwrap();
+        w.append(&[1]).unwrap();
+        w.sync(true).unwrap();
+        drop(w);
+        store.set_meeting_status(&gid, "processing").unwrap();
+        gid
+    }
+
+    #[test]
+    fn peer_recorded_and_leased_meetings_get_no_final_pass_but_local_ones_do() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        let (local, hub, phone) = (
+            processing_with_audio(&store),
+            processing_with_audio(&store),
+            processing_with_audio(&store),
+        );
+        // The hub: a phone recorded it.
+        store
+            .set_meeting_audio_origin_for_tests(&hub, Some(3))
+            .unwrap();
+        // The phone: it granted the pass to the desktop.
+        store
+            .insert_lease_for_tests("lease-1", &phone, 1, "granted")
+            .unwrap();
+
+        let out = recover_with_kinds(&store, &[FINAL_PASS_JOB]).unwrap();
+        assert_eq!(out.jobs_requeued, 1);
+        assert!(store.jobs_for_meeting(&hub).unwrap().is_empty());
+        assert!(store.jobs_for_meeting(&phone).unwrap().is_empty());
+        assert_eq!(store.jobs_for_meeting(&local).unwrap().len(), 1);
+        for g in [&hub, &phone] {
+            assert_eq!(store.get_meeting(g).unwrap().status, "processing");
+        }
+
+        // A closed lease no longer holds the meeting back.
+        let closed = processing_with_audio(&store);
+        store
+            .insert_lease_for_tests("lease-2", &closed, 1, "done")
+            .unwrap();
+        recover_with_kinds(&store, &[FINAL_PASS_JOB]).unwrap();
+        assert_eq!(store.jobs_for_meeting(&closed).unwrap().len(), 1);
     }
 
     /// A removal that fails must not stop the launch.

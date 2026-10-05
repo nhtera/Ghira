@@ -14,6 +14,13 @@
 //!   in a row with no new `done`, the job is held (not failed) until the app
 //!   has been quiet (no recording, active) for [`YieldBackoff::idle`], so a
 //!   phone that records or backgrounds all the time doesn't spin on a long job.
+//! - A leased job (payload `{lease: job_uuid, epoch}`, doc 07 §8: a phone's
+//!   final pass or notes run here) is fenced: [`JobRunner::set_fence`] says
+//!   whether its lease still holds at the claim, at every checkpoint
+//!   ([`JobCtx::preempted`]) and before the commit ([`JobCtx::may_commit`]). A
+//!   failed fence drops the job (completed as fenced, logged `Expired`) and
+//!   never requeues it; the commit itself is also fenced by the store. Jobs
+//!   without a lease are not affected.
 //! - A handler that isn't [`JobHandler::ready`] (its models aren't installed)
 //!   is skipped: its jobs wait in the queue without spending an attempt, and
 //!   run once the models arrive ("record now, process later").
@@ -39,6 +46,52 @@ pub enum Outcome {
     Yield(Value),
 }
 
+/// Where a leased job asks whether its lease still holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FenceAt {
+    /// Before the job runs.
+    Claim,
+    /// A yield point (the check behind [`JobCtx::preempted`]).
+    Checkpoint,
+    /// Right before the result is committed: the holder keeps a margin
+    /// (1 min) before its deadline.
+    Commit,
+}
+
+/// Whether the lease of a leased job still holds at `FenceAt`. Never called
+/// for a job without a lease.
+pub type Fence = Arc<dyn Fn(&Job, FenceAt) -> bool + Send + Sync>;
+
+/// The lease a job runs under: the grantor's job uuid and fencing epoch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobLease {
+    pub job_uuid: String,
+    pub epoch: i64,
+}
+
+impl JobLease {
+    /// `{lease: job_uuid, epoch}` in a job payload; `None`: not leased.
+    pub fn from_payload(payload: &Value) -> Option<JobLease> {
+        let job_uuid = payload.get("lease")?.as_str()?.to_string();
+        let epoch = payload.get("epoch").and_then(Value::as_i64).unwrap_or(0);
+        Some(JobLease { job_uuid, epoch })
+    }
+}
+
+/// `payload` with the lease keys of `job` (a resume payload built from
+/// numbers alone would otherwise un-lease the job on its next run).
+fn keep_lease(job: &Job, payload: &Value) -> Value {
+    let mut out = payload.clone();
+    if let (Some(o), Some(src)) = (out.as_object_mut(), job.payload.as_object()) {
+        for k in ["lease", "epoch"] {
+            if let (Some(v), false) = (src.get(k), o.contains_key(k)) {
+                o.insert(k.to_string(), v.clone());
+            }
+        }
+    }
+    out
+}
+
 pub struct JobCtx<'a> {
     pub store: &'a Arc<Store>,
     pub events: &'a EventTx,
@@ -46,6 +99,9 @@ pub struct JobCtx<'a> {
     preempt: &'a AtomicBool,
     inactive: &'a AtomicBool,
     refunded: AtomicBool,
+    fence: Option<&'a Fence>,
+    /// The handler gave up because the lease no longer holds.
+    fenced: AtomicBool,
 }
 
 /// When a job that keeps yielding without saving anything new is held back.
@@ -81,14 +137,45 @@ impl JobCtx<'_> {
     /// A recording started (or the app left the foreground): return
     /// [`Outcome::Yield`] at the next safe point. Reads the inactive flag too,
     /// so a clear of `preempt` racing a lifecycle change can't hide it.
+    /// A leased job whose fence fails is asked to stop too (the runner then
+    /// drops it instead of requeueing).
     pub fn preempted(&self) -> bool {
-        self.preempt.load(Ordering::SeqCst) || self.inactive.load(Ordering::SeqCst)
+        self.preempt.load(Ordering::SeqCst)
+            || self.inactive.load(Ordering::SeqCst)
+            || !self.fence_ok(FenceAt::Checkpoint)
+    }
+
+    /// The lease this job runs under, if any.
+    pub fn lease(&self) -> Option<JobLease> {
+        JobLease::from_payload(&self.job.payload)
+    }
+
+    fn fence_ok(&self, at: FenceAt) -> bool {
+        match (self.fence, self.lease()) {
+            (Some(f), Some(_)) => f(self.job, at),
+            _ => true,
+        }
+    }
+
+    /// Whether the result may be committed now: always for a job without a
+    /// lease; otherwise the lease must still hold with its commit margin.
+    /// An early exit only: the store's commit is fenced atomically too.
+    pub fn may_commit(&self) -> bool {
+        self.fence_ok(FenceAt::Commit)
+    }
+
+    /// The lease is gone (a failed [`JobCtx::may_commit`], or the store's
+    /// `Fenced`): nothing was written. Return its outcome from the handler;
+    /// the runner completes the job as fenced.
+    pub fn abandon_fenced(&self) -> Outcome {
+        self.fenced.store(true, Ordering::SeqCst);
+        Outcome::Done
     }
 
     /// Saves progress and the resume point (numbers/identifiers only).
     pub fn checkpoint(&self, progress: f64, payload: &Value) -> Result<(), String> {
         self.store
-            .checkpoint_job(self.job.id, progress, payload)
+            .checkpoint_job(self.job.id, progress, &keep_lease(self.job, payload))
             .map_err(|e| e.to_string())
     }
 
@@ -151,6 +238,7 @@ pub struct JobRunner {
     /// The app is not active (mobile lifecycle): no claims, running job yields.
     inactive: AtomicBool,
     preempt: AtomicBool,
+    fence: Mutex<Option<Fence>>,
     backoff: Mutex<YieldBackoff>,
     yields: Mutex<HashMap<i64, YieldState>>,
     /// When the app last stopped being busy (recording stopped, active again);
@@ -180,6 +268,7 @@ impl JobRunner {
             recording: AtomicUsize::new(0),
             inactive: AtomicBool::new(false),
             preempt: AtomicBool::new(false),
+            fence: Mutex::new(None),
             backoff: Mutex::new(YieldBackoff::default()),
             yields: Mutex::new(HashMap::new()),
             quiet_since: Mutex::new(Instant::now()),
@@ -188,6 +277,12 @@ impl JobRunner {
             wake: (Mutex::new(false), Condvar::new()),
             shutdown: AtomicBool::new(false),
         })
+    }
+
+    /// Fences leased jobs (see [`FenceAt`]). Without one, leases are not
+    /// checked here (the store still fences the commit).
+    pub fn set_fence(&self, fence: Fence) {
+        *self.fence.lock().unwrap_or_else(|e| e.into_inner()) = Some(fence);
     }
 
     /// Changes when a job that yields without progress is held.
@@ -378,6 +473,7 @@ impl JobRunner {
             return None;
         }
         let held = self.held_now();
+        let fence = self.fence.lock().unwrap_or_else(|e| e.into_inner()).clone();
         for h in &self.handlers {
             if !h.ready() {
                 continue;
@@ -400,7 +496,14 @@ impl JobRunner {
                 preempt: &self.preempt,
                 inactive: &self.inactive,
                 refunded: AtomicBool::new(false),
+                fence: fence.as_ref(),
+                fenced: AtomicBool::new(false),
             };
+            if !ctx.fence_ok(FenceAt::Claim) {
+                // Never runs: the lease is gone before it started.
+                self.drop_fenced(&job);
+                return Some((job, Ok(Outcome::Done)));
+            }
             ctx.progress(None, 0.0);
             *self.current.lock().unwrap_or_else(|e| e.into_inner()) = Some(job.id);
             log::info!(
@@ -421,10 +524,24 @@ impl JobRunner {
                 Err(_) => log::warn!("job failed kind={} id={} ms={ms}", job.kind, job.id),
             }
             *self.current.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            // A leased job that gave up, or yielded with its lease gone, is
+            // dropped: requeueing it would only run it under a dead lease.
+            let fenced = ctx.fenced.load(Ordering::SeqCst)
+                || (matches!(r, Ok(Outcome::Yield(_))) && !ctx.fence_ok(FenceAt::Checkpoint));
+            if fenced {
+                self.yields
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(&job.id);
+                self.drop_fenced(&job);
+                return Some((job, Ok(Outcome::Done)));
+            }
             self.account(job.id, &r);
             let settled = match &r {
                 Ok(Outcome::Done) => self.store.complete_job(job.id),
-                Ok(Outcome::Yield(payload)) => self.store.release_job(job.id, payload),
+                Ok(Outcome::Yield(payload)) => {
+                    self.store.release_job(job.id, &keep_lease(&job, payload))
+                }
                 Err(e) => {
                     self.error(job.meeting_gid.clone(), format!("{} failed: {e}", job.kind));
                     let r = self.store.fail_job(job.id);
@@ -441,6 +558,15 @@ impl JobRunner {
             return Some((job, r));
         }
         None
+    }
+
+    /// Completes a job whose lease is gone (`Expired`): it wrote nothing.
+    fn drop_fenced(&self, job: &Job) {
+        *self.current.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        log::info!("job fenced code=Expired kind={} id={}", job.kind, job.id);
+        if let Err(e) = self.store.complete_job(job.id) {
+            self.error(job.meeting_gid.clone(), format!("job {}: {e}", job.id));
+        }
     }
 
     /// Runs jobs until none is claimable (CLI, tests). Returns how many ran.
@@ -724,6 +850,8 @@ mod tests {
             preempt: &runner.preempt,
             inactive: &runner.inactive,
             refunded: AtomicBool::new(false),
+            fence: None,
+            fenced: AtomicBool::new(false),
         };
         // Stop, then inactive.
         runner.recording_started();

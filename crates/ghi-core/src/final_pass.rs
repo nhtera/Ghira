@@ -934,10 +934,28 @@ impl FinalPassJob {
             }
         }
         let lines = v2.len();
+        // Leased: the lease must still hold, with its margin (an early exit;
+        // the store fences the commit itself).
+        if !ctx.may_commit() {
+            return Ok(ctx.abandon_fenced());
+        }
         // The marks of the lines another speaker talked over go in with them.
-        store
-            .replace_transcript_marked(&meeting, v2, &overlaps)
-            .map_err(err)?;
+        let stored = match ctx.lease() {
+            Some(l) => store.replace_transcript_marked_epoch(
+                &meeting,
+                v2,
+                &overlaps,
+                l.epoch,
+                Some(&l.job_uuid),
+            ),
+            None => store.replace_transcript_marked(&meeting, v2, &overlaps),
+        };
+        match stored {
+            Ok(_) => {}
+            // The lease was revoked or expired meanwhile: nothing was written.
+            Err(ghi_store::StoreError::Fenced) => return Ok(ctx.abandon_fenced()),
+            Err(e) => return Err(err(e)),
+        }
         log::info!("final pass stored lines={lines}");
         // Done: nothing is left to resume (and the audio-derived rows go).
         if let Err(e) = store.clear_pass_checkpoints(&meeting) {

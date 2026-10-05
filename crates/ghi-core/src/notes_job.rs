@@ -17,7 +17,7 @@ use ghi_llm::{Llm, Transcript};
 use ghi_store::store::{NewActionItem, NewNoteBlock, Provenance, ReplacedNotes, Segment, Store};
 
 use crate::events::{Event, Stage};
-use crate::jobs::{JobCtx, JobHandler, Outcome};
+use crate::jobs::{JobCtx, JobHandler, JobLease, Outcome};
 
 pub const NOTES_FINAL_JOB: &str = "notes_final";
 
@@ -204,6 +204,36 @@ pub fn save_notes_with(
     extra: Vec<NewNoteBlock>,
     model: &str,
 ) -> Result<ReplacedNotes, String> {
+    save_notes_leased(store, meeting, n, segs, extra, model, None).map_err(|e| match e {
+        SaveError::Fenced => store_err(ghi_store::StoreError::Fenced),
+        SaveError::Other(e) => e,
+    })
+}
+
+/// Why [`save_notes_leased`] saved nothing.
+pub(crate) enum SaveError {
+    /// The lease is no longer granted.
+    Fenced,
+    Other(String),
+}
+
+impl From<String> for SaveError {
+    fn from(e: String) -> Self {
+        SaveError::Other(e)
+    }
+}
+
+/// [`save_notes_with`] under a lease (`job_uuid`, epoch): the commit also
+/// closes the lease atomically.
+pub(crate) fn save_notes_leased(
+    store: &Store,
+    meeting: &str,
+    n: &Notes,
+    segs: &[Segment],
+    extra: Vec<NewNoteBlock>,
+    model: &str,
+    lease: Option<&JobLease>,
+) -> Result<ReplacedNotes, SaveError> {
     let anchors = |ids: &[u64]| anchors_for(store, meeting, segs, ids);
     let mut blocks = Vec::new();
     let mut block = |kind: &str, text: &str, ids: &[u64]| -> Result<(), String> {
@@ -250,9 +280,16 @@ pub fn save_notes_with(
             ..Default::default()
         });
     }
-    let saved = store
-        .replace_ai_notes(meeting, blocks, actions)
-        .map_err(store_err)?;
+    let saved = match lease {
+        Some(l) => {
+            store.replace_ai_notes_epoch(meeting, blocks, actions, l.epoch, Some(&l.job_uuid))
+        }
+        None => store.replace_ai_notes(meeting, blocks, actions),
+    }
+    .map_err(|e| match e {
+        ghi_store::StoreError::Fenced => SaveError::Fenced,
+        e => SaveError::Other(store_err(e)),
+    })?;
     // Not worth failing the save over.
     let _ = store.set_notes_model(meeting, Some(model));
     Ok(saved)
@@ -389,7 +426,27 @@ impl JobHandler for NotesJob {
             };
             let model = llm.engine().name;
             drop(llm); // frees the model before anything else loads
-            save_notes_with(ctx.store, meeting, &run.notes, &segs, extra, &model)?;
+            // The last look before the commit: a recording or a lost lease
+            // ends the run here (the lease's own margin included).
+            if ctx.preempted() {
+                return Ok(Outcome::Yield(ctx.job.payload.clone()));
+            }
+            if !ctx.may_commit() {
+                return Ok(ctx.abandon_fenced());
+            }
+            match save_notes_leased(
+                ctx.store,
+                meeting,
+                &run.notes,
+                &segs,
+                extra,
+                &model,
+                ctx.lease().as_ref(),
+            ) {
+                Ok(_) => {}
+                Err(SaveError::Fenced) => return Ok(ctx.abandon_fenced()),
+                Err(SaveError::Other(e)) => return Err(e),
+            }
         }
         if self.version >= 2 {
             ctx.store
