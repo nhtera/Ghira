@@ -584,26 +584,108 @@ pub extern "C" fn ghi_ios_inbox_changed() {
     crate::cmd::events::emit(crate::cmd::MobileEvent::InboxChanged);
 }
 
-/// Swift scanned a pairing code. The text carries a secret, so it is only
-/// checked here and never logged; the pairing flow that consumes it arrives
-/// with the sync session (15-I).
+/// Why a pairing scan ended without a code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QrError {
+    /// Camera access is off: the UI offers "Allow camera in Settings".
+    Denied,
+    /// No usable camera (or nothing to present the scanner from).
+    Unavailable,
+    /// The user closed the scanner.
+    Cancelled,
+}
+
+/// Swift marks an error as this prefix + a code (see `GhiSync.swift`).
+const QR_ERROR_PREFIX: &str = "\u{1}ghi-error:";
+
+/// Decodes what Swift sent to `ghi_ios_qr_scanned`.
+fn parse_qr(text: String) -> Result<String, QrError> {
+    match text.strip_prefix(QR_ERROR_PREFIX) {
+        None => Ok(text),
+        Some("denied") => Err(QrError::Denied),
+        Some("cancelled") => Err(QrError::Cancelled),
+        Some(_) => Err(QrError::Unavailable),
+    }
+}
+
+type QrChannel = (
+    std::sync::mpsc::Sender<Result<String, QrError>>,
+    std::sync::Mutex<std::sync::mpsc::Receiver<Result<String, QrError>>>,
+);
+
+fn qr_channel() -> &'static QrChannel {
+    static CH: std::sync::OnceLock<QrChannel> = std::sync::OnceLock::new();
+    CH.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        (tx, std::sync::Mutex::new(rx))
+    })
+}
+
+/// Waits up to `timeout` for the next scan result (a code or a `QrError`).
+/// The text carries a secret: callers must not log it. One consumer (the sync
+/// service) reads; a result nobody asked for waits in the queue, so
+/// `qr_drain` first when starting a scan.
+#[allow(dead_code)] // consumed by the sync service (15-J)
+pub fn qr_recv(timeout: std::time::Duration) -> Option<Result<String, QrError>> {
+    let rx = qr_channel().1.lock().unwrap_or_else(|p| p.into_inner());
+    rx.recv_timeout(timeout).ok()
+}
+
+/// Drops results left over from an earlier scan.
+#[allow(dead_code)] // consumed by the sync service (15-J)
+pub fn qr_drain() {
+    let rx = qr_channel().1.lock().unwrap_or_else(|p| p.into_inner());
+    while rx.try_recv().is_ok() {}
+}
+
+/// The desktops Swift's Bonjour browse currently sees (LAN addresses only).
+pub fn pushed_discovery() -> &'static ghi_net::lan::PushedDiscovery {
+    static D: std::sync::OnceLock<ghi_net::lan::PushedDiscovery> = std::sync::OnceLock::new();
+    D.get_or_init(ghi_net::lan::PushedDiscovery::new)
+}
+
+/// Every `ip:port` of `[{"addrs":[…]}, …]`; malformed entries are skipped.
+fn parse_browse(json: &str) -> Vec<std::net::SocketAddr> {
+    #[derive(serde::Deserialize)]
+    struct Svc {
+        #[serde(default)]
+        addrs: Vec<String>,
+    }
+    let Ok(list) = serde_json::from_str::<Vec<Svc>>(json) else {
+        return Vec::new();
+    };
+    list.into_iter()
+        .flat_map(|s| s.addrs)
+        .filter_map(|a| a.parse().ok())
+        .collect()
+}
+
+/// Swift scanned a pairing code, or the scan failed (see [`QrError`]). The text
+/// carries a secret, so it is never logged; the sync service reads it with
+/// [`qr_recv`].
 ///
 /// # Safety
 /// `text` is NULL or a NUL-terminated string valid for the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ghi_ios_qr_scanned(text: *const std::ffi::c_char) {
     // SAFETY: the caller guarantees a valid NUL-terminated string (or NULL).
-    let _ = unsafe { c_text(text) };
+    if let Some(text) = unsafe { c_text(text) } {
+        let _ = qr_channel().0.send(parse_qr(text));
+    }
 }
 
-/// Swift's Bonjour browse changed: `json` lists the visible services.
+/// Swift's Bonjour browse changed: `json` lists the visible services as
+/// `[{"addrs":["ip:port",…]}, …]`. Non-LAN addresses are dropped by
+/// `PushedDiscovery`.
 ///
 /// # Safety
 /// `json` is NULL or a NUL-terminated string valid for the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ghi_ios_browse_found(json: *const std::ffi::c_char) {
     // SAFETY: the caller guarantees a valid NUL-terminated string (or NULL).
-    let _ = unsafe { c_text(json) };
+    if let Some(json) = unsafe { c_text(json) } {
+        pushed_discovery().set(parse_browse(&json));
+    }
 }
 
 /// Copies a C string argument; `None` for NULL or invalid UTF-8.
@@ -631,10 +713,39 @@ mod tests {
         unsafe {
             ghi_ios_qr_scanned(std::ptr::null());
             ghi_ios_browse_found(c"[]".as_ptr());
+            ghi_ios_browse_found(c"not json".as_ptr());
             assert_eq!(c_text(c"abc".as_ptr()).as_deref(), Some("abc"));
             assert!(c_text(c"\xff".as_ptr()).is_none());
             assert!(c_text(std::ptr::null()).is_none());
         }
+    }
+
+    #[test]
+    fn qr_results_and_errors_are_told_apart() {
+        assert_eq!(
+            parse_qr("ghira://pair?x".into()),
+            Ok("ghira://pair?x".into())
+        );
+        assert_eq!(
+            parse_qr("\u{1}ghi-error:denied".into()),
+            Err(QrError::Denied)
+        );
+        assert_eq!(
+            parse_qr("\u{1}ghi-error:cancelled".into()),
+            Err(QrError::Cancelled)
+        );
+        assert_eq!(
+            parse_qr("\u{1}ghi-error:other".into()),
+            Err(QrError::Unavailable)
+        );
+    }
+
+    #[test]
+    fn browse_json_keeps_only_parsable_addresses() {
+        let got =
+            parse_browse(r#"[{"addrs":["192.168.1.5:7000","junk"]},{"addrs":["10.0.0.2:1"]},{}]"#);
+        assert_eq!(got.len(), 2);
+        assert!(parse_browse("nope").is_empty());
     }
 
     /// The Swift enum and `ActivityPhase` list the same cases with the same numbers.

@@ -27,10 +27,18 @@
 	<string>0.1.0</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_ghi._tcp</string>
+	</array>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Ghira reads your calendar to name a meeting after the event you are in and to know who is attending. Events stay on this phone; only a meeting you record keeps its title and attendee names.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Ghira uses the camera only to scan the pairing code on your Mac.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Ghira uses Face ID to unlock your meetings when app lock is on.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Ghira finds your Mac on this Wi-Fi to sync your meetings. Nothing leaves your local network.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Ghira records meetings on this phone. Audio stays on the device.</string>
 	<key>NSSupportsLiveActivities</key>

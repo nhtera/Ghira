@@ -46,6 +46,7 @@ enum GhiTestHooks {
             }
         }
         if ProcessInfo.processInfo.environment["GHI_SPIKE"] == "storage" { storageSpike() }
+        GhiSyncHooks.install()
         let prefix = "com.nhtera.ghira.test."
         let nc = NotificationCenter.default
         let actions: [(String, () -> Void)] = [
