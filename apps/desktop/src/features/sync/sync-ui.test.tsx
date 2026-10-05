@@ -19,6 +19,7 @@ type Hooks = {
   syncSimulateWipeDone(): void;
   syncSimulateProgress(n: number): void;
   syncSetDeleteEverywhere(s: string, w?: string[]): void;
+  syncTransferNext(outcome: string): void;
 };
 const mock = () => (window as unknown as { __ghiMock: Hooks }).__ghiMock;
 
@@ -91,7 +92,7 @@ describe("Settings > Sync", () => {
     expect(screen.getByText("Open Ghira on your phone to sync.")).toBeTruthy();
     expect(screen.getByText(/Last seen/)).toBeTruthy();
     expect(screen.getByText("Can’t find your phone?")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Export for another device" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Export for another device" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("asks before applying another device's mass delete", async () => {
@@ -110,6 +111,80 @@ describe("Settings > Sync", () => {
     await user.click(within(dialog).getByRole("button", { name: "Keep them" }));
     await waitFor(() => expect(confirm).toHaveBeenCalledWith(false));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+});
+
+describe("export and import for another device", () => {
+  const exportDialog = async (user: ReturnType<typeof userEvent.setup>) => {
+    mock().syncSet("error");
+    renderSettings(<SyncSection />);
+    await user.click(await screen.findByRole("button", { name: "Export for another device" }));
+    return screen.findByRole("dialog", { name: "Export for another device" });
+  };
+
+  it("asks for a repeated passphrase of at least 8 characters, then exports all meetings", async () => {
+    const user = userEvent.setup();
+    const run = vi.spyOn(ipc.commands, "syncExportForDevice");
+    const dialog = await exportDialog(user);
+    const save = within(dialog).getByRole("button", { name: "Save file…" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    await user.type(within(dialog).getByLabelText("Passphrase"), "short");
+    expect(save.disabled).toBe(true);
+    expect(within(dialog).getByText("Use at least 8 characters.")).toBeTruthy();
+    await user.clear(within(dialog).getByLabelText("Passphrase"));
+    await user.type(within(dialog).getByLabelText("Passphrase"), "correct horse");
+    await user.type(within(dialog).getByLabelText("Repeat the passphrase"), "correct hors");
+    expect(save.disabled).toBe(true);
+    await user.type(within(dialog).getByLabelText("Repeat the passphrase"), "e");
+    expect(save.disabled).toBe(false);
+    await user.click(save);
+    // null: every finished meeting; the file's path never reaches the webview.
+    await waitFor(() => expect(run).toHaveBeenCalledWith(null, "correct horse"));
+    expect(await screen.findByText("Saved Ghira transfer 2026-10-06.ghix with 3 meetings")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("stays open when the save dialog is cancelled", async () => {
+    const user = userEvent.setup();
+    const dialog = await exportDialog(user);
+    mock().syncTransferNext("cancel");
+    await user.type(within(dialog).getByLabelText("Passphrase"), "correct horse");
+    await user.type(within(dialog).getByLabelText("Repeat the passphrase"), "correct horse");
+    await user.click(within(dialog).getByRole("button", { name: "Save file…" }));
+    await waitFor(() => expect((within(dialog).getByRole("button", { name: "Save file…" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.getByRole("dialog", { name: "Export for another device" })).toBeTruthy();
+  });
+
+  it("imports with the passphrase, tells what was left out and refreshes the lists", async () => {
+    const user = userEvent.setup();
+    mock().syncSet("off");
+    renderSettings(<SyncSection />);
+    const run = vi.spyOn(ipc.commands, "syncImportFromDevice");
+    await user.click(await screen.findByRole("button", { name: "Import from another device" }));
+    const dialog = await screen.findByRole("dialog", { name: "Import from another device" });
+    expect(within(dialog).queryByLabelText("Repeat the passphrase")).toBeNull();
+    mock().syncTransferNext("refused");
+    await user.type(within(dialog).getByLabelText("Passphrase"), "correct horse");
+    await user.click(within(dialog).getByRole("button", { name: "Choose file…" }));
+    await waitFor(() => expect(run).toHaveBeenCalledWith("correct horse", "Choose an export file"));
+    expect(await screen.findByText("Imported 3 meetings from Ghira transfer 2026-10-06.ghix")).toBeTruthy();
+    expect(await screen.findByText("1 meeting in the file was deleted here earlier, so it was left out.")).toBeTruthy();
+  });
+
+  it("words a wrong passphrase and a file that isn't an export, and keeps the sheet", async () => {
+    const user = userEvent.setup();
+    mock().syncSet("off");
+    renderSettings(<SyncSection />);
+    await user.click(await screen.findByRole("button", { name: "Import from another device" }));
+    const dialog = await screen.findByRole("dialog", { name: "Import from another device" });
+    await user.type(within(dialog).getByLabelText("Passphrase"), "correct horse");
+    mock().syncTransferNext("wrongPassphrase");
+    await user.click(within(dialog).getByRole("button", { name: "Choose file…" }));
+    expect(await within(dialog).findByText(/doesn’t open this file/)).toBeTruthy();
+    mock().syncTransferNext("notAnExport");
+    await user.click(within(dialog).getByRole("button", { name: "Choose file…" }));
+    expect(await within(dialog).findByText(/isn’t a file made with/)).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Import from another device" })).toBeTruthy();
   });
 });
 

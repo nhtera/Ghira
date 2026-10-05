@@ -188,6 +188,8 @@ fn main() {
             "sync_confirm_mass_delete",
             "sync_delete_everywhere_status",
             "sync_delete_everywhere_skip",
+            "sync_export_for_device",
+            "sync_import_from_device",
         ]),
     ))
     .expect("failed to run tauri-build");

@@ -135,6 +135,8 @@
     "allow-sync-confirm-mass-delete",
     "allow-sync-delete-everywhere-status",
     "allow-sync-delete-everywhere-skip",
+    "allow-sync-export-for-device",
+    "allow-sync-import-from-device",
     "allow-ask-all-meetings",
     "allow-related-meetings",
     "allow-list-people",

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Settings → Sync (phase 15): the on/off switch, "Pair a phone" (QR sheet),
 // paired devices, what syncs, "Local network only", and what to do when the
-// phone can't be found (hotspot / Internet Sharing, then export).
-import { useEffect, useRef, useState } from "react";
+// phone can't be found (hotspot / Internet Sharing, then a sealed file to
+// export here and import on the other device).
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, useToast } from "@ghi/ui";
@@ -11,6 +12,7 @@ import { ipc } from "../../ipc";
 import { DevicesList } from "../sync/devices-list";
 import { errorKey } from "../sync/logic";
 import { PairSheet } from "../sync/pair-sheet";
+import { TransferSheet, type TransferMode } from "../sync/transfer-sheet";
 import { useSyncEvents, useSyncStatus } from "../sync/use-sync";
 import { Card, Note, Row, SwitchRow, useFail } from "./parts";
 
@@ -22,6 +24,12 @@ export function SyncSection() {
   const { data: status, refetch } = useSyncStatus();
   const [pairing, setPairing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [transfer, setTransfer] = useState<TransferMode | null>(null);
+  const transferButton = useRef<HTMLButtonElement | null>(null);
+  const openTransfer = (mode: TransferMode, e: MouseEvent<HTMLButtonElement>) => {
+    transferButton.current = e.currentTarget;
+    setTransfer(mode);
+  };
   const pairButton = useRef<HTMLButtonElement>(null);
 
   // The wipe event arrives after the device left the list: remember the names.
@@ -97,20 +105,36 @@ export function SyncSection() {
           {noDiscovery && (
             <Card title={t("settings.sync.hotspotTitle")} hint={t("settings.sync.hotspotBody")}>
               <div className="flex flex-wrap items-center gap-3">
-                <Button icon="ios_share" disabled aria-describedby="export-instead-hint">
+                <Button icon="ios_share" onClick={(e) => openTransfer("export", e)} aria-describedby="export-instead-hint">
                   {t("settings.sync.exportInstead")}
                 </Button>
                 <span id="export-instead-hint" className="text-small text-muted">
-                  {t("settings.sync.exportInsteadHint")} {t("settings.sync.exportInsteadSoon")}
+                  {t("settings.sync.exportInsteadHint")}
                 </span>
               </div>
             </Card>
           )}
         </>
       )}
+      <Card className="mt-2">
+        <Row label={t("settings.sync.importFromDevice")} hint={t("settings.sync.importFromDeviceHint", { app: APP_NAME })}>
+          <Button icon="upload_file" onClick={(e) => openTransfer("import", e)}>
+            {t("settings.sync.importFromDevice")}
+          </Button>
+        </Row>
+      </Card>
       <div className="mt-5">
         <Note icon="wifi">{t("settings.sync.localOnly")}</Note>
       </div>
+      <TransferSheet
+        mode={transfer}
+        onOpenChange={(o) => {
+          if (o) return;
+          setTransfer(null);
+          // The sheet is unmounted with its dialog: give focus back to the button.
+          requestAnimationFrame(() => transferButton.current?.focus());
+        }}
+      />
       <PairSheet
         open={pairing}
         onOpenChange={(o) => {

@@ -983,7 +983,7 @@
       "hotspotTitle": "Can’t find your phone?",
       "hotspotBody": "Some Wi-Fi networks, like hotels and offices, stop devices from seeing each other. Turn on Personal Hotspot on your iPhone and join it from this Mac, or turn on Internet Sharing on this Mac and join it from your phone. Syncing still stays between the two devices.",
       "exportInstead": "Export for another device",
-      "exportInsteadHint": "Or save a meeting as a file here and open it on your other device.",
+      "exportInsteadHint": "Or save your meetings as a passphrase-protected file here and open it on your other device.",
       "editedOn": "Edited on {{device}}",
       "useThis": "Use this",
       "dismiss": "Dismiss",
@@ -1018,7 +1018,31 @@
       "pairLoading": "Getting a code…",
       "pairDone": "Done",
       "pairedHint": "Syncing starts now. You can unpair any time.",
-      "exportInsteadSoon": "Not available yet.",
+      "importFromDevice": "Import from another device",
+      "importFromDeviceHint": "Open a file made with “Export for another device”. {{app}} merges it into your library. Meetings you deleted here stay deleted.",
+      "transfer": {
+        "exportTitle": "Export for another device",
+        "exportBody": "Saves all your finished meetings, with their audio, in one file protected by a passphrase. Open it on your other device with “Import from another device”.",
+        "importTitle": "Import from another device",
+        "importBody": "Enter the passphrase the file was saved with, then choose the file.",
+        "passphrase": "Passphrase",
+        "passphraseAgain": "Repeat the passphrase",
+        "warning": "You need this passphrase to open the file. It can’t be recovered. Send the file yourself, for example with AirDrop or a USB drive.",
+        "exportAction": "Save file…",
+        "importAction": "Choose file…",
+        "exported_one": "Saved {{name}} with {{count}} meeting",
+        "exported_other": "Saved {{name}} with {{count}} meetings",
+        "imported_one": "Imported {{count}} meeting from {{name}}",
+        "imported_other": "Imported {{count}} meetings from {{name}}",
+        "importedSkipped_one": "{{count}} meeting in the file was deleted here earlier, so it was left out.",
+        "importedSkipped_other": "{{count}} meetings in the file were deleted here earlier, so they were left out.",
+        "chooseTitle": "Choose an export file",
+        "error": {
+          "passphrase_short": "Use at least {{min}} characters.",
+          "wrong_passphrase": "That passphrase doesn’t open this file, or the file is damaged. Nothing was imported.",
+          "not_an_export": "This isn’t a file made with “Export for another device”."
+        }
+      },
       "deleteEverywhereBody": "Devices that can’t be reached right now keep their copies."
     },
     "shortcuts": {

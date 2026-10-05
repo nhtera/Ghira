@@ -25,6 +25,17 @@ async function show(page: Page, v: (typeof VARIANTS)[number], what: "section" | 
 
 const AXE = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
+// The passphrase sheet of "Export for another device": axe in both languages and themes.
+for (const v of VARIANTS)
+  test(`axe: sync export sheet ${v.theme}-${v.language}`, async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "axe runs once, in chromium");
+    await show(page, v, "section");
+    await page.getByRole("button", { name: v.language === "en" ? "Export for another device" : "Xuất cho thiết bị khác" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    const r = await new AxeBuilder({ page }).withTags(AXE).analyze();
+    expect(r.violations.map((x) => `${x.id}: ${x.nodes.map((n) => n.target).join(" ")}`)).toEqual([]);
+  });
+
 for (const v of VARIANTS)
   for (const what of ["section", "sheet"] as const) {
     const name = `${what}-${v.theme}-${v.language}`;

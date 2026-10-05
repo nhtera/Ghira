@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-import-from-device"
+description = "Enables the sync_import_from_device command without any pre-configured scope."
+commands.allow = ["sync_import_from_device"]
+
+[[permission]]
+identifier = "deny-sync-import-from-device"
+description = "Denies the sync_import_from_device command without any pre-configured scope."
+commands.deny = ["sync_import_from_device"]

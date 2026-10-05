@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { errorKey, formatCountdown, qrDataUrl, whenAgo } from "./logic";
+import { errorKey, formatCountdown, qrDataUrl, transferErrorKey, whenAgo } from "./logic";
 
 describe("sync logic", () => {
   it("counts down m:ss, rounding up", () => {
@@ -28,5 +28,12 @@ describe("sync logic", () => {
   it("words an unknown error code as internal", () => {
     expect(errorKey("unreachable")).toBe("unreachable");
     expect(errorKey("weird")).toBe("internal");
+  });
+
+  it("knows the file export errors the core words by code", () => {
+    expect(transferErrorKey("wrong_passphrase")).toBe("wrong_passphrase");
+    expect(transferErrorKey("not_an_export")).toBe("not_an_export");
+    expect(transferErrorKey("passphrase_short")).toBe("passphrase_short");
+    expect(transferErrorKey("store: disk full")).toBeNull();
   });
 });

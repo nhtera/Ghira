@@ -71,6 +71,21 @@ pub async fn save_file(
     Ok(d.save_file().await.map(|f| f.path().to_path_buf()))
 }
 
+/// One existing file with the given extension (an archive to import).
+pub async fn pick_file(
+    app: &AppHandle,
+    title: String,
+    extension: &'static str,
+) -> Result<Option<PathBuf>, String> {
+    let _open = Open::take()?;
+    Ok(dialog(app)
+        .set_title(title)
+        .add_filter(extension.to_uppercase(), &[extension])
+        .pick_file()
+        .await
+        .map(|f| f.path().to_path_buf()))
+}
+
 pub async fn pick_folder(
     app: &AppHandle,
     title: String,

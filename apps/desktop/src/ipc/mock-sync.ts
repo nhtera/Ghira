@@ -10,8 +10,9 @@
 //   needsConfirm   paired, the phone deleted 12 meetings and waits for an answer
 //   error          paired, the last session failed (code "unreachable")
 // Other hooks: syncSimulatePaired, syncSimulateWipeDone, syncSimulateProgress,
-// syncSetDeleteEverywhere.
-import type { ConflictCopy, DeleteEverywhereStatus, DeviceRow, SyncEvent, SyncStatus } from "../bindings";
+// syncSetDeleteEverywhere, syncTransferNext (the next file export or import:
+// "cancel" the dialog, "wrongPassphrase", "notAnExport" or "refused" 1 meeting).
+import type { ConflictCopy, DeleteEverywhereStatus, DeviceRow, DeviceTransfer, SyncEvent, SyncStatus } from "../bindings";
 import type { Commands } from "./ipc";
 
 type Result<T> = { status: "ok"; data: T } | { status: "error"; error: string };
@@ -64,7 +65,11 @@ type SyncCommands = Pick<
   | "syncConfirmMassDelete"
   | "syncDeleteEverywhereStatus"
   | "syncDeleteEverywhereSkip"
+  | "syncExportForDevice"
+  | "syncImportFromDevice"
 >;
+
+export type TransferOutcome = "ok" | "cancel" | "wrongPassphrase" | "notAnExport" | "refused";
 
 export interface SyncMock {
   commands: SyncCommands;
@@ -75,6 +80,7 @@ export interface SyncMock {
     syncSimulateWipeDone(): void;
     syncSimulateProgress(pending: number): void;
     syncSetDeleteEverywhere(state: DeleteEverywhereStatus["state"], waitingFor?: string[]): void;
+    syncTransferNext(outcome: TransferOutcome): void;
   };
 }
 
@@ -87,6 +93,7 @@ export function createSyncMock(): SyncMock {
   let conflicts: ConflictCopy[] = [];
   let lastErrorCode: string | null = null;
   let deleteStatus: DeleteEverywhereStatus = { state: "idle", waitingFor: [] };
+  let transferNext: TransferOutcome = "ok";
 
   const phone = (over: Partial<DeviceRow> = {}): DeviceRow => ({ ...MOCK_PHONE, lastSeenMs: Date.now() - 4 * 60_000, ...over });
 
@@ -111,6 +118,17 @@ export function createSyncMock(): SyncMock {
   });
   const needsOn = <T>(): Promise<Result<T>> | null => (state === "off" ? fail<T>("sync_off") : null);
   const deviceOf = (gid: string) => devices.find((d) => d.gid === gid);
+
+  // The core's file export / import: a short passphrase is refused before any dialog.
+  const transfer = (passphrase: string, name: string): Promise<Result<DeviceTransfer | null>> => {
+    if (passphrase.length < 8) return fail("passphrase_short");
+    const outcome = transferNext;
+    transferNext = "ok";
+    if (outcome === "cancel") return ok(null);
+    if (outcome === "wrongPassphrase") return fail("wrong_passphrase");
+    if (outcome === "notAnExport") return fail("not_an_export");
+    return ok({ fileName: name, meetings: 3, refused: outcome === "refused" ? 1 : 0, tracks: 3 });
+  };
 
   const commands: SyncCommands = {
     syncStatus: () => ok(status()),
@@ -165,6 +183,8 @@ export function createSyncMock(): SyncMock {
       deleteStatus = { state: "done", waitingFor: [] };
       return ok(null);
     },
+    syncExportForDevice: (_meetingGids, passphrase) => transfer(passphrase, "Ghira transfer 2026-10-06.ghix"),
+    syncImportFromDevice: (passphrase) => transfer(passphrase, "Ghira transfer 2026-10-06.ghix"),
   };
 
   return {
@@ -188,6 +208,9 @@ export function createSyncMock(): SyncMock {
       syncSimulateProgress: (pending) => emit({ type: "progress", pending }),
       syncSetDeleteEverywhere: (s, waitingFor = []) => {
         deleteStatus = { state: s, waitingFor };
+      },
+      syncTransferNext: (outcome) => {
+        transferNext = outcome;
       },
     },
   };

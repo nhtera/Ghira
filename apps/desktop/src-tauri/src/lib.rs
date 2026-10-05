@@ -31,6 +31,7 @@ mod recovery_cmd;
 mod settings_cmd;
 mod speakers_cmd;
 mod sync_cmd;
+mod sync_export_cmd;
 mod system;
 mod tray;
 mod update_cmd;
@@ -450,7 +451,9 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             ghi_app::sync_cmd::sync_conflict_resolve,
             ghi_app::sync_cmd::sync_confirm_mass_delete,
             ghi_app::sync_cmd::sync_delete_everywhere_status,
-            ghi_app::sync_cmd::sync_delete_everywhere_skip
+            ghi_app::sync_cmd::sync_delete_everywhere_skip,
+            sync_export_cmd::sync_export_for_device,
+            sync_export_cmd::sync_import_from_device
         ])
         .events(tauri_specta::collect_events![
             core::CoreEvent,

@@ -960,7 +960,7 @@
       "hotspotTitle": "Không thấy điện thoại?",
       "hotspotBody": "Một số mạng Wi-Fi, như ở khách sạn hay văn phòng, không cho các thiết bị thấy nhau. Hãy bật Điểm truy cập cá nhân trên iPhone rồi kết nối Mac vào đó, hoặc bật Chia sẻ Internet trên Mac rồi kết nối điện thoại vào. Dữ liệu đồng bộ vẫn chỉ đi giữa hai thiết bị.",
       "exportInstead": "Xuất cho thiết bị khác",
-      "exportInsteadHint": "Hoặc lưu cuộc họp thành tệp ở đây rồi mở trên thiết bị kia.",
+      "exportInsteadHint": "Hoặc lưu các cuộc họp thành tệp có cụm mật khẩu ở đây rồi mở trên thiết bị kia.",
       "editedOn": "Sửa trên {{device}}",
       "useThis": "Dùng bản này",
       "dismiss": "Bỏ qua",
@@ -994,7 +994,28 @@
       "pairLoading": "Đang tạo mã…",
       "pairDone": "Xong",
       "pairedHint": "Đồng bộ bắt đầu ngay. Bạn có thể huỷ ghép bất cứ lúc nào.",
-      "exportInsteadSoon": "Chưa có.",
+      "importFromDevice": "Nhập từ thiết bị khác",
+      "importFromDeviceHint": "Mở tệp tạo bằng “Xuất cho thiết bị khác”. {{app}} gộp tệp vào thư viện của bạn. Cuộc họp bạn đã xóa ở đây vẫn giữ nguyên là đã xóa.",
+      "transfer": {
+        "exportTitle": "Xuất cho thiết bị khác",
+        "exportBody": "Lưu mọi cuộc họp đã xong, kèm âm thanh, vào một tệp được bảo vệ bằng cụm mật khẩu. Mở tệp trên thiết bị kia bằng “Nhập từ thiết bị khác”.",
+        "importTitle": "Nhập từ thiết bị khác",
+        "importBody": "Nhập cụm mật khẩu đã dùng khi lưu tệp, rồi chọn tệp.",
+        "passphrase": "Cụm mật khẩu",
+        "passphraseAgain": "Nhập lại cụm mật khẩu",
+        "warning": "Bạn cần cụm mật khẩu này để mở tệp. Không thể khôi phục nếu quên. Hãy tự chuyển tệp, ví dụ qua AirDrop hoặc USB.",
+        "exportAction": "Lưu tệp…",
+        "importAction": "Chọn tệp…",
+        "exported_other": "Đã lưu {{name}} với {{count}} cuộc họp",
+        "imported_other": "Đã nhập {{count}} cuộc họp từ {{name}}",
+        "importedSkipped_other": "{{count}} cuộc họp trong tệp đã bị xóa ở đây trước đó nên không được nhập.",
+        "chooseTitle": "Chọn tệp xuất",
+        "error": {
+          "passphrase_short": "Dùng ít nhất {{min}} ký tự.",
+          "wrong_passphrase": "Cụm mật khẩu này không mở được tệp, hoặc tệp bị hỏng. Chưa nhập gì cả.",
+          "not_an_export": "Đây không phải tệp tạo bằng “Xuất cho thiết bị khác”."
+        }
+      },
       "deleteEverywhereBody": "Thiết bị nào chưa kết nối được vẫn giữ bản của nó."
     },
     "shortcuts": {

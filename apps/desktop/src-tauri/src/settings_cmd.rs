@@ -53,7 +53,7 @@ pub async fn export_everything(
 }
 
 /// Today as `YYYY-MM-DD` (UTC).
-fn today() -> String {
+pub(crate) fn today() -> String {
     let days = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() / 86_400)

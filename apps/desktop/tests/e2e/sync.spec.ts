@@ -91,12 +91,43 @@ test("Unpair and wipe says what a wipe cannot do, then waits for the phone", asy
   await expect(page.getByText("iPhone 16 deleted its synced meetings.").first()).toBeVisible();
 });
 
-test("a failed session is worded, pending work asks to open the phone, hotspot guidance and a disabled export show", async ({ page }) => {
+test("a failed session is worded, pending work asks to open the phone, hotspot guidance and an export button show", async ({ page }) => {
   await open(page, "error");
   await expect(page.getByTestId("sync-error")).toContainText("Couldn’t reach the other device");
   await expect(page.getByText("Open Ghira on your phone to sync.")).toBeVisible();
   await expect(page.getByText(/Personal Hotspot/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Export for another device" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Export for another device" })).toBeEnabled();
+});
+
+test("Export for another device asks for a repeated passphrase and says what was saved", async ({ page }) => {
+  await open(page, "error");
+  const opener = page.getByRole("button", { name: "Export for another device" });
+  await opener.click();
+  const dialog = page.getByRole("dialog", { name: "Export for another device" });
+  const save = dialog.getByRole("button", { name: "Save file…" });
+  await expect(save).toBeDisabled();
+  await dialog.getByLabel("Passphrase", { exact: true }).fill("correct horse");
+  await dialog.getByLabel("Repeat the passphrase").fill("correct horse");
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page.getByText("Saved Ghira transfer 2026-10-06.ghix with 3 meetings")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(opener).toBeFocused();
+});
+
+test("Import from another device words a wrong passphrase, then imports and says what was left out", async ({ page }) => {
+  await open(page, "off");
+  await page.getByRole("button", { name: "Import from another device" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import from another device" });
+  await dialog.getByLabel("Passphrase").fill("correct horse");
+  await mock(page, "syncTransferNext", "wrongPassphrase");
+  await dialog.getByRole("button", { name: "Choose file…" }).click();
+  await expect(dialog.getByText(/doesn’t open this file/)).toBeVisible();
+  await mock(page, "syncTransferNext", "refused");
+  await dialog.getByRole("button", { name: "Choose file…" }).click();
+  await expect(page.getByText("Imported 3 meetings from Ghira transfer 2026-10-06.ghix")).toBeVisible();
+  await expect(page.getByText("1 meeting in the file was deleted here earlier, so it was left out.")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("another device's mass delete waits for an answer and Keep them refuses it", async ({ page }) => {

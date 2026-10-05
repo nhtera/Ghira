@@ -577,6 +577,30 @@ export const commands = {
 	 *  keep their copies.
 	 */
 	syncDeleteEverywhereSkip: () => typedError<null, string>(__TAURI_INVOKE("sync_delete_everywhere_skip")),
+	/**
+	 *  Seals the given meetings (every finished one when `meeting_gids` is
+	 *  `None`) with `passphrase` into a file the user picks (a save dialog).
+	 *  `None`: the dialog was cancelled.
+	 */
+	syncExportForDevice: (meetingGids: string[] | null, passphrase: string) => typedError<{
+	fileName: string,
+	meetings: number,
+	/**  Meetings in the file this device had deleted, so it did not take them. */
+	refused: number,
+	tracks: number,
+} | null, string>(__TAURI_INVOKE("sync_export_for_device", { meetingGids, passphrase })),
+	/**
+	 *  Merges a sealed export from another device (an open dialog first) into
+	 *  this library with `passphrase`. `None`: the dialog was cancelled. A wrong
+	 *  passphrase changes nothing.
+	 */
+	syncImportFromDevice: (passphrase: string, title: string) => typedError<{
+	fileName: string,
+	meetings: number,
+	/**  Meetings in the file this device had deleted, so it did not take them. */
+	refused: number,
+	tracks: number,
+} | null, string>(__TAURI_INVOKE("sync_import_from_device", { passphrase, title })),
 };
 
 /** Events */
@@ -912,6 +936,18 @@ export type DeviceState =
  *  so it can delete what it holds from this one (doc 07 §3.5).
  */
 "wipePending";
+
+/**
+ *  What an export wrote or an import took: counts and the file's name (never
+ *  its path: the webview doesn't see paths).
+ */
+export type DeviceTransfer = {
+	fileName: string,
+	meetings: number,
+	/**  Meetings in the file this device had deleted, so it did not take them. */
+	refused: number,
+	tracks: number,
+};
 
 export type DiagnosticsStatus = {
 	crashedLastRun: boolean,

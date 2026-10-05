@@ -34,3 +34,11 @@ export type KnownSyncError = (typeof KNOWN_ERRORS)[number];
 export function errorKey(code: string): KnownSyncError {
   return (KNOWN_ERRORS as readonly string[]).includes(code) ? (code as KnownSyncError) : "internal";
 }
+
+const TRANSFER_ERRORS = ["passphrase_short", "wrong_passphrase", "not_an_export"] as const;
+export type TransferError = (typeof TRANSFER_ERRORS)[number];
+
+/** The core's error code for a file export or import, or null for any other message. */
+export function transferErrorKey(error: string): TransferError | null {
+  return (TRANSFER_ERRORS as readonly string[]).includes(error) ? (error as TransferError) : null;
+}
