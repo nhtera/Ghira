@@ -108,7 +108,7 @@ pub fn copy_dir(from: &Path, to: &Path) {
 use ghi_store::rowcrypt::{open_text, row_aad};
 
 /// Newest schema version with a fixture.
-pub const FIXTURE_VERSIONS: std::ops::RangeInclusive<u32> = 1..=8;
+pub const FIXTURE_VERSIONS: std::ops::RangeInclusive<u32> = 1..=9;
 
 /// Gid `kind`/`i` of the fixtures (valid UUIDs, so `check_gid` accepts them).
 pub fn gid(kind: u8, i: u16) -> String {

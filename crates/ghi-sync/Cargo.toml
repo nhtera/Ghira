@@ -1,0 +1,38 @@
+[package]
+name = "ghi-sync"
+description = "LAN sync between a desktop hub and phone spokes: Noise transport, wire protocol, sessions, leases, audio transfer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ghi-store = { path = "../ghi-store" }
+# Sockets and mDNS are in ghi-net only (RT-6); this crate sees byte streams.
+ghi-net = { path = "../ghi-net" }
+# Pinned: the mid-handshake `set_psk` the responder relies on (spike Q10).
+# Only this crate may depend on it (deny.toml).
+snow = "=0.10.0"
+ciborium = "0.2"
+base45 = "3"
+# SVG output only: no `image`.
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+uuid = { version = "1", features = ["v4", "v5", "v7", "v8"] }
+zeroize = { version = "1", features = ["derive"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+log = "0.4"
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_WindowsProgramming"] }
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"

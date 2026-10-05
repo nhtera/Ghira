@@ -11,7 +11,9 @@
 //!   a cloud request, a setting, and per version: `source_hash` / a discard
 //!   (v3), a waveform (v4), two embeddings (v5), a voice profile (v6), and a
 //!   folder, tags, source app, calendar info, track speakers and an overlap
-//!   mark (v7), and a final-pass checkpoint (v8);
+//!   mark (v7), a final-pass checkpoint (v8), and `ord` on the note and the
+//!   action item (v9; its sync tables are empty and `sync_log` holds what the
+//!   triggers logged);
 //! - `m2`: deleted for good (only its tombstone is left);
 //! - `m3`: crypto-shredded but not yet removed (a delete a crash interrupted;
 //!   its key is zeroed, its rows and FTS tokens are still there).
@@ -23,12 +25,12 @@
 //! schema N has them, sealing text with the real `rowcrypt`. v7's
 //! folder/tag/calendar/track-speaker rows go through the public
 //! `Store` API (which migrates to the latest schema, so only the newest fixture
-//! can be rebuilt that way: v1-v7 are committed as they were). When v9 ships,
-//! add a `seed` step for v9, pin the v7 extras to raw SQL if the API moves on,
+//! can be rebuilt that way: v1-v8 are committed as they were). When v10 ships,
+//! add a `seed` step for v10, pin the v7 extras to raw SQL if the API moves on,
 //! and rebuild just the new one:
 //!
 //! ```sh
-//! GHI_FIXTURE_ONLY=8 cargo test -p ghi-store --test schema_upgrade -- --ignored regenerate_fixtures
+//! GHI_FIXTURE_ONLY=9 cargo test -p ghi-store --test schema_upgrade -- --ignored regenerate_fixtures
 //! ```
 
 mod common;
@@ -54,8 +56,9 @@ const CKPT_STAMP: &str = "fixture-stamp";
 const CKPT_PART: &str = "asr.0.0";
 const CKPT_DATA: &[u8] = r#"[[{"t":"chốt","s":0.0,"e":0.5,"c":0.9,"k":null}]]"#.as_bytes();
 /// The fixtures stay small: they are committed binaries (SQLCipher pages are
-/// 4 KiB and every table and index takes at least one, so v7 is ~275 KiB).
-const MAX_FIXTURE_BYTES: u64 = 300 * 1024;
+/// 4 KiB and every table and index takes at least one, so v7 is ~275 KiB and
+/// v9, with the sync tables and triggers, ~370 KiB).
+const MAX_FIXTURE_BYTES: u64 = 400 * 1024;
 
 fn meeting_dek(n: u8) -> Dek {
     Dek::from_bytes([0x40 + n; 32])
@@ -268,22 +271,20 @@ fn seed(conn: &Connection, v: u32, ring: &KeyRing) {
     // Notes (+ FTS), action item, mark.
     let note_gid = gid(4, 1);
     let note = "Quyết định: chốt ngân sách quý bốn";
-    let note_id = insert(
-        conn,
-        "notes_blocks",
-        &[
-            ("gid", &note_gid),
-            ("meeting_id", &m1_id),
-            ("kind", &"summary"),
-            ("provenance", &"ai"),
-            (
-                "body_ct",
-                &seal_text(&dek1, note, &row_aad("notes_blocks", "body_ct", &note_gid)),
-            ),
-            ("anchors_json", &"[]"),
-            ("lamport", &3i64),
-        ],
-    );
+    let note_ct = seal_text(&dek1, note, &row_aad("notes_blocks", "body_ct", &note_gid));
+    let mut note_cols: Vec<(&str, &dyn ToSql)> = vec![
+        ("gid", &note_gid),
+        ("meeting_id", &m1_id),
+        ("kind", &"summary"),
+        ("provenance", &"ai"),
+        ("body_ct", &note_ct),
+        ("anchors_json", &"[]"),
+        ("lamport", &3i64),
+    ];
+    if v >= 9 {
+        note_cols.push(("ord", &"0001"));
+    }
+    let note_id = insert(conn, "notes_blocks", &note_cols);
     conn.execute(
         "INSERT INTO notes_fts (rowid, body_norm) VALUES (?1, ?2)",
         params![note_id, fold::fold(note)],
@@ -319,6 +320,9 @@ fn seed(conn: &Connection, v: u32, ring: &KeyRing) {
         cols.push(("provenance", &"ai"));
         cols.push(("due_text_ct", &due_ct));
         cols.push(("anchors_json", &anchors));
+    }
+    if v >= 9 {
+        cols.push(("ord", &"0001"));
     }
     insert(conn, "action_items", &cols);
     insert(
@@ -567,7 +571,7 @@ fn build_fixture(v: u32) -> std::path::PathBuf {
 #[test]
 #[ignore = "rewrites tests/fixtures/schema/*.db"]
 fn regenerate_fixtures() {
-    // GHI_FIXTURE_ONLY=8 rewrites just that one (the others are committed).
+    // GHI_FIXTURE_ONLY=9 rewrites just that one (the others are committed).
     let only: Option<u32> = std::env::var("GHI_FIXTURE_ONLY")
         .ok()
         .and_then(|v| v.parse().ok());
@@ -759,6 +763,9 @@ fn upgrade_and_check(v: u32) {
     let ring1 = common::ring(&keys);
     assert_ne!(ring0, ring1, "finishing m3's delete rotated the ring");
     assert!(!ring1.is_rotating());
+    // The Lamport clock follows a remote value, and never goes back.
+    store.observe_lamport(10_000).unwrap();
+    store.observe_lamport(5).unwrap();
     drop(store);
 
     // Raw view: version, shape, integrity.
@@ -823,6 +830,7 @@ fn upgrade_and_check(v: u32) {
         scalar(&conn, "SELECT count(*) FROM meetings WHERE index_gen <> 0"),
         0
     );
+    check_sync_schema(&conn);
     let before = (table_counts(&conn), settings(&conn));
     drop(conn);
 
@@ -952,6 +960,160 @@ fn upgrade_and_check(v: u32) {
     );
 }
 
+/// The syncable tables and the `kind` their log rows use.
+const SYNC_KINDS: [(&str, &str); 12] = [
+    ("folders", "folder"),
+    ("persons", "person"),
+    ("tags", "tag"),
+    ("meetings", "meeting"),
+    ("tracks", "track"),
+    ("speakers", "speaker"),
+    ("segments", "segment"),
+    ("notes_blocks", "note"),
+    ("action_items", "action_item"),
+    ("marks", "mark"),
+    ("meeting_tags", "meeting_tag"),
+    ("voice_profiles", "voice_profile"),
+];
+
+/// Schema 0009 (sync) after an upgrade: new tables are empty, ids are
+/// set, notes are numbered in their old order, every live row and tombstone is
+/// in `sync_log`, and the triggers keep it current.
+fn check_sync_schema(conn: &Connection) {
+    let counts = table_counts(conn);
+    for t in [
+        "devices",
+        "leases",
+        "peer_meetings",
+        "conflict_copies",
+        "synced_settings",
+        "sync_pending",
+    ] {
+        assert_eq!(counts[t], 0, "{t}");
+    }
+    // Feed and device ids: quoted UUIDs, written once (a v9 fixture has them from its build).
+    let uuid_setting = |key: &str| -> String {
+        let json: String = conn
+            .query_row(
+                "SELECT value_json FROM settings WHERE key = ?1",
+                [key],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let id: String = serde_json::from_str(&json).unwrap();
+        assert!(uuid::Uuid::parse_str(&id).is_ok(), "{key}: {id}");
+        id
+    };
+    assert_ne!(
+        uuid_setting("sync.feed_id"),
+        uuid_setting("sync.device_gid")
+    );
+    // Notes and action items keep their order: 0009 numbers them by id.
+    for t in ["notes_blocks", "action_items"] {
+        assert_eq!(
+            scalar(
+                conn,
+                &format!("SELECT count(*) FROM {t} WHERE ord = '0001'")
+            ),
+            1,
+            "{t}"
+        );
+    }
+    // New columns have their defaults.
+    assert_eq!(
+        scalar(
+            conn,
+            "SELECT count(*) FROM meetings WHERE origin IS NOT NULL OR audio_origin IS NOT NULL
+             OR base_lamport IS NOT NULL OR transcript_epoch <> 0 OR ai_epoch <> 0"
+        ),
+        0
+    );
+    assert_eq!(
+        scalar(conn, "SELECT count(*) FROM segments WHERE epoch <> 0"),
+        0
+    );
+    assert_eq!(
+        scalar(
+            conn,
+            "SELECT count(*) FROM tracks WHERE lamport <> 0 OR cut_pages IS NOT NULL"
+        ),
+        0
+    );
+    assert_eq!(
+        scalar(
+            conn,
+            "SELECT count(*) FROM tombstones WHERE cause IS NOT NULL OR origin IS NOT NULL"
+        ),
+        0
+    );
+    // sync_log: every live row and every tombstone has an entry of its kind.
+    for (table, kind) in SYNC_KINDS {
+        assert_eq!(
+            scalar(
+                conn,
+                &format!(
+                    "SELECT count(*) FROM {table} t WHERE NOT EXISTS
+                     (SELECT 1 FROM sync_log l WHERE l.gid = t.gid AND l.kind = '{kind}')"
+                )
+            ),
+            0,
+            "{table} rows missing from sync_log"
+        );
+    }
+    assert_eq!(
+        scalar(
+            conn,
+            "SELECT count(*) FROM tombstones t WHERE NOT EXISTS
+             (SELECT 1 FROM sync_log l WHERE l.gid = t.gid AND l.kind = 'tombstone')"
+        ),
+        0
+    );
+    // The Lamport clock moved up to the remote value (see `observe_lamport`).
+    assert_eq!(
+        scalar(
+            conn,
+            "SELECT CAST(value_json AS INTEGER) FROM settings WHERE key = 'lamport'"
+        ),
+        10_000
+    );
+
+    // Triggers: a write logs again (a new, higher seq), a tombstone replaces
+    // the row's entry. Rolled back, so the caller's snapshot is unchanged.
+    let tx = conn.unchecked_transaction().unwrap();
+    let mark = common::gid(6, 1);
+    let seq = |g: &str| -> (i64, String) {
+        tx.query_row("SELECT seq, kind FROM sync_log WHERE gid = ?1", [g], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap()
+    };
+    let (seq0, kind0) = seq(&mark);
+    assert_eq!(kind0, "mark");
+    tx.execute("UPDATE marks SET t_ms = t_ms + 1 WHERE gid = ?1", [&mark])
+        .unwrap();
+    let (seq1, kind1) = seq(&mark);
+    assert!(seq1 > seq0 && kind1 == "mark");
+    tx.execute(
+        "INSERT INTO tombstones (gid, kind, lamport, deleted_at, cause) VALUES (?1, 'mark', 99, 0, 'user')",
+        [&mark],
+    )
+    .unwrap();
+    let (seq2, kind2) = seq(&mark);
+    assert!(seq2 > seq1 && kind2 == "tombstone");
+    // A later write to the (not yet removed) row doesn't hide the tombstone.
+    tx.execute("UPDATE marks SET t_ms = t_ms + 1 WHERE gid = ?1", [&mark])
+        .unwrap();
+    assert_eq!(seq(&mark), (seq2, "tombstone".to_string()));
+    assert_eq!(
+        scalar(
+            &tx,
+            &format!("SELECT count(*) FROM sync_log WHERE gid = '{mark}'")
+        ),
+        1
+    );
+    tx.rollback().unwrap();
+}
+
 macro_rules! upgrade_tests {
     ($($name:ident: $v:expr,)*) => {$(
         #[test]
@@ -970,4 +1132,5 @@ upgrade_tests! {
     upgrades_from_v6: 6,
     upgrades_from_v7: 7,
     upgrades_from_v8: 8,
+    upgrades_from_v9: 9,
 }

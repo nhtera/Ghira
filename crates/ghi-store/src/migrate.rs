@@ -78,7 +78,117 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 8,
         step: Step::Sql(include_str!("migrations/0008_pass_checkpoints.sql")),
     },
+    Migration {
+        version: 9,
+        step: Step::Func(sync_v9),
+    },
 ];
+
+/// Syncable tables and the `kind` their `sync_log` rows (and tombstones) use,
+/// in feed order: parents before children.
+pub(crate) const SYNC_TABLES: [(&str, &str); 14] = [
+    ("folders", "folder"),
+    ("persons", "person"),
+    ("tags", "tag"),
+    ("meetings", "meeting"),
+    ("tracks", "track"),
+    ("speakers", "speaker"),
+    ("segments", "segment"),
+    ("notes_blocks", "note"),
+    ("action_items", "action_item"),
+    ("marks", "mark"),
+    ("meeting_tags", "meeting_tag"),
+    ("voice_profiles", "voice_profile"),
+    ("conflict_copies", "conflict_copy"),
+    ("synced_settings", "setting"),
+];
+
+/// `kind` of a tombstone's `sync_log` row.
+pub(crate) const TOMBSTONE_LOG_KIND: &str = "tombstone";
+
+const ORD_DIGITS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+/// The `ord` of the `rank`-th (1-based) note or action item of a meeting when
+/// 0009 numbers existing rows: four base-62 digits, which sort as bytes in
+/// rank order (up to 62^4 - 1 rows). It is a fractional index, so a row can
+/// later be put between two others by appending digits.
+pub(crate) fn rank_ord(rank: u32) -> String {
+    let mut n = rank;
+    let mut out = [b'0'; 4];
+    for d in out.iter_mut().rev() {
+        *d = ORD_DIGITS[(n % 62) as usize];
+        n /= 62;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// 0009: LAN sync. Tables and columns (SQL), then in Rust: `ord` in current
+/// `id` order (so the display order doesn't change), `sync.feed_id` and
+/// `sync.device_gid`, one `sync_log` row per live row and tombstone (parents
+/// first), and the triggers that keep `sync_log` current. The triggers come
+/// last so the backfill doesn't fire them.
+fn sync_v9(tx: &Transaction) -> rusqlite::Result<()> {
+    tx.execute_batch(include_str!("migrations/0009_sync.sql"))?;
+    for table in ["notes_blocks", "action_items"] {
+        let rows: Vec<(i64, i64)> = tx
+            .prepare(&format!(
+                "SELECT id, meeting_id FROM {table} ORDER BY meeting_id, id"
+            ))?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut upd = tx.prepare(&format!("UPDATE {table} SET ord = ?1 WHERE id = ?2"))?;
+        let (mut meeting, mut rank) = (None, 0u32);
+        for (id, m) in rows {
+            if meeting != Some(m) {
+                meeting = Some(m);
+                rank = 0;
+            }
+            rank += 1;
+            upd.execute(rusqlite::params![rank_ord(rank), id])?;
+        }
+    }
+    for (key, value) in [("sync.feed_id", new_gid()), ("sync.device_gid", new_gid())] {
+        tx.execute(
+            "INSERT OR IGNORE INTO settings (key, value_json) VALUES (?1, ?2)",
+            rusqlite::params![key, serde_json::Value::String(value).to_string()],
+        )?;
+    }
+    for (table, kind) in SYNC_TABLES {
+        // `meeting_tags` has no rowid; its gids are time-ordered anyway.
+        let order = if table == "meeting_tags" { "gid" } else { "id" };
+        tx.execute_batch(&format!(
+            "INSERT OR IGNORE INTO sync_log (kind, gid) SELECT '{kind}', gid FROM {table} ORDER BY {order};"
+        ))?;
+    }
+    tx.execute_batch(&format!(
+        "INSERT OR REPLACE INTO sync_log (kind, gid)
+         SELECT '{TOMBSTONE_LOG_KIND}', gid FROM tombstones ORDER BY lamport, gid;"
+    ))?;
+    for (table, kind) in SYNC_TABLES {
+        for event in ["INSERT", "UPDATE"] {
+            tx.execute_batch(&format!(
+                "CREATE TRIGGER sync_log_{table}_{} AFTER {event} ON {table}
+                 WHEN NOT EXISTS (SELECT 1 FROM tombstones WHERE gid = NEW.gid)
+                 BEGIN
+                     DELETE FROM sync_log WHERE gid = NEW.gid;
+                     INSERT INTO sync_log (kind, gid) VALUES ('{kind}', NEW.gid);
+                 END;",
+                event.to_lowercase()
+            ))?;
+        }
+    }
+    for event in ["INSERT", "UPDATE"] {
+        tx.execute_batch(&format!(
+            "CREATE TRIGGER sync_log_tombstones_{} AFTER {event} ON tombstones
+             BEGIN
+                 DELETE FROM sync_log WHERE gid = NEW.gid;
+                 INSERT INTO sync_log (kind, gid) VALUES ('{TOMBSTONE_LOG_KIND}', NEW.gid);
+             END;",
+            event.to_lowercase()
+        ))?;
+    }
+    Ok(())
+}
 
 /// Gives every person its `name_key`. Persons are not created by production
 /// code before this version, but if two have the same key the later ones are
@@ -290,4 +400,18 @@ pub fn restore_snapshot(snapshot: &Path, db_path: &Path) -> Result<()> {
     }
     fs::rename(tmp, db_path)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rank_ord;
+
+    #[test]
+    fn rank_ords_sort_as_bytes_in_rank_order() {
+        let ords: Vec<String> = (1..=5000).map(rank_ord).collect();
+        assert!(ords.windows(2).all(|w| w[0] < w[1]));
+        assert_eq!(rank_ord(1), "0001");
+        assert_eq!(rank_ord(62), "0010");
+        assert_eq!(rank_ord(61), "000z");
+    }
 }

@@ -53,10 +53,15 @@ deny = [
   { crate = "attohttpc", wrappers = ["ghi-net"] },
   { crate = "curl", wrappers = ["ghi-net"] },
   { crate = "surf", wrappers = ["ghi-net"] },
-  { crate = "socket2", wrappers = ["ghi-net", "hyper-util", "tokio"] },
+  # mdns-sd (and socket-pktinfo, which it uses) are ghi-net's: LAN sync only.
+  { crate = "socket2", wrappers = ["ghi-net", "hyper-util", "tokio", "mdns-sd", "socket-pktinfo"] },
   { crate = "tungstenite", wrappers = ["ghi-net", "tokio-tungstenite"] },
   { crate = "tokio-tungstenite", wrappers = ["ghi-net"] },
   { crate = "quinn", wrappers = ["ghi-net"] },
+  # Phase 15 LAN sync: mDNS lives in ghi-net only (RT-6); the Noise transport
+  # only in ghi-sync.
+  { crate = "mdns-sd", wrappers = ["ghi-net"] },
+  { crate = "snow", wrappers = ["ghi-sync"] },
   # Tauri plugins that give the webview network or process access.
   { crate = "tauri-plugin-http" },
   { crate = "tauri-plugin-websocket" },

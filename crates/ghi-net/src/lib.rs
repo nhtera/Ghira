@@ -6,12 +6,13 @@
 //! sockets anywhere else (`deny.toml` bans + `tools/scripts/check-net-egress.sh`).
 //! The policy model lives here; [`cloud`] is the HTTPS client for cloud AI,
 //! gated by a per-request [`CloudGrant`] (phase 6). Per-class switches for model
-//! downloads and the update check, and the LAN listener guard (phase 15), build
-//! on it.
+//! downloads and the update check build on it. [`lan`] is the LAN listener,
+//! connector and discovery of sync (phase 15), guarded by [`is_lan`].
 
 mod cloud;
 pub mod fetch;
 mod ip;
+pub mod lan;
 mod secret;
 
 pub use cloud::{
@@ -19,6 +20,7 @@ pub use cloud::{
     send, sha256_hex,
 };
 pub use ip::{is_lan, is_public};
+pub use lan::{lan_connections_opened, listeners_open};
 pub use secret::{Headers, Secret};
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};

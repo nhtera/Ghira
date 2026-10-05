@@ -16,6 +16,8 @@
 //!   contentless index, with highlights on the original text.
 //! - [`keys`]: the master key in the OS keystore; [`recovery`]: the optional
 //!   24-word recovery key; [`export`]: password-encrypted archives.
+//! - [`sync`]: the store side of LAN sync (phase 15): change feed, devices,
+//!   leases, wipe, and the merge engine that applies a peer's records.
 //! - [`store`]: the facade the app uses, including crypto-shred delete,
 //!   tombstones, jobs and retention.
 //!
@@ -40,6 +42,7 @@ pub mod retention;
 pub mod rowcrypt;
 pub mod search;
 pub mod store;
+pub mod sync;
 pub mod tombstones;
 pub mod voice;
 
@@ -93,6 +96,8 @@ pub enum StoreError {
         kind: &'static str,
         max: usize,
     },
+    /// A phase 15 sync entry point whose body has not landed yet.
+    NotYet(&'static str),
 }
 
 impl fmt::Display for StoreError {
@@ -119,6 +124,7 @@ impl fmt::Display for StoreError {
             StoreError::Invalid(what) => write!(f, "invalid input: {what}"),
             StoreError::Limit { kind, max } => write!(f, "limit reached: at most {max} {kind}"),
             StoreError::Duplicate { kind } => write!(f, "a {kind} with that name already exists"),
+            StoreError::NotYet(what) => write!(f, "not implemented yet: {what}"),
             StoreError::IndexStale => f.write_str("the meeting changed while it was indexed"),
         }
     }

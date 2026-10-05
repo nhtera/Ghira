@@ -9,14 +9,17 @@ cd "$(dirname "$0")/../.."
 outside=(':!crates/ghi-net/**' ':!third_party/**' ':!tools/scripts/check-net-egress.sh')
 
 # Network crates as dependencies (any Cargo.toml outside ghi-net).
-deps='^[[:space:]]*"?(reqwest|hyper|hyper-util|ureq|isahc|attohttpc|surf|curl|socket2|tungstenite|tokio-tungstenite|quinn|tauri-plugin-(http|websocket|shell|upload))"?[[:space:]]*='
+deps='^[[:space:]]*"?(reqwest|hyper|hyper-util|ureq|isahc|attohttpc|surf|curl|socket2|tungstenite|tokio-tungstenite|quinn|mdns-sd|if-addrs|tauri-plugin-(http|websocket|shell|upload))"?[[:space:]]*='
 # Rust sockets and processes that reach the network.
 # (`\b` is not portable in git grep's ERE, so word boundaries are spelled out.)
 w='(^|[^A-Za-z0-9_])'
-rust="${w}(TcpListener|TcpStream|UdpSocket)(\$|[^A-Za-z0-9_])|${w}(libc|nix)::(connect|socket|bind)|${w}(reqwest|hyper|ureq|socket2|tungstenite|tokio_tungstenite|quinn)::|Command::new\\(\"(curl|wget)\""
+rust="${w}(TcpListener|TcpStream|UdpSocket)(\$|[^A-Za-z0-9_])|${w}(libc|nix)::(connect|socket|bind)|${w}(reqwest|hyper|ureq|socket2|tungstenite|tokio_tungstenite|quinn|mdns_sd)::|Command::new\\(\"(curl|wget)\""
 
 # Native plugins (phases 4, 7, 17): Swift and Kotlin networking APIs.
 native="${w}(URLSession|NWConnection|NWListener|CFSocket|HttpURLConnection|okhttp3|ServerSocket)|java\\.net\\.(Socket|URL)"
+# Bonjour browsing (phase 15): only the iOS sync file may browse; it reads the
+# addresses from the service's TXT record, so it needs no NWConnection.
+native_sync="${w}(NWBrowser|DNSService(Browse|Resolve|GetAddrInfo))"
 # First-party C/C++ (phase 3 onward): sockets, DNS and HTTP clients.
 cpp="${w}(socket|connect|getaddrinfo|gethostbyname)\\(|httplib::|curl_easy_|WinHttp[A-Z]|InternetOpen"
 
@@ -32,6 +35,7 @@ scan() { # pattern, pathspecs...
 scan "$deps" '*Cargo.toml'
 scan "$rust" '*.rs'
 scan "$native" '*.swift' '*.kt' '*.kts' '*.java' '*.m' '*.mm'
+scan "$native_sync" '*.swift' '*.kt' '*.kts' '*.java' '*.m' '*.mm' ':!native/ios/GhiAudio/GhiSync.swift'
 scan "$cpp" '*.c' '*.cc' '*.cpp' '*.h' '*.hpp' '*.m' '*.mm'
 
 if [[ $status -ne 0 ]]; then
