@@ -92,6 +92,8 @@ mod swift {
         pub fn ghi_swift_share_file(path: *const std::ffi::c_char) -> bool;
         /// Opens this app's page in Settings.
         pub fn ghi_swift_open_settings();
+        /// The main WKWebView stops adding the safe-area insets to the page's layout.
+        pub fn ghi_swift_webview_never_adjust(webview: *mut std::ffi::c_void);
         /// `beginBackgroundTask`; returns a token for `end_bg_task` (0: none granted).
         pub fn ghi_swift_begin_bg_task(name: *const std::ffi::c_char) -> u64;
         pub fn ghi_swift_end_bg_task(token: u64);
@@ -132,6 +134,15 @@ pub fn exclude_from_backup(dir: &std::path::Path) -> Result<(), String> {
     }
     let _ = dir;
     Ok(())
+}
+
+/// Right after the main webview is built: it fills the screen (the page pads
+/// for the safe areas itself). `webview` is Tauri's platform webview pointer
+/// (the `WKWebView`); the call runs on the main thread.
+#[cfg(target_os = "ios")]
+pub fn webview_fill_screen(webview: *mut std::ffi::c_void) {
+    // SAFETY: Swift only takes an unretained reference to the live WKWebView.
+    unsafe { swift::ghi_swift_webview_never_adjust(webview) }
 }
 
 /// Called once at startup.

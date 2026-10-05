@@ -32,14 +32,30 @@ enum WebViewInsets {
         }
     }
 
+    /// `.never`, and a layout so the page measures itself again. Idempotent.
+    static func fill(_ web: WKWebView) {
+        guard web.scrollView.contentInsetAdjustmentBehavior != .never else { return }
+        web.scrollView.contentInsetAdjustmentBehavior = .never
+        web.setNeedsLayout()
+        web.superview?.layoutIfNeeded()
+    }
+
     private static func fix(_ view: UIView) {
-        if let web = view as? WKWebView {
-            if web.scrollView.contentInsetAdjustmentBehavior != .never {
-                web.scrollView.contentInsetAdjustmentBehavior = .never
-                web.setNeedsLayout()
-                web.superview?.layoutIfNeeded()
-            }
-        }
+        if let web = view as? WKWebView { fill(web) }
         for sub in view.subviews { fix(sub) }
+    }
+}
+
+/// Rust hands over Tauri's platform webview right after it is built, so the
+/// first frame already fills the screen. The view walk above stays as the
+/// fallback (a webview created some other way).
+@_cdecl("ghi_swift_webview_never_adjust")
+public func ghiSwiftWebviewNeverAdjust(_ pointer: UnsafeMutableRawPointer?) {
+    guard let pointer else { return }
+    let web = Unmanaged<WKWebView>.fromOpaque(pointer).takeUnretainedValue()
+    if Thread.isMainThread {
+        WebViewInsets.fill(web)
+    } else {
+        DispatchQueue.main.async { WebViewInsets.fill(web) }
     }
 }

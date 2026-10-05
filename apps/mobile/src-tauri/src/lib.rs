@@ -194,10 +194,16 @@ pub fn run() {
             } else {
                 window
             };
-            window
+            let window = window
                 .title("Ghira")
                 .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny)
                 .build()?;
+            // The page lays itself out under the status bar and the home
+            // indicator: the web view must not also inset it (platform.rs).
+            #[cfg(target_os = "ios")]
+            window.with_webview(|webview| platform::webview_fill_screen(webview.inner()))?;
+            #[cfg(not(target_os = "ios"))]
+            let _ = window;
             Ok(())
         })
         .run(tauri::generate_context!())

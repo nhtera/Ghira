@@ -77,6 +77,10 @@ pub unsafe extern "C" fn ghi_swift_share_file(_path: *const c_char) -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn ghi_swift_open_settings() {}
 /// # Safety
+/// Never dereferences `webview`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ghi_swift_webview_never_adjust(_webview: *mut std::ffi::c_void) {}
+/// # Safety
 /// Never dereferences `name`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ghi_swift_begin_bg_task(_name: *const c_char) -> u64 {
@@ -123,6 +127,7 @@ pub fn keep() -> usize {
         ghi_swift_text_scale as *const () as usize,
         ghi_swift_share_file as *const () as usize,
         ghi_swift_open_settings as *const () as usize,
+        ghi_swift_webview_never_adjust as *const () as usize,
         ghi_swift_begin_bg_task as *const () as usize,
         ghi_swift_end_bg_task as *const () as usize,
         ghi_swift_set_privacy_cover as *const () as usize,

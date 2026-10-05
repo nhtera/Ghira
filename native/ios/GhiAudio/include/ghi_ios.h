@@ -64,6 +64,9 @@ float ghi_swift_text_scale(void);
 bool ghi_swift_share_file(const char *path);
 // Opens this app's page in the Settings app.
 void ghi_swift_open_settings(void);
+// The main WKWebView (Tauri's platform webview pointer) fills the screen: its scroll
+// view stops adding the safe-area insets to the page's layout viewport. Main thread.
+void ghi_swift_webview_never_adjust(void *webview);
 // beginBackgroundTask; returns a token for ghi_swift_end_bg_task (0: none granted).
 uint64_t ghi_swift_begin_bg_task(const char *name);
 void ghi_swift_end_bg_task(uint64_t token);
