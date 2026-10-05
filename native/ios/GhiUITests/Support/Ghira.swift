@@ -14,6 +14,9 @@ enum Ghira {
     /// GHI_REAL_ENGINES=1 on the host to run against the models in the app.
     static func app(env: [String: String] = [:], args: [String] = []) -> XCUIApplication {
         let app = XCUIApplication(bundleIdentifier: bundleId)
+        // The phone's data was sealed with the Keychain key store (release app): a debug test-hooks build
+        // would otherwise look for its file key and report "the key for this store is missing".
+        if onDevice { app.launchEnvironment["GHI_KEYSTORE"] = "keychain" }
         if (ProcessInfo.processInfo.environment["GHI_REAL_ENGINES"] ?? "").isEmpty {
             app.launchEnvironment["GHI_FAKE_ENGINES"] = "1"
             app.launchEnvironment["GHI_DEVICE_TIER"] = "live"
