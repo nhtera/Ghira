@@ -2565,7 +2565,8 @@ impl Store {
         let store = Store::open(dest, keystore, protection)?;
         // The restored database carries its source's feed id, and peers hold
         // cursors into that feed: a new id makes them start over (doc 07 §7.2).
-        store.reset_feed_id()?;
+        // A restore is also a new device (doc 07 §3.1): a new device gid too.
+        store.reset_sync_identity()?;
         Ok(store)
     }
 
