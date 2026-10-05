@@ -1165,6 +1165,17 @@ export type ImportUpdate = {
 	error: string | null,
 };
 
+/**
+ *  A final pass is open on the paired computer for a meeting (the phone reads,
+ *  the computer writes).
+ */
+export type LeaseOpen = {
+	/**  The computer's name. */
+	device: string,
+	/**  0..=100. */
+	percent: number,
+};
+
 /**  A final transcript line. */
 export type LineInfo = {
 	/**  Store segment gid (empty until persisted). */
@@ -1251,6 +1262,16 @@ export type MeetingDetail = {
 	 *  `voice_memos`.
 	 */
 	sourceApp: string | null,
+	/**
+	 *  The audio lives on the paired computer: it recorded the meeting and
+	 *  none is kept here.
+	 */
+	audioOnPeer?: boolean,
+	/**
+	 *  A final pass is open on the paired computer: the transcript is read-only
+	 *  here until it comes back (phone only).
+	 */
+	leaseOpen?: LeaseOpen | null,
 };
 
 /**  A meeting app started using the microphone. */

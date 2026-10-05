@@ -830,8 +830,13 @@ impl Core {
         if lock(&self.session).is_some() {
             return Err("stop the recording first".into());
         }
-        prepare()?;
+        if let Err(e) = prepare() {
+            // `prepare` may have queued wipes before it failed.
+            self.undo_prepare();
+            return Err(e);
+        }
         if self.deleting.swap(true, Ordering::AcqRel) {
+            self.undo_prepare();
             return Err("all data is already being deleted".into());
         }
         // From here `store()` refuses: nothing reopens the database.
@@ -840,12 +845,22 @@ impl Core {
             // Nothing was deleted: the next `store()` opens it again, with
             // its job runner, once the last user has let go.
             *lock(&self.settings) = None;
-            if let Some(s) = self.sync_service() {
-                s.resume();
-            }
         }
         self.deleting.store(false, Ordering::Release);
+        if r.is_err() {
+            self.undo_prepare();
+        }
         r
+    }
+
+    /// The delete did not happen: the devices `prepare` queued for a wipe go
+    /// back to paired (nothing was removed, so nothing is to be wiped) and sync
+    /// carries on. Runs once `store()` works again.
+    fn undo_prepare(&self) {
+        if let Some(s) = self.sync_service() {
+            s.rollback_wipes();
+            s.resume();
+        }
     }
 
     fn delete_locked(&self) -> Result<(), String> {

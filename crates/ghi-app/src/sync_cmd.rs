@@ -2,8 +2,8 @@
 //! LAN sync between the desktop and a phone (phase 15, doc 07): the commands
 //! and DTOs both apps' UI use. The commands run on the app's
 //! [`SyncService`] (managed state, see `sync_service.rs`); an app without one
-//! (the phone, until its wiring lands) gets an honest empty state (sync off,
-//! nobody paired) or the typed error [`NOT_AVAILABLE`].
+//! gets an honest empty state (sync off, nobody paired) or the typed error
+//! [`NOT_AVAILABLE`].
 //!
 //! The desktop registers the hub side (`sync_pair_open`/`sync_pair_close`);
 //! the phone registers the spoke side (`sync_pair_scan_*`, `sync_lease_revoke`).
@@ -114,6 +114,17 @@ pub struct ConflictCopy {
     pub text: String,
 }
 
+/// A final pass is open on the paired computer for a meeting (the phone reads,
+/// the computer writes).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LeaseOpen {
+    /// The computer's name.
+    pub device: String,
+    /// 0..=100.
+    pub percent: u8,
+}
+
 /// Where "Delete everywhere" stands (doc 07 §7.9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -187,9 +198,8 @@ pub enum SyncEvent {
     },
 }
 
-/// The service behind the commands, when the app runs one (the desktop does;
-/// the phone's wiring is 15-J2, until then its commands answer the empty
-/// state or [`NOT_AVAILABLE`]).
+/// The service behind the commands, when the app runs one (both apps do; an
+/// app without one answers the empty state or [`NOT_AVAILABLE`]).
 fn service(app: &tauri::AppHandle) -> Option<Arc<SyncService>> {
     use tauri::Manager;
     app.try_state::<Arc<SyncService>>()
@@ -351,17 +361,23 @@ pub async fn sync_delete_everywhere_skip(app: tauri::AppHandle) -> Result<(), St
     }
 }
 
-/// Phone: starts the camera to scan the desktop's code (the scan arrives as
-/// `ghi_ios_qr_scanned`, never through the webview).
+/// Phone: shows the camera scanner and pairs with the computer whose code it
+/// reads (the code never reaches the webview). Resolves when paired (the
+/// `paired` event is emitted too) or when the scan was closed; the error is
+/// `invalid`, `expired`, `cameraOff`, `localNetwork` or `upgradeRequired`. A
+/// computer that cannot be reached arrives as an `error` event.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_pair_scan_start() -> Result<(), String> {
-    Err(NOT_AVAILABLE.into())
+pub async fn sync_pair_scan_start(app: tauri::AppHandle) -> Result<(), String> {
+    with_service(&app, |s| s.pair_scan(), || Err(NOT_AVAILABLE.into())).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_pair_scan_stop() -> Result<(), String> {
+pub async fn sync_pair_scan_stop(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(s) = service(&app) {
+        s.pair_scan_stop();
+    }
     Ok(())
 }
 
@@ -369,9 +385,13 @@ pub async fn sync_pair_scan_stop() -> Result<(), String> {
 /// ("Process on this phone now").
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_lease_revoke(meeting: String) -> Result<(), String> {
-    let _ = meeting;
-    Err(NOT_AVAILABLE.into())
+pub async fn sync_lease_revoke(app: tauri::AppHandle, meeting: String) -> Result<(), String> {
+    with_service(
+        &app,
+        move |s| s.lease_revoke(&meeting),
+        || Err(NOT_AVAILABLE.into()),
+    )
+    .await
 }
 
 #[cfg(test)]

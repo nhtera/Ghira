@@ -15,9 +15,11 @@
 //! (`Listener::rebind`). The store is the app's own ([`Core::store_even_locked`]):
 //! nothing here opens a second one.
 //!
-//! **Roles.** The desktop is the [`Role::Hub`]. A phone's spoke loop is wired
-//! by the mobile app (15-J2) on the same service: [`Role::Spoke`] never
-//! listens, and the commands that don't need a listener work for both.
+//! **Roles.** The desktop is the [`Role::Hub`]. The phone runs the same
+//! service as the [`Role::Spoke`] (`sync_spoke.rs`): it never listens, scans
+//! the hub's code, keeps one session to the hub while the app is in the
+//! foreground and hands it final passes under leases. The commands that
+//! don't need a listener work for both.
 //!
 //! **One path for "Delete everything".** [`SyncService::delete_everywhere_prepare`]
 //! queues `Wipe` for every paired device and waits (bounded, and only for
@@ -55,10 +57,11 @@ use ghi_sync::identity::Identity;
 use ghi_sync::service::{HubNode, Served};
 use ghi_sync::session::SessionReport;
 use ghi_sync::transport::ByteStream;
-use ghi_sync::wire::TrackOffer;
+use ghi_sync::wire::{self, TrackOffer};
 use ghi_sync::{SyncError, qr};
 use zeroize::Zeroizing;
 
+pub use self::spoke::{ScanError, SpokeLink};
 use crate::core::Core;
 use crate::sync_cmd::{
     ConflictCopy, ConflictTarget, DeleteEverywhereState, DeleteEverywhereStatus, DevicePlatform,
@@ -134,7 +137,17 @@ pub struct SyncConfig {
     pub advertise: bool,
     /// A device seen within this long is waited for by "Delete everything".
     pub reachable_within: Duration,
+    /// Spoke: the platform (camera, Bonjour, background time, the tier).
+    pub link: Option<Arc<dyn SpokeLink>>,
+    /// Spoke: what this device calls itself in a pairing (`ios`).
+    pub platform: String,
+    /// Spoke: hours without the desktop before this phone takes a final pass
+    /// back (the setting "desktop offline for N hours").
+    pub offline_hours: Arc<dyn Fn() -> u32 + Send + Sync>,
 }
+
+/// How long a desktop may stay away before a phone processes for itself.
+pub const DEFAULT_OFFLINE_HOURS: u32 = 12;
 
 impl SyncConfig {
     pub fn hub(
@@ -150,6 +163,31 @@ impl SyncConfig {
             addrs: Arc::new(lan::lan_addrs),
             advertise: cfg!(feature = "mdns"),
             reachable_within: REACHABLE_WITHIN,
+            link: None,
+            platform: String::new(),
+            offline_hours: Arc::new(|| DEFAULT_OFFLINE_HOURS),
+        }
+    }
+
+    /// The phone: connects out to its hub through `link`.
+    pub fn spoke(
+        device_name: impl Into<String>,
+        platform: impl Into<String>,
+        link: Arc<dyn SpokeLink>,
+        emit: impl Fn(SyncEvent) + Send + Sync + 'static,
+        settings_changed: impl Fn() + Send + Sync + 'static,
+    ) -> Self {
+        SyncConfig {
+            role: Role::Spoke,
+            device_name: device_name.into(),
+            emit: Arc::new(emit),
+            settings_changed: Arc::new(settings_changed),
+            addrs: Arc::new(Vec::new),
+            advertise: false,
+            reachable_within: REACHABLE_WITHIN,
+            link: Some(link),
+            platform: platform.into(),
+            offline_hours: Arc::new(|| DEFAULT_OFFLINE_HOURS),
         }
     }
 }
@@ -203,12 +241,19 @@ pub struct SyncService {
     tick: Mutex<Option<JoinHandle<()>>>,
     /// "Delete here only": the wipe's wait ends.
     skip_wipe: AtomicBool,
+    /// Devices "Delete everything" moved to `wipe_pending` (and were not
+    /// before): they go back to paired if the delete does not happen.
+    queued_wipes: Mutex<Vec<String>>,
+    /// The phone's side (idle on the desktop).
+    spoke: spoke::Shared,
 }
 
 /// What the store wrapper saw applied.
 enum Seen {
     Conflict(String),
     Settings,
+    /// A phone offered a lease: its job may start now.
+    Lease,
 }
 
 /// The store a hub node serves: the app's own, watched so a merge that made a
@@ -251,7 +296,6 @@ impl SyncStore for Watched {
         fn mark_key_sent(&self, device_gid: &str, meeting_gid: &str) -> StoreResult<()>;
         fn accept_dek(&self, meeting_gid: &str, dek: &[u8; 32], from_device: &str) -> StoreResult<()>;
         fn peer_meetings(&self, device_gid: &str) -> StoreResult<Vec<String>>;
-        fn lease_open(&self, lease: &Lease) -> StoreResult<Lease>;
         fn lease_renew(&self, job_uuid: &str, ttl_ms: i64, deadline_cont_ns: i64, boot_id: &str) -> StoreResult<()>;
         fn lease_state(&self, job_uuid: &str) -> StoreResult<Option<Lease>>;
         fn lease_fence_ok(&self, job_uuid: &str, now_cont_ns: i64, boot_id: &str, margin_ms: i64) -> StoreResult<bool>;
@@ -271,6 +315,14 @@ impl SyncStore for Watched {
         fn sync_dirty(&self, kind: &str, gid: &str) -> StoreResult<bool>;
         fn track_offer(&self, from_device: &str, offer: &TrackOffer) -> StoreResult<OfferResult>;
         fn track_push(&self, from_device: &str, track_gid: &str, prefix: &[u8], first: u64, records: &[Vec<u8>]) -> StoreResult<u64>;
+    }
+
+    fn lease_open(&self, lease: &Lease) -> StoreResult<Lease> {
+        let opened = SyncStore::lease_open(self.store.as_ref(), lease)?;
+        if lease.role == LeaseRole::Holder {
+            (self.seen)(Seen::Lease);
+        }
+        Ok(opened)
     }
 
     fn apply_rows(&self, from_device: &str, rows: &[Record]) -> StoreResult<ApplyResult> {
@@ -512,6 +564,8 @@ impl SyncService {
             shutdown: AtomicBool::new(false),
             tick: Mutex::new(None),
             skip_wipe: AtomicBool::new(false),
+            queued_wipes: Mutex::new(Vec::new()),
+            spoke: spoke::Shared::default(),
         });
         core.attach_sync(&svc);
         svc
@@ -530,6 +584,10 @@ impl SyncService {
             .spawn(move || tick_loop(weak))
             .map_err(|e| log::warn!("sync thread did not start: {e}"))
             .ok();
+        drop(tick);
+        if self.cfg.role == Role::Spoke {
+            self.spoke_start();
+        }
     }
 
     /// Stops listening and ends the sessions (the app is quitting).
@@ -541,6 +599,7 @@ impl SyncService {
         {
             let _ = t.join();
         }
+        self.spoke_stop();
         let _one = lock(&self.lifecycle);
         self.stop_running();
     }
@@ -551,6 +610,8 @@ impl SyncService {
         let _one = lock(&self.lifecycle);
         lock(&self.state).closed = true;
         self.stop_running();
+        self.spoke_wake_up();
+        self.spoke_wait_idle();
     }
 
     /// The deletion failed before anything was removed: sync carries on.
@@ -563,6 +624,7 @@ impl SyncService {
     pub fn poke(&self) {
         *lock(&self.wake.0) = true;
         self.wake.1.notify_all();
+        self.spoke_wake_up();
     }
 
     fn emit(&self, e: SyncEvent) {
@@ -984,6 +1046,7 @@ impl SyncService {
                 continue;
             }
             if state == StoreDeviceState::WipePending {
+                self.wipe_finished();
                 self.emit(SyncEvent::WipeDone { gid });
             } else if closed_by == Some(ControlOutcome::Wiped) {
                 self.emit(SyncEvent::Unpaired {
@@ -991,6 +1054,7 @@ impl SyncService {
                     name,
                     by_peer: true,
                 });
+                self.wipe_finished();
                 self.emit(SyncEvent::WipeDone { gid });
             } else {
                 self.emit(SyncEvent::Unpaired {
@@ -999,6 +1063,17 @@ impl SyncService {
                     by_peer: true,
                 });
             }
+        }
+    }
+
+    /// The phone's "Unpair and delete on <computer>" is over.
+    fn wipe_finished(&self) {
+        let mut st = lock(&self.state);
+        if self.cfg.role == Role::Spoke && st.delete.state == Some(DeleteEverywhereState::Waiting) {
+            st.delete = DeleteState {
+                state: Some(DeleteEverywhereState::Done),
+                waiting_for: Vec::new(),
+            };
         }
     }
 
@@ -1020,6 +1095,7 @@ impl SyncService {
                 *lock(self.core.settings_cache()) = None;
                 (self.cfg.settings_changed)();
             }
+            Seen::Lease => self.start_lease_jobs(),
         }
     }
 
@@ -1085,10 +1161,10 @@ impl SyncService {
                     > i64::try_from(self.cfg.reachable_within.as_millis()).unwrap_or(i64::MAX)
             })
         };
-        let pending_on_phone = if enabled && devices.iter().any(stale) {
-            pending_changes(&store)
-        } else {
-            0
+        let pending_on_phone = match self.cfg.role {
+            Role::Hub if enabled && devices.iter().any(stale) => pending_changes(&store),
+            Role::Spoke if enabled && !devices.is_empty() => pending_changes(&store),
+            _ => 0,
         };
         Ok(SyncStatus {
             enabled,
@@ -1182,6 +1258,10 @@ impl SyncService {
     pub fn unpair(self: &Arc<Self>, gid: &str) -> Result<(), String> {
         let store = self.store()?;
         let d = Self::device_of(&store, gid)?;
+        if self.cfg.role == Role::Spoke {
+            // The computer forgets this phone too, when it can be reached.
+            self.spoke_tell_hub(&store, wire::Control::Unpair);
+        }
         store.unpin_device(gid).map_err(|e| e.to_string())?;
         if let Some(k) = lock(&self.state).known.as_mut() {
             k.remove(gid);
@@ -1206,6 +1286,15 @@ impl SyncService {
         {
             e.1 = StoreDeviceState::WipePending;
         }
+        if self.cfg.role == Role::Spoke {
+            // The phone's session delivers it; the status shows the wait.
+            let name = Self::device_of(&store, gid)?.name;
+            lock(&self.state).delete = DeleteState {
+                state: Some(DeleteEverywhereState::Waiting),
+                waiting_for: vec![name],
+            };
+            self.spoke_wake_up();
+        }
         self.reconcile();
         Ok(())
     }
@@ -1219,6 +1308,9 @@ impl SyncService {
         }
         self.reconcile();
         self.start_lease_jobs();
+        if self.cfg.role == Role::Spoke {
+            self.spoke_run_now();
+        }
         self.emit(SyncEvent::Progress {
             pending: pending_changes(&store),
         });
@@ -1313,6 +1405,7 @@ impl SyncService {
     /// deletes the data, which also destroys the identity.
     pub fn delete_everywhere_prepare(self: &Arc<Self>, everywhere: bool) -> Result<(), String> {
         self.skip_wipe.store(false, Ordering::Release);
+        lock(&self.queued_wipes).clear();
         lock(&self.state).delete = DeleteState::default();
         let result = self.wait_for_wipes(everywhere);
         // A failed wait leaves the status where the UI can see it end.
@@ -1326,8 +1419,30 @@ impl SyncService {
         result
     }
 
+    /// The local delete failed after [`SyncService::delete_everywhere_prepare`]
+    /// queued wipes: those devices are paired again (nothing was removed).
+    /// Devices that took their wipe meanwhile are gone and stay gone.
+    pub fn rollback_wipes(&self) {
+        let queued = std::mem::take(&mut *lock(&self.queued_wipes));
+        if queued.is_empty() {
+            return;
+        }
+        let Ok(store) = self.core.store_even_locked() else {
+            log::warn!("devices stay queued for a wipe: the store is not open");
+            return;
+        };
+        for gid in &queued {
+            if let Err(e) = store.clear_wipe_pending(gid) {
+                log::warn!("a device stays queued for a wipe: {e}");
+            }
+        }
+        let mut st = lock(&self.state);
+        st.known = None;
+        st.delete = DeleteState::default();
+    }
+
     fn wait_for_wipes(self: &Arc<Self>, everywhere: bool) -> Result<(), String> {
-        if !everywhere || self.cfg.role != Role::Hub {
+        if !everywhere {
             return Ok(());
         }
         let store = self.store()?;
@@ -1342,10 +1457,16 @@ impl SyncService {
             .map(|d| d.gid.clone())
             .collect();
         for d in &devices {
+            let was = d.state == StoreDeviceState::WipePending;
             store.set_wipe_pending(&d.gid).map_err(|e| e.to_string())?;
+            if !was {
+                lock(&self.queued_wipes).push(d.gid.clone());
+            }
         }
-        // The devices that can still take it, with the listener up.
+        // The devices that can still take it, with the listener up (hub) or
+        // the session loop awake (phone).
         self.reconcile();
+        self.spoke_wake_up();
         let until = Instant::now() + WIPE_WAIT;
         loop {
             let present = store.devices().map_err(|e| e.to_string())?;
@@ -1354,7 +1475,7 @@ impl SyncService {
                 .filter(|d| near.contains(&d.gid))
                 .map(|d| d.name.clone())
                 .collect();
-            let listening = lock(&self.state).running.is_some();
+            let listening = self.cfg.role == Role::Spoke || lock(&self.state).running.is_some();
             let over = left.is_empty()
                 || !listening
                 || self.skip_wipe.load(Ordering::Acquire)
@@ -1452,6 +1573,13 @@ fn pending_changes(store: &Store) -> u32 {
     u32::try_from(tombs + rows).unwrap_or(u32::MAX)
 }
 
+#[path = "sync_spoke.rs"]
+pub mod spoke;
+
 #[cfg(test)]
 #[path = "sync_service_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "sync_spoke_tests.rs"]
+mod spoke_tests;

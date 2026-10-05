@@ -86,6 +86,14 @@ pub struct MeetingDetail {
     /// Where an imported file came from: `zoom`, `teams`, `meet`, `plaud`,
     /// `voice_memos`.
     pub source_app: Option<String>,
+    /// The audio lives on the paired computer: it recorded the meeting and
+    /// none is kept here.
+    #[specta(optional)]
+    pub audio_on_peer: bool,
+    /// A final pass is open on the paired computer: the transcript is read-only
+    /// here until it comes back (phone only).
+    #[specta(optional)]
+    pub lease_open: Option<crate::sync_cmd::LeaseOpen>,
 }
 
 /// A citation resolved against the current transcript.
@@ -321,8 +329,22 @@ pub async fn meeting_detail(core: CoreState<'_>, meeting: String) -> Result<Meet
         let segs = store.segments(&meeting).map_err(err)?;
         let speakers = speakers_with(&store, &meeting, &segs)?;
         let job = active_jobs(c, &store)?.remove(&meeting);
+        let audio_available = store.audio_available(&meeting).map_err(err)?;
+        // Recorded on a paired device and no audio here: it lives there. (A
+        // meeting this device recorded and whose audio retention removed is
+        // not "on the computer".)
+        let audio_on_peer =
+            !audio_available && store.meeting_audio_origin(&meeting).map_err(err)?.is_some();
+        let lease_open = crate::sync_service::spoke::meeting_sync_view(&store, &meeting)
+            .lease_open()
+            .map(|(device, percent)| crate::sync_cmd::LeaseOpen {
+                device: device.to_string(),
+                percent,
+            });
         Ok(MeetingDetail {
-            audio_available: store.audio_available(&meeting).map_err(err)?,
+            audio_available,
+            audio_on_peer,
+            lease_open,
             notes_model: store.notes_model(&meeting).map_err(err)?,
             source_app: m.source_app,
             speakers,

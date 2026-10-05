@@ -61,7 +61,7 @@ impl Llm for OneLiner {
     }
 }
 
-fn script() -> Script {
+pub(super) fn script() -> Script {
     Script {
         utterances: vec![(1.0, 2.0, "xin chào mọi người".into())],
         turns: vec![SpeakerSegment {
@@ -72,7 +72,7 @@ fn script() -> Script {
     }
 }
 
-fn handlers(_: &Arc<Store>, _: &std::path::Path) -> Vec<Arc<dyn JobHandler>> {
+pub(super) fn handlers(_: &Arc<Store>, _: &std::path::Path) -> Vec<Arc<dyn JobHandler>> {
     let engines: Arc<dyn SpeechEngines> = FakeEngines::new(script());
     let llm: ghi_core::notes_job::LlmFactory =
         Arc::new(|_| Ok(Box::new(OneLiner) as Box<dyn Llm + Send>));
@@ -93,34 +93,45 @@ fn handlers(_: &Arc<Store>, _: &std::path::Path) -> Vec<Arc<dyn JobHandler>> {
     ]
 }
 
-struct Hub {
-    core: Arc<Core>,
-    svc: Arc<SyncService>,
-    events: Arc<Mutex<Vec<SyncEvent>>>,
-    settings_calls: Arc<AtomicUsize>,
+pub(super) struct Hub {
+    pub(super) core: Arc<Core>,
+    pub(super) svc: Arc<SyncService>,
+    pub(super) events: Arc<Mutex<Vec<SyncEvent>>>,
+    pub(super) settings_calls: Arc<AtomicUsize>,
     _tmp: tempfile::TempDir,
 }
 
 impl Hub {
-    fn store(&self) -> Arc<Store> {
+    pub(super) fn store(&self) -> Arc<Store> {
         self.core.store().unwrap()
     }
 
-    fn events(&self) -> Vec<SyncEvent> {
+    pub(super) fn events(&self) -> Vec<SyncEvent> {
         lock(&self.events).clone()
     }
 
-    fn gid(&self) -> String {
+    pub(super) fn gid(&self) -> String {
         self.store().sync_device_gid().unwrap()
     }
 }
 
-fn hub_with(addrs: Vec<IpAddr>, reachable_within: Duration) -> Hub {
+pub(super) fn hub_with(addrs: Vec<IpAddr>, reachable_within: Duration) -> Hub {
+    hub_with_handlers(addrs, reachable_within, Arc::new(handlers))
+}
+
+pub(super) type Handlers =
+    Arc<dyn Fn(&Arc<Store>, &std::path::Path) -> Vec<Arc<dyn JobHandler>> + Send + Sync>;
+
+pub(super) fn hub_with_handlers(
+    addrs: Vec<IpAddr>,
+    reachable_within: Duration,
+    handlers: Handlers,
+) -> Hub {
     let tmp = tempfile::tempdir().unwrap();
     let (core, _rx) = Core::for_test_with(
         tmp.path().join("data"),
         CoreHooks {
-            handlers: Some(Arc::new(handlers)),
+            handlers: Some(handlers),
             recover_kinds: Some(Vec::new()),
             ..Default::default()
         },
@@ -148,7 +159,7 @@ fn hub_with(addrs: Vec<IpAddr>, reachable_within: Duration) -> Hub {
     }
 }
 
-fn hub() -> Hub {
+pub(super) fn hub() -> Hub {
     hub_with(Vec::new(), REACHABLE_WITHIN)
 }
 
@@ -242,7 +253,7 @@ fn sync_raw(
     (mine, server.join().unwrap())
 }
 
-fn wait_for(what: &str, secs: u64, mut ok: impl FnMut() -> bool) {
+pub(super) fn wait_for(what: &str, secs: u64, mut ok: impl FnMut() -> bool) {
     let until = Instant::now() + Duration::from_secs(secs);
     while !ok() {
         assert!(Instant::now() < until, "timed out waiting for {what}");
@@ -252,6 +263,11 @@ fn wait_for(what: &str, secs: u64, mut ok: impl FnMut() -> bool) {
 
 /// A recorded meeting on the phone: live lines and one audio track.
 fn record_on_spoke(spoke: &Spoke) -> String {
+    record_meeting(&spoke.store)
+}
+
+/// A recorded meeting in `store`: live lines and one audio track.
+pub(super) fn record_meeting(store: &Arc<Store>) -> String {
     let (tx, rx) = bus();
     let engines: Arc<dyn SpeechEngines> = FakeEngines::new(script());
     let capture = replay(
@@ -266,7 +282,7 @@ fn record_on_spoke(spoke: &Spoke) -> String {
     )
     .unwrap();
     let s = Session::start(
-        spoke.store.clone(),
+        store.clone(),
         Some(engines),
         capture,
         SessionConfig {
@@ -284,7 +300,7 @@ fn record_on_spoke(spoke: &Spoke) -> String {
     .unwrap();
     let meeting = s.meeting().to_string();
     let t = Instant::now();
-    while spoke.store.segments(&meeting).unwrap().is_empty() {
+    while store.segments(&meeting).unwrap().is_empty() {
         assert!(t.elapsed() < Duration::from_secs(20));
         let _ = rx.recv_timeout(Duration::from_millis(50));
     }
@@ -292,7 +308,7 @@ fn record_on_spoke(spoke: &Spoke) -> String {
     meeting
 }
 
-fn texts(s: &Store, meeting: &str) -> Vec<String> {
+pub(super) fn texts(s: &Store, meeting: &str) -> Vec<String> {
     s.segments(meeting)
         .unwrap()
         .into_iter()

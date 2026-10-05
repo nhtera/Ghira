@@ -253,6 +253,17 @@ impl Store {
         Ok(())
     }
 
+    /// Puts a `wipe_pending` pin back to `paired`: "Delete everything" queued
+    /// the wipe, then the local delete failed and nothing was removed, so the
+    /// devices are not to be wiped (doc 07 §3.5). Other states are left alone.
+    pub fn clear_wipe_pending(&self, gid: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE devices SET state = 'paired' WHERE gid = ?1 AND state = 'wipe_pending'",
+            [gid],
+        )?;
+        Ok(())
+    }
+
     /// Records a session: `last_seen = now`, and the address that worked.
     pub fn touch_device(&self, gid: &str, addr: Option<&str>) -> Result<()> {
         let n = self.conn().execute(

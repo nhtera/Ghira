@@ -150,6 +150,13 @@ impl JobCtx<'_> {
         JobLease::from_payload(&self.job.payload)
     }
 
+    /// The fencing epoch of a job its device took back from a lease (doc 07
+    /// §8: a self-taken pass writes at `epoch + 1`); `None` for an ordinary
+    /// job. Leased jobs get theirs from [`JobCtx::lease`].
+    pub fn epoch(&self) -> Option<i64> {
+        self.job.payload.get("epoch").and_then(Value::as_i64)
+    }
+
     fn fence_ok(&self, at: FenceAt) -> bool {
         match (self.fence, self.lease()) {
             (Some(f), Some(_)) => f(self.job, at),

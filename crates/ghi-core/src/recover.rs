@@ -35,10 +35,21 @@ fn err(e: ghi_store::StoreError) -> String {
     e.to_string()
 }
 
+/// The store setting listing the meetings a phone recorded for its computer
+/// and has not handed over yet (a JSON array of gids; the sync loop keeps it).
+pub const DESKTOP_PENDING_KEY: &str = "sync.desktop_pending";
+
 /// Whether the meeting's processing belongs to a lease: a peer recorded it
-/// (this device has no audio of its own to process), or a lease is open.
+/// (this device has no audio of its own to process), a lease is open, or it
+/// waits to be handed to the computer.
 fn leased_elsewhere(store: &Store, gid: &str) -> Result<bool, String> {
-    Ok(store.meeting_audio_origin(gid).map_err(err)?.is_some()
+    let waiting = store
+        .get_setting(DESKTOP_PENDING_KEY)
+        .map_err(err)?
+        .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
+        .is_some_and(|l| l.iter().any(|g| g == gid));
+    Ok(waiting
+        || store.meeting_audio_origin(gid).map_err(err)?.is_some()
         || store.lease_any_open_for(gid).map_err(err)?)
 }
 
@@ -341,6 +352,25 @@ mod tests {
             .unwrap();
         recover_with_kinds(&store, &[FINAL_PASS_JOB]).unwrap();
         assert_eq!(store.jobs_for_meeting(&closed).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_meeting_waiting_to_be_handed_to_the_computer_is_not_processed_here() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        let (waiting, local) = (processing_with_audio(&store), processing_with_audio(&store));
+        store
+            .set_setting(DESKTOP_PENDING_KEY, &serde_json::json!([waiting]))
+            .unwrap();
+        let out = recover_with_kinds(&store, &[FINAL_PASS_JOB]).unwrap();
+        assert_eq!(out.jobs_requeued, 1);
+        assert!(store.jobs_for_meeting(&waiting).unwrap().is_empty());
+        assert_eq!(store.jobs_for_meeting(&local).unwrap().len(), 1);
     }
 
     /// A removal that fails must not stop the launch.

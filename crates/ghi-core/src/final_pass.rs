@@ -948,7 +948,14 @@ impl FinalPassJob {
                 l.epoch,
                 Some(&l.job_uuid),
             ),
-            None => store.replace_transcript_marked(&meeting, v2, &overlaps),
+            None => match ctx.epoch() {
+                // Taken back from a lease that was revoked or expired: the
+                // result carries the epoch above the desktop's.
+                Some(epoch) => {
+                    store.replace_transcript_marked_epoch(&meeting, v2, &overlaps, epoch, None)
+                }
+                None => store.replace_transcript_marked(&meeting, v2, &overlaps),
+            },
         };
         match stored {
             Ok(_) => {}
