@@ -228,6 +228,40 @@
         "tokens": "{{in}} vào · {{out}} ra (token)"
       }
     },
+    "storeProblem": {
+      "title": "{{app}} không mở được các cuộc họp của bạn",
+      "reason": {
+        "keyMissing": "Khoá để mở các cuộc họp của bạn chỉ được giữ trên điện thoại này và hiện không còn ở đây. Điều này có thể xảy ra sau khi đặt lại điện thoại, khôi phục bản sao lưu sang điện thoại mới hoặc xoá Chuỗi khoá.",
+        "keyLocked": "Khoá của các cuộc họp được bảo vệ khi điện thoại hoặc {{app}} đang khoá. Hãy mở khoá bằng Face ID hoặc mật mã, rồi thử lại.",
+        "keystore": "Nơi lưu khoá bảo mật của điện thoại không phản hồi.",
+        "damaged": "Không đọc được dữ liệu cuộc họp của bạn. Dữ liệu có thể đã bị hỏng.",
+        "migration": "Không cập nhật được dữ liệu cuộc họp lên phiên bản {{app}} này. Chưa có gì bị thay đổi.",
+        "disk": "Điện thoại không đọc hoặc ghi được tệp của {{app}}. Hãy kiểm tra dung lượng trống.",
+        "other": "Đã xảy ra lỗi khi mở các cuộc họp của bạn."
+      },
+      "code": "Mã lỗi: {{code}}",
+      "retry": "Thử lại",
+      "stillBroken": "Vẫn chưa mở được.",
+      "startFresh": "Bắt đầu lại từ đầu",
+      "startFreshNote": "Bắt đầu lại từ đầu sẽ xoá các cuộc họp không mở được và đưa {{app}} về trạng thái ban đầu.",
+      "confirm": {
+        "title": "Bắt đầu lại từ đầu?",
+        "body": "Mọi thứ {{app}} đã lưu trên điện thoại này, kể cả các cuộc họp hiện không mở được, sẽ bị xoá vĩnh viễn. Không thể hoàn tác.",
+        "typePrompt": "Gõ {{phrase}} để xác nhận",
+        "action": "Xoá và bắt đầu lại",
+        "cancel": "Huỷ"
+      },
+      "notFound": {
+        "title": "Không tìm thấy trang",
+        "body": "Màn hình này không tồn tại.",
+        "action": "Về Cuộc họp"
+      },
+      "failed": {
+        "title": "{{app}} không tải được",
+        "body": "Đã xảy ra lỗi khi khởi động. Các cuộc họp của bạn không bị thay đổi.",
+        "stillBroken": "Vẫn chưa tải được."
+      }
+    },
     "lock": {
       "title": "{{app}} đang khoá",
       "body": "Các cuộc họp của bạn được giữ riêng tư cho đến khi bạn mở khoá.",

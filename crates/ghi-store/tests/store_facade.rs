@@ -656,10 +656,7 @@ fn recovery_phrase_restores_after_the_keychain_is_lost() {
     let err = Store::open(tmp.path(), fresh.clone(), Protection::default())
         .err()
         .unwrap();
-    assert!(
-        matches!(&err, StoreError::Invalid(m) if m.contains("recovery phrase")),
-        "{err}"
-    );
+    assert!(matches!(&err, StoreError::KeyMissing), "{err}");
     assert!(
         fresh.load().unwrap().is_none(),
         "no useless key was created"

@@ -101,6 +101,26 @@ export const commands = {
 	 */
 	privacyDeleteAll: (confirm: string) => typedError<null, string>(__TAURI_INVOKE("privacy_delete_all", { confirm })),
 	/**
+	 *  What the last attempt to open the store found (`Ready`: nothing failed).
+	 *  It never opens the store itself: the startup call already did, and a
+	 *  second open could prompt for the key again. "Try again" is `lock_state`.
+	 */
+	storeStatus: () => typedError<StoreStatus, string>(__TAURI_INVOKE("store_status")),
+	/**
+	 *  Removes the store that can't be opened and its key, and opens a new empty
+	 *  one. `confirm` is the typed phrase (`DELETE` / `XÓA`, checked again here),
+	 *  refused while a recording or an import runs (`busy`). Rust also refuses
+	 *  unless the store still can't be read for good (`keyMissing`, `damaged`):
+	 *  the error is that problem's code, or `storeReadable`.
+	 */
+	storeStartFresh: (confirm: string) => typedError<null, string>(__TAURI_INVOKE("store_start_fresh", { confirm })),
+	/**
+	 *  The webview reports that a screen failed to render, for the diagnostics log
+	 *  (`ghi-diag`). Only the error's type name goes in: letters and digits, at
+	 *  most 48, never a message (it could hold meeting text).
+	 */
+	logUiFailure: (kind: string) => typedError<null, string>(__TAURI_INVOKE("log_ui_failure", { kind })),
+	/**
 	 *  The chip for each of these meetings (unknown ids are left out). Call it
 	 *  with the ids `list_meetings` returned and again on `coreEvent` job changes.
 	 */
@@ -1276,6 +1296,34 @@ export type SpeakerInfo = {
 
 /**  Final-pass stages, in order (shown as progress in the UI). */
 export type Stage = "decoding" | "refiningSpeakers" | "matchingVoices" | "improvingTranscript" | "writingNotes";
+
+export type StoreProblem = 
+/**  The data is there, its key is not (the key stays on its device). */
+"keyMissing" | 
+/**
+ *  The key needs the user's presence (the phone or the app is locked, or
+ *  the prompt was cancelled or denied).
+ */
+"keyLocked" | 
+/**  The OS key store failed. */
+"keystore" | 
+/**
+ *  The database is not readable with its key (`SQLITE_NOTADB`, a failed
+ *  authentication) or is corrupt (`SQLITE_CORRUPT`; it doesn't heal).
+ */
+"damaged" | 
+/**  An upgrade of the database failed (and was rolled back). */
+"migration" | 
+/**  The files couldn't be read or written (I/O, no space, can't open). */
+"disk" | 
+/**  Anything else about the open itself (busy, a malformed request): a retry may pass. */
+"other" | 
+/**  The store opened but starting on top of it failed (recovery, job runner). */
+"startup";
+
+export type StoreStatus = { state: "ready" } | 
+/**  `problem` is a stable code; the words are the UI's. */
+{ state: "unavailable"; problem: StoreProblem };
 
 /**  A tag on a meeting row. */
 export type TagChip = {

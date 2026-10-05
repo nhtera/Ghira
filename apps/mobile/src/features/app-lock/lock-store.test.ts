@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOCKED_EVENT, UNLOCKED_EVENT } from "./events";
-import { getLockSnapshot, markUnlocked, pageVisibility, refreshLock, resetLockStore, setLockEnabled } from "./lock-store";
+import { getLockSnapshot, markUnlocked, pageVisibility, refreshLock, resetLockStore, retryStartup, setLockEnabled } from "./lock-store";
 
 const mock = () => window.__ghiSettingsMock!;
 
@@ -24,6 +24,56 @@ describe("lock store", () => {
     expect(getLockSnapshot().phase).toBe("unknown");
     mock().starting = false;
     await vi.advanceTimersByTimeAsync(800);
+    expect(getLockSnapshot().phase).toBe("unlocked");
+  });
+
+  it("names the reason when the store can't be opened, and stops asking", async () => {
+    mock().storeProblem = "keyMissing";
+    await refreshLock();
+    expect(getLockSnapshot()).toMatchObject({ phase: "unavailable", problem: "keyMissing" });
+    const asked = mock().calls.lockState;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(mock().calls.lockState).toBe(asked);
+  });
+
+  it("does not open the store again on a focus; only Try again does", async () => {
+    mock().storeProblem = "keyLocked";
+    await refreshLock();
+    const asked = mock().calls.lockState;
+    await refreshLock();
+    expect(mock().calls.lockState).toBe(asked);
+    await retryStartup();
+    expect(mock().calls.lockState).toBe(asked + 1);
+  });
+
+  it("a store that opened but failed to start is the generic failed state", async () => {
+    mock().storeProblem = "startup";
+    await refreshLock();
+    expect(getLockSnapshot()).toMatchObject({ phase: "failed", problem: null });
+  });
+
+  it("carries on once \"Try again\" finds the store", async () => {
+    mock().storeProblem = "damaged";
+    await refreshLock();
+    expect(getLockSnapshot().phase).toBe("unavailable");
+    await retryStartup();
+    expect(getLockSnapshot().phase).toBe("unavailable");
+    mock().storeProblem = null;
+    await retryStartup();
+    expect(getLockSnapshot()).toMatchObject({ phase: "unlocked", problem: null });
+  });
+
+  it("shows \"failed\" instead of nothing when startup keeps failing", async () => {
+    mock().startupFails = true;
+    await refreshLock();
+    for (const ms of [400, 800, 1600, 3200]) {
+      expect(getLockSnapshot().phase).toBe("unknown");
+      await vi.advanceTimersByTimeAsync(ms);
+    }
+    expect(getLockSnapshot()).toMatchObject({ phase: "failed", problem: null });
+    // It keeps trying in the background and recovers by itself.
+    mock().startupFails = false;
+    await vi.advanceTimersByTimeAsync(4000);
     expect(getLockSnapshot().phase).toBe("unlocked");
   });
 

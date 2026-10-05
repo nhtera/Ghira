@@ -35,6 +35,8 @@ specta = "=2.0.0-rc.25"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Only for the error codes of a failed store open (`store_problem.rs`).
+rusqlite = "0.40"
 log = "0.4"
 zeroize = "1"
 rand_core = { version = "0.6", features = ["getrandom"] }

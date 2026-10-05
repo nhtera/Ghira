@@ -230,6 +230,40 @@
         "tokens": "{{in}} in · {{out}} out tokens"
       }
     },
+    "storeProblem": {
+      "title": "{{app}} can’t open your meetings",
+      "reason": {
+        "keyMissing": "The key that unlocks your meetings is kept on this phone only, and it isn’t here now. This can happen after resetting the phone, restoring a backup onto a new phone, or erasing the Keychain.",
+        "keyLocked": "Your meetings’ key is protected while this phone or {{app}} is locked. Unlock with Face ID or your passcode, then try again.",
+        "keystore": "This phone’s secure key storage didn’t answer.",
+        "damaged": "Your meeting data can’t be read. It may be damaged.",
+        "migration": "Your meeting data couldn’t be updated to this version of {{app}}. Nothing was changed.",
+        "disk": "This phone couldn’t read or write {{app}}’s files. Check that it has free space.",
+        "other": "Something went wrong while opening your meetings."
+      },
+      "code": "Error code: {{code}}",
+      "retry": "Try again",
+      "stillBroken": "They still can’t be opened.",
+      "startFresh": "Start fresh",
+      "startFreshNote": "Starting fresh erases the meetings that can’t be opened and starts {{app}} over from the beginning.",
+      "confirm": {
+        "title": "Start fresh?",
+        "body": "Everything {{app}} saved on this phone, including the meetings that can’t be opened now, is erased for good. This can’t be undone.",
+        "typePrompt": "Type {{phrase}} to confirm",
+        "action": "Erase and start fresh",
+        "cancel": "Cancel"
+      },
+      "notFound": {
+        "title": "Page not found",
+        "body": "That screen doesn’t exist.",
+        "action": "Go to Meetings"
+      },
+      "failed": {
+        "title": "{{app}} couldn’t load",
+        "body": "Something went wrong while starting. Your meetings haven’t been changed.",
+        "stillBroken": "It still didn’t load."
+      }
+    },
     "lock": {
       "title": "{{app}} is locked",
       "body": "Your meetings stay private until you unlock.",

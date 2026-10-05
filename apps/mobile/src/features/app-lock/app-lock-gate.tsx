@@ -3,6 +3,8 @@
 // app is locked. Before Rust has answered (and when the page is hidden with the
 // lock on) it is a blank cover, so no meeting content shows. Unlocking is Face
 // ID through `unlock`; the gate asks once when it appears and then on the button.
+// The same layer carries the can't-open-your-meetings and couldn't-start screens
+// (store-problem), so those never leave a blank page either.
 // While it shows, every other child of <body> (the app root, open sheets) is
 // inert, and the gate takes pointer events back even if a sheet had turned them off.
 import { Icon } from "@ghi/ui";
@@ -10,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { ipc } from "../../ipc";
+import { PROBLEM_TITLE_ID, StoreProblemScreen } from "../store-problem";
 import { Btn } from "../settings/controls";
 import { knownError } from "../settings/api";
 import {
@@ -53,12 +56,13 @@ function useInertBehind(active: boolean) {
 
 export function AppLockGate() {
   const { t } = useTranslation();
-  const { phase, covered } = useLock();
+  const { phase, covered, problem } = useLock();
   const [failure, setFailure] = useState<string | null>(null);
   const asking = useRef(false);
   const asked = useRef(false);
   const button = useRef<HTMLButtonElement>(null);
   const locked = phase === "locked";
+  const trouble = phase === "unavailable" || phase === "failed";
 
   const unlock = useCallback(async () => {
     if (asking.current) return;
@@ -118,14 +122,19 @@ export function AppLockGate() {
   return createPortal(
     <div
       {...{ [GATE_ATTR]: "" }}
-      role={locked ? "dialog" : undefined}
-      aria-modal={locked ? true : undefined}
-      aria-labelledby={locked ? "lock-title" : undefined}
-      aria-hidden={locked ? undefined : true}
-      data-testid="app-lock-gate"
+      role={locked || trouble ? "dialog" : undefined}
+      aria-modal={locked || trouble ? true : undefined}
+      aria-labelledby={locked ? "lock-title" : trouble ? PROBLEM_TITLE_ID : undefined}
+      aria-hidden={locked || trouble ? undefined : true}
+      data-testid={trouble ? "store-problem-gate" : "app-lock-gate"}
       style={{ pointerEvents: "auto" }}
-      className="fixed inset-0 z-[1000] flex flex-col items-center justify-center gap-4 bg-bg px-8 pt-safe pb-safe text-center text-ink"
+      className={
+        trouble
+          ? "fixed inset-0 z-[1000] flex flex-col items-center overflow-y-auto bg-bg px-8 pt-safe pb-safe text-center text-ink"
+          : "fixed inset-0 z-[1000] flex flex-col items-center justify-center gap-4 bg-bg px-8 pt-safe pb-safe text-center text-ink"
+      }
     >
+      {trouble && <StoreProblemScreen problem={phase === "unavailable" ? problem : null} />}
       {locked && (
         <>
           <span

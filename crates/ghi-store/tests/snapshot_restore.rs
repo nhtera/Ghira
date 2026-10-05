@@ -205,10 +205,7 @@ fn a_wrong_key_is_an_error_not_a_new_database() {
     let Err(err) = common::open_with(tmp.path(), &common::keys(), migrate::MIGRATIONS) else {
         panic!("created a useless key");
     };
-    assert!(
-        matches!(&err, StoreError::Invalid(m) if m.contains("recovery phrase")),
-        "{err}"
-    );
+    assert!(matches!(&err, StoreError::KeyMissing), "{err}");
 }
 
 #[test]

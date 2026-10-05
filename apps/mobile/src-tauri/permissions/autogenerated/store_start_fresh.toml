@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-store-start-fresh"
+description = "Enables the store_start_fresh command without any pre-configured scope."
+commands.allow = ["store_start_fresh"]
+
+[[permission]]
+identifier = "deny-store-start-fresh"
+description = "Denies the store_start_fresh command without any pre-configured scope."
+commands.deny = ["store_start_fresh"]

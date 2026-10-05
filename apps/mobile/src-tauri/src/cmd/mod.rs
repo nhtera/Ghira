@@ -24,6 +24,7 @@ pub mod onboarding;
 pub mod privacy;
 pub mod record;
 pub mod settings;
+pub mod store;
 pub mod types;
 pub mod voice;
 
@@ -61,6 +62,9 @@ pub fn builder() -> Builder<tauri::Wry> {
             models::models_cancel,
             privacy::privacy_export_all_share,
             privacy::privacy_delete_all,
+            store::store_status,
+            store::store_start_fresh,
+            store::log_ui_failure,
             meetings::meeting_chips,
             meetings::share_meeting_export,
             settings::mobile_settings,

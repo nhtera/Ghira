@@ -19,6 +19,7 @@ pub mod library;
 pub mod lock_cmd;
 pub mod settings_cmd;
 pub mod speakers_cmd;
+pub mod store_problem;
 pub mod system;
 pub mod voice_cmd;
 

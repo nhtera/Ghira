@@ -8,8 +8,10 @@ import {
   createRoute,
   createRouter,
   redirect,
+  useRouter,
   type RouterHistory,
 } from "@tanstack/react-router";
+import { LoadFailed, PageNotFound } from "./features/store-problem";
 import { RootView } from "./shell/root-view";
 import { TabShell } from "./shell/tab-shell";
 import { meetingsRoutes } from "./routes/meetings";
@@ -42,8 +44,33 @@ const onboarding = onboardingRoutes(root);
 
 const routeTree = root.addChildren([shell.addChildren([index, meetings, record, search, settings]), onboarding]);
 
+// A route that throws (a loader, a render) shows "couldn't load" with "Try
+// again"; one that doesn't exist says so and goes home. Never a blank page.
+function RouteFailed({ reset }: { reset?: () => void }) {
+  const router = useRouter();
+  return (
+    <LoadFailed
+      onRetry={async () => {
+        await router.invalidate();
+        reset?.();
+      }}
+    />
+  );
+}
+
+function RouteNotFound() {
+  const router = useRouter();
+  return <PageNotFound onHome={() => void router.navigate({ to: "/meetings", replace: true })} />;
+}
+
 export function makeRouter(history?: RouterHistory) {
-  return createRouter({ routeTree, history: history ?? createHashHistory(), defaultPreload: false });
+  return createRouter({
+    routeTree,
+    history: history ?? createHashHistory(),
+    defaultPreload: false,
+    defaultErrorComponent: RouteFailed,
+    defaultNotFoundComponent: RouteNotFound,
+  });
 }
 
 declare module "@tanstack/react-router" {

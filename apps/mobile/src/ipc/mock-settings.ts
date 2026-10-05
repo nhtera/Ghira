@@ -5,10 +5,11 @@
 // ("the cloud sheet never calls cloudSend before the click"), the lock, the
 // inbox and the failure switches. Time stands still: nothing happens by itself
 // except the short scripted import of an inbox item.
-import type { AppSettings, CloudSendResult, InboxItem, MobileSettings, Vocabulary } from "../bindings";
+import type { AppSettings, CloudSendResult, InboxItem, MobileSettings, StoreProblem, Vocabulary } from "../bindings";
 import type { Commands } from "./ipc";
 import { recordCommands } from "./mock-record";
 
+const STORE_PROBLEMS: readonly StoreProblem[] = ["keyMissing", "keyLocked", "keystore", "damaged", "migration", "disk", "other", "startup"];
 const ok = <T>(data: T) => ({ status: "ok" as const, data });
 const fail = (error: string) => ({ status: "error" as const, error });
 
@@ -21,6 +22,14 @@ export interface GhiSettingsMock {
   locked: boolean;
   /** The app is still starting: lock_state and every content command answer "the app is starting". */
   starting: boolean;
+  /**
+   * The encrypted store can't be opened, with this code (`?storeProblem=keyMissing`):
+   * lock_state refuses, store_status says why, and content commands refuse.
+   * Set it back to null for "Try again" to work.
+   */
+  storeProblem: StoreProblem | null;
+  /** lock_state keeps failing for no reason store_status can name (`?startupFails=1`). */
+  startupFails: boolean;
   /** The phone has no passcode: unlock and the lock switch answer `noAuthMethod`. */
   noAuthMethod: boolean;
   /** Warnings and the retention note the next cloud previews carry. */
@@ -114,6 +123,8 @@ const hooks: GhiSettingsMock = {
   locked: query("locked") === "1",
   // `?starting=1500`: the core answers "starting" for that many ms after launch.
   starting: Number(query("starting")) > 0,
+  storeProblem: STORE_PROBLEMS.find((p) => p === query("storeProblem")) ?? null,
+  startupFails: query("startupFails") === "1",
   noAuthMethod: false,
   warnings: [],
   retentionNote: "",
@@ -148,7 +159,7 @@ const hooks: GhiSettingsMock = {
     mobile = freshMobile();
     meDeleted = false;
     ignored = [];
-    Object.assign(hooks, { calls: {}, args: {}, locked: false, starting: false, noAuthMethod: false, warnings: [], retentionNote: "", faceIdOk: true, faceIdPrompts: 0, busy: false, keys: {}, lastKey: "", cloudRequests: 0, logAt: null, terms: [], learned: ["Linh Trần"], maxTerms: 200, failSend: [], cloudLocked: [], inbox: [], exportedWith: null, wiped: false });
+    Object.assign(hooks, { calls: {}, args: {}, locked: false, starting: false, storeProblem: null, startupFails: false, noAuthMethod: false, warnings: [], retentionNote: "", faceIdOk: true, faceIdPrompts: 0, busy: false, keys: {}, lastKey: "", cloudRequests: 0, logAt: null, terms: [], learned: ["Linh Trần"], maxTerms: 200, failSend: [], cloudLocked: [], inbox: [], exportedWith: null, wiped: false });
   },
 };
 if (typeof window !== "undefined") {
@@ -157,10 +168,11 @@ if (typeof window !== "undefined") {
 }
 
 /** What the real core answers to a command that needs the store while it is locked or starting. */
-export const gateMessage = (): string | null => (hooks.starting ? "the app is starting" : hooks.locked ? "the app is locked" : null);
+export const gateMessage = (): string | null =>
+  hooks.storeProblem ? "the key for this store is missing: restore with the recovery phrase" : hooks.starting ? "the app is starting" : hooks.locked ? "the app is locked" : null;
 
 // Commands that keep working while locked or starting (Core::store_even_locked and the app's own).
-const OPEN = /^(lockState|lockNow|unlock|setAppLock|appVersion|lifecycleState|deviceTier|micPermission|requestMicPermission|openAppSettings|record\w*|models\w*|onboarding\w*|mobileSettings|setMobileSettings|voiceSetConsent|voiceEnroll\w*|enrollVoiceLevel)$/;
+const OPEN = /^(lockState|lockNow|unlock|setAppLock|appVersion|lifecycleState|deviceTier|micPermission|requestMicPermission|openAppSettings|store\w*|logUiFailure|record\w*|models\w*|onboarding\w*|mobileSettings|setMobileSettings|voiceSetConsent|voiceEnroll\w*|enrollVoiceLevel)$/;
 
 /** Makes the content commands refuse like Rust does while the app is locked or starting. */
 export function gateContent(script: Partial<Commands>): Partial<Commands> {
@@ -231,7 +243,26 @@ const scripted: Partial<Commands> = {
     return ok(app);
   },
 
-  lockState: async () => (hooks.starting ? fail("the app is starting") : ok(hooks.locked)),
+  lockState: async () =>
+    hooks.storeProblem || hooks.startupFails
+      ? fail("the key for this store is missing: restore with the recovery phrase")
+      : hooks.starting
+        ? fail("the app is starting")
+        : ok(hooks.locked),
+  logUiFailure: async () => ok(null),
+  storeStatus: async () =>
+    ok(hooks.storeProblem ? ({ state: "unavailable", problem: hooks.storeProblem } as const) : ({ state: "ready" } as const)),
+  storeStartFresh: async (confirm) => {
+    if (!["delete", "xoa"].includes(foldPhrase(confirm))) return fail("confirmMismatch");
+    if (hooks.busy) return fail("busy");
+    app = freshApp();
+    mobile = freshMobile();
+    hooks.storeProblem = null;
+    hooks.wiped = true;
+    // A new store: first launch again.
+    window.__ghiRecord?.setOnboarding([]);
+    return ok(null);
+  },
   lockNow: async () => {
     hooks.locked = app.appLock;
     if (hooks.locked) announceLock(true);

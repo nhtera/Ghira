@@ -65,6 +65,9 @@ pub enum StoreError {
     KeyLocked,
     /// This platform has no keystore implementation yet.
     Unsupported(&'static str),
+    /// A database exists but the keystore holds no key for it (the key stays
+    /// on its device: a restore to a new phone, a Keychain reset).
+    KeyMissing,
     NotFound {
         kind: &'static str,
         gid: String,
@@ -100,6 +103,9 @@ impl fmt::Display for StoreError {
             StoreError::Keystore { detail } => write!(f, "keystore: {detail}"),
             StoreError::KeyLocked => {
                 f.write_str("the key needs you to unlock (cancelled or denied)")
+            }
+            StoreError::KeyMissing => {
+                f.write_str("the key for this store is missing on this device")
             }
             StoreError::Unsupported(what) => write!(f, "not supported on this platform: {what}"),
             StoreError::NotFound { kind, gid } => write!(f, "{kind} {gid} not found"),

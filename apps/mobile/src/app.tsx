@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { initMobileI18n } from "@ghi/i18n/mobile";
 import { PlatformProvider, setTextScale } from "@ghi/ui";
+import { AppErrorBoundary } from "./features/store-problem";
 import { makeRouter } from "./router";
 import { browserOverrides, deviceLanguage } from "./state/language";
 
@@ -22,7 +23,9 @@ export function App() {
   return (
     <I18nextProvider i18n={i18n}>
       <PlatformProvider value="ios">
-        <RouterProvider router={router} />
+        <AppErrorBoundary>
+          <RouterProvider router={router} />
+        </AppErrorBoundary>
       </PlatformProvider>
     </I18nextProvider>
   );

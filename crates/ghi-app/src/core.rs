@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
+use crate::store_problem::StoreProblem;
 use ghi_core::events::{Envelope, ErrorKind, EventTx, bus};
 use ghi_core::jobs::JobRunner;
 use ghi_core::live::Mode;
@@ -36,6 +37,8 @@ pub struct Core {
     /// Held for a whole start or stop, so they never overlap; the session
     /// slot itself is only locked briefly.
     lifecycle: Mutex<()>,
+    /// Why the last attempt to open the store failed (none while it is open).
+    open_problem: Mutex<Option<crate::store_problem::StoreProblem>>,
     /// "Delete all data" is running: the store must not be reopened.
     deleting: std::sync::atomic::AtomicBool,
     /// The app lock is on: commands get no store, and transcript events
@@ -480,6 +483,7 @@ impl Core {
         Core {
             data,
             store: Mutex::new(None),
+            open_problem: Mutex::new(None),
             session: Mutex::new(None),
             lifecycle: Mutex::new(()),
             deleting: std::sync::atomic::AtomicBool::new(false),
@@ -977,12 +981,108 @@ impl Core {
         if let Some(s) = slot.as_ref() {
             return Ok(s.clone());
         }
+        *lock(&self.open_problem) = None;
+        match self.open_new() {
+            Ok(store) => {
+                *slot = Some(store.clone());
+                Ok(store)
+            }
+            Err(e) => {
+                // The store opened but starting on top of it failed.
+                let problem = *lock(&self.open_problem).get_or_insert(StoreProblem::Startup);
+                log::warn!("opening the store failed: {}", problem.code());
+                Err(e)
+            }
+        }
+    }
+
+    /// Why the store can't be opened (`None`: it is open, or nothing failed
+    /// yet). Every `store()` call tries again, so this is also "try again".
+    pub fn open_problem(&self) -> Option<StoreProblem> {
+        *lock(&self.open_problem)
+    }
+
+    /// Removes the store that can't be opened and its key, then opens a new
+    /// empty one (the app starts over at onboarding).
+    ///
+    /// Only for data that is gone for good: under the store lock the open is
+    /// tried once more, and the wipe goes ahead only if it still fails with
+    /// [`StoreProblem::KeyMissing`] or [`StoreProblem::Damaged`]. A store that
+    /// opens, a locked key, a keystore or disk error, a failed upgrade all
+    /// refuse with the problem's code (`storeReadable` when it opened), so a
+    /// stray call can't erase meetings that a retry would open. An open store
+    /// is deleted with [`Core::delete_everything`] instead.
+    pub fn start_fresh(&self) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        if self.deleting.swap(true, Ordering::AcqRel) {
+            return Err("all data is already being deleted".into());
+        }
+        let r = self.start_fresh_locked();
+        self.deleting.store(false, Ordering::Release);
+        r?;
+        self.store_even_locked().map(|_| ())
+    }
+
+    fn start_fresh_locked(&self) -> Result<(), String> {
+        let slot = lock(&self.store);
+        if slot.is_some() {
+            return Err("storeReadable".into());
+        }
         let dir = self.data.join("store");
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let store = Arc::new(
-            Store::open(&dir, self.keystore(&dir)?, Protection::default())
-                .map_err(|e| e.to_string())?,
-        );
+        let keys = self
+            .keystore(&dir)
+            .map_err(|_| StoreProblem::Keystore.code().to_owned())?;
+        match Store::open(&dir, keys.clone(), Protection::default()) {
+            // It opens after all: nothing to start over from. Dropped again;
+            // the normal open runs recovery and the job runner.
+            Ok(_) => return Err("storeReadable".into()),
+            Err(e) => {
+                let problem = StoreProblem::of(&e);
+                if !problem.allows_start_fresh() {
+                    return Err(problem.code().to_owned());
+                }
+            }
+        }
+        // The key goes first: from here the old data can't be read, whatever
+        // happens to the files (crypto-shred).
+        keys.delete().map_err(|e| {
+            log::warn!("start fresh: removing the key failed: {e}");
+            StoreProblem::Keystore.code().to_owned()
+        })?;
+        if let Err(e) = std::fs::remove_dir_all(&dir)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            // Sealed without its key; a new store can't be created over them,
+            // so this is reported and "Start fresh" can be run again.
+            log::warn!("start fresh: removing the store files failed: {e}");
+            return Err(StoreProblem::Disk.code().to_owned());
+        }
+        if let Ok(s) = self.secrets() {
+            for p in crate::cloud_cmd::PROVIDERS {
+                let _ = s.delete(&format!("provider-{p}"));
+            }
+        }
+        *lock(&self.settings) = None;
+        *lock(&self.open_problem) = None;
+        Ok(())
+    }
+
+    fn open_new(&self) -> Result<Arc<Store>, String> {
+        let dir = self.data.join("store");
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            *lock(&self.open_problem) = Some(StoreProblem::Disk);
+            e.to_string()
+        })?;
+        let keys = self.keystore(&dir).inspect_err(|_| {
+            *lock(&self.open_problem) = Some(StoreProblem::Keystore);
+        })?;
+        let store = Arc::new(Store::open(&dir, keys, Protection::default()).map_err(|e| {
+            let problem = StoreProblem::of(&e);
+            // The code only: the error text can carry paths.
+            log::warn!("opening the store failed: {}", problem.code());
+            *lock(&self.open_problem) = Some(problem);
+            e.to_string()
+        })?);
         // A test recording interrupted by a quit or crash goes first, so
         // recovery doesn't turn it into a meeting with jobs.
         if let Some(test) = Self::pending_test(&store) {
@@ -1017,7 +1117,6 @@ impl Core {
         }
         *lock(&self.runner_thread) = Some(runner.spawn().map_err(|e| e.to_string())?);
         *lock(&self.runner) = Some(runner);
-        *slot = Some(store.clone());
         Ok(store)
     }
 

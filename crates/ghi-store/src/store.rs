@@ -376,7 +376,7 @@ impl Store {
     /// secret and saves the ring again.
     ///
     /// If the keystore has no ring but the directory holds a database, this
-    /// fails with [`StoreError::Invalid`] ("restore with the recovery phrase")
+    /// fails with [`StoreError::KeyMissing`]
     /// instead of creating a key that opens nothing.
     pub fn open(dir: &Path, keystore: Arc<dyn KeyStore>, protection: Protection) -> Result<Store> {
         Store::open_with_migrations(dir, keystore, protection, migrate::MIGRATIONS)
@@ -397,9 +397,7 @@ impl Store {
         let ring = match keystore.load()? {
             Some(r) => r,
             None if dir.join(DB_FILE).exists() => {
-                return Err(StoreError::Invalid(
-                    "the key for this store is missing: restore with the recovery phrase".into(),
-                ));
+                return Err(StoreError::KeyMissing);
             }
             None => {
                 let r = KeyRing::generate();

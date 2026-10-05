@@ -148,8 +148,19 @@ pub fn delete_all(
         return Err("busy".into());
     }
     core.delete_everything()?;
-    for dir in ["backlog", "metrics", "logs", "import-tmp", EXPORT_DIR] {
+    wipe_side_data(data, inbox_root, true)
+}
+
+/// What the app keeps next to the store goes with it (backlog, metrics, logs,
+/// temporary files, the share extension's inbox). The diagnostics log
+/// (`diagnostics/`, codes and counts only) stays in both cases: it is what
+/// explains a failed start. `logs` is the older per-session folder.
+fn wipe_side_data(data: &Path, inbox_root: &Path, logs: bool) -> Result<(), String> {
+    for dir in ["backlog", "metrics", "import-tmp", EXPORT_DIR] {
         let _ = std::fs::remove_dir_all(data.join(dir));
+    }
+    if logs {
+        let _ = std::fs::remove_dir_all(data.join("logs"));
     }
     // The recorder keeps writing there: the next recording needs them.
     for dir in ["backlog", "metrics"] {
@@ -167,6 +178,30 @@ pub fn delete_all(
         }
     }
     Ok(())
+}
+
+/// "Start fresh" on the can't-open screen: the same typed confirmation as
+/// [`delete_all`], but for a store that can't be opened, so there is nothing
+/// to crypto-shred: the files and the key go, and a new empty store opens
+/// (the app is back at onboarding).
+pub fn start_fresh(
+    core: &Core,
+    data: &Path,
+    inbox_root: &Path,
+    confirm: &str,
+    busy: &dyn Fn() -> bool,
+) -> Result<(), String> {
+    if !phrase_ok(confirm) {
+        return Err("confirmMismatch".into());
+    }
+    let Ok(_wipe) = DATA_GUARD.try_write() else {
+        return Err("busy".into());
+    };
+    if busy() {
+        return Err("busy".into());
+    }
+    core.start_fresh()?;
+    wipe_side_data(data, inbox_root, false)
 }
 
 /// Applies the retention setting and deletes the audio past it (text stays).
@@ -350,8 +385,135 @@ mod tests {
         assert_eq!(store.get_meeting(&gid).unwrap().title, "hết hạn");
     }
 
+    /// `DATA_GUARD` is process-wide: the tests that wipe take turns.
+    static WIPES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn core_with(data: &Path, ks: Arc<MemoryKeyStore>) -> Arc<Core> {
+        let hooks = CoreHooks {
+            data_dir: Some(data.to_path_buf()),
+            handlers: Some(Arc::new(|_, _| vec![])),
+            recover_kinds: Some(vec![]),
+            keystore: Some(ks),
+            ..CoreHooks::default()
+        };
+        Core::for_test_with(data.to_path_buf(), hooks).0
+    }
+
+    #[test]
+    fn a_store_without_its_key_reports_key_missing_and_start_fresh_replaces_it() {
+        use ghi_app::store_problem::StoreProblem;
+        let _turn = WIPES.lock().unwrap_or_else(|e| e.into_inner());
+        let t = tempfile::tempdir().unwrap();
+        let data = t.path().join("Ghira");
+        let inbox = t.path().join("inbox");
+        let store = open(&data.join("store"), Arc::new(MemoryKeyStore::default()));
+        store
+            .create_meeting(NewMeeting {
+                title: "bí mật".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        drop(store);
+
+        // The same data on a phone whose Keychain has no key for it.
+        let ks = Arc::new(MemoryKeyStore::default());
+        let core = core_with(&data, ks.clone());
+        assert_eq!(core.open_problem(), None, "nothing failed yet");
+        assert!(core.store_even_locked().is_err());
+        assert_eq!(core.open_problem(), Some(StoreProblem::KeyMissing));
+        assert!(core.store().is_err(), "content stays unavailable");
+        assert!(ks.load().unwrap().is_none(), "no useless key was created");
+
+        // The typed phrase and a running recording are checked first.
+        assert_eq!(
+            start_fresh(&core, &data, &inbox, "nope", &|| false),
+            Err("confirmMismatch".into())
+        );
+        assert_eq!(
+            start_fresh(&core, &data, &inbox, "DELETE", &|| true),
+            Err("busy".into())
+        );
+        assert_eq!(core.open_problem(), Some(StoreProblem::KeyMissing));
+
+        start_fresh(&core, &data, &inbox, "xóa", &|| false).unwrap();
+        assert_eq!(core.open_problem(), None);
+        let store = core.store_even_locked().unwrap();
+        assert!(
+            store.list_meetings(10, 0).unwrap().is_empty(),
+            "a new, empty store"
+        );
+        assert!(ks.load().unwrap().is_some(), "with a key of its own");
+        // An open store is not started fresh: that is "delete everything".
+        drop(store);
+        assert!(core.start_fresh().is_err());
+    }
+
+    /// A key store that answers like a locked Keychain.
+    struct Locked;
+    impl KeyStore for Locked {
+        fn load(&self) -> Result<Option<ghi_store::keys::KeyRing>, ghi_store::StoreError> {
+            Err(ghi_store::StoreError::KeyLocked)
+        }
+        fn save(
+            &self,
+            _: &ghi_store::keys::KeyRing,
+            _: ghi_store::keys::Protection,
+        ) -> Result<(), ghi_store::StoreError> {
+            Err(ghi_store::StoreError::KeyLocked)
+        }
+        fn delete(&self) -> Result<(), ghi_store::StoreError> {
+            panic!("a locked key must never be deleted");
+        }
+    }
+
+    #[test]
+    fn start_fresh_refuses_a_store_that_still_opens_or_may_open_later() {
+        let _turn = WIPES.lock().unwrap_or_else(|e| e.into_inner());
+        let t = tempfile::tempdir().unwrap();
+        let data = t.path().join("Ghira");
+        let inbox = t.path().join("inbox");
+        let ks = Arc::new(MemoryKeyStore::default());
+        let store = open(&data.join("store"), ks.clone());
+        let gid = store
+            .create_meeting(NewMeeting {
+                title: "bí mật".into(),
+                ..Default::default()
+            })
+            .unwrap()
+            .gid;
+        drop(store);
+
+        // A healthy store: refused, and everything is still there.
+        let core = core_with(&data, ks.clone());
+        assert_eq!(
+            start_fresh(&core, &data, &inbox, "DELETE", &|| false),
+            Err("storeReadable".into())
+        );
+        drop(core);
+        let store = open(&data.join("store"), ks.clone());
+        assert_eq!(store.list_meetings(10, 0).unwrap().len(), 1);
+        assert!(store.get_meeting(&gid).is_ok());
+        drop(store);
+
+        // A key that is only locked right now: refused with its code, never deleted.
+        let hooks = CoreHooks {
+            data_dir: Some(data.clone()),
+            handlers: Some(Arc::new(|_, _| vec![])),
+            recover_kinds: Some(vec![]),
+            keystore: Some(Arc::new(Locked)),
+            ..CoreHooks::default()
+        };
+        let (core, _rx) = Core::for_test_with(data.clone(), hooks);
+        assert_eq!(
+            start_fresh(&core, &data, &inbox, "DELETE", &|| false),
+            Err("keyLocked".into())
+        );
+        assert!(data.join("store").join("ghira.db").exists());
+    }
+
     #[test]
     fn delete_all_wipes_the_store_the_keys_and_what_the_app_keeps() {
+        let _turn = WIPES.lock().unwrap_or_else(|e| e.into_inner());
         let t = tempfile::tempdir().unwrap();
         let data = t.path().join("Ghira");
         let ks = Arc::new(MemoryKeyStore::default());
