@@ -134,10 +134,24 @@ pub fn builder() -> Builder<tauri::Wry> {
             ghi_app::voice_cmd::enroll_voice_level,
             ghi_app::calendar_cmd::meeting_attendees,
             ghi_app::calendar_cmd::meeting_contacts,
+            ghi_app::sync_cmd::sync_status,
+            ghi_app::sync_cmd::sync_set_enabled,
+            ghi_app::sync_cmd::sync_devices,
+            ghi_app::sync_cmd::sync_unpair,
+            ghi_app::sync_cmd::sync_unpair_and_wipe,
+            ghi_app::sync_cmd::sync_now,
+            ghi_app::sync_cmd::sync_conflicts,
+            ghi_app::sync_cmd::sync_conflict_resolve,
+            ghi_app::sync_cmd::sync_confirm_mass_delete,
+            ghi_app::sync_cmd::sync_delete_everywhere_status,
+            ghi_app::sync_cmd::sync_pair_scan_start,
+            ghi_app::sync_cmd::sync_pair_scan_stop,
+            ghi_app::sync_cmd::sync_lease_revoke,
         ])
         .events(collect_events![
             CoreEvent,
             MobileEvent,
-            ghi_app::lock_cmd::LockChanged
+            ghi_app::lock_cmd::LockChanged,
+            ghi_app::sync_cmd::SyncEvent
         ])
 }

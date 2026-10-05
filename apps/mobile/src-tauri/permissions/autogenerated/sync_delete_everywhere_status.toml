@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-delete-everywhere-status"
+description = "Enables the sync_delete_everywhere_status command without any pre-configured scope."
+commands.allow = ["sync_delete_everywhere_status"]
+
+[[permission]]
+identifier = "deny-sync-delete-everywhere-status"
+description = "Denies the sync_delete_everywhere_status command without any pre-configured scope."
+commands.deny = ["sync_delete_everywhere_status"]

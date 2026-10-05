@@ -13,6 +13,7 @@ import type {
   ModelDownload,
   Navigate,
   QuitRequested,
+  SyncEvent,
   commands,
 } from "../bindings";
 
@@ -39,6 +40,8 @@ export interface Ipc {
   onImportUpdate(cb: (e: ImportUpdate) => void): Promise<Unlisten>;
   /** The app lock engaged or was lifted (every window). */
   onLockChanged(cb: (e: LockChanged) => void): Promise<Unlisten>;
+  /** Phone sync: paired, unpaired, progress, a conflict copy, a mass delete to confirm, a wipe done, an error code. */
+  onSyncEvent(cb: (e: SyncEvent) => void): Promise<Unlisten>;
   /** The app-update status changed (a check, a download, an error). */
   onUpdateChanged(cb: (e: UpdateChanged) => void): Promise<Unlisten>;
   /** The URL an `<audio>` element plays for a ghi-audio token (issueAudioPlay, issueAudioSample). */

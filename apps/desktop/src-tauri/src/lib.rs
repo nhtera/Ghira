@@ -436,7 +436,19 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             organize_cmd::tag_meetings,
             organize_cmd::untag_meetings,
             import_cmd::import_tracks_separately,
-            system::show_notification
+            system::show_notification,
+            ghi_app::sync_cmd::sync_status,
+            ghi_app::sync_cmd::sync_set_enabled,
+            ghi_app::sync_cmd::sync_pair_open,
+            ghi_app::sync_cmd::sync_pair_close,
+            ghi_app::sync_cmd::sync_devices,
+            ghi_app::sync_cmd::sync_unpair,
+            ghi_app::sync_cmd::sync_unpair_and_wipe,
+            ghi_app::sync_cmd::sync_now,
+            ghi_app::sync_cmd::sync_conflicts,
+            ghi_app::sync_cmd::sync_conflict_resolve,
+            ghi_app::sync_cmd::sync_confirm_mass_delete,
+            ghi_app::sync_cmd::sync_delete_everywhere_status
         ])
         .events(tauri_specta::collect_events![
             core::CoreEvent,
@@ -448,7 +460,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             import_cmd::ImportStaged,
             import_cmd::ImportUpdate,
             update_cmd::UpdateChanged,
-            lock_cmd::LockChanged
+            lock_cmd::LockChanged,
+            ghi_app::sync_cmd::SyncEvent
         ])
 }
 

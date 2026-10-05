@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-set-enabled"
+description = "Enables the sync_set_enabled command without any pre-configured scope."
+commands.allow = ["sync_set_enabled"]
+
+[[permission]]
+identifier = "deny-sync-set-enabled"
+description = "Denies the sync_set_enabled command without any pre-configured scope."
+commands.deny = ["sync_set_enabled"]

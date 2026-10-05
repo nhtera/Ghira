@@ -104,6 +104,14 @@ pub extern "C" fn ghi_swift_request_mic_permission() {}
 pub extern "C" fn ghi_swift_available_capacity() -> i64 {
     -1
 }
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_swift_qr_scan_start() {}
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_swift_qr_scan_stop() {}
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_swift_browse_start() {}
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_swift_browse_stop() {}
 
 /// References every stub so the linker keeps them (the platform layer's own
 /// references are to external symbols it resolves at link time).
@@ -135,6 +143,10 @@ pub fn keep() -> usize {
         ghi_swift_mic_permission as *const () as usize,
         ghi_swift_request_mic_permission as *const () as usize,
         ghi_swift_available_capacity as *const () as usize,
+        ghi_swift_qr_scan_start as *const () as usize,
+        ghi_swift_qr_scan_stop as *const () as usize,
+        ghi_swift_browse_start as *const () as usize,
+        ghi_swift_browse_stop as *const () as usize,
     ]
     .iter()
     .sum()

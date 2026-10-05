@@ -95,4 +95,19 @@ void ghi_swift_request_calendar_access(void);
 char *ghi_swift_calendar_events(int64_t from_ms, int64_t to_ms);
 void ghi_swift_string_free(char *s);
 
+// LAN sync (phase 15, doc 07). The camera scan of the desktop's pairing code:
+// the scanned text goes to Rust only (ghi_ios_qr_scanned), never to the webview.
+void ghi_swift_qr_scan_start(void);
+void ghi_swift_qr_scan_stop(void);
+// Swift -> Rust: the text of a scanned QR code (UTF-8, NUL-terminated; Rust
+// copies it, the caller keeps ownership). It carries a secret: never log it.
+void ghi_ios_qr_scanned(const char *text);
+// Bonjour browse for the desktop's sync service (NWBrowser; the local
+// network permission prompt appears on first use).
+void ghi_swift_browse_start(void);
+void ghi_swift_browse_stop(void);
+// Swift -> Rust: the services currently visible, as a JSON array of
+// {"name": string, "host": string, "port": number} (copied by Rust).
+void ghi_ios_browse_found(const char *json);
+
 #endif

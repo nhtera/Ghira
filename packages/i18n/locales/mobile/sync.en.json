@@ -1,0 +1,46 @@
+{
+  "mobile": {
+    "sync": {
+      "row": "Sync with computer",
+      "pairWithDesktop": "Pair with your computer",
+      "pairedWith": "Paired with {{device}}",
+      "notPaired": "Not paired",
+      "unpair": "Unpair",
+      "unpairTitle": "Unpair from {{device}}?",
+      "unpairBody": "This phone and {{device}} stop syncing. Meetings already on each one stay where they are.",
+      "unpairedBy": "Unpaired by {{device}}. Pair again to keep syncing.",
+      "wipeAsked": "{{device}} asked this phone to delete the meetings they shared. They’ve been deleted here.",
+      "scan": {
+        "cameraOff": "The camera is off for {{app}}. Turn it on in Settings to scan the code.",
+        "invalid": "That isn’t a {{app}} code.",
+        "expired": "That code has expired. Show a new one on your computer.",
+        "notFound": "Couldn’t find your computer. Check that both are on the same Wi-Fi.",
+        "localNetwork": "{{app}} needs the local network to find your computer. Turn it on in Settings."
+      },
+      "audioOnDevice": "Audio is on {{device}}",
+      "audioOnDeviceHint": "Play it there. This phone has the notes and the transcript.",
+      "refiningOn": "Refining on {{device}}",
+      "refiningHint": "The transcript can’t be edited until it comes back.",
+      "processHere": "Process on this phone now",
+      "processHereHint": "Takes the job back from {{device}}.",
+      "editedOn": "Edited on {{device}}",
+      "useThis": "Use this",
+      "dismiss": "Dismiss",
+      "deletedHere": "Deleted here. It will be deleted on {{device}} the next time you sync.",
+      "deletedEverywhere": "Deleted on all devices",
+      "chip": {
+        "sending": "Sending to {{device}}",
+        "refining": "Refining on {{device}}",
+        "waitingForDevice": "Waiting for {{device}}"
+      },
+      "error": {
+        "unreachable": "Couldn’t reach your computer. Check that both are on the same Wi-Fi.",
+        "refused": "Your computer no longer accepts this phone. Pair them again.",
+        "upgradeRequired": "One of the two apps needs an update before they can sync.",
+        "storageFull": "There isn’t enough storage space to finish syncing.",
+        "locked": "Unlock {{app}} to sync.",
+        "internal": "Sync stopped because of a problem. Try again."
+      }
+    }
+  }
+}

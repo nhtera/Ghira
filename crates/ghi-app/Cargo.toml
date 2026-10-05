@@ -47,6 +47,7 @@ ghi-models = { path = "../ghi-models" }
 ghi-net = { path = "../ghi-net" }
 ghi-speech = { path = "../ghi-speech" }
 ghi-store = { path = "../ghi-store" }
+ghi-sync = { path = "../ghi-sync" }
 ghi-text = { path = "../ghi-text" }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]

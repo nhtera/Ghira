@@ -1,0 +1,46 @@
+{
+  "mobile": {
+    "sync": {
+      "row": "Đồng bộ với máy tính",
+      "pairWithDesktop": "Ghép nối với máy tính",
+      "pairedWith": "Đã ghép với {{device}}",
+      "notPaired": "Chưa ghép",
+      "unpair": "Huỷ ghép",
+      "unpairTitle": "Huỷ ghép với {{device}}?",
+      "unpairBody": "Điện thoại này và {{device}} sẽ ngừng đồng bộ. Cuộc họp đã có trên mỗi máy vẫn được giữ.",
+      "unpairedBy": "{{device}} đã huỷ ghép. Hãy ghép lại để tiếp tục đồng bộ.",
+      "wipeAsked": "{{device}} đã yêu cầu điện thoại này xoá các cuộc họp đã chia sẻ. Chúng đã được xoá khỏi máy.",
+      "scan": {
+        "cameraOff": "Camera đang tắt với {{app}}. Bật trong Cài đặt để quét mã.",
+        "invalid": "Đây không phải mã của {{app}}.",
+        "expired": "Mã đã hết hạn. Hãy tạo mã mới trên máy tính.",
+        "notFound": "Không tìm thấy máy tính. Kiểm tra hai máy có cùng Wi-Fi không.",
+        "localNetwork": "{{app}} cần dùng mạng nội bộ để tìm máy tính. Bật trong Cài đặt."
+      },
+      "audioOnDevice": "Âm thanh nằm trên {{device}}",
+      "audioOnDeviceHint": "Hãy nghe ở đó. Điện thoại này có ghi chú và bản ghi.",
+      "refiningOn": "Đang xử lý cuối trên {{device}}",
+      "refiningHint": "Chưa sửa được bản ghi cho đến khi xử lý xong.",
+      "processHere": "Xử lý ngay trên điện thoại này",
+      "processHereHint": "Lấy lại công việc từ {{device}}.",
+      "editedOn": "Sửa trên {{device}}",
+      "useThis": "Dùng bản này",
+      "dismiss": "Bỏ qua",
+      "deletedHere": "Đã xoá ở đây. Cuộc họp sẽ bị xoá trên {{device}} ở lần đồng bộ tới.",
+      "deletedEverywhere": "Đã xoá trên mọi thiết bị",
+      "chip": {
+        "sending": "Đang gửi sang {{device}}",
+        "refining": "Đang xử lý cuối trên {{device}}",
+        "waitingForDevice": "Chờ {{device}}"
+      },
+      "error": {
+        "unreachable": "Không kết nối được với máy tính. Kiểm tra hai máy có cùng Wi-Fi không.",
+        "refused": "Máy tính không còn chấp nhận điện thoại này. Hãy ghép nối lại.",
+        "upgradeRequired": "Một trong hai ứng dụng cần cập nhật trước khi đồng bộ được.",
+        "storageFull": "Không đủ dung lượng để đồng bộ xong.",
+        "locked": "Mở khoá {{app}} để đồng bộ.",
+        "internal": "Đồng bộ dừng vì có lỗi. Bạn thử lại nhé."
+      }
+    }
+  }
+}

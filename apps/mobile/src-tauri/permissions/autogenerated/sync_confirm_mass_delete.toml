@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-confirm-mass-delete"
+description = "Enables the sync_confirm_mass_delete command without any pre-configured scope."
+commands.allow = ["sync_confirm_mass_delete"]
+
+[[permission]]
+identifier = "deny-sync-confirm-mass-delete"
+description = "Denies the sync_confirm_mass_delete command without any pre-configured scope."
+commands.deny = ["sync_confirm_mass_delete"]

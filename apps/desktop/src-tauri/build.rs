@@ -175,6 +175,18 @@ fn main() {
             "meeting_transcript",
             "meeting_notes",
             "meeting_detail",
+            "sync_status",
+            "sync_set_enabled",
+            "sync_pair_open",
+            "sync_pair_close",
+            "sync_devices",
+            "sync_unpair",
+            "sync_unpair_and_wipe",
+            "sync_now",
+            "sync_conflicts",
+            "sync_conflict_resolve",
+            "sync_confirm_mass_delete",
+            "sync_delete_everywhere_status",
         ]),
     ))
     .expect("failed to run tauri-build");

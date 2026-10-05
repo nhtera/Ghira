@@ -2,7 +2,7 @@
 // The UI's only way to the Rust core: the tauri-specta commands and events
 // (RT-14: the mock uses the same generated types, so screens built against
 // it work unchanged on the real core).
-import type { CoreEvent, MobileEvent, commands } from "../bindings";
+import type { CoreEvent, MobileEvent, SyncEvent, commands } from "../bindings";
 
 export type Commands = typeof commands;
 export type Unlisten = () => void;
@@ -17,6 +17,8 @@ export interface Ipc {
   onMobileEvent(cb: (e: MobileEvent) => void): Promise<Unlisten>;
   /** The app lock engaged (`locked: true`) or was unlocked. Nothing is sent at a launch with the lock off. */
   onLockChanged(cb: (locked: boolean) => void): Promise<Unlisten>;
+  /** Computer sync: paired, unpaired, progress, a conflict copy, a mass delete to confirm, a wipe done, an error code. */
+  onSyncEvent(cb: (e: SyncEvent) => void): Promise<Unlisten>;
   /** The URL an `<audio>` element plays for a ghi-audio token (issueAudioPlay). */
   audioUrl(token: string): string;
 }

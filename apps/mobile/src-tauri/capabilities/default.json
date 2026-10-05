@@ -102,6 +102,19 @@
     "allow-voice-status",
     "allow-enroll-voice-level",
     "allow-meeting-attendees",
-    "allow-meeting-contacts"
+    "allow-meeting-contacts",
+    "allow-sync-status",
+    "allow-sync-set-enabled",
+    "allow-sync-devices",
+    "allow-sync-unpair",
+    "allow-sync-unpair-and-wipe",
+    "allow-sync-now",
+    "allow-sync-conflicts",
+    "allow-sync-conflict-resolve",
+    "allow-sync-confirm-mass-delete",
+    "allow-sync-delete-everywhere-status",
+    "allow-sync-pair-scan-start",
+    "allow-sync-pair-scan-stop",
+    "allow-sync-lease-revoke"
   ]
 }

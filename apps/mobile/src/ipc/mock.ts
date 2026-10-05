@@ -8,10 +8,13 @@ import type { Commands, Ipc } from "./ipc";
 import { calendarCommands } from "./mock-calendar";
 import { meetingCommands } from "./mock-meetings";
 import { recordCommands } from "./mock-record";
+import { createSyncMock } from "./mock-sync";
 import { gateContent, lockListeners, settingsCommands } from "./mock-settings";
 
 const coreListeners = new Set<(e: CoreEvent) => void>();
 const mobileListeners = new Set<(e: MobileEvent) => void>();
+
+const sync = createSyncMock();
 
 const scripted: Partial<Commands> = {
   appVersion: async () => ({ app: "0.1.0", core: "0.1.0" }),
@@ -21,6 +24,7 @@ const scripted: Partial<Commands> = {
   ...meetingCommands,
   ...settingsCommands,
   ...calendarCommands,
+  ...sync.commands,
 };
 
 /**
@@ -64,6 +68,10 @@ export const mockIpc: Ipc = {
     lockListeners.add(cb);
     return () => lockListeners.delete(cb);
   },
+  onSyncEvent: async (cb) => {
+    sync.listeners.add(cb);
+    return () => sync.listeners.delete(cb);
+  },
   audioUrl: (token) => token,
 };
 
@@ -72,11 +80,12 @@ declare global {
     __ghiMock?: {
       simulateMobileEvent(e: MobileEvent): void;
       simulateCoreEvent(e: CoreEvent): void;
-    };
+    } & ReturnType<typeof createSyncMock>["hooks"];
   }
 }
 
 window.__ghiMock = {
   simulateMobileEvent: (e) => mobileListeners.forEach((l) => l(e)),
   simulateCoreEvent: (e) => coreListeners.forEach((l) => l(e)),
+  ...sync.hooks,
 };

@@ -29,6 +29,7 @@ import { aiCommands, audioDeleted, sensitiveMeetings } from "./mock-ai";
 import { calendarCommands } from "./mock-calendar";
 import { organizeCommands } from "./mock-organize";
 import { peopleCommands } from "./mock-people";
+import { createSyncMock } from "./mock-sync";
 
 const LINE_MS = 1800;
 // Palette slots in assignment order (s1, s2, s4, s8: tokens speakerOrder).
@@ -234,6 +235,8 @@ const setLocked = (v: boolean) => {
   lockListeners.forEach((l) => l({ locked: v }));
 };
 
+const sync = createSyncMock();
+
 const commands: Commands = {
   lockState: () => ok(locked),
   lockNow: () => {
@@ -259,6 +262,7 @@ const commands: Commands = {
   ...reviewCommands({ rows, process }),
   ...calendarCommands(),
   ...organizeCommands({ rows }),
+  ...sync.commands,
   ...peopleCommands({ rows, voiceReady: () => voiceInstalled, recording: () => session != null }),
   ...aiCommands({
     rows,
@@ -636,6 +640,7 @@ export const mockIpc: Ipc = {
   onImportUpdate,
   onUpdateChanged: on(updateListeners),
   onLockChanged: on(lockListeners),
+  onSyncEvent: on(sync.listeners),
   audioUrl,
 };
 
@@ -656,4 +661,5 @@ let modelDamaged = false;
   },
   /** Stores a (fake) API key, as Settings → AI would. */
   setCloudKey: (provider: string) => commands.setCloudKey(provider, "test-key"),
+  ...sync.hooks,
 };

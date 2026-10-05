@@ -117,6 +117,10 @@ mod swift {
         /// `volumeAvailableCapacityForImportantUsage` of the app's volume in
         /// bytes (counts purgeable space); < 0 when unknown.
         pub fn ghi_swift_available_capacity() -> i64;
+        pub fn ghi_swift_qr_scan_start();
+        pub fn ghi_swift_qr_scan_stop();
+        pub fn ghi_swift_browse_start();
+        pub fn ghi_swift_browse_stop();
     }
 }
 
@@ -509,6 +513,40 @@ mod wrappers {
         }
     }
 
+    /// Starts the camera scan for the desktop's pairing code (phase 15).
+    pub fn qr_scan_start() {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        unsafe {
+            swift::ghi_swift_qr_scan_start()
+        }
+    }
+
+    pub fn qr_scan_stop() {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        unsafe {
+            swift::ghi_swift_qr_scan_stop()
+        }
+    }
+
+    /// Starts browsing for the desktop's sync service (phase 15).
+    pub fn browse_start() {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        unsafe {
+            swift::ghi_swift_browse_start()
+        }
+    }
+
+    pub fn browse_stop() {
+        // SAFETY: plain C call into Swift.
+        #[cfg(target_os = "ios")]
+        unsafe {
+            swift::ghi_swift_browse_stop()
+        }
+    }
+
     pub fn request_mic_permission() {
         // SAFETY: plain C call into Swift.
         #[cfg(target_os = "ios")]
@@ -546,9 +584,58 @@ pub extern "C" fn ghi_ios_inbox_changed() {
     crate::cmd::events::emit(crate::cmd::MobileEvent::InboxChanged);
 }
 
+/// Swift scanned a pairing code. The text carries a secret, so it is only
+/// checked here and never logged; the pairing flow that consumes it arrives
+/// with the sync session (15-I).
+///
+/// # Safety
+/// `text` is NULL or a NUL-terminated string valid for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ghi_ios_qr_scanned(text: *const std::ffi::c_char) {
+    // SAFETY: the caller guarantees a valid NUL-terminated string (or NULL).
+    let _ = unsafe { c_text(text) };
+}
+
+/// Swift's Bonjour browse changed: `json` lists the visible services.
+///
+/// # Safety
+/// `json` is NULL or a NUL-terminated string valid for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ghi_ios_browse_found(json: *const std::ffi::c_char) {
+    // SAFETY: the caller guarantees a valid NUL-terminated string (or NULL).
+    let _ = unsafe { c_text(json) };
+}
+
+/// Copies a C string argument; `None` for NULL or invalid UTF-8.
+///
+/// # Safety
+/// `p` is NULL or a NUL-terminated string valid for the call.
+unsafe fn c_text(p: *const std::ffi::c_char) -> Option<String> {
+    if p.is_null() {
+        return None;
+    }
+    // SAFETY: non-null and NUL-terminated per the contract.
+    unsafe { std::ffi::CStr::from_ptr(p) }
+        .to_str()
+        .ok()
+        .map(str::to_owned)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sync_callbacks_tolerate_null_and_bad_text() {
+        // SAFETY: NULL and a valid C string.
+        unsafe {
+            ghi_ios_qr_scanned(std::ptr::null());
+            ghi_ios_browse_found(c"[]".as_ptr());
+            assert_eq!(c_text(c"abc".as_ptr()).as_deref(), Some("abc"));
+            assert!(c_text(c"\xff".as_ptr()).is_none());
+            assert!(c_text(std::ptr::null()).is_none());
+        }
+    }
 
     /// The Swift enum and `ActivityPhase` list the same cases with the same numbers.
     #[test]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-unpair-and-wipe"
+description = "Enables the sync_unpair_and_wipe command without any pre-configured scope."
+commands.allow = ["sync_unpair_and_wipe"]
+
+[[permission]]
+identifier = "deny-sync-unpair-and-wipe"
+description = "Denies the sync_unpair_and_wipe command without any pre-configured scope."
+commands.deny = ["sync_unpair_and_wipe"]

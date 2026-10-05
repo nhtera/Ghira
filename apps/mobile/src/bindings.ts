@@ -320,6 +320,35 @@ export const commands = {
 	 *  the follow-up email's "To"). Empty if none. Errors: `storage`.
 	 */
 	meetingContacts: (meeting: string) => typedError<MeetingContact[], string>(__TAURI_INVOKE("meeting_contacts", { meeting })),
+	/**  Whether sync is on, who is paired and what is waiting. */
+	syncStatus: () => typedError<SyncStatus, string>(__TAURI_INVOKE("sync_status")),
+	/**  Turns sync on or off. Turning it on creates this device's identity. */
+	syncSetEnabled: (enabled: boolean) => typedError<SyncStatus, string>(__TAURI_INVOKE("sync_set_enabled", { enabled })),
+	syncDevices: () => typedError<DeviceRow[], string>(__TAURI_INVOKE("sync_devices")),
+	/**  Forgets a device. Meetings already synced stay on both. */
+	syncUnpair: (gid: string) => typedError<null, string>(__TAURI_INVOKE("sync_unpair", { gid })),
+	/**  Forgets a device and has it delete what it got from this one. */
+	syncUnpairAndWipe: (gid: string) => typedError<null, string>(__TAURI_INVOKE("sync_unpair_and_wipe", { gid })),
+	/**  Syncs now instead of waiting for the next change. */
+	syncNow: () => typedError<null, string>(__TAURI_INVOKE("sync_now")),
+	/**  The conflict copies of a meeting. */
+	syncConflicts: (meeting: string) => typedError<ConflictCopy[], string>(__TAURI_INVOKE("sync_conflicts", { meeting })),
+	/**  Takes the copy (`use_it`) in place of what is there, or dismisses it. */
+	syncConflictResolve: (gid: string, useIt: boolean) => typedError<null, string>(__TAURI_INVOKE("sync_conflict_resolve", { gid, useIt })),
+	/**  Answers a [`SyncEvent::NeedsConfirm`]: apply the other device's mass delete or refuse it. */
+	syncConfirmMassDelete: (accept: boolean) => typedError<null, string>(__TAURI_INVOKE("sync_confirm_mass_delete", { accept })),
+	syncDeleteEverywhereStatus: () => typedError<DeleteEverywhereStatus, string>(__TAURI_INVOKE("sync_delete_everywhere_status")),
+	/**
+	 *  Phone: starts the camera to scan the desktop's code (the scan arrives as
+	 *  `ghi_ios_qr_scanned`, never through the webview).
+	 */
+	syncPairScanStart: () => typedError<null, string>(__TAURI_INVOKE("sync_pair_scan_start")),
+	syncPairScanStop: () => typedError<null, string>(__TAURI_INVOKE("sync_pair_scan_stop")),
+	/**
+	 *  Phone: takes back a meeting's final pass from the desktop to run it here
+	 *  ("Process on this phone now").
+	 */
+	syncLeaseRevoke: (meeting: string) => typedError<null, string>(__TAURI_INVOKE("sync_lease_revoke", { meeting })),
 };
 
 /** Events */
@@ -327,6 +356,7 @@ export const events = {
 	coreEvent: makeEvent<CoreEvent>("core-event"),
 	lockChanged: makeEvent<LockChanged>("lock-changed"),
 	mobileEvent: makeEvent<MobileEvent>("mobile-event"),
+	syncEvent: makeEvent<SyncEvent>("sync-event"),
 };
 
 /* Types */
@@ -561,6 +591,22 @@ export type CloudTask =
 /**  Ask this meeting. */
 { kind: "ask"; question: string; language: NotesLanguage };
 
+/**
+ *  The losing side of an edit made on two devices: kept so the user can take
+ *  it instead (doc 07 §7.4). The winner is already in place.
+ */
+export type ConflictCopy = {
+	gid: string,
+	targetKind: ConflictTarget,
+	/**  Which field of the target (`text`, `title`, ...). */
+	field: string,
+	/**  The name of the device that made this edit ("Edited on {device}"). */
+	device: string,
+	text: string,
+};
+
+export type ConflictTarget = "title" | "segment" | "noteBlock" | "actionItem" | "speaker";
+
 /**  The copy-the-consent-message text (EN and VI) for the clipboard. */
 export type ConsentMessage = {
 	en: string,
@@ -582,6 +628,38 @@ export type CoreEvent = Envelope;
 export type CurrentEvent = {
 	event: CalendarEvent | null,
 };
+
+/**  Where "Delete everywhere" stands (doc 07 §7.9). */
+export type DeleteEverywhereState = "idle" | 
+/**  Waiting for the devices in `waiting_for` to be reachable. */
+"waiting" | "done";
+
+export type DeleteEverywhereStatus = {
+	state: DeleteEverywhereState,
+	/**  Names of the devices not yet reached. */
+	waitingFor: string[],
+};
+
+export type DevicePlatform = "mac" | "windows" | "ios";
+
+/**  One paired device. */
+export type DeviceRow = {
+	gid: string,
+	name: string,
+	platform: DevicePlatform,
+	state: DeviceState,
+	/**  Unix ms of the last completed session; `None` if never. */
+	lastSeenMs: number | null,
+};
+
+export type DeviceState = 
+/**  Paired and syncing. */
+"paired" | 
+/**
+ *  "Unpair and wipe" was chosen; waiting for the device to be reachable
+ *  so it can delete what it holds from this one (doc 07 §3.5).
+ */
+"wipePending";
 
 export type DeviceTier = {
 	/**  `iPhone16,1` style machine identifier (`SIMULATOR_MODEL_IDENTIFIER` on the simulator). */
@@ -1324,6 +1402,45 @@ export type StoreProblem =
 export type StoreStatus = { state: "ready" } | 
 /**  `problem` is a stable code; the words are the UI's. */
 { state: "unavailable"; problem: StoreProblem };
+
+/**  A sync failure as a code the UI words (doc 07 §5.3: never content). */
+export type SyncErrorCode = 
+/**  No network path to the other device on the local network. */
+"unreachable" | 
+/**  The other device no longer accepts this one. */
+"refused" | 
+/**  The two apps are too far apart in version; one needs an update. */
+"upgradeRequired" | "storageFull" | 
+/**  Locked by the app lock. */
+"locked" | "internal";
+
+/**  Sync happened (or needs the user). Codes and counts only. */
+export type SyncEvent = { type: "paired"; device: DeviceRow } | 
+/**  `by_peer`: the other device unpaired (the UI says "Unpaired by <name>"). */
+{ type: "unpaired"; gid: string; name: string; byPeer: boolean } | { type: "progress"; pending: number } | 
+/**  A conflict copy was made for this meeting. */
+{ type: "conflict"; meeting: string } | 
+/**
+ *  The other device deleted `count` meetings in one go; nothing is
+ *  applied until the user answers `sync_confirm_mass_delete`.
+ */
+{ type: "needsConfirm"; device: string; count: number } | 
+/**  The wipe finished (here, or the peer confirmed it). */
+{ type: "wipeDone"; gid: string } | { type: "error"; code: SyncErrorCode };
+
+export type SyncStatus = {
+	enabled: boolean,
+	paired: DeviceRow[],
+	/**
+	 *  Things waiting to go to the desktop; the desktop shows "Open Ghira on
+	 *  your phone to sync" while this is above 0.
+	 */
+	pendingOnPhone: number,
+	/**  Always true: sync never leaves the local network. */
+	localOnly: boolean,
+	/**  The last failure as a code (never content), for the UI to word. */
+	lastErrorCode: string | null,
+};
 
 /**  A tag on a meeting row. */
 export type TagChip = {
