@@ -101,9 +101,21 @@ pub(crate) fn run_pair<S: Transport + 'static, H: Transport + 'static>(
     spoke_side: S,
     hub_side: H,
 ) -> (crate::Result<SessionReport>, crate::Result<SessionReport>) {
-    let (hub_store, clk) = (hub.clone(), clock());
-    let server = thread::spawn(move || HubSession::new(hub_store, clk, hub_side).serve());
-    let mut s = SpokeSession::new(spoke.clone(), clock(), spoke_side, "hub".into());
+    run_with_clocks(hub, spoke, spoke_side, hub_side, clock(), clock())
+}
+
+/// Like [`run_pair`], with the clocks each side's session reads.
+pub(crate) fn run_with_clocks<S: Transport + 'static, H: Transport + 'static>(
+    hub: &Arc<FakeSyncStore>,
+    spoke: &Arc<FakeSyncStore>,
+    spoke_side: S,
+    hub_side: H,
+    hub_clock: Arc<FakeClock>,
+    spoke_clock: Arc<FakeClock>,
+) -> (crate::Result<SessionReport>, crate::Result<SessionReport>) {
+    let hub_store = hub.clone();
+    let server = thread::spawn(move || HubSession::new(hub_store, hub_clock, hub_side).serve());
+    let mut s = SpokeSession::new(spoke.clone(), spoke_clock, spoke_side, "hub".into());
     let mine = s.run_once();
     let _ = s.bye();
     drop(s);
@@ -179,9 +191,9 @@ fn cursors_move_only_with_the_ack() {
 
 /// Fails the n-th message (counting sends and receives) and everything
 /// after it, like a connection that dropped there.
-struct Flaky {
-    inner: Option<MemDuplex>,
-    budget: usize,
+pub(crate) struct Flaky {
+    pub(crate) inner: Option<MemDuplex>,
+    pub(crate) budget: usize,
 }
 
 impl Flaky {

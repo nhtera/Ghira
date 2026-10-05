@@ -88,6 +88,8 @@ struct Inner {
 pub struct FakeSyncStore {
     gid: String,
     relay: bool,
+    /// Gives lease renewals a wall time (the real store reads its own).
+    clock: Mutex<Option<std::sync::Arc<crate::clock::FakeClock>>>,
     inner: Mutex<Inner>,
 }
 
@@ -101,8 +103,14 @@ impl FakeSyncStore {
         Self {
             gid: gid.to_string(),
             relay,
+            clock: Mutex::new(None),
             inner: Mutex::new(inner),
         }
+    }
+
+    /// Lets `lease_renew` stamp `wall_deadline_ms` from this clock.
+    pub fn attach_clock(&self, clock: std::sync::Arc<crate::clock::FakeClock>) {
+        *self.clock.lock().unwrap_or_else(|p| p.into_inner()) = Some(clock);
     }
 
     fn g(&self) -> MutexGuard<'_, Inner> {
@@ -126,6 +134,12 @@ impl FakeSyncStore {
         let seq = g.log.len() as i64 + 1;
         g.log.push((seq, Entry::Row(gid)));
         rec
+    }
+
+    /// A row that never reaches the feed (a meeting still recording, say).
+    pub fn put_unsynced(&self, rec: Record) {
+        let mut g = self.g();
+        g.rows.insert(rec.gid().to_string(), rec);
     }
 
     /// Deletes locally: a tombstone, logged; children of a meeting go too.
@@ -167,6 +181,10 @@ impl FakeSyncStore {
 
     pub fn set_dek(&self, meeting_gid: &str, dek: [u8; 32]) {
         self.g().deks.insert(meeting_gid.into(), dek);
+    }
+
+    pub fn forget_dek(&self, meeting_gid: &str) {
+        self.g().deks.remove(meeting_gid);
     }
 
     pub fn dek(&self, meeting_gid: &str) -> Option<[u8; 32]> {
@@ -241,18 +259,6 @@ impl FakeSyncStore {
 
     pub fn device_ids(&self) -> Vec<String> {
         self.g().devices.keys().cloned().collect()
-    }
-
-    pub fn has_peer_meeting(&self, device: &str, meeting_gid: &str) -> bool {
-        self.g()
-            .peer_meetings
-            .contains(&(device.to_string(), meeting_gid.to_string()))
-    }
-
-    pub fn add_peer_meeting(&self, device: &str, meeting_gid: &str) {
-        self.g()
-            .peer_meetings
-            .insert((device.to_string(), meeting_gid.to_string()));
     }
 }
 
@@ -630,11 +636,26 @@ impl SyncStore for FakeSyncStore {
         deadline_cont_ns: i64,
         boot_id: &str,
     ) -> Res<()> {
+        let wall = self
+            .clock
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .map(|c| crate::clock::Clock::wall_ms(c.as_ref()));
         let mut g = self.g();
         let l = g
             .leases
             .get_mut(job_uuid)
             .ok_or_else(|| not_found("lease", job_uuid))?;
+        if !matches!(
+            l.state.as_str(),
+            "offered" | "granted" | "running" | "revoking"
+        ) {
+            return Err(StoreError::Fenced);
+        }
+        if let Some(w) = wall {
+            l.wall_deadline_ms = Some(w + ttl_ms);
+        }
         l.ttl_ms = ttl_ms;
         l.deadline_cont_ns = Some(deadline_cont_ns);
         l.boot_id = Some(boot_id.to_string());
@@ -654,7 +675,7 @@ impl SyncStore for FakeSyncStore {
         let Some(l) = g.leases.get(job_uuid) else {
             return Ok(false);
         };
-        let open = matches!(l.state.as_str(), "granted" | "running");
+        let open = l.state == "granted";
         let (Some(deadline), Some(boot)) = (l.deadline_cont_ns, l.boot_id.as_deref()) else {
             return Ok(false);
         };

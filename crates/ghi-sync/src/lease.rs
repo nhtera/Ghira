@@ -161,7 +161,9 @@ impl Grantor {
         }) {
             return Err(invalid("the meeting already has an open lease"));
         }
-        let epoch = earlier.iter().map(|l| l.epoch).max().unwrap_or(0) + 1;
+        // A self-take ran locally under `epoch + 1`, so that one is spent too.
+        let spent = |l: &Lease| l.epoch + i64::from(l.state == "self_taken");
+        let epoch = earlier.iter().map(spent).max().unwrap_or(0) + 1;
         let lease = Lease {
             job_uuid: uuid::Uuid::new_v4().to_string(),
             meeting_gid: meeting_gid.to_string(),
@@ -580,5 +582,525 @@ impl Holder {
     /// same compare-and-set): `true` when the result may be kept.
     pub fn finish(&self, store: &dyn SyncStore, job_uuid: &str) -> Result<bool> {
         Ok(store.lease_transition(job_uuid, &HOLDER_OPEN, "done")?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+    use std::time::Duration;
+
+    use ghi_store::sync::records::{NoteRec, Record, Version};
+
+    use super::*;
+    use crate::clock::FakeClock;
+    use crate::mem::MemDuplex;
+    use crate::session::fake::FakeSyncStore;
+    use crate::session::tests::{
+        HUB_KEY, hub_store, meeting, paired_spoke, run_with_clocks, spoke_key, sync_once,
+    };
+
+    const HOUR: Duration = Duration::from_secs(3600);
+
+    struct Rig {
+        hub: Arc<FakeSyncStore>,
+        phone: Arc<FakeSyncStore>,
+        hub_clock: Arc<FakeClock>,
+        phone_clock: Arc<FakeClock>,
+    }
+
+    impl Rig {
+        fn advance(&self, by: Duration) {
+            self.hub_clock.advance(by);
+            self.phone_clock.advance(by);
+        }
+
+        /// One session with the rig's clocks.
+        fn sync(
+            &self,
+        ) -> (
+            crate::Result<crate::session::SessionReport>,
+            crate::Result<crate::session::SessionReport>,
+        ) {
+            let (a, b) = MemDuplex::pair(spoke_key(1), HUB_KEY);
+            run_with_clocks(
+                &self.hub,
+                &self.phone,
+                a,
+                b,
+                self.hub_clock.clone(),
+                self.phone_clock.clone(),
+            )
+        }
+
+        fn offer(&self) -> ProcessRequest {
+            Grantor
+                .offer(
+                    self.phone.as_ref(),
+                    "hub",
+                    "m1",
+                    &["final_pass".into()],
+                    DEFAULT_TTL_MS,
+                )
+                .unwrap()
+        }
+
+        fn phone_lease(&self, job: &str) -> Lease {
+            self.phone.lease(job).unwrap()
+        }
+    }
+
+    /// A phone and hub that exchanged meeting `m1` and its key.
+    fn rig() -> Rig {
+        let hub = hub_store();
+        let phone = paired_spoke(&hub, "phone-a", 1);
+        phone.put_local(meeting("m1"));
+        phone.set_dek("m1", [7; 32]);
+        sync_once(&hub, &phone, 1).0.unwrap();
+        let (hub_clock, phone_clock) = (
+            Arc::new(FakeClock::new(1_700_000_000_000)),
+            Arc::new(FakeClock::new(1_700_000_000_000)),
+        );
+        hub.attach_clock(hub_clock.clone());
+        phone.attach_clock(phone_clock.clone());
+        Rig {
+            hub,
+            phone,
+            hub_clock,
+            phone_clock,
+        }
+    }
+
+    // The fake names the phone "phone-a"; the lease's peer on the phone is "hub".
+    #[test]
+    fn an_offer_needs_rows_key_and_audio_acked_and_one_open_lease_per_meeting() {
+        let hub = hub_store();
+        let phone = paired_spoke(&hub, "phone-a", 1);
+        phone.put_local(meeting("m1"));
+        phone.set_dek("m1", [7; 32]);
+        let kinds = ["final_pass".to_string()];
+        // Nothing acked yet.
+        assert!(
+            Grantor
+                .offer(phone.as_ref(), "hub", "m1", &kinds, DEFAULT_TTL_MS)
+                .is_err()
+        );
+        sync_once(&hub, &phone, 1).0.unwrap();
+        // Audio still waiting.
+        use crate::audio::TrackInfo;
+        use crate::session::fake::{LocalTrack, make_page};
+        phone.add_local_track(LocalTrack {
+            info: TrackInfo {
+                track_gid: "t1".into(),
+                meeting_gid: "m1".into(),
+                magic: b"GHB1".to_vec(),
+                version: 1,
+                prefix: vec![1; 19],
+                pages: 1,
+                bytes: 10,
+            },
+            pages: vec![make_page(0, b"x")],
+        });
+        assert!(
+            Grantor
+                .offer(phone.as_ref(), "hub", "m1", &kinds, DEFAULT_TTL_MS)
+                .is_err()
+        );
+        sync_once(&hub, &phone, 1).0.unwrap();
+        // Bad kinds and ttl are refused.
+        assert!(
+            Grantor
+                .offer(
+                    phone.as_ref(),
+                    "hub",
+                    "m1",
+                    &["rm -rf".to_string()],
+                    DEFAULT_TTL_MS
+                )
+                .is_err()
+        );
+        assert!(
+            Grantor
+                .offer(phone.as_ref(), "hub", "m1", &kinds, 0)
+                .is_err()
+        );
+        let req = Grantor
+            .offer(phone.as_ref(), "hub", "m1", &kinds, DEFAULT_TTL_MS)
+            .unwrap();
+        assert_eq!((req.epoch, req.ttl_ms), (1, DEFAULT_TTL_MS));
+        assert!(
+            Grantor
+                .offer(phone.as_ref(), "hub", "m1", &kinds, DEFAULT_TTL_MS)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn an_offer_becomes_a_lease_on_both_sides_and_a_duplicate_is_a_no_op() {
+        let r = rig();
+        let req = r.offer();
+        assert_eq!(r.phone_lease(&req.job_uuid).state, "offered");
+        let (mine, theirs) = r.sync();
+        mine.unwrap();
+        assert_eq!(
+            theirs.unwrap().new_leases,
+            std::slice::from_ref(&req.job_uuid)
+        );
+        let phone_side = r.phone_lease(&req.job_uuid);
+        assert_eq!(phone_side.state, "granted");
+        // G = send + ttl + 15 min, stamped before the offer went out.
+        let g = phone_side.deadline_cont_ns.unwrap();
+        assert_eq!(
+            g,
+            r.phone_clock.now_cont_ns() as i64 + (DEFAULT_TTL_MS + GRACE_MS) * 1_000_000
+        );
+        let hub_side = r.hub.lease(&req.job_uuid).unwrap();
+        assert_eq!(
+            (hub_side.role, hub_side.state.as_str()),
+            (LeaseRole::Holder, "granted")
+        );
+        assert_eq!(
+            hub_side.deadline_cont_ns.unwrap(),
+            r.hub_clock.now_cont_ns() as i64 + DEFAULT_TTL_MS * 1_000_000,
+            "H = recv + ttl, 15 min before G"
+        );
+        // The same request again: accepted, nothing new to enqueue.
+        let again = Holder
+            .on_request(r.hub.as_ref(), r.hub_clock.as_ref(), "phone-a", &req)
+            .unwrap();
+        assert!(matches!(
+            again,
+            RequestOutcome::Accepted {
+                newly_opened: false,
+                ..
+            }
+        ));
+        assert_eq!(r.hub.all_leases().len(), 1);
+    }
+
+    #[test]
+    fn the_holder_refuses_what_it_cannot_take() {
+        let r = rig();
+        let base = ProcessRequest {
+            job_uuid: "j1".into(),
+            meeting_gid: "m1".into(),
+            epoch: 1,
+            kinds: vec!["final_pass".into()],
+            ttl_ms: 1000,
+        };
+        let ask = |req: &ProcessRequest, from: &str| {
+            Holder
+                .on_request(r.hub.as_ref(), r.hub_clock.as_ref(), from, req)
+                .unwrap()
+        };
+        let refused = |o: RequestOutcome| match o {
+            RequestOutcome::Refused(why) => why,
+            other => panic!("{other:?}"),
+        };
+        let mut bad = base.clone();
+        bad.kinds = vec!["shell".into()];
+        assert_eq!(refused(ask(&bad, "phone-a")), RefuseReason::Unsupported);
+        bad = base.clone();
+        bad.ttl_ms = MAX_TTL_MS + 1;
+        assert_eq!(refused(ask(&bad, "phone-a")), RefuseReason::Unsupported);
+        bad = base.clone();
+        bad.meeting_gid = "never-exchanged".into();
+        assert_eq!(refused(ask(&bad, "phone-a")), RefuseReason::NoKey);
+        // A meeting that was exchanged with another device only.
+        assert_eq!(refused(ask(&base, "phone-b")), RefuseReason::NoKey);
+        // A tombstoned meeting.
+        r.hub.delete_local("m1", "meeting", None);
+        assert_eq!(refused(ask(&base, "phone-a")), RefuseReason::Deleted);
+        assert!(r.hub.all_leases().is_empty());
+    }
+
+    #[test]
+    fn race_a_a_desktop_that_wakes_after_g_never_starts_and_the_phone_takes_over_once() {
+        let r = rig();
+        let req = r.offer();
+        r.sync().0.unwrap();
+        let (n, capable) = (12 * 3600 * 1000, true);
+        // The desktop sleeps; the phone is away. Just before G + N: not yet.
+        r.advance(
+            Duration::from_millis((DEFAULT_TTL_MS + GRACE_MS) as u64)
+                + 11 * HOUR
+                + Duration::from_secs(59 * 60),
+        );
+        assert!(
+            Grantor
+                .poll(r.phone.as_ref(), r.phone_clock.as_ref(), n, capable)
+                .unwrap()
+                .is_empty()
+        );
+        // Not capable (no A16+): it waits however long.
+        r.advance(2 * HOUR);
+        assert!(
+            Grantor
+                .poll(r.phone.as_ref(), r.phone_clock.as_ref(), n, false)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            Grantor.state_of(r.phone_clock.as_ref(), &r.phone_lease(&req.job_uuid)),
+            Some(GrantorState::Expired)
+        );
+        // Capable: epoch + 1, exactly once.
+        let acts = Grantor
+            .poll(r.phone.as_ref(), r.phone_clock.as_ref(), n, capable)
+            .unwrap();
+        let [GrantorAction::SelfTake(t)] = acts.as_slice() else {
+            panic!("{acts:?}")
+        };
+        assert_eq!((t.epoch, t.meeting_gid.as_str()), (req.epoch + 1, "m1"));
+        assert!(
+            Grantor
+                .poll(r.phone.as_ref(), r.phone_clock.as_ref(), n, capable)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(r.phone_lease(&req.job_uuid).state, "self_taken");
+        // The desktop wakes up long after H: its fence says no, so it never
+        // starts or commits.
+        assert!(
+            !Holder
+                .fence_ok(r.hub.as_ref(), r.hub_clock.as_ref(), &req.job_uuid, 0)
+                .unwrap()
+        );
+        // A later offer for the meeting is above the epoch the take-back used.
+        assert_eq!(r.offer().epoch, 3);
+    }
+
+    #[test]
+    fn the_holder_stops_a_minute_before_h_and_a_status_renews_it() {
+        let r = rig();
+        let req = r.offer();
+        r.sync().0.unwrap();
+        let job = req.job_uuid.as_str();
+        let ok = |margin| {
+            Holder
+                .fence_ok(r.hub.as_ref(), r.hub_clock.as_ref(), job, margin)
+                .unwrap()
+        };
+        assert!(ok(COMMIT_MARGIN_MS));
+        r.advance(Duration::from_millis(DEFAULT_TTL_MS as u64 - 90_000));
+        assert!(ok(COMMIT_MARGIN_MS));
+        r.advance(Duration::from_secs(40));
+        assert!(!ok(COMMIT_MARGIN_MS), "inside the last minute: no commit");
+        assert!(ok(0), "but it still holds the lease");
+        // The phone is back: the next session renews H (and G).
+        let before_g = r.phone_lease(job).deadline_cont_ns.unwrap();
+        let (mine, _) = r.sync();
+        let rep = mine.unwrap();
+        assert_eq!(rep.lease_infos.len(), 1);
+        assert_eq!(rep.lease_infos[0].state, "queued");
+        assert!(ok(COMMIT_MARGIN_MS), "renewed");
+        assert!(r.phone_lease(job).deadline_cont_ns.unwrap() > before_g);
+    }
+
+    #[test]
+    fn an_expired_lease_is_not_revived_by_a_late_status() {
+        let r = rig();
+        let req = r.offer();
+        r.sync().0.unwrap();
+        r.advance(Duration::from_millis(DEFAULT_TTL_MS as u64 + 1000));
+        let (mine, _) = r.sync();
+        assert_eq!(mine.unwrap().lease_infos[0].state, "expired");
+        assert!(
+            !Holder
+                .fence_ok(r.hub.as_ref(), r.hub_clock.as_ref(), &req.job_uuid, 0)
+                .unwrap()
+        );
+        assert_eq!(r.hub.lease(&req.job_uuid).unwrap().state, "expired");
+    }
+
+    #[test]
+    fn a_holder_reboot_suspends_the_lease_until_it_is_renewed() {
+        let r = rig();
+        let req = r.offer();
+        r.sync().0.unwrap();
+        r.advance(Duration::from_secs(600));
+        r.hub_clock.reboot();
+        assert!(
+            !Holder
+                .fence_ok(r.hub.as_ref(), r.hub_clock.as_ref(), &req.job_uuid, 0)
+                .unwrap()
+        );
+        let (mine, _) = r.sync();
+        assert_eq!(mine.unwrap().lease_infos[0].state, "queued");
+        assert!(
+            Holder
+                .fence_ok(r.hub.as_ref(), r.hub_clock.as_ref(), &req.job_uuid, 0)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn a_grantor_reboot_uses_wall_time_with_an_hour_of_grace() {
+        let r = rig();
+        let req = r.offer();
+        r.sync().0.unwrap(); // G stamped; wall deadline = now + ttl
+        r.phone_clock.reboot();
+        // Wall time only: G_wall = deadline + 15 min + 1 h.
+        let to_g = Duration::from_millis((DEFAULT_TTL_MS + GRACE_MS + REBOOT_GRACE_MS) as u64);
+        r.phone_clock.advance(to_g - Duration::from_secs(60));
+        assert!(
+            Grantor
+                .poll(r.phone.as_ref(), r.phone_clock.as_ref(), 0, true)
+                .unwrap()
+                .is_empty()
+        );
+        r.phone_clock.advance(Duration::from_secs(120));
+        let acts = Grantor
+            .poll(r.phone.as_ref(), r.phone_clock.as_ref(), 0, true)
+            .unwrap();
+        assert_eq!(acts.len(), 1);
+        assert_eq!(r.phone_lease(&req.job_uuid).state, "self_taken");
+    }
+
+    #[test]
+    fn done_is_reported_once_and_closes_the_lease() {
+        let r = rig();
+        let req = r.offer();
+        r.sync().0.unwrap();
+        assert!(Holder.finish(r.hub.as_ref(), &req.job_uuid).unwrap());
+        let (mine, _) = r.sync();
+        assert_eq!(mine.unwrap().lease_infos[0].state, "done");
+        assert_eq!(r.phone_lease(&req.job_uuid).state, "done");
+        // Closed: no more status traffic for it.
+        assert!(r.sync().0.unwrap().lease_infos.is_empty());
+    }
+
+    #[test]
+    fn revoke_takes_the_job_back_with_the_next_epoch() {
+        let r = rig();
+        let req = r.offer();
+        r.sync().0.unwrap();
+        Grantor.revoke(r.phone.as_ref(), "m1").unwrap();
+        assert_eq!(r.phone_lease(&req.job_uuid).state, "revoking");
+        let (mine, _) = r.sync();
+        let rep = mine.unwrap();
+        assert_eq!(rep.take_back.len(), 1);
+        assert_eq!(
+            (
+                rep.take_back[0].epoch,
+                rep.take_back[0].meeting_gid.as_str()
+            ),
+            (2, "m1")
+        );
+        assert_eq!(r.phone_lease(&req.job_uuid).state, "self_taken");
+        assert_eq!(r.hub.lease(&req.job_uuid).unwrap().state, "revoked");
+        assert!(
+            !Holder
+                .fence_ok(r.hub.as_ref(), r.hub_clock.as_ref(), &req.job_uuid, 0)
+                .unwrap()
+        );
+        assert!(
+            Grantor.revoke(r.phone.as_ref(), "m1").is_err(),
+            "nothing left to revoke"
+        );
+    }
+
+    #[test]
+    fn revoke_after_the_commit_takes_nothing() {
+        let r = rig();
+        let req = r.offer();
+        r.sync().0.unwrap();
+        // The desktop commits first; the phone does not know yet.
+        assert!(Holder.finish(r.hub.as_ref(), &req.job_uuid).unwrap());
+        Grantor.revoke(r.phone.as_ref(), "m1").unwrap();
+        let (mine, _) = r.sync();
+        assert!(mine.unwrap().take_back.is_empty());
+        assert_eq!(r.phone_lease(&req.job_uuid).state, "done");
+    }
+
+    #[test]
+    fn race_c_revoke_and_commit_in_the_same_instant_give_exactly_one_answer() {
+        for round in 0..300 {
+            let r = rig();
+            let req = r.offer();
+            r.sync().0.unwrap();
+            let gate = Arc::new(Barrier::new(2));
+            let (hub, job, g2) = (r.hub.clone(), req.job_uuid.clone(), gate.clone());
+            let commit = thread::spawn(move || {
+                g2.wait();
+                Holder.finish(hub.as_ref(), &job).unwrap()
+            });
+            gate.wait();
+            let reply = Holder
+                .on_revoke(
+                    r.hub.as_ref(),
+                    &LeaseQuery {
+                        meeting_gid: "m1".into(),
+                        epoch: req.epoch,
+                    },
+                )
+                .unwrap();
+            let committed = commit.join().unwrap();
+            match reply {
+                Message::Revoked { .. } => assert!(!committed, "round {round}: both won"),
+                Message::AlreadyDone { .. } => assert!(committed, "round {round}: neither won"),
+                other => panic!("{other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn race_b_two_results_keep_the_higher_epoch_on_both_devices() {
+        let r = rig();
+        let req = r.offer();
+        r.sync().0.unwrap();
+        let note = |epoch: i64, body: u8, lamport: i64| {
+            Record::Note(NoteRec {
+                gid: "note-1".into(),
+                version: Version {
+                    lamport,
+                    origin: "x".into(),
+                },
+                meeting_gid: "m1".into(),
+                epoch: Some(epoch),
+                body_ct: Some(ghi_store::sync::records::Bytes(vec![body])),
+                ..Default::default()
+            })
+        };
+        // The desktop finished under epoch 1 (and so has the higher Lamport
+        // value); the phone self-took with epoch 2 meanwhile.
+        r.hub.put_local(note(1, 1, 0));
+        r.hub.put_local(note(1, 1, 0)); // bumps the Lamport clock further
+        let acts = {
+            r.advance(Duration::from_millis(
+                (DEFAULT_TTL_MS + GRACE_MS) as u64 + 1,
+            ));
+            Grantor
+                .poll(r.phone.as_ref(), r.phone_clock.as_ref(), 0, true)
+                .unwrap()
+        };
+        let [GrantorAction::SelfTake(t)] = acts.as_slice() else {
+            panic!("{acts:?}")
+        };
+        assert_eq!(t.epoch, 2);
+        r.phone.put_local(note(t.epoch, 2, 0));
+        r.sync().0.unwrap();
+        r.sync().0.unwrap();
+        for store in [&r.hub, &r.phone] {
+            let Some(Record::Note(n)) = store.row("note-1") else {
+                panic!("no note")
+            };
+            assert_eq!(n.epoch, Some(2));
+            assert_eq!(n.body_ct.unwrap().0, vec![2]);
+        }
+        let _ = req;
+    }
+
+    #[test]
+    fn a_refused_offer_for_a_deleted_meeting_ends_the_lease() {
+        let r = rig();
+        let req = r.offer();
+        r.hub.delete_local("m1", "meeting", None);
+        // The hub's tombstone and the offer cross in one session; the offer
+        // goes first, the hub answers Deleted.
+        r.sync().0.unwrap();
+        assert_eq!(r.phone_lease(&req.job_uuid).state, "revoked");
+        assert!(r.hub.all_leases().is_empty());
     }
 }
