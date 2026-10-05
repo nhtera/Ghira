@@ -201,7 +201,7 @@ public func ghiSwiftQrScanStart() {
         GhiSyncHooks.install()
         // GHI_FAKE_QR: a scan without the camera (nothing is presented).
         if let fake = ProcessInfo.processInfo.environment["GHI_FAKE_QR"], !fake.isEmpty {
-            return GhiSyncHooks.inject(fake)
+            return GhiSyncHooks.injectWithoutScanner(fake)
         }
         #endif
         QrScanner.shared.start()
@@ -320,6 +320,17 @@ enum GhiSyncHooks {
     static func inject(_ text: String) {
         guard QrScanner.shared.isActive else { return }
         QrScanner.shared.finish(text)
+        markInjected()
+    }
+
+    /// GHI_FAKE_QR in the app's environment: the scan Rust asked for is answered at once, with no
+    /// sheet (the Simulator has no camera and a UI test has nobody to show a code to).
+    static func injectWithoutScanner(_ text: String) {
+        deliver(text)
+        markInjected()
+    }
+
+    private static func markInjected() {
         if let dir = InboxShared.containerURL() {
             try? "1".write(to: dir.appendingPathComponent("qr-injected.txt"), atomically: true, encoding: .utf8)
         }

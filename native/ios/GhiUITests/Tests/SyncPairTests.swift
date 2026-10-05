@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-// Phase 15-H: the native pairing scanner, driven through the test hooks of a
+// Phase 15-H/J: the native pairing scanner, driven through the test hooks of a
 // `build-ios.sh --sim --test-hooks` build (the Simulator has no camera, so the
-// sheet opens without a preview). `qr-open` is what the web UI's Pair button
-// will do through Rust once 15-J lands; `qr` injects a scan result (GHI_FAKE_QR
-// or a fixed string). The app writes qr-injected.txt in the App Group once the
-// text was handed to Rust. Needs the app installed and onboarding done.
+// sheet opens without a preview). `qr-open` starts the scan (what the web UI's
+// scan button does through Rust); `qr` injects a scan result (GHI_FAKE_QR or a
+// fixed string). The app writes qr-injected.txt in the App Group once the text
+// was handed to Rust. Needs the app installed and onboarding done.
+//
+// The end-to-end test pairs with a Mac's `ghi sync serve --print-qr` (the code
+// is a secret: it is read from the 0600 file named by GHI_FAKE_QR_FILE, handed
+// to the app's environment and never printed or asserted on):
+//   ghi sync serve --dir <scratch> --bind <en0 ip> --name "Test Mac" --print-qr > <0600 file> &
+//   TEST_RUNNER_GHI_FAKE_QR_FILE=<file> native/ios/GhiUITests/run.sh -only-testing:GhiUITests/SyncPairTests/testInjectedScanPairs
 
 import XCTest
 
@@ -48,9 +54,44 @@ final class SyncPairTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "a scan was delivered with no scanner open")
     }
 
-    /// Pairing from the injected string to a paired device needs the sync
-    /// service and its UI (15-J).
+    /// The injected string pairs with a hub on this Mac and a recording reaches it: the
+    /// app answers its own scan with GHI_FAKE_QR, shows the paired computer, and the session
+    /// that follows marks it synced. Skips without a code file (needs a running hub).
     func testInjectedScanPairs() throws {
-        throw XCTSkip("end-to-end pairing needs the sync service (15-J) and a desktop peer")
+        guard let path = ProcessInfo.processInfo.environment["GHI_FAKE_QR_FILE"], !path.isEmpty else {
+            throw XCTSkip("GHI_FAKE_QR_FILE not set (a 0600 file with the pairing code of `ghi sync serve --print-qr`)")
+        }
+        let code = try String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertFalse(code.isEmpty, "the code file is empty")
+        let app = Ghira.app(env: ["GHI_FAKE_QR": code])
+        app.launch()
+        Ghira.completeOnboarding(app)
+        Ghira.tapTab(app, "Settings")
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Sync with computer")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), app.debugDescription)
+        row.tap()
+        // Not paired yet: the button starts the scan, which the environment answers at once. (A phone
+        // that paired in the onboarding's pair step, which scans by itself, is paired already.)
+        let scan = app.buttons["Scan the code"]
+        if scan.waitForExistence(timeout: 5) { scan.tap() }
+        // Paired: the computer's card, then the first session's "Last synced".
+        XCTAssertTrue(app.staticTexts["Paired computer"].waitForExistence(timeout: 30), "not paired\n" + app.debugDescription)
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Last synced")).firstMatch.waitForExistence(timeout: 60),
+            "no session finished\n" + app.debugDescription)
+
+        // A short recording syncs to the computer on its own (rows, then its audio).
+        Ghira.tapTab(app, "Record")
+        let record = Ghira.recordButton(app)
+        XCTAssertTrue(record.waitForExistence(timeout: 10), app.debugDescription)
+        record.tap()
+        let consent = app.buttons["Everyone knows, start recording"]
+        if consent.waitForExistence(timeout: 3) { consent.tap() }
+        sleep(6)
+        let stop = Ghira.stopButton(app)
+        XCTAssertTrue(stop.waitForExistence(timeout: 10), app.debugDescription)
+        stop.tap()
+        // The change goes out within seconds; the Mac side checks the store afterwards.
+        sleep(20)
     }
 }
