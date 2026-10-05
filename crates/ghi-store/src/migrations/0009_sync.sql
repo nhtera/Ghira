@@ -7,6 +7,10 @@
 -- Paired devices (pins). `role`: the peer's role. `state` 'wipe_pending' means
 -- only a session that delivers Wipe is allowed. `static_pub` is the peer's
 -- X25519 key. `pair_psk_wrapped` is wrapped by the KeyRing (AAD `device:<gid>`).
+-- State 'known' is a device this one has no pairing with: it wrote a row that
+-- reached us through the hub (or was unpaired later), kept only so `origin`
+-- columns name the writer. It has no key or PSK, never connects, and is
+-- invisible to pin, handshake and device lists.
 -- push_seq / pull_seq are the cursors, `pull_feed_id` the feed they belong to.
 CREATE TABLE devices (
     id               INTEGER PRIMARY KEY,
@@ -14,10 +18,10 @@ CREATE TABLE devices (
     name             TEXT NOT NULL,
     platform         TEXT NOT NULL,
     role             TEXT NOT NULL CHECK (role IN ('hub', 'spoke')),
-    static_pub       BLOB NOT NULL UNIQUE,
+    static_pub       BLOB UNIQUE,
     key_alg          TEXT NOT NULL DEFAULT 'x25519',
-    pair_psk_wrapped BLOB NOT NULL,
-    state            TEXT NOT NULL DEFAULT 'paired' CHECK (state IN ('paired', 'wipe_pending')),
+    pair_psk_wrapped BLOB,
+    state            TEXT NOT NULL DEFAULT 'paired' CHECK (state IN ('paired', 'wipe_pending', 'known')),
     paired_at        INTEGER NOT NULL,
     last_seen        INTEGER,
     last_addr        TEXT,

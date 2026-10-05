@@ -177,6 +177,25 @@ fn sync_v9(tx: &Transaction) -> rusqlite::Result<()> {
             ))?;
         }
     }
+    // A local write moves `lamport`; the version then belongs to this device
+    // (`origin` NULL), not to the peer that wrote the row before. The merge
+    // engine sets `lamport` and `origin` together and says so with the
+    // `sync.applying` flag (set inside its transaction). Synced settings set
+    // their own origin.
+    for (table, _) in SYNC_TABLES {
+        if table == "synced_settings" {
+            continue;
+        }
+        tx.execute_batch(&format!(
+            "CREATE TRIGGER sync_origin_{table} AFTER UPDATE OF lamport ON {table}
+             WHEN NEW.lamport IS NOT OLD.lamport AND OLD.origin IS NOT NULL
+                  AND NEW.origin IS OLD.origin
+                  AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'sync.applying')
+             BEGIN
+                 UPDATE {table} SET origin = NULL WHERE gid = NEW.gid;
+             END;"
+        ))?;
+    }
     for event in ["INSERT", "UPDATE"] {
         tx.execute_batch(&format!(
             "CREATE TRIGGER sync_log_tombstones_{} AFTER {event} ON tombstones

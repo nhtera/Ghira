@@ -145,7 +145,8 @@ impl Store {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         let taken: bool = tx.query_row(
-            "SELECT EXISTS (SELECT 1 FROM devices WHERE gid = ?1 OR static_pub = ?2)
+            "SELECT EXISTS (SELECT 1 FROM devices
+                            WHERE (gid = ?1 AND state <> 'known') OR static_pub = ?2)
                  OR EXISTS (SELECT 1 FROM settings
                             WHERE key = 'sync.device_gid' AND value_json = json_quote(?1))",
             params![device.gid, device.static_pub.as_slice()],
@@ -158,19 +159,44 @@ impl Store {
             let ring = self.ring();
             rowcrypt::seal(&psk_key(&ring), pair_psk, &psk_aad(&device.gid))
         };
-        tx.execute(
-            "INSERT INTO devices (gid, name, platform, role, static_pub, pair_psk_wrapped, paired_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                device.gid,
-                device.name,
-                device.platform,
-                device.role.as_str(),
-                device.static_pub.as_slice(),
-                wrapped,
-                now_ms()
-            ],
-        )?;
+        // A device this one only knew as a row writer (state 'known') keeps its
+        // id, so the `origin` columns that name it stay right.
+        let known: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM devices WHERE gid = ?1 AND state = 'known'",
+                [&device.gid],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match known {
+            Some(id) => tx.execute(
+                "UPDATE devices SET name = ?2, platform = ?3, role = ?4, static_pub = ?5,
+                     pair_psk_wrapped = ?6, state = 'paired', paired_at = ?7
+                 WHERE id = ?1",
+                params![
+                    id,
+                    device.name,
+                    device.platform,
+                    device.role.as_str(),
+                    device.static_pub.as_slice(),
+                    wrapped,
+                    now_ms()
+                ],
+            )?,
+            None => tx.execute(
+                "INSERT INTO devices (gid, name, platform, role, static_pub, pair_psk_wrapped, paired_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    device.gid,
+                    device.name,
+                    device.platform,
+                    device.role.as_str(),
+                    device.static_pub.as_slice(),
+                    wrapped,
+                    now_ms()
+                ],
+            )?,
+        };
         let d = tx.query_row(
             &format!("SELECT {DEVICE_COLS} FROM devices WHERE gid = ?1"),
             [&device.gid],
@@ -186,7 +212,27 @@ impl Store {
     pub fn unpin_device(&self, gid: &str) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        tx.execute("DELETE FROM devices WHERE gid = ?1", [gid])?;
+        // The row stays as a 'known' writer (no key, no PSK) so `origin`
+        // columns that name it keep their meaning; what was exchanged with it
+        // is forgotten like a deleted pin's.
+        let id: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM devices WHERE gid = ?1 AND state <> 'known'",
+                [gid],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(id) = id {
+            tx.execute("DELETE FROM peer_meetings WHERE device_id = ?1", [id])?;
+            tx.execute("UPDATE leases SET peer_id = NULL WHERE peer_id = ?1", [id])?;
+            tx.execute(
+                "UPDATE devices SET state = 'known', static_pub = NULL, pair_psk_wrapped = NULL,
+                     name = '', last_seen = NULL, last_addr = NULL, push_seq = 0,
+                     pull_feed_id = NULL, pull_seq = 0
+                 WHERE id = ?1",
+                [id],
+            )?;
+        }
         tx.execute(
             "DELETE FROM settings WHERE key = ?1",
             [mass_delete_key(gid)],
@@ -198,7 +244,7 @@ impl Store {
     /// Moves a pin to `wipe_pending` ("Unpair and wipe").
     pub fn set_wipe_pending(&self, gid: &str) -> Result<()> {
         let n = self.conn().execute(
-            "UPDATE devices SET state = 'wipe_pending' WHERE gid = ?1",
+            "UPDATE devices SET state = 'wipe_pending' WHERE gid = ?1 AND state <> 'known'",
             [gid],
         )?;
         if n == 0 {
@@ -222,7 +268,9 @@ impl Store {
 
     pub fn devices(&self) -> Result<Vec<Device>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare(&format!("SELECT {DEVICE_COLS} FROM devices ORDER BY id"))?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {DEVICE_COLS} FROM devices WHERE state <> 'known' ORDER BY id"
+        ))?;
         let rows = stmt.query_map([], device_from_row)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
@@ -231,7 +279,7 @@ impl Store {
         Ok(self
             .conn()
             .query_row(
-                &format!("SELECT {DEVICE_COLS} FROM devices WHERE gid = ?1"),
+                &format!("SELECT {DEVICE_COLS} FROM devices WHERE gid = ?1 AND state <> 'known'"),
                 [gid],
                 device_from_row,
             )
@@ -256,7 +304,7 @@ impl Store {
         let wrapped: Vec<u8> = self
             .conn()
             .query_row(
-                "SELECT pair_psk_wrapped FROM devices WHERE gid = ?1",
+                "SELECT pair_psk_wrapped FROM devices WHERE gid = ?1 AND state <> 'known'",
                 [gid],
                 |r| r.get(0),
             )

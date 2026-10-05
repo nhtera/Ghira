@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The per-field merge rules of doc 07 §7.4 (slice 15-C2).
+//! The per-field merge rules of doc 07 §7.4 (slice 15-C2): pure functions, no
+//! database.
 
 use std::cmp::Ordering;
+
+use sha2::{Digest, Sha256};
 
 use super::records::Version;
 
@@ -25,6 +28,66 @@ pub fn status_rank(status: &str) -> Option<u8> {
     }
 }
 
+/// The higher-ranked of two known statuses (`a` if equal or `b` is unknown).
+pub fn merge_status<'a>(a: &'a str, b: &'a str) -> &'a str {
+    match (status_rank(a), status_rank(b)) {
+        (Some(x), Some(y)) if y > x => b,
+        (None, Some(_)) => b,
+        _ => a,
+    }
+}
+
+/// `cut_pages` merges by minimum; `None` means "never cut".
+pub fn merge_cut(a: Option<i64>, b: Option<i64>) -> Option<i64> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.min(y)),
+        (x, None) => x,
+        (None, y) => y,
+    }
+}
+
+/// What the epoch fence says about an incoming row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fence {
+    /// Same generation as the meeting: apply.
+    Accept,
+    /// Newer than the meeting knows: the meeting row may still be on its way,
+    /// so hold the row (amendment #1).
+    Park,
+    /// Older: a later result replaced it. Drop it and tombstone it.
+    Superseded,
+}
+
+/// Compares a row's `(version, epoch)` (or a bare epoch, with a `0` first
+/// element on both sides) to the meeting's.
+pub fn fence(row: (i64, i64), meeting: (i64, i64)) -> Fence {
+    match row.cmp(&meeting) {
+        Ordering::Equal => Fence::Accept,
+        Ordering::Greater => Fence::Park,
+        Ordering::Less => Fence::Superseded,
+    }
+}
+
+/// The gid of the conflict copy of `field` of `target_gid`, whose text lost to
+/// another version: a UUIDv8 over `H(gid, field, loser version)`, so every
+/// device (and every redelivery) names the same copy the same way.
+pub fn copy_gid(target_gid: &str, field: &str, loser_lamport: i64, loser_origin: &str) -> String {
+    let mut h = Sha256::new();
+    for part in [
+        target_gid.as_bytes(),
+        field.as_bytes(),
+        &loser_lamport.to_be_bytes(),
+        loser_origin.as_bytes(),
+    ] {
+        h.update((part.len() as u64).to_be_bytes());
+        h.update(part);
+    }
+    let digest = h.finalize();
+    let mut b = [0u8; 16];
+    b.copy_from_slice(&digest[..16]);
+    uuid::Uuid::new_v8(b).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -44,5 +107,35 @@ mod tests {
     fn status_ranks_are_ordered() {
         assert!(status_rank("recording") < status_rank("ready"));
         assert_eq!(status_rank("bogus"), None);
+        assert_eq!(merge_status("processing", "recording"), "processing");
+        assert_eq!(merge_status("importing", "ready"), "ready");
+        assert_eq!(merge_status("ready", "bogus"), "ready");
+    }
+
+    #[test]
+    fn cut_pages_take_the_minimum() {
+        assert_eq!(merge_cut(Some(9), Some(4)), Some(4));
+        assert_eq!(merge_cut(None, Some(4)), Some(4));
+        assert_eq!(merge_cut(Some(9), None), Some(9));
+        assert_eq!(merge_cut(None, None), None);
+    }
+
+    #[test]
+    fn fence_compares_generations() {
+        assert_eq!(fence((1, 1), (1, 1)), Fence::Accept);
+        assert_eq!(fence((2, 0), (1, 5)), Fence::Park);
+        assert_eq!(fence((1, 2), (1, 1)), Fence::Park);
+        assert_eq!(fence((1, 0), (1, 1)), Fence::Superseded);
+        assert_eq!(fence((0, 3), (0, 4)), Fence::Superseded);
+    }
+
+    #[test]
+    fn copy_gids_are_deterministic_and_distinct() {
+        let a = copy_gid("g", "title_ct", 7, "dev");
+        assert_eq!(a, copy_gid("g", "title_ct", 7, "dev"));
+        assert_ne!(a, copy_gid("g", "title_ct", 8, "dev"));
+        assert_ne!(a, copy_gid("g", "body_ct", 7, "dev"));
+        assert_ne!(a, copy_gid("g", "title_ct", 7, "dev2"));
+        assert!(uuid::Uuid::parse_str(&a).is_ok());
     }
 }

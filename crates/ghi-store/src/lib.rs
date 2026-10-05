@@ -105,6 +105,12 @@ pub enum StoreError {
     Fenced,
     /// A phase 15 sync entry point whose body has not landed yet.
     NotYet(&'static str),
+    /// A peer's record failed validation (doc 07 §5.4); the whole batch is
+    /// refused and nothing was written. `why` is a fixed text, never content.
+    BadRecord {
+        gid: String,
+        why: &'static str,
+    },
 }
 
 impl fmt::Display for StoreError {
@@ -134,6 +140,7 @@ impl fmt::Display for StoreError {
             StoreError::Tombstoned { gid } => write!(f, "{gid} was deleted"),
             StoreError::Fenced => f.write_str("the job's lease is no longer granted"),
             StoreError::NotYet(what) => write!(f, "not implemented yet: {what}"),
+            StoreError::BadRecord { gid, why } => write!(f, "bad record {gid}: {why}"),
             StoreError::IndexStale => f.write_str("the meeting changed while it was indexed"),
         }
     }

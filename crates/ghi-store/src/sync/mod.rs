@@ -29,13 +29,8 @@ pub mod wipe;
 
 use rusqlite::Connection;
 
+use crate::Result;
 use crate::store::Store;
-use crate::{Result, StoreError};
-
-/// The error every W0 stub returns.
-pub(crate) fn not_yet<T>(what: &'static str) -> Result<T> {
-    Err(StoreError::NotYet(what))
-}
 
 impl Store {
     /// Sets the Lamport clock to `max(clock, remote)`: called for every remote
