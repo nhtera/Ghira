@@ -101,13 +101,15 @@ void ghi_swift_qr_scan_start(void);
 void ghi_swift_qr_scan_stop(void);
 // Swift -> Rust: the text of a scanned QR code (UTF-8, NUL-terminated; Rust
 // copies it, the caller keeps ownership). It carries a secret: never log it.
+// A failure arrives as "\x01ghi-error:<code>" (denied, unavailable, cancelled).
 void ghi_ios_qr_scanned(const char *text);
 // Bonjour browse for the desktop's sync service (NWBrowser; the local
 // network permission prompt appears on first use).
 void ghi_swift_browse_start(void);
 void ghi_swift_browse_stop(void);
 // Swift -> Rust: the services currently visible, as a JSON array of
-// {"name": string, "host": string, "port": number} (copied by Rust).
+// {"addrs": ["ip:port", ...]} read from each service's TXT `a=` (v=1 only;
+// Rust re-checks every address with is_lan). Copied by Rust.
 void ghi_ios_browse_found(const char *json);
 
 #endif
