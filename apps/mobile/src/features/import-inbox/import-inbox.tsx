@@ -28,6 +28,8 @@ export function ImportInbox() {
   const [toast, setToast] = useState(false);
   // How many were waiting when the banner was closed (null: it was not).
   const [hidden, setHidden] = useState<number | null>(null);
+  // The list is real: it was read and the app is not locked (the count is 0 otherwise, which says nothing).
+  const [loaded, setLoaded] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const importing = useRef(new Set<string>());
   const noticeSlot = useNoticeSlot();
@@ -38,6 +40,7 @@ export function ImportInbox() {
       // Locked: nothing of the inbox may stay on screen.
       importing.current = new Set();
       setItems([]);
+      setLoaded(false);
       setOpen(false);
       setToast(false);
       return;
@@ -52,6 +55,7 @@ export function ImportInbox() {
     );
     importing.current = now;
     setItems(r.data);
+    setLoaded(true);
     if (done) setToast(true);
   }, []);
 
@@ -99,8 +103,8 @@ export function ImportInbox() {
   }, []);
   const showBanner = bannerVisible(waiting, hidden);
   // Follow the count down, so the next arrival is "more" than what was closed.
-  if (hiddenAfter(waiting, hidden) !== hidden)
-    setHidden(hiddenAfter(waiting, hidden));
+  if (hiddenAfter(waiting, hidden, loaded) !== hidden)
+    setHidden(hiddenAfter(waiting, hidden, loaded));
 
   const confirm = async (
     item: InboxItem,
@@ -122,7 +126,7 @@ export function ImportInbox() {
   return (
     <>
       {noticeSlot &&
-        (showBanner || (toast && !sheetOpen)) &&
+        showBanner &&
         createPortal(
           <div className="flex flex-col gap-2 px-3 pb-2">
             {showBanner && (
@@ -140,32 +144,35 @@ export function ImportInbox() {
                 />
               </div>
             )}
-            {toast && !sheetOpen && (
-              <div
-                role="status"
-                className="flex items-center gap-2 rounded-(--ios-radius-group) bg-surface2 py-1 ps-3 pe-1 text-ink shadow-float"
-              >
-                <Icon
-                  name="check_circle"
-                  size={20}
-                  className="shrink-0 text-accent"
-                />
-                <span className="text-ios-subhead flex-1">
-                  {t("mobile.inbox.added")}
-                </span>
-                <button
-                  type="button"
-                  aria-label={t("mobile.inbox.closeToast")}
-                  onClick={() => setToast(false)}
-                  className="grid min-h-ios-target min-w-ios-target place-items-center text-muted"
-                >
-                  <Icon name="close" size={20} />
-                </button>
-              </div>
-            )}
           </div>,
           noticeSlot,
         )}
+      {/* Transient (4 s): an overlay above the tab bar, so it never moves the screen or covers its title. */}
+      {toast && !sheetOpen && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--safe-bottom)+6rem)] z-30 px-3">
+          <div
+            role="status"
+            className="pointer-events-auto flex items-center gap-2 rounded-(--ios-radius-group) bg-surface2 py-1 ps-3 pe-1 text-ink shadow-float"
+          >
+            <Icon
+              name="check_circle"
+              size={20}
+              className="shrink-0 text-accent"
+            />
+            <span className="text-ios-subhead flex-1">
+              {t("mobile.inbox.added")}
+            </span>
+            <button
+              type="button"
+              aria-label={t("mobile.inbox.closeToast")}
+              onClick={() => setToast(false)}
+              className="grid min-h-ios-target min-w-ios-target place-items-center text-muted"
+            >
+              <Icon name="close" size={20} />
+            </button>
+          </div>
+        </div>
+      )}
       <Sheet
         open={sheetOpen}
         onOpenChange={setOpen}

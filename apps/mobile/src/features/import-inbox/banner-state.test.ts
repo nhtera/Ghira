@@ -13,9 +13,20 @@ describe("the waiting banner", () => {
     expect(bannerVisible(3, 2)).toBe(true);
   });
   it("a file arriving after some were handled counts as new", () => {
-    const hidden = hiddenAfter(1, 2);
+    const hidden = hiddenAfter(1, 2, true);
     expect(hidden).toBe(1);
     expect(bannerVisible(2, hidden)).toBe(true);
-    expect(hiddenAfter(5, null)).toBeNull();
+    expect(hiddenAfter(5, null, true)).toBeNull();
+  });
+  it("keeps it closed across a lock and unlock with the same files", () => {
+    let hidden: number | null = 2;
+    // Locked: the list is cleared (0 waiting) but not loaded.
+    hidden = hiddenAfter(0, hidden, false);
+    expect(hidden).toBe(2);
+    // Unlocked, list reloaded: the same two files.
+    hidden = hiddenAfter(2, hidden, true);
+    expect(bannerVisible(2, hidden)).toBe(false);
+    // And a third still brings it back.
+    expect(bannerVisible(3, hidden)).toBe(true);
   });
 });

@@ -179,3 +179,33 @@ test("locking clears the inbox from the screen, unlocking brings it back", async
   await page.getByRole("button", { name: "Unlock with Face ID" }).click();
   await expect(page.getByRole("button", { name: "Review" })).toBeVisible();
 });
+
+test("a hidden banner stays hidden across a lock and unlock with the same files", async ({ page }) => {
+  await seed(page, [item("a"), item("b")]);
+  await page.getByRole("status").filter({ hasText: "files are waiting to import" }).getByRole("button", { name: "Hide notice" }).click();
+  await page.evaluate(() => {
+    window.__ghiSettingsMock!.faceIdOk = false;
+    window.__ghiSettingsMock!.locked = true;
+    window.dispatchEvent(new Event("focus"));
+  });
+  await expect(page.getByRole("button", { name: "Unlock with Face ID" })).toBeVisible();
+  await page.evaluate(() => (window.__ghiSettingsMock!.faceIdOk = true));
+  await page.getByRole("button", { name: "Unlock with Face ID" }).click();
+  // The files are back (Settings counts them) but the banner is not.
+  await expect(page.getByRole("button", { name: /Waiting to import/ })).toContainText("2");
+  await expect(page.getByRole("button", { name: "Review" })).toHaveCount(0);
+  // One more still brings it back.
+  await seed(page, [item("a"), item("b"), item("c")]);
+  await expect(page.getByRole("button", { name: "Review" })).toBeVisible();
+});
+
+test("the Added toast is an overlay: it is not in the notice strip and does not sit at the top", async ({ page }) => {
+  await seed(page, [item("only")]);
+  await page.getByRole("button", { name: "Review" }).click();
+  await page.getByRole("dialog", { name: "Waiting to import" }).getByRole("button", { name: "Import" }).click();
+  const toast = page.getByRole("status").filter({ hasText: "Added to Ghira" });
+  await expect(toast).toBeVisible();
+  await expect(page.locator("[data-notices]")).toHaveCount(1);
+  await expect(page.locator("[data-notices]")).toBeHidden();
+  expect((await toast.boundingBox())!.y).toBeGreaterThan(page.viewportSize()!.height / 2);
+});

@@ -8,7 +8,16 @@ export function bannerVisible(waiting: number, hidden: number | null): boolean {
   return waiting > 0 && (hidden === null || waiting > hidden);
 }
 
-/** The count to remember: it follows the count down, so a file arriving after some were handled still counts as new. */
-export function hiddenAfter(waiting: number, hidden: number | null): number | null {
-  return hidden === null ? null : Math.min(hidden, waiting);
+/**
+ * The count to remember: it follows the count down, so a file arriving after
+ * some were handled still counts as new. Only while the list is real
+ * (`loaded`): locked, or not reloaded yet, the count is 0 because nothing is
+ * known, and the same files must not come back as "new" after an unlock.
+ */
+export function hiddenAfter(
+  waiting: number,
+  hidden: number | null,
+  loaded: boolean,
+): number | null {
+  return hidden === null || !loaded ? hidden : Math.min(hidden, waiting);
 }
