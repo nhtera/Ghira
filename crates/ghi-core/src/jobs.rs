@@ -191,6 +191,15 @@ impl JobCtx<'_> {
     }
 
     pub fn progress(&self, stage: Option<Stage>, progress: f32) {
+        // The phone's chip reads "Final pass on <device> · %" from the lease.
+        if self.job.kind == crate::session::FINAL_PASS_JOB
+            && let Some(l) = self.lease()
+            && let Err(e) = self
+                .store
+                .lease_set_progress(&l.job_uuid, f64::from(progress.clamp(0.0, 1.0)))
+        {
+            log::debug!("lease progress not saved: {e}");
+        }
         self.events.emit(Event::JobProgress {
             meeting: self.job.meeting_gid.clone(),
             job: self.job.id,

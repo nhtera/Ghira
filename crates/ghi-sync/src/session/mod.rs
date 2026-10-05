@@ -63,6 +63,8 @@ impl Default for Timing {
 /// to spoke.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SessionReport {
+    /// Hub: the gid of the spoke this session served (set at `Hello`).
+    pub peer: Option<String>,
     pub rows_pushed: usize,
     pub rows_pulled: usize,
     pub tombs_pushed: usize,

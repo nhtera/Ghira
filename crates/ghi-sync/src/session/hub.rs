@@ -234,6 +234,7 @@ impl<T: Transport> HubSession<T> {
                 .set_cursors(&dev.gid, dev.push_seq, Some(&h.feed_id), 0)?;
         }
         self.store.touch_device(&dev.gid, None)?;
+        self.report.peer = Some(dev.gid.clone());
         let pending = control::pending_for(self.store.as_ref(), &dev.gid)?;
         self.wipe_delivered = !pending.is_empty();
         let ok = HelloOk {

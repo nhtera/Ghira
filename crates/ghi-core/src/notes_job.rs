@@ -281,6 +281,13 @@ pub(crate) fn save_notes_leased(
         });
     }
     let saved = match lease {
+        // The final pass under this lease already closed it (`granted ->
+        // done`, in its own commit): the notes that follow carry the epoch
+        // but have no state change left to make. A lease that is revoked or
+        // expired is not `done`, so it still fences the commit.
+        Some(l) if lease_is_done(store, &l.job_uuid) => {
+            store.replace_ai_notes_epoch(meeting, blocks, actions, l.epoch, None)
+        }
         Some(l) => {
             store.replace_ai_notes_epoch(meeting, blocks, actions, l.epoch, Some(&l.job_uuid))
         }
@@ -293,6 +300,15 @@ pub(crate) fn save_notes_leased(
     // Not worth failing the save over.
     let _ = store.set_notes_model(meeting, Some(model));
     Ok(saved)
+}
+
+/// Whether the lease was closed by a result commit (see [`save_notes_leased`]).
+fn lease_is_done(store: &Store, job_uuid: &str) -> bool {
+    store
+        .lease_state(job_uuid)
+        .ok()
+        .flatten()
+        .is_some_and(|l| l.state == "done")
 }
 
 /// Opens the local model for a transcript of `transcript_bytes`.

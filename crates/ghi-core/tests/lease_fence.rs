@@ -256,6 +256,19 @@ fn a_granted_lease_commits_at_its_epoch() {
     assert_eq!(r.runner.run_pending(), 2);
     assert_eq!(r.store.job(id).unwrap().state, JobState::Done);
     assert_eq!(version(&r), v + 1);
+    // The notes the pass queued carry the same lease and epoch, and were
+    // written although the pass's commit already closed the lease.
+    let notes = r
+        .store
+        .jobs_for_meeting(&r.meeting)
+        .unwrap()
+        .into_iter()
+        .find(|j| j.kind == NOTES_FINAL_JOB)
+        .expect("notes_final queued");
+    assert_eq!(notes.payload["lease"], "u5");
+    assert_eq!(notes.payload["epoch"], 7);
+    assert_eq!(notes.state, JobState::Done);
+    assert!(!r.store.note_blocks(&r.meeting).unwrap().is_empty());
     // The lease closed in the commit's transaction: a second commit under it
     // is fenced.
     let again = r.store.replace_transcript_epoch(

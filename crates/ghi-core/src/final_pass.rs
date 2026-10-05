@@ -39,7 +39,7 @@ use crate::aligner;
 use crate::carry::{self, Turn};
 use crate::engines::SpeechEngines;
 use crate::events::Stage;
-use crate::jobs::{JobCtx, JobHandler, Outcome};
+use crate::jobs::{JobCtx, JobHandler, JobLease, Outcome};
 use crate::live::line_language;
 use crate::notes_job::NOTES_FINAL_JOB;
 use crate::recluster;
@@ -480,7 +480,7 @@ impl FinalPassJob {
         // settles like a meeting without audio, so it never stays "processing".
         if m.sensitive {
             if notes {
-                queue_notes(store, &meeting)?;
+                queue_notes(store, &meeting, ctx.lease().as_ref())?;
             } else {
                 settle_ready(ctx, &meeting).map_err(err)?;
             }
@@ -509,7 +509,7 @@ impl FinalPassJob {
         }
         if pcm.is_empty() {
             if notes {
-                queue_notes(store, &meeting)?;
+                queue_notes(store, &meeting, ctx.lease().as_ref())?;
             } else {
                 settle_ready(ctx, &meeting).map_err(err)?;
             }
@@ -962,7 +962,7 @@ impl FinalPassJob {
             log::warn!("final pass checkpoints not cleared: {e}");
         }
         if notes {
-            queue_notes(store, &meeting)?;
+            queue_notes(store, &meeting, ctx.lease().as_ref())?;
         } else {
             // No notes job follows to settle the meeting.
             settle_ready(ctx, &meeting).map_err(err)?;
@@ -1056,18 +1056,26 @@ fn announce_ready(ctx: &JobCtx, meeting: &str) {
     });
 }
 
-fn queue_notes(store: &Store, meeting: &str) -> Result<(), String> {
+/// Queues the final notes after a pass. A leased pass hands its lease on
+/// (`{lease, epoch}`), so the notes run under the same fence and are written
+/// with the same epoch; without it the sync layer would see an unleased job
+/// on a meeting whose processing belongs to a lease (doc 07 §8).
+fn queue_notes(store: &Store, meeting: &str, lease: Option<&JobLease>) -> Result<(), String> {
     if store
         .active_job(meeting, NOTES_FINAL_JOB)
         .map_err(|e| e.to_string())?
         .is_none()
     {
+        let payload = match lease {
+            Some(l) => serde_json::json!({"lease": l.job_uuid, "epoch": l.epoch}),
+            None => serde_json::json!({}),
+        };
         store
             .enqueue_job(
                 Some(meeting),
                 NOTES_FINAL_JOB,
                 JOB_PAYLOAD_VERSION,
-                &serde_json::json!({}),
+                &payload,
             )
             .map_err(|e| e.to_string())?;
     }
