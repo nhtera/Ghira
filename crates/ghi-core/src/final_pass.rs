@@ -16,15 +16,24 @@
 //! - Voice step (14c, `voice_step`): after the carry-over, unnamed clusters
 //!   are matched with Me's profile (room mode) and, with the third-party flag
 //!   on, others'; Me learns from the mic. Never blocks the pass.
-//! - Preempted by a recording, the pass yields and starts over later (it
-//!   is short next to the meeting: ~4 min for 60 min on an M4 Pro).
+//! - Preempted by a recording (or the app leaving the foreground, or killed),
+//!   the pass resumes later: each finished ASR chunk of a track and the
+//!   diarization are saved sealed in the store (`final_pass_ckpt`, keyed by a
+//!   stamp of the audio, engine and chunking) and skipped on the next run;
+//!   only the cheap global steps (alignment, voice carry-over, voice step) are
+//!   redone. Chunks are at most [`CHECKPOINT_CHUNK_S`] long, so a yield loses
+//!   seconds of work, not the whole pass. The checkpoints go when the pass
+//!   stores its transcript (or fails), with the audio, and with the meeting.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use ghi_audio::{SAMPLE_RATE, Track};
 use ghi_speech::{SpeakerSegment, Word};
 use ghi_store::store::{NewSegment, NewSpeaker, Store, TrackKind};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::aligner;
 use crate::carry::{self, Turn};
@@ -103,62 +112,272 @@ pub fn cut_points(pcm: &[f32], chunk_s: f64) -> Vec<usize> {
     cuts
 }
 
-/// A final ASR result: its words on the track's timeline, and its text.
-type Final = (Vec<Word>, String);
+/// The longest ASR chunk (seconds) the pass uses, whatever the engine or
+/// config asks for: a chunk is the unit that is saved and skipped on resume,
+/// and the work a yield loses (cuts still land on the quietest moment).
+pub const CHECKPOINT_CHUNK_S: f64 = 60.0;
 
-/// Transcribes `pcm` chunk by chunk; words on the track's timeline (seconds).
+/// Bumped when what a checkpoint holds changes shape.
+const CKPT_VERSION: u32 = 1;
+
+/// A final ASR result: its words on the track's timeline.
+type Final = Vec<Word>;
+
+/// Progress of the stages on the job's 0..1 scale (the UI shows it as the
+/// percent): decoding, diarization, ASR, matching.
+const P_DIAR: (f32, f32) = (0.02, 0.12);
+const P_ASR: (f32, f32) = (0.12, 0.97);
+const P_MATCH: f32 = 0.97;
+
+/// What a job has saved: parts finished (all runs), parts in all, and the
+/// progress shown; the job's resume payload (numbers only).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Mark {
+    done: u64,
+    total: u64,
+    p: f32,
+    /// Which checkpoints `done` counts (the stamp's first 64 bits): when it
+    /// changes (another audio or engine) the runner starts its accounting over.
+    stamp_id: u64,
+}
+
+impl Mark {
+    fn from_payload(v: &serde_json::Value) -> Mark {
+        Mark {
+            done: v["done"].as_u64().unwrap_or(0),
+            total: v["total"].as_u64().unwrap_or(0),
+            p: v["p"].as_f64().unwrap_or(0.0) as f32,
+            stamp_id: v["stamp"].as_u64().unwrap_or(0),
+        }
+    }
+
+    fn json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "done": self.done,
+            "total": self.total,
+            "p": self.p,
+            "stamp": self.stamp_id,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CkWord {
+    t: String,
+    /// Start, end (`f64::to_bits`) and confidence (`f32::to_bits`): exact.
+    s: u64,
+    e: u64,
+    c: u32,
+    k: Option<u32>,
+}
+
+fn encode_finals(finals: &[Final]) -> Vec<u8> {
+    let v: Vec<Vec<CkWord>> = finals
+        .iter()
+        .map(|f| {
+            f.iter()
+                .map(|w| CkWord {
+                    t: w.text.clone(),
+                    s: w.start.to_bits(),
+                    e: w.end.to_bits(),
+                    c: w.confidence.to_bits(),
+                    k: w.speaker,
+                })
+                .collect()
+        })
+        .collect();
+    serde_json::to_vec(&v).unwrap_or_default()
+}
+
+fn decode_finals(b: &[u8]) -> Option<Vec<Final>> {
+    let v: Vec<Vec<CkWord>> = serde_json::from_slice(b).ok()?;
+    Some(
+        v.into_iter()
+            .map(|f| {
+                f.into_iter()
+                    .map(|w| Word {
+                        text: w.t,
+                        start: f64::from_bits(w.s),
+                        end: f64::from_bits(w.e),
+                        confidence: f32::from_bits(w.c),
+                        speaker: w.k,
+                    })
+                    .collect()
+            })
+            .collect(),
+    )
+}
+
+fn encode_segs(segs: &[SpeakerSegment]) -> Vec<u8> {
+    let v: Vec<(u64, u64, u32)> = segs
+        .iter()
+        .map(|s| (s.start.to_bits(), s.end.to_bits(), s.speaker))
+        .collect();
+    serde_json::to_vec(&v).unwrap_or_default()
+}
+
+fn decode_segs(b: &[u8]) -> Option<Vec<SpeakerSegment>> {
+    let v: Vec<(u64, u64, u32)> = serde_json::from_slice(b).ok()?;
+    Some(
+        v.into_iter()
+            .map(|(start, end, speaker)| SpeakerSegment {
+                start: f64::from_bits(start),
+                end: f64::from_bits(end),
+                speaker,
+            })
+            .collect(),
+    )
+}
+
+/// Names what the checkpoints are computed from: this build's checkpoint
+/// shape, the engine and its models, the language, the chunking and the audio
+/// itself (so a discard or trim, which change the audio, invalidate them).
+fn pass_stamp(
+    engine: &str,
+    language: Option<&str>,
+    chunk_s: f64,
+    pcm: &HashMap<Track, Vec<f32>>,
+) -> String {
+    let mut h = Sha256::new();
+    h.update(b"ghi-final-pass-ckpt");
+    h.update(CKPT_VERSION.to_le_bytes());
+    h.update(engine.as_bytes());
+    h.update([0]);
+    h.update(language.unwrap_or("").as_bytes());
+    h.update([0]);
+    h.update(chunk_s.to_bits().to_le_bytes());
+    let mut tracks: Vec<&Track> = pcm.keys().collect();
+    tracks.sort_by_key(|t| t.index());
+    let mut buf = Vec::with_capacity(16 * 1024);
+    for t in tracks {
+        h.update((t.index() as u64).to_le_bytes());
+        h.update((pcm[t].len() as u64).to_le_bytes());
+        for block in pcm[t].chunks(4096) {
+            buf.clear();
+            buf.extend(block.iter().flat_map(|x| x.to_le_bytes()));
+            h.update(&buf);
+        }
+    }
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The checkpoints of one run: what earlier runs saved, and saving what this
+/// one finishes. Saving never fails the pass (a part that could not be saved
+/// is computed again next time).
+struct Ckpt<'a> {
+    ctx: &'a JobCtx<'a>,
+    meeting: &'a str,
+    stamp: String,
+    saved: HashMap<String, Vec<u8>>,
+    mark: &'a Cell<Mark>,
+}
+
+impl Ckpt<'_> {
+    fn save(&mut self, part: &str, data: Vec<u8>) {
+        match self
+            .ctx
+            .store
+            .put_pass_checkpoint(self.meeting, &self.stamp, part, &data)
+        {
+            Ok(true) => {
+                let mut m = self.mark.get();
+                m.done += 1;
+                self.mark.set(m);
+                self.ctx.made_progress();
+                if let Err(e) = self.ctx.checkpoint(f64::from(m.p), &m.json()) {
+                    log::warn!("final pass checkpoint note: {e}");
+                }
+            }
+            // Nothing was written (no audio, or a sensitive meeting): not progress.
+            Ok(false) => {}
+            Err(e) => log::warn!("final pass checkpoint not saved: {e}"),
+        }
+    }
+
+    /// Shows `p` (never less than shown before, also across restarts).
+    fn show(&self, stage: Stage, p: f32) {
+        let mut m = self.mark.get();
+        m.p = m.p.max(p);
+        self.mark.set(m);
+        self.ctx.progress(Some(stage), m.p);
+    }
+}
+
+/// The ASR chunks of every track: `(track, cut points)`, in track order.
+type Plan = Vec<(Track, Vec<usize>)>;
+
+/// Transcribes the chunks of one track; words on the track's timeline
+/// (seconds). Finished chunks come from the checkpoints, the others are run
+/// and saved as they finish. `None`: preempted (what finished is saved).
 fn transcribe(
     engines: &dyn SpeechEngines,
     pcm: &[f32],
+    track: Track,
+    cuts: &[usize],
     language: Option<&str>,
-    chunk_s: f64,
-    ctx: &JobCtx,
+    ck: &mut Ckpt,
+    progress: &Cell<(usize, usize)>,
 ) -> Result<Option<Vec<Final>>, String> {
-    let cuts = cut_points(pcm, chunk_s);
+    let ctx = ck.ctx;
     let mut out = Vec::new();
-    for w in cuts.windows(2) {
+    for (idx, w) in cuts.windows(2).enumerate() {
+        let (a, b) = (w[0], w[1]);
+        let part = format!("asr.{}.{idx}", track.index());
+        let advance = |ck: &Ckpt| {
+            let (done, total) = progress.get();
+            let done = done + (b - a);
+            progress.set((done, total));
+            ck.show(
+                Stage::ImprovingTranscript,
+                P_ASR.0 + (P_ASR.1 - P_ASR.0) * done as f32 / total.max(1) as f32,
+            );
+        };
+        if let Some(finals) = ck.saved.get(&part).and_then(|b| decode_finals(b)) {
+            out.extend(finals);
+            advance(ck);
+            continue;
+        }
         if ctx.preempted() {
             return Ok(None);
         }
-        let (a, b) = (w[0], w[1]);
+        let mut chunk_out: Vec<Final> = Vec::new();
         let off = a as f64 / RATE;
         let mut asr = engines.asr(language).map_err(|e| e.to_string())?;
-        let collect = |asr: &mut crate::engines::BoxAsr,
-                       out: &mut Vec<(Vec<Word>, String)>|
-         -> Result<(), String> {
-            while let Some(r) = asr.next_result().map_err(|e| e.to_string())? {
-                if !r.is_final || r.text.trim().is_empty() {
-                    continue;
+        let collect =
+            |asr: &mut crate::engines::BoxAsr, out: &mut Vec<Final>| -> Result<(), String> {
+                while let Some(r) = asr.next_result().map_err(|e| e.to_string())? {
+                    if !r.is_final || r.text.trim().is_empty() {
+                        continue;
+                    }
+                    let mut words: Vec<Word> = r
+                        .words
+                        .iter()
+                        .map(|w| Word {
+                            start: w.start + off,
+                            end: w.end + off,
+                            ..w.clone()
+                        })
+                        .collect();
+                    if words.is_empty() {
+                        let end = off + r.audio_processed;
+                        words.push(Word {
+                            text: r.text.trim().to_string(),
+                            start: (end - 1.0).max(off),
+                            end,
+                            confidence: 1.0,
+                            speaker: None,
+                        });
+                    }
+                    out.push(words);
                 }
-                let mut words: Vec<Word> = r
-                    .words
-                    .iter()
-                    .map(|w| Word {
-                        start: w.start + off,
-                        end: w.end + off,
-                        ..w.clone()
-                    })
-                    .collect();
-                if words.is_empty() {
-                    let end = off + r.audio_processed;
-                    words.push(Word {
-                        text: r.text.trim().to_string(),
-                        start: (end - 1.0).max(off),
-                        end,
-                        confidence: 1.0,
-                        speaker: None,
-                    });
-                }
-                out.push((words, r.text.trim().to_string()));
-            }
-            Ok(())
-        };
+                Ok(())
+            };
         for block in pcm[a..b].chunks(SAMPLE_RATE as usize) {
             if ctx.preempted() {
                 return Ok(None);
             }
             asr.push(block, SAMPLE_RATE).map_err(|e| e.to_string())?;
-            collect(&mut asr, &mut out)?;
+            collect(&mut asr, &mut chunk_out)?;
         }
         // Engines that decode at the end (Whisper) stop mid-chunk on preemption.
         if !asr
@@ -167,11 +386,10 @@ fn transcribe(
         {
             return Ok(None);
         }
-        collect(&mut asr, &mut out)?;
-        ctx.progress(
-            Some(Stage::ImprovingTranscript),
-            b as f32 / pcm.len().max(1) as f32,
-        );
+        collect(&mut asr, &mut chunk_out)?;
+        ck.save(&part, encode_finals(&chunk_out));
+        out.extend(chunk_out);
+        advance(ck);
     }
     Ok(Some(out))
 }
@@ -207,6 +425,7 @@ impl JobHandler for FinalPassJob {
     /// The live transcript and its notes stay; the meeting is usable.
     fn failed(&self, ctx: &JobCtx) {
         if let Ok(m) = ctx.meeting() {
+            let _ = ctx.store.clear_pass_checkpoints(m);
             let _ = ctx.store.set_meeting_status(m, "ready");
         }
     }
@@ -248,7 +467,11 @@ impl JobHandler for FinalPassNoNotes {
 impl FinalPassJob {
     /// The pass; `notes` queues `notes_final` once the transcript is stored.
     fn run_with(&self, ctx: &JobCtx, notes: bool) -> Result<Outcome, String> {
-        let restart = || Ok(Outcome::Yield(serde_json::json!({})));
+        // What the job has saved (from an earlier run's payload to begin
+        // with); a yield hands it back so the runner can tell progress from
+        // spinning.
+        let mark = Cell::new(Mark::from_payload(&ctx.job.payload));
+        let restart = || Ok(Outcome::Yield(mark.get().json()));
         let meeting = ctx.meeting()?.to_string();
         let store: &Arc<Store> = ctx.store;
         let err = |e: ghi_store::StoreError| e.to_string();
@@ -269,9 +492,12 @@ impl FinalPassJob {
         store.remove_orphan_speakers(&meeting).map_err(err)?;
 
         // Decoding.
-        ctx.progress(Some(Stage::Decoding), 0.0);
+        ctx.progress(Some(Stage::Decoding), mark.get().p);
         let mut pcm: HashMap<Track, Vec<f32>> = HashMap::new();
         for (kind, _) in store.tracks(&meeting).map_err(err)? {
+            if ctx.preempted() {
+                return restart();
+            }
             let track = match kind {
                 TrackKind::Mic | TrackKind::File => Track::Mic,
                 TrackKind::System => Track::System,
@@ -305,6 +531,16 @@ impl FinalPassJob {
         }
         let engines = (self.engines)()?;
         let language = m.lang.as_deref();
+        let chunk_s = engines
+            .final_chunk_s()
+            .unwrap_or(self.chunk_s)
+            .min(CHECKPOINT_CHUNK_S);
+        let mut tracks: Vec<Track> = pcm.keys().copied().collect();
+        tracks.sort_by_key(|t| t.index());
+        let plan: Plan = tracks
+            .iter()
+            .map(|&t| (t, cut_points(&pcm[&t], chunk_s)))
+            .collect();
 
         // RefiningSpeakers: diarize the far track (call) or the room mic.
         let diar_track = if call && pcm.contains_key(&Track::System) {
@@ -312,11 +548,44 @@ impl FinalPassJob {
         } else {
             Track::Mic
         };
-        ctx.progress(Some(Stage::RefiningSpeakers), 0.0);
+        // The stamp ties checkpoints to this audio, engine and chunking.
+        let stamp = pass_stamp(&engines.checkpoint_id(), language, chunk_s, &pcm);
+        let saved = match store.pass_checkpoints(&meeting, &stamp) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("final pass checkpoints unreadable: {e}");
+                HashMap::new()
+            }
+        };
+        let asr_samples: usize = plan
+            .iter()
+            .map(|(_, c)| c.last().copied().unwrap_or(0))
+            .sum();
+        let asr_parts: u64 = plan
+            .iter()
+            .map(|(_, c)| c.len().saturating_sub(1) as u64)
+            .sum();
         // A multi-track import knows who spoke when (each participant's own
         // track): those spans stand in for the diarizer, which is not run.
         let known = store.track_speakers(&meeting).map_err(err)?;
         let from_tracks = !known.is_empty();
+        let mut m0 = mark.get();
+        m0.total = asr_parts + u64::from(!from_tracks);
+        m0.done = saved.len() as u64;
+        m0.stamp_id = u64::from_str_radix(&stamp[..16], 16).unwrap_or(0);
+        if saved.is_empty() {
+            // Nothing carried over (another audio or engine, or a first run).
+            m0.p = 0.0;
+        }
+        mark.set(m0);
+        let mut ck = Ckpt {
+            ctx,
+            meeting: &meeting,
+            stamp,
+            saved,
+            mark: &mark,
+        };
+        ck.show(Stage::RefiningSpeakers, P_DIAR.0);
         let spans: Vec<TrackSpan> = known
             .iter()
             .enumerate()
@@ -328,7 +597,25 @@ impl FinalPassJob {
                 })
             })
             .collect();
-        let mut segs: Vec<SpeakerSegment> = if from_tracks {
+        let expected = store
+            .expected_speakers(&meeting)
+            .ok()
+            .flatten()
+            .map(|n| n as usize);
+        let voice_ready = self.voice.as_ref().is_some_and(|v| (v.ready)());
+        // What the diarization depends on besides the audio: the speaker model
+        // and the expected count (the re-clustering).
+        let diar_part = format!(
+            "diar.{}.{}.{}",
+            diar_track.index(),
+            expected.map_or(-1, |n| n as i64),
+            if voice_ready {
+                voice_model_key()
+            } else {
+                "-".to_string()
+            }
+        );
+        let segs: Vec<SpeakerSegment> = if from_tracks {
             known
                 .iter()
                 .enumerate()
@@ -340,66 +627,75 @@ impl FinalPassJob {
                     })
                 })
                 .collect()
+        } else if let Some(segs) = ck.saved.get(&diar_part).and_then(|b| decode_segs(b)) {
+            ck.show(Stage::RefiningSpeakers, P_DIAR.1);
+            segs
         } else {
             let mut diar = engines.diar().map_err(|e| e.to_string())?;
-            for block in pcm[&diar_track].chunks(10 * SAMPLE_RATE as usize) {
+            let blocks = pcm[&diar_track].chunks(10 * SAMPLE_RATE as usize);
+            let n = blocks.len().max(1) as f32;
+            for (i, block) in blocks.enumerate() {
                 if ctx.preempted() {
                     return restart();
                 }
                 diar.push(block, SAMPLE_RATE).map_err(|e| e.to_string())?;
+                ck.show(
+                    Stage::RefiningSpeakers,
+                    P_DIAR.0 + (P_DIAR.1 - P_DIAR.0) * 0.9 * (i + 1) as f32 / n,
+                );
             }
             diar.finish().map_err(|e| e.to_string())?;
-            diar.segments().map_err(|e| e.to_string())?
-        };
-        // The diarizer tops out at 8 voices: when it did, tell them apart
-        // again with the speaker model (phase 14d, D12). Never blocks the pass.
-        if !from_tracks
-            && recluster_wanted(&segs)
-            && let Some(voice) = self.voice.as_ref().filter(|v| (v.ready)())
-        {
-            match (voice.embedder)() {
-                Ok(mut embedder) => {
-                    match recluster::run(
-                        &pcm[&diar_track],
-                        engines.as_ref(),
-                        embedder.as_mut(),
-                        &segs,
-                        &|| ctx.preempted(),
-                        store
-                            .expected_speakers(&meeting)
-                            .ok()
-                            .flatten()
-                            .map(|n| n as usize),
-                    ) {
-                        Ok(Some(better)) => segs = better,
-                        Ok(None) => {}
-                        Err(e) => log::warn!("recluster skipped: {} chars of error", e.len()),
+            let mut segs = diar.segments().map_err(|e| e.to_string())?;
+            // The diarizer tops out at 8 voices: when it did, tell them apart
+            // again with the speaker model (phase 14d, D12). Never blocks the pass.
+            if recluster_wanted(&segs)
+                && let Some(voice) = self.voice.as_ref().filter(|v| (v.ready)())
+            {
+                match (voice.embedder)() {
+                    Ok(mut embedder) => {
+                        match recluster::run(
+                            &pcm[&diar_track],
+                            engines.as_ref(),
+                            embedder.as_mut(),
+                            &segs,
+                            &|| ctx.preempted(),
+                            expected,
+                        ) {
+                            Ok(Some(better)) => segs = better,
+                            Ok(None) => {}
+                            Err(e) => log::warn!("recluster skipped: {} chars of error", e.len()),
+                        }
+                        if ctx.preempted() {
+                            return restart();
+                        }
                     }
-                    if ctx.preempted() {
-                        return restart();
-                    }
+                    Err(_) => log::warn!("recluster skipped: no speaker model"),
                 }
-                Err(_) => log::warn!("recluster skipped: no speaker model"),
             }
-        }
+            ck.save(&diar_part, encode_segs(&segs));
+            ck.show(Stage::RefiningSpeakers, P_DIAR.1);
+            segs
+        };
 
         // ImprovingTranscript.
         let mut lines: Vec<Line> = Vec::new();
-        let mut tracks: Vec<Track> = pcm.keys().copied().collect();
-        tracks.sort_by_key(|t| t.index());
-        for t in tracks {
+        let progress = Cell::new((0usize, asr_samples));
+        for (t, cuts) in &plan {
+            let t = *t;
             let me = call && t == Track::Mic && diar_track != Track::Mic;
             let Some(finals) = transcribe(
                 engines.as_ref(),
                 &pcm[&t],
+                t,
+                cuts,
                 language,
-                engines.final_chunk_s().unwrap_or(self.chunk_s),
-                ctx,
+                &mut ck,
+                &progress,
             )?
             else {
                 return restart();
             };
-            for (words, _) in finals {
+            for words in finals {
                 if me {
                     let l = aligner::align(&words, &[]);
                     for al in l {
@@ -429,7 +725,7 @@ impl FinalPassJob {
         lines.sort_by_key(|l| (l.t0_ms, l.track.index()));
 
         // MatchingVoices: carry live speakers over to the final clusters.
-        ctx.progress(Some(Stage::MatchingVoices), 0.0);
+        ck.show(Stage::MatchingVoices, P_MATCH);
         let v1 = store.segments(&meeting).map_err(err)?;
         let speakers = store.speakers(&meeting).map_err(err)?;
         let me_gid = speakers
@@ -643,6 +939,10 @@ impl FinalPassJob {
             .replace_transcript_marked(&meeting, v2, &overlaps)
             .map_err(err)?;
         log::info!("final pass stored lines={lines}");
+        // Done: nothing is left to resume (and the audio-derived rows go).
+        if let Err(e) = store.clear_pass_checkpoints(&meeting) {
+            log::warn!("final pass checkpoints not cleared: {e}");
+        }
         if notes {
             queue_notes(store, &meeting)?;
         } else {
@@ -706,6 +1006,16 @@ fn overlap_ms(spans: &[TrackSpan], t0_ms: i64, t1_ms: i64) -> i64 {
     total
 }
 
+/// Names the speaker model the re-clustering uses (its registry id and the
+/// start of its pinned hash), so a replaced model re-runs the diarization.
+fn voice_model_key() -> String {
+    #[cfg(feature = "voice")]
+    if let Some(m) = ghi_models::find(crate::profiles::VOICE_MODEL) {
+        return format!("{}.{}", m.id, &m.sha256[..12]);
+    }
+    crate::profiles::VOICE_MODEL.to_string()
+}
+
 /// The diarizer returned as many voices as it can tell apart.
 fn recluster_wanted(segs: &[SpeakerSegment]) -> bool {
     let mut labels: Vec<u32> = segs.iter().map(|s| s.speaker).collect();
@@ -766,5 +1076,77 @@ mod tests {
         let c = cuts[1] as f64 / 16_000.0;
         assert!((22.0..22.5).contains(&c), "cut at {c}");
         assert_eq!(cut_points(&pcm[..16_000 * 10], 20.0), vec![0, 160_000]);
+    }
+
+    fn pcm_of(n: usize, f: f32) -> HashMap<Track, Vec<f32>> {
+        HashMap::from([(Track::Mic, (0..n).map(|i| i as f32 * f).collect())])
+    }
+
+    #[test]
+    fn the_stamp_follows_audio_engine_language_and_chunking() {
+        let base = pass_stamp("e1", Some("vi"), 60.0, &pcm_of(1000, 0.5));
+        assert_eq!(base, pass_stamp("e1", Some("vi"), 60.0, &pcm_of(1000, 0.5)));
+        assert_ne!(base, pass_stamp("e2", Some("vi"), 60.0, &pcm_of(1000, 0.5)));
+        assert_ne!(base, pass_stamp("e1", Some("en"), 60.0, &pcm_of(1000, 0.5)));
+        assert_ne!(base, pass_stamp("e1", None, 60.0, &pcm_of(1000, 0.5)));
+        assert_ne!(base, pass_stamp("e1", Some("vi"), 30.0, &pcm_of(1000, 0.5)));
+        // One sample differs (a discard or trim changed the audio) / one more.
+        let mut p = pcm_of(1000, 0.5);
+        p.get_mut(&Track::Mic).unwrap()[400] = 0.0;
+        assert_ne!(base, pass_stamp("e1", Some("vi"), 60.0, &p));
+        assert_ne!(base, pass_stamp("e1", Some("vi"), 60.0, &pcm_of(1001, 0.5)));
+        // The same samples on another track are another audio.
+        let sys = HashMap::from([(Track::System, pcm_of(1000, 0.5)[&Track::Mic].clone())]);
+        assert_ne!(base, pass_stamp("e1", Some("vi"), 60.0, &sys));
+        // Fits the store's token rule.
+        assert!(base.len() <= 96 && base.bytes().all(|b| b.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn checkpoint_parts_round_trip_exactly() {
+        let w = |t: &str, s: f64, e: f64, c: f32, k| Word {
+            text: t.into(),
+            start: s,
+            end: e,
+            confidence: c,
+            speaker: k,
+        };
+        let finals = vec![
+            vec![
+                w("xin", 0.1, 0.30000000000000004, 0.9, None),
+                w("chào", 0.4, 1.0 / 3.0, 0.123_456_79, Some(2)),
+            ],
+            vec![w("tạm biệt", 61.25, 62.0, 1.0, None)],
+            vec![w(
+                "x",
+                f64::MIN_POSITIVE / 3.0,
+                1.0 + f64::EPSILON,
+                f32::MIN_POSITIVE,
+                None,
+            )],
+        ];
+        assert_eq!(decode_finals(&encode_finals(&finals)), Some(finals));
+        assert_eq!(decode_finals(b"not json"), None);
+        let segs = vec![
+            SpeakerSegment {
+                start: 0.0,
+                end: 1.5,
+                speaker: 1,
+            },
+            SpeakerSegment {
+                start: 1.5,
+                end: 2.0 / 3.0,
+                speaker: 2,
+            },
+        ];
+        assert_eq!(decode_segs(&encode_segs(&segs)), Some(segs));
+        let m = Mark {
+            done: 3,
+            total: 9,
+            p: 0.375,
+            stamp_id: u64::MAX - 5,
+        };
+        assert_eq!(Mark::from_payload(&m.json()), m);
+        assert_eq!(Mark::from_payload(&serde_json::json!({})), Mark::default());
     }
 }

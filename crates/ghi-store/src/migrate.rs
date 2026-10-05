@@ -74,6 +74,10 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 7,
         step: Step::Sql(include_str!("migrations/0007_organize.sql")),
     },
+    Migration {
+        version: 8,
+        step: Step::Sql(include_str!("migrations/0008_pass_checkpoints.sql")),
+    },
 ];
 
 /// Gives every person its `name_key`. Persons are not created by production

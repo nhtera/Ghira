@@ -57,7 +57,7 @@ impl Store {
     }
 
     /// Deletes a meeting's audio now (bundle files, `tracks` rows with
-    /// tombstones, the cached waveform), keeping the text. Sensitive mode uses
+    /// tombstones, the cached waveform, final-pass checkpoints), keeping the text. Sensitive mode uses
     /// it; like the sweep it is not a crypto-shred. Returns the tracks removed.
     pub fn delete_audio(&self, meeting_gid: &str) -> Result<u32> {
         let id = Store::meeting_ref(&self.conn(), meeting_gid)?.id;
@@ -85,6 +85,10 @@ impl Store {
         )?;
         let n = tx.execute("DELETE FROM tracks WHERE meeting_id = ?1", params![id])?;
         tx.execute("DELETE FROM waveforms WHERE meeting_id = ?1", params![id])?;
+        tx.execute(
+            "DELETE FROM final_pass_ckpt WHERE meeting_id = ?1",
+            params![id],
+        )?;
         tx.commit()?;
         Ok(n as u32)
     }

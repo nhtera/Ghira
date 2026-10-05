@@ -14,10 +14,10 @@ workspace = true
 # TypeScript types for the Tauri apps (tauri-specta).
 specta = ["dep:specta"]
 # NeMo-Speech.cpp engines (tools/scripts/build-nemo.sh first).
-nemo = ["ghi-speech/nemo"]
+nemo = ["ghi-speech/nemo", "dep:ghi-models"]
 # Whisper large-v3-turbo as the final-pass ASR (tools/scripts/build-whisper.sh).
 # `WhisperFinalEngines` also needs `nemo`: Whisper reads, NeMo still diarizes.
-whisper = ["ghi-speech/whisper"]
+whisper = ["ghi-speech/whisper", "dep:ghi-models"]
 # Speaker embeddings for voice profiles (CAM++ over tract; phase 14c).
 voice = ["ghi-speech/voice", "dep:ghi-models"]
 

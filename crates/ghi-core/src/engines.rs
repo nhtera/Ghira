@@ -27,6 +27,24 @@ pub trait SpeechEngines: Send + Sync {
     fn final_chunk_s(&self) -> Option<f64> {
         None
     }
+    /// Names the engine and its models for the final pass's checkpoints: they
+    /// are only reused by the same engine (another ASR, another model file).
+    fn checkpoint_id(&self) -> String {
+        format!("engine:{}", self.chunk_ms())
+    }
+}
+/// `id:sha256` of the registry model a file is (callers verify the file
+/// against the registry before loading); a file the registry doesn't know
+/// falls back to `name:size`. Changes whenever the model is replaced.
+#[cfg(feature = "nemo")]
+fn model_tag(path: &std::path::Path) -> String {
+    let name = path
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    match ghi_models::registry().into_iter().find(|m| m.file == name) {
+        Some(m) => format!("{}:{}", m.id, m.sha256),
+        None => format!("{name}:{}", std::fs::metadata(path).map_or(0, |m| m.len())),
+    }
 }
 
 #[cfg(feature = "nemo")]
@@ -47,6 +65,7 @@ mod nemo {
         asr: Arc<Asr>,
         diar: Arc<Diarizer>,
         chunk_ms: u32,
+        tag: String,
     }
 
     impl NemoEngines {
@@ -71,6 +90,11 @@ mod nemo {
                 asr: Arc::new(asr),
                 diar: Arc::new(diar),
                 chunk_ms,
+                tag: format!(
+                    "nemo:{}:{}:{chunk_ms}",
+                    super::model_tag(asr_model),
+                    super::model_tag(diar_model)
+                ),
             })
         }
     }
@@ -89,6 +113,10 @@ mod nemo {
 
         fn chunk_ms(&self) -> u32 {
             self.chunk_ms
+        }
+
+        fn checkpoint_id(&self) -> String {
+            self.tag.clone()
         }
     }
 }
@@ -113,6 +141,7 @@ mod whisper_final {
         asr: Arc<Whisper>,
         diar: Arc<Diarizer>,
         chunk_ms: u32,
+        tag: String,
     }
 
     impl WhisperFinalEngines {
@@ -138,6 +167,12 @@ mod whisper_final {
                 asr: Arc::new(asr),
                 diar: Arc::new(diar),
                 chunk_ms,
+                tag: format!(
+                    "whisper:{}:{}:{}",
+                    super::model_tag(whisper_model),
+                    super::model_tag(vad_model),
+                    super::model_tag(diar_model)
+                ),
             })
         }
     }
@@ -160,6 +195,10 @@ mod whisper_final {
 
         fn final_chunk_s(&self) -> Option<f64> {
             Some(120.0)
+        }
+
+        fn checkpoint_id(&self) -> String {
+            self.tag.clone()
         }
     }
 }

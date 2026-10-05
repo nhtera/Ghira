@@ -178,12 +178,32 @@ impl Store {
     /// Takes the oldest queued job of `kind` whose payload version is at most
     /// `max_payload_version`, moving it to `running` and counting the attempt.
     pub fn claim_next_job(&self, kind: &str, max_payload_version: u32) -> Result<Option<Job>> {
+        self.claim_next_job_except(kind, max_payload_version, &[])
+    }
+
+    /// [`Store::claim_next_job`] passing over the jobs in `except` (held back
+    /// by the runner).
+    pub fn claim_next_job_except(
+        &self,
+        kind: &str,
+        max_payload_version: u32,
+        except: &[i64],
+    ) -> Result<Option<Job>> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
+        // Integers only: nothing but digits and commas reaches the SQL.
+        let skip = except
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
         let id: Option<i64> = tx
             .query_row(
-                "SELECT id FROM jobs WHERE state = 'queued' AND kind = ?1 AND payload_version <= ?2 AND attempts < ?3
-                 ORDER BY id LIMIT 1",
+                &format!(
+                    "SELECT id FROM jobs WHERE state = 'queued' AND kind = ?1 AND payload_version <= ?2 AND attempts < ?3
+                     AND id NOT IN ({skip})
+                     ORDER BY id LIMIT 1"
+                ),
                 params![kind, max_payload_version, MAX_ATTEMPTS],
                 |r| r.get(0),
             )
@@ -193,6 +213,18 @@ impl Store {
         let job = tx.query_row(&format!("{JOB_SELECT} WHERE j.id = ?1"), [id], job_from_row)?;
         tx.commit()?;
         Ok(Some(job))
+    }
+
+    /// Gives back the attempt a running job's claim counted: the run made
+    /// progress that is kept (a checkpoint), so being killed later must not
+    /// push a long job toward [`MAX_ATTEMPTS`]. Harmless on a job that is not
+    /// running.
+    pub fn refund_job_attempt(&self, id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE jobs SET attempts = max(attempts - 1, 0) WHERE id = ?1 AND state = 'running'",
+            [id],
+        )?;
+        Ok(())
     }
 
     /// Progress (0..=1) of a running job.

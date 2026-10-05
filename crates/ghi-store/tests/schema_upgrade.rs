@@ -11,7 +11,7 @@
 //!   a cloud request, a setting, and per version: `source_hash` / a discard
 //!   (v3), a waveform (v4), two embeddings (v5), a voice profile (v6), and a
 //!   folder, tags, source app, calendar info, track speakers and an overlap
-//!   mark (v7);
+//!   mark (v7), and a final-pass checkpoint (v8);
 //! - `m2`: deleted for good (only its tombstone is left);
 //! - `m3`: crypto-shredded but not yet removed (a delete a crash interrupted;
 //!   its key is zeroed, its rows and FTS tokens are still there).
@@ -20,13 +20,15 @@
 //!
 //! Rebuilding: the old APIs are gone, so `regenerate_fixtures` applies
 //! `MIGRATIONS[..N]` to an empty database and writes the rows with SQL as
-//! schema N has them, sealing text with the real `rowcrypt`. v7 is the current
-//! schema, so its folder/tag/calendar/track-speaker rows go through the public
-//! `Store` API. When v8 ships, add a `seed` step for v8 and keep the v7 extras
-//! working by pinning them to raw SQL if the API moves on. Run:
+//! schema N has them, sealing text with the real `rowcrypt`. v7's
+//! folder/tag/calendar/track-speaker rows go through the public
+//! `Store` API (which migrates to the latest schema, so only the newest fixture
+//! can be rebuilt that way: v1-v7 are committed as they were). When v9 ships,
+//! add a `seed` step for v9, pin the v7 extras to raw SQL if the API moves on,
+//! and rebuild just the new one:
 //!
 //! ```sh
-//! cargo test -p ghi-store --test schema_upgrade -- --ignored regenerate_fixtures
+//! GHI_FIXTURE_ONLY=8 cargo test -p ghi-store --test schema_upgrade -- --ignored regenerate_fixtures
 //! ```
 
 mod common;
@@ -47,6 +49,10 @@ use rusqlite::{Connection, ToSql, params};
 use common::{FIXTURE_VERSIONS, gid, m1, m2, m3};
 
 const MODEL: &str = "test-embed";
+/// v8's final-pass checkpoint of m1 (what a pass that yielded left).
+const CKPT_STAMP: &str = "fixture-stamp";
+const CKPT_PART: &str = "asr.0.0";
+const CKPT_DATA: &[u8] = r#"[[{"t":"chốt","s":0.0,"e":0.5,"c":0.9,"k":null}]]"#.as_bytes();
 /// The fixtures stay small: they are committed binaries (SQLCipher pages are
 /// 4 KiB and every table and index takes at least one, so v7 is ~275 KiB).
 const MAX_FIXTURE_BYTES: u64 = 300 * 1024;
@@ -354,6 +360,27 @@ fn seed(conn: &Connection, v: u32, ring: &KeyRing) {
             &[("meeting_id", &m1_id), ("data_ct", &ct)],
         );
     }
+    if v >= 8 {
+        let ct = seal(
+            &dek1,
+            CKPT_DATA,
+            &row_aad(
+                "final_pass_ckpt",
+                "data_ct",
+                &format!("{}:{CKPT_STAMP}:{CKPT_PART}", m1()),
+            ),
+        );
+        insert(
+            conn,
+            "final_pass_ckpt",
+            &[
+                ("meeting_id", &m1_id),
+                ("part", &CKPT_PART),
+                ("stamp", &CKPT_STAMP),
+                ("data_ct", &ct),
+            ],
+        );
+    }
     if v >= 5 {
         let key = dek1.subkey(ROWS_INFO);
         for chunk in 0..2u32 {
@@ -518,7 +545,7 @@ fn build_fixture(v: u32) -> std::path::PathBuf {
     .unwrap();
     seed(&conn, v, &ring);
     drop(conn);
-    if v == 7 {
+    if v >= 7 {
         seed_v7_extras(tmp.path());
     }
     // The interrupted delete: shred m3's key, leave its rows.
@@ -540,7 +567,11 @@ fn build_fixture(v: u32) -> std::path::PathBuf {
 #[test]
 #[ignore = "rewrites tests/fixtures/schema/*.db"]
 fn regenerate_fixtures() {
-    for v in FIXTURE_VERSIONS {
+    // GHI_FIXTURE_ONLY=8 rewrites just that one (the others are committed).
+    let only: Option<u32> = std::env::var("GHI_FIXTURE_ONLY")
+        .ok()
+        .and_then(|v| v.parse().ok());
+    for v in FIXTURE_VERSIONS.filter(|v| only.is_none_or(|o| o == *v)) {
         let out = build_fixture(v);
         eprintln!("v{v}: {} bytes", std::fs::metadata(out).unwrap().len());
     }
@@ -750,6 +781,7 @@ fn upgrade_and_check(v: u32) {
     assert_eq!(counts["waveforms"], i64::from(v >= 4));
     assert_eq!(counts["voice_profiles"], i64::from(v >= 6));
     assert_eq!(counts["voice_embeddings"], i64::from(v >= 6));
+    assert_eq!(counts["final_pass_ckpt"], i64::from(v >= 8));
     assert_eq!(counts["folders"], i64::from(v >= 7));
     assert_eq!(counts["tags"], if v >= 7 { 2 } else { 0 });
     assert_eq!(counts["meeting_tags"], if v >= 7 { 2 } else { 0 });
@@ -796,6 +828,18 @@ fn upgrade_and_check(v: u32) {
 
     // Voice profile (v6+): its key re-wrapped by the rotation and still opens.
     let store = common::reopen(dir, &keys);
+    // A checkpoint (v8+) still opens after the rotation.
+    if v >= 8 {
+        let got = store.pass_checkpoints(&m1(), CKPT_STAMP).unwrap();
+        assert_eq!(got[CKPT_PART], CKPT_DATA);
+    } else {
+        assert!(
+            store
+                .pass_checkpoints(&m1(), CKPT_STAMP)
+                .unwrap()
+                .is_empty()
+        );
+    }
     if v >= 6 {
         let profile = gid(8, 1);
         assert_eq!(
@@ -925,4 +969,5 @@ upgrade_tests! {
     upgrades_from_v5: 5,
     upgrades_from_v6: 6,
     upgrades_from_v7: 7,
+    upgrades_from_v8: 8,
 }

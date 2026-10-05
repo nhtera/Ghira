@@ -4,7 +4,7 @@
 
 mod common;
 
-use ghi_store::migrate::MIGRATIONS;
+use ghi_store::migrate::{self, MIGRATIONS};
 use ghi_store::organize::{
     MAX_FOLDER_NAME, MAX_FOLDERS, MAX_TAG_NAME, MAX_TAGS, MAX_TAGS_PER_MEETING, TrackSpeaker,
 };
@@ -61,7 +61,7 @@ fn migration_v7_keeps_old_meetings_and_adds_empty_organization() {
     assert!(store.track_speakers(&gid).unwrap().is_empty());
     drop(store);
     let conn = db::open(&path, &common::db_key(&keys)).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 7);
+    assert_eq!(db::user_version(&conn).unwrap(), migrate::latest_version());
     let overlap: i64 = conn
         .query_row("SELECT overlap FROM segments WHERE gid = 'seg'", [], |r| {
             r.get(0)

@@ -24,6 +24,7 @@
 pub mod anchors;
 pub mod backup;
 pub mod bundle;
+pub mod ckpt;
 pub mod db;
 pub mod edits;
 pub mod embeddings;

@@ -9,10 +9,16 @@
 //! - A crash leaves the job `running`; the store requeues it at the next open
 //!   (that one does count as an attempt).
 //! - Payloads hold numbers and identifiers only; handlers fetch content by gid.
+//! - A resumable handler reports how much it has saved in its yield payload
+//!   (`"done"`: a count that only grows while `"stamp"`, if given, is the same). After [`YieldBackoff::after`] yields
+//!   in a row with no new `done`, the job is held (not failed) until the app
+//!   has been quiet (no recording, active) for [`YieldBackoff::idle`], so a
+//!   phone that records or backgrounds all the time doesn't spin on a long job.
 //! - A handler that isn't [`JobHandler::ready`] (its models aren't installed)
 //!   is skipped: its jobs wait in the queue without spending an attempt, and
 //!   run once the models arrive ("record now, process later").
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
@@ -39,6 +45,36 @@ pub struct JobCtx<'a> {
     pub job: &'a Job,
     preempt: &'a AtomicBool,
     inactive: &'a AtomicBool,
+    refunded: AtomicBool,
+}
+
+/// When a job that keeps yielding without saving anything new is held back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct YieldBackoff {
+    /// Yields in a row without progress (`"done"` unchanged) before holding.
+    pub after: u32,
+    /// How long the app must have been quiet (not recording, active) before a
+    /// held job is claimed again.
+    pub idle: Duration,
+}
+
+impl Default for YieldBackoff {
+    fn default() -> Self {
+        YieldBackoff {
+            after: 3,
+            idle: Duration::from_secs(90),
+        }
+    }
+}
+
+/// Yield accounting of one job.
+#[derive(Debug, Clone, Copy, Default)]
+struct YieldState {
+    /// What `done` counts (the handler's `"stamp"`): another one starts over.
+    stamp: u64,
+    done: u64,
+    streak: u32,
+    held: bool,
 }
 
 impl JobCtx<'_> {
@@ -54,6 +90,17 @@ impl JobCtx<'_> {
         self.store
             .checkpoint_job(self.job.id, progress, payload)
             .map_err(|e| e.to_string())
+    }
+
+    /// The run saved something a later run will skip (a checkpoint): the claim
+    /// no longer counts as an attempt, so repeated kills of a long job that
+    /// keeps advancing never wear its attempts out. Once per run.
+    pub fn made_progress(&self) {
+        if !self.refunded.swap(true, Ordering::SeqCst)
+            && let Err(e) = self.store.refund_job_attempt(self.job.id)
+        {
+            log::warn!("refunding job {}: {e}", self.job.id);
+        }
     }
 
     pub fn progress(&self, stage: Option<Stage>, progress: f32) {
@@ -104,6 +151,11 @@ pub struct JobRunner {
     /// The app is not active (mobile lifecycle): no claims, running job yields.
     inactive: AtomicBool,
     preempt: AtomicBool,
+    backoff: Mutex<YieldBackoff>,
+    yields: Mutex<HashMap<i64, YieldState>>,
+    /// When the app last stopped being busy (recording stopped, active again);
+    /// held jobs wait for it to age.
+    quiet_since: Mutex<Instant>,
     /// Callers of `run_one` past the recording check (a job claimed or being
     /// looked for). Raised before the check, so a recording that starts
     /// meanwhile either sees it (`wait_idle` waits) or stops the claim.
@@ -128,11 +180,101 @@ impl JobRunner {
             recording: AtomicUsize::new(0),
             inactive: AtomicBool::new(false),
             preempt: AtomicBool::new(false),
+            backoff: Mutex::new(YieldBackoff::default()),
+            yields: Mutex::new(HashMap::new()),
+            quiet_since: Mutex::new(Instant::now()),
             running: AtomicUsize::new(0),
             current: Mutex::new(None),
             wake: (Mutex::new(false), Condvar::new()),
             shutdown: AtomicBool::new(false),
         })
+    }
+
+    /// Changes when a job that yields without progress is held.
+    pub fn set_yield_backoff(&self, b: YieldBackoff) {
+        *self.backoff.lock().unwrap_or_else(|e| e.into_inner()) = b;
+    }
+
+    /// Ids of the jobs held back by the yield backoff (still queued).
+    pub fn held_jobs(&self) -> Vec<i64> {
+        let mut v: Vec<i64> = self
+            .yields
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter(|(_, s)| s.held)
+            .map(|(id, _)| *id)
+            .collect();
+        v.sort_unstable();
+        v
+    }
+
+    fn touch_quiet(&self) {
+        *self.quiet_since.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
+    }
+
+    /// Notes how a run ended for the yield backoff: a `Done` or an error
+    /// forgets the job; a yield whose `"done"` grew restarts the count, one
+    /// that didn't extends it and, at the limit, holds the job.
+    fn account(&self, id: i64, r: &Result<Outcome, String>) {
+        let mut map = self.yields.lock().unwrap_or_else(|e| e.into_inner());
+        match r {
+            Ok(Outcome::Yield(p)) => {
+                let Some(done) = p.get("done").and_then(Value::as_u64) else {
+                    return;
+                };
+                let after = self.backoff.lock().unwrap_or_else(|e| e.into_inner()).after;
+                let st = map.entry(id).or_default();
+                // The saved work was thrown away (a discard, another engine):
+                // the old count means nothing, and that is not spinning.
+                let stamp = p.get("stamp").and_then(Value::as_u64).unwrap_or(0);
+                if stamp != st.stamp {
+                    *st = YieldState {
+                        stamp,
+                        ..Default::default()
+                    };
+                }
+                if done > st.done {
+                    st.streak = 0;
+                    st.done = done;
+                } else {
+                    st.streak += 1;
+                }
+                if after > 0 && st.streak >= after {
+                    st.held = true;
+                    log::info!(
+                        "job held id={id} after {} yields without progress",
+                        st.streak
+                    );
+                }
+            }
+            _ => {
+                map.remove(&id);
+            }
+        }
+    }
+
+    /// Jobs the claim must pass over now. Held ones are released (their count
+    /// starts again) once the app has been quiet long enough.
+    fn held_now(&self) -> Vec<i64> {
+        let idle = self.backoff.lock().unwrap_or_else(|e| e.into_inner()).idle;
+        let quiet = self
+            .quiet_since
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .elapsed()
+            >= idle;
+        let mut map = self.yields.lock().unwrap_or_else(|e| e.into_inner());
+        let mut skip = Vec::new();
+        for (id, st) in map.iter_mut().filter(|(_, s)| s.held) {
+            if quiet {
+                st.held = false;
+                st.streak = 0;
+            } else {
+                skip.push(*id);
+            }
+        }
+        skip
     }
 
     /// Wakes the background loop (a job was queued).
@@ -188,11 +330,13 @@ impl JobRunner {
     pub fn app_inactive(&self) {
         self.inactive.store(true, Ordering::SeqCst);
         self.preempt.store(true, Ordering::SeqCst);
+        self.touch_quiet();
     }
 
     /// The app is active again: jobs may be claimed (unless recording).
     pub fn app_active(&self) {
         self.inactive.store(false, Ordering::SeqCst);
+        self.touch_quiet();
         self.refresh_preempt();
         self.notify();
     }
@@ -233,11 +377,15 @@ impl JobRunner {
         if self.recording() || self.inactive.load(Ordering::SeqCst) {
             return None;
         }
+        let held = self.held_now();
         for h in &self.handlers {
             if !h.ready() {
                 continue;
             }
-            let job = match self.store.claim_next_job(h.kind(), JOB_PAYLOAD_VERSION) {
+            let job = match self
+                .store
+                .claim_next_job_except(h.kind(), JOB_PAYLOAD_VERSION, &held)
+            {
                 Ok(Some(j)) => j,
                 Ok(None) => continue,
                 Err(e) => {
@@ -251,6 +399,7 @@ impl JobRunner {
                 job: &job,
                 preempt: &self.preempt,
                 inactive: &self.inactive,
+                refunded: AtomicBool::new(false),
             };
             ctx.progress(None, 0.0);
             *self.current.lock().unwrap_or_else(|e| e.into_inner()) = Some(job.id);
@@ -272,6 +421,7 @@ impl JobRunner {
                 Err(_) => log::warn!("job failed kind={} id={} ms={ms}", job.kind, job.id),
             }
             *self.current.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            self.account(job.id, &r);
             let settled = match &r {
                 Ok(Outcome::Done) => self.store.complete_job(job.id),
                 Ok(Outcome::Yield(payload)) => self.store.release_job(job.id, payload),
@@ -340,6 +490,7 @@ impl JobRunner {
 impl RecordingHooks for JobRunner {
     fn recording_started(&self) {
         self.recording.fetch_add(1, Ordering::SeqCst);
+        self.touch_quiet();
         self.preempt.store(true, Ordering::SeqCst);
     }
 
@@ -355,6 +506,7 @@ impl RecordingHooks for JobRunner {
     }
 
     fn recording_stopped(&self) {
+        self.touch_quiet();
         let before = self
             .recording
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
@@ -571,6 +723,7 @@ mod tests {
             job: &job,
             preempt: &runner.preempt,
             inactive: &runner.inactive,
+            refunded: AtomicBool::new(false),
         };
         // Stop, then inactive.
         runner.recording_started();
@@ -589,5 +742,150 @@ mod tests {
         runner.inactive.store(true, Ordering::SeqCst);
         runner.refresh_preempt();
         assert!(runner.preempt.load(Ordering::SeqCst));
+    }
+
+    /// Yields at once with a `done` count that grows only when told to.
+    struct Spin {
+        done: std::sync::atomic::AtomicU64,
+        stamp: std::sync::atomic::AtomicU64,
+        grow: AtomicBool,
+    }
+
+    impl JobHandler for Spin {
+        fn kind(&self) -> &'static str {
+            "spin"
+        }
+        fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
+            if self.grow.load(Ordering::SeqCst) {
+                self.done.fetch_add(1, Ordering::SeqCst);
+                ctx.made_progress();
+            }
+            Ok(Outcome::Yield(json!({
+                "done": self.done.load(Ordering::SeqCst),
+                "stamp": self.stamp.load(Ordering::SeqCst),
+            })))
+        }
+    }
+
+    fn spin_runner(
+        grow: bool,
+        backoff: YieldBackoff,
+    ) -> (tempfile::TempDir, Arc<Store>, Arc<JobRunner>, String) {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            Store::open(
+                tmp.path(),
+                Arc::new(MemoryKeyStore::default()),
+                Protection::default(),
+            )
+            .unwrap(),
+        );
+        let m = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        let (tx, _rx) = bus();
+        let spin = Arc::new(Spin {
+            done: Default::default(),
+            stamp: Default::default(),
+            grow: AtomicBool::new(grow),
+        });
+        let runner = JobRunner::new(store.clone(), tx, vec![spin]);
+        runner.set_yield_backoff(backoff);
+        (tmp, store, runner, m)
+    }
+
+    #[test]
+    fn a_job_that_yields_without_progress_is_held_until_the_app_is_quiet() {
+        let idle = Duration::from_millis(250);
+        let (_t, store, runner, m) = spin_runner(false, YieldBackoff { after: 2, idle });
+        let a = store.enqueue_job(Some(&m), "spin", 1, &json!({})).unwrap();
+        let b = store.enqueue_job(Some(&m), "spin", 1, &json!({})).unwrap();
+        // Two yields in a row with nothing new: a is held (not failed, and a
+        // yield never costs an attempt). b is a different job and still runs.
+        assert_eq!(runner.run_one().unwrap().0.id, a);
+        assert!(runner.held_jobs().is_empty());
+        assert_eq!(runner.run_one().unwrap().0.id, a);
+        assert_eq!(runner.held_jobs(), [a]);
+        let j = store.job(a).unwrap();
+        assert_eq!((j.state, j.attempts), (JobState::Queued, 0));
+        assert_eq!(
+            runner.run_one().unwrap().0.id,
+            b,
+            "the held one is passed over"
+        );
+        // A recording just ended: not quiet yet.
+        runner.recording_started();
+        runner.recording_stopped();
+        std::thread::sleep(Duration::from_millis(30));
+        assert_eq!(runner.run_one().unwrap().0.id, b);
+        assert_eq!(runner.held_jobs(), [a, b], "b yielded twice too");
+        // Quiet for `idle`: a runs again (and its count starts over).
+        std::thread::sleep(idle);
+        assert_eq!(runner.run_one().unwrap().0.id, a);
+        assert!(
+            runner.held_jobs().is_empty(),
+            "both released, counts start over"
+        );
+    }
+
+    #[test]
+    fn progress_between_yields_never_holds_the_job_and_refunds_the_attempt() {
+        let (_t, store, runner, m) = spin_runner(
+            true,
+            YieldBackoff {
+                after: 2,
+                idle: Duration::from_secs(3600),
+            },
+        );
+        let a = store.enqueue_job(Some(&m), "spin", 1, &json!({})).unwrap();
+        for _ in 0..6 {
+            assert_eq!(runner.run_one().unwrap().0.id, a);
+            assert!(runner.held_jobs().is_empty());
+        }
+        assert_eq!(store.job(a).unwrap().attempts, 0);
+        // A run that made progress and was then killed (left running, requeued
+        // at the next open) costs nothing: its attempt was given back.
+        let claimed = store.claim_next_job("spin", 1).unwrap().unwrap();
+        assert_eq!(claimed.attempts, 1);
+        store.refund_job_attempt(a).unwrap();
+        assert_eq!(store.job(a).unwrap().attempts, 0);
+    }
+
+    #[test]
+    fn a_new_stamp_starts_the_yield_count_over() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            Store::open(
+                tmp.path(),
+                Arc::new(MemoryKeyStore::default()),
+                Protection::default(),
+            )
+            .unwrap(),
+        );
+        let m = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        let (tx, _rx) = bus();
+        let spin = Arc::new(Spin {
+            done: Default::default(),
+            stamp: Default::default(),
+            grow: AtomicBool::new(false),
+        });
+        let runner = JobRunner::new(store.clone(), tx, vec![spin.clone()]);
+        runner.set_yield_backoff(YieldBackoff {
+            after: 2,
+            idle: Duration::from_secs(3600),
+        });
+        let a = store.enqueue_job(Some(&m), "spin", 1, &json!({})).unwrap();
+        spin.stamp.store(7, Ordering::SeqCst);
+        spin.done.store(5, Ordering::SeqCst);
+        drop(runner.run_one().unwrap()); // first sight of stamp 7: counts as new
+        drop(runner.run_one().unwrap()); // nothing new: streak 1
+        // The audio changed (a discard): the saved work is gone, `done` is
+        // lower. That is not spinning, so the job is not held.
+        spin.stamp.store(8, Ordering::SeqCst);
+        spin.done.store(1, Ordering::SeqCst);
+        drop(runner.run_one().unwrap());
+        assert!(runner.held_jobs().is_empty());
+        drop(runner.run_one().unwrap()); // streak 1 under stamp 8
+        assert!(runner.held_jobs().is_empty());
+        drop(runner.run_one().unwrap()); // streak 2: now held
+        assert_eq!(runner.held_jobs(), [a]);
     }
 }

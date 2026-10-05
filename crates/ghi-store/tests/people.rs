@@ -112,7 +112,10 @@ fn migration_0006_creates_me_and_links_me_speakers() {
     assert_eq!((people[0].meetings, people[0].voice.clone()), (1, None));
     drop(store);
     let conn = db::open(&path, &common::db_key(&keys)).unwrap();
-    assert_eq!(db::user_version(&conn).unwrap(), 7);
+    assert_eq!(
+        db::user_version(&conn).unwrap(),
+        ghi_store::migrate::latest_version()
+    );
     for t in ["voice_profiles", "voice_embeddings", "speaker_voices"] {
         let n: i64 = conn
             .query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get(0))
