@@ -12,13 +12,14 @@
 //   leased         paired; meeting "m-notes" has its audio on the computer and a final pass open there (42%)
 //   desktopAudio   paired; "m-notes" is synced and its audio is on the computer
 //   waiting        paired; "m-notes" waits for Wi-Fi
+// Delete everything with a paired computer waits (status "waiting") until syncSimulateWipeDone or syncDeleteEverywhereSkip.
 // Other hooks: syncSimulateScan (a good scan), syncSimulateScanFailure (an error event while scanning),
 // syncFailNextScan (the next scan start fails with that code), syncSimulateUnpairedByPeer, syncSimulateWipeDone, syncSetDeleteEverywhere.
 // Any `?sync=` or `syncSet` also makes pairing available to the onboarding (`isSyncAvailable`).
 import type { ConflictCopy, DeleteEverywhereStatus, DeviceRow, SyncErrorCode, SyncEvent, SyncStatus } from "../bindings";
 import type { Commands } from "./ipc";
 import { meetingCommands } from "./mock-meetings";
-import { settingsCommands } from "./mock-settings";
+import { foldPhrase, settingsCommands } from "./mock-settings";
 
 const ok = <T>(data: T) => ({ status: "ok" as const, data });
 const fail = (error: string) => ({ status: "error" as const, error });
@@ -65,14 +66,14 @@ type SyncCommands = Pick<
   | "syncConflictResolve"
   | "syncConfirmMassDelete"
   | "syncDeleteEverywhereStatus"
+  | "syncDeleteEverywhereSkip"
+  | "privacyDeleteAll"
   | "syncPairScanStart"
   | "syncPairScanStop"
   | "syncLeaseRevoke"
   | "meetingChips"
   | "meetingDetail"
-  | "mobileSettings"
   | "setMobileSettings"
-  | "inboxConfirm"
 >;
 
 export interface SyncMock {
@@ -102,8 +103,8 @@ export function createSyncMock(): SyncMock {
   let lastErrorCode: string | null = null;
   let scanning = false;
   let failScan: string | null = null;
-  // The Desktop target is refused by the settings mock (as the real core still does): once paired it is accepted here.
-  let desktopDefault = false;
+  // "Delete everything" waiting for the computer: resolves the wait (done by the computer, or skipped).
+  let endWait: (() => void) | null = null;
   let chip: "synced" | "waitingForWifi" | "finalOnDesktop" | null = null;
   let audioOnDesktop = false;
   let deleteStatus: DeleteEverywhereStatus = { state: "idle", waitingFor: [] };
@@ -181,6 +182,21 @@ export function createSyncMock(): SyncMock {
       return ok(null);
     },
     syncDeleteEverywhereStatus: async () => ok(deleteStatus),
+    syncDeleteEverywhereSkip: async () => {
+      endWait?.();
+      return ok(null);
+    },
+    privacyDeleteAll: async (confirm, everywhere) => {
+      const d = devices.find((x) => x.state === "paired");
+      if (!everywhere || !d || !["delete", "xoa"].includes(foldPhrase(confirm))) return settingsCommands.privacyDeleteAll!(confirm, false);
+      deleteStatus = { state: "waiting", waitingFor: [d.name] };
+      await new Promise<void>((resolve) => {
+        endWait = resolve;
+      });
+      endWait = null;
+      deleteStatus = { state: "done", waitingFor: [] };
+      return settingsCommands.privacyDeleteAll!(confirm, false);
+    },
     syncPairScanStart: async () => {
       if (state === "off") return fail("sync_off");
       if (failScan) {
@@ -200,22 +216,9 @@ export function createSyncMock(): SyncMock {
       if (chip === "finalOnDesktop") chip = "synced";
       return ok(null);
     },
-    mobileSettings: async () => {
-      const r = await settingsCommands.mobileSettings!();
-      return r.status === "ok" && desktopDefault && current.paired() ? ok({ ...r.data, defaultTarget: "desktop" as const }) : r;
-    },
-    setMobileSettings: async (settings) => {
-      desktopDefault = settings.defaultTarget === "desktop";
-      if (!desktopDefault) return settingsCommands.setMobileSettings!(settings);
-      if (!current.paired()) {
-        desktopDefault = false;
-        return fail("pairingNotAvailable");
-      }
-      const r = await settingsCommands.setMobileSettings!({ ...settings, defaultTarget: "phone" });
-      return r.status === "ok" ? ok({ ...r.data, defaultTarget: "desktop" as const }) : r;
-    },
-    inboxConfirm: async (id, language, target) =>
-      settingsCommands.inboxConfirm!(id, language, target === "desktop" && current.paired() ? "phone" : target),
+    // The Desktop target needs a pairing, as in the core.
+    setMobileSettings: async (settings) =>
+      settings.defaultTarget === "desktop" && !current.paired() ? fail("pairingNotAvailable") : settingsCommands.setMobileSettings!(settings),
     meetingChips: async (ids) => {
       const r = await meetingCommands.meetingChips!(ids);
       if (r.status !== "ok" || !chip) return r;
@@ -225,7 +228,12 @@ export function createSyncMock(): SyncMock {
     meetingDetail: async (id) => {
       const r = await meetingCommands.meetingDetail!(id);
       if (r.status !== "ok" || id !== MOCK_SYNC_MEETING || !audioOnDesktop) return r;
-      return ok({ ...r.data, audioAvailable: false });
+      return ok({
+        ...r.data,
+        audioAvailable: false,
+        audioOnPeer: true,
+        ...(chip === "finalOnDesktop" ? { leaseOpen: { device: MOCK_DESKTOP.name, percent: 42 } } : {}),
+      });
     },
   };
 
@@ -244,6 +252,15 @@ export function createSyncMock(): SyncMock {
         emit({ type: "paired", device: d });
       },
       syncSimulateWipeDone: () => {
+        // "Delete everything" was waiting for the computer: it took its wipe.
+        if (endWait) {
+          const d = devices[0];
+          devices = [];
+          state = "pairing";
+          if (d) emit({ type: "wipeDone", gid: d.gid });
+          endWait();
+          return;
+        }
         const d = devices.find((x) => x.state === "wipePending");
         if (!d) return;
         devices = devices.filter((x) => x !== d);

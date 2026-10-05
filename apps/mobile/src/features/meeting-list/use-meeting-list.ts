@@ -8,6 +8,7 @@ import { ipc } from "../../ipc";
 import { UNLOCKED_EVENT } from "../app-lock/events";
 import { useWindowEvent } from "../meeting-view/use-window-event";
 import { classifyError } from "../meeting-view/read-error";
+import { useSyncEvents } from "../sync/use-sync";
 
 export const PAGE = 50;
 
@@ -162,6 +163,15 @@ export function useMeetingList() {
   }, [fetchChips, load]);
 
   useWindowEvent(UNLOCKED_EVENT, () => void load(true));
+  // A pass with the computer moved something (its final pass, a sync): the chips follow.
+  useSyncEvents(
+    useCallback(
+      (e) => {
+        if (e.type === "progress") void fetchChips(rowsRef.current.map((r) => r.gid));
+      },
+      [fetchChips],
+    ),
+  );
 
   const chipOf = useCallback(
     (gid: string) => chipWithProgress(state.chips[gid], progress[gid]),

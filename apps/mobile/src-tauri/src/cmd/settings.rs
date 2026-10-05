@@ -17,10 +17,14 @@ pub const KEY: &str = "mobile";
 #[serde(rename_all = "camelCase")]
 pub struct MobileSettings {
     /// What new recordings and imports use (Settings → Processing). `Desktop`
-    /// is rejected until phase 15.
+    /// needs a paired computer (`pairingNotAvailable` otherwise).
     pub default_target: ProcessingTarget,
     /// Download models over Wi-Fi only (default true).
     pub models_wifi_only: bool,
+    /// Hours the paired computer may stay away from a meeting handed to it
+    /// before this phone processes it itself (1..=168; default 12). A phone
+    /// below the live tier keeps waiting.
+    pub desktop_offline_hours: u32,
 }
 
 impl Default for MobileSettings {
@@ -28,9 +32,15 @@ impl Default for MobileSettings {
         MobileSettings {
             default_target: ProcessingTarget::Phone,
             models_wifi_only: true,
+            desktop_offline_hours: DEFAULT_OFFLINE_HOURS,
         }
     }
 }
+
+/// The default of [`MobileSettings::desktop_offline_hours`].
+pub const DEFAULT_OFFLINE_HOURS: u32 = ghi_app::sync_service::DEFAULT_OFFLINE_HOURS;
+/// The range of [`MobileSettings::desktop_offline_hours`].
+pub const OFFLINE_HOURS: std::ops::RangeInclusive<u32> = 1..=168;
 
 /// Stored fields over the defaults: an older store lacks newer fields and a
 /// value this build cannot read keeps its default, field by field.
@@ -60,11 +70,18 @@ pub fn load(store: &Store) -> Result<MobileSettings, String> {
     ))
 }
 
-/// Saves `s` (the desktop target is refused) and returns what is stored.
-pub fn save(store: &Store, s: MobileSettings) -> Result<MobileSettings, String> {
-    if s.default_target == ProcessingTarget::Desktop {
-        return Err("desktopUnavailable".into());
+/// Saves `s` and returns what is stored. The desktop target needs a paired
+/// computer (`pairingNotAvailable`); the offline hours stay within
+/// [`OFFLINE_HOURS`].
+pub fn save(store: &Store, mut s: MobileSettings) -> Result<MobileSettings, String> {
+    if s.default_target == ProcessingTarget::Desktop
+        && !ghi_app::sync_service::spoke::has_hub(store)
+    {
+        return Err("pairingNotAvailable".into());
     }
+    s.desktop_offline_hours = s
+        .desktop_offline_hours
+        .clamp(*OFFLINE_HOURS.start(), *OFFLINE_HOURS.end());
     let v = serde_json::to_value(s).map_err(|e| e.to_string())?;
     store.set_setting(KEY, &v).map_err(|e| e.to_string())?;
     Ok(s)
@@ -119,23 +136,49 @@ mod tests {
         let s = MobileSettings {
             default_target: ProcessingTarget::Cloud,
             models_wifi_only: false,
+            desktop_offline_hours: 24,
         };
         assert_eq!(save(&store, s).unwrap(), s);
         assert_eq!(load(&store).unwrap(), s);
     }
 
     #[test]
-    fn the_desktop_target_is_refused_and_nothing_is_stored() {
+    fn the_desktop_target_needs_a_paired_computer_and_nothing_is_stored_without() {
         let (_t, store) = store();
-        let r = save(
-            &store,
-            MobileSettings {
-                default_target: ProcessingTarget::Desktop,
-                models_wifi_only: false,
-            },
-        );
-        assert_eq!(r, Err("desktopUnavailable".into()));
+        let want = MobileSettings {
+            default_target: ProcessingTarget::Desktop,
+            models_wifi_only: false,
+            desktop_offline_hours: 12,
+        };
+        assert_eq!(save(&store, want), Err("pairingNotAvailable".into()));
         assert_eq!(load(&store).unwrap(), MobileSettings::default());
+        store
+            .pin_device(
+                &ghi_store::sync::devices::NewDevice {
+                    gid: "01a10db5-956d-729d-91b2-76be7b439cdd".into(),
+                    name: "Mac".into(),
+                    platform: "desktop".into(),
+                    role: ghi_store::sync::devices::DeviceRole::Hub,
+                    static_pub: [7; 32],
+                },
+                &[9; 32],
+            )
+            .unwrap();
+        assert_eq!(save(&store, want).unwrap(), want);
+    }
+
+    #[test]
+    fn the_offline_hours_stay_in_range() {
+        let (_t, store) = store();
+        let with = |hours| MobileSettings {
+            desktop_offline_hours: hours,
+            ..MobileSettings::default()
+        };
+        assert_eq!(save(&store, with(0)).unwrap().desktop_offline_hours, 1);
+        assert_eq!(
+            save(&store, with(100_000)).unwrap().desktop_offline_hours,
+            168
+        );
     }
 
     #[test]

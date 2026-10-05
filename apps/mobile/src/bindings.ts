@@ -98,8 +98,14 @@ export const commands = {
 	 *  (`DELETE` or `XÓA`, see `privacy_cmd::DELETE_PHRASES`; case and accents
 	 *  are ignored); Rust checks it again, so a stray call from the webview
 	 *  cannot wipe the phone. Refused while a recording or import runs (`busy`).
+	 * 
+	 *  With `everywhere` and a paired computer, the computer is asked to delete
+	 *  what it got from this phone first, and this waits for it while it is
+	 *  reachable (`sync_delete_everywhere_status` says for whom;
+	 *  `sync_delete_everywhere_skip` ends the wait); the sync identity goes with
+	 *  the data.
 	 */
-	privacyDeleteAll: (confirm: string) => typedError<null, string>(__TAURI_INVOKE("privacy_delete_all", { confirm })),
+	privacyDeleteAll: (confirm: string, everywhere: boolean) => typedError<null, string>(__TAURI_INVOKE("privacy_delete_all", { confirm, everywhere })),
 	/**
 	 *  What the last attempt to open the store found (`Ready`: nothing failed).
 	 *  It never opens the store itself: the startup call already did, and a
@@ -343,8 +349,17 @@ export const commands = {
 	 */
 	syncDeleteEverywhereStatus: () => typedError<DeleteEverywhereStatus, string>(__TAURI_INVOKE("sync_delete_everywhere_status")),
 	/**
-	 *  Phone: starts the camera to scan the desktop's code (the scan arrives as
-	 *  `ghi_ios_qr_scanned`, never through the webview).
+	 *  "Delete here only": stops the wait for paired devices during "Delete
+	 *  everything"; the data goes at once and the devices that were not reached
+	 *  keep their copies.
+	 */
+	syncDeleteEverywhereSkip: () => typedError<null, string>(__TAURI_INVOKE("sync_delete_everywhere_skip")),
+	/**
+	 *  Phone: shows the camera scanner and pairs with the computer whose code it
+	 *  reads (the code never reaches the webview). Resolves when paired (the
+	 *  `paired` event is emitted too) or when the scan was closed; the error is
+	 *  `invalid`, `expired`, `cameraOff`, `localNetwork` or `upgradeRequired`. A
+	 *  computer that cannot be reached arrives as an `error` event.
 	 */
 	syncPairScanStart: () => typedError<null, string>(__TAURI_INVOKE("sync_pair_scan_start")),
 	syncPairScanStop: () => typedError<null, string>(__TAURI_INVOKE("sync_pair_scan_stop")),
@@ -810,6 +825,17 @@ export type InterruptionKind =
 /**  A phone call (the M6 notice). */
 "call" | "other";
 
+/**
+ *  A final pass is open on the paired computer for a meeting (the phone reads,
+ *  the computer writes).
+ */
+export type LeaseOpen = {
+	/**  The computer's name. */
+	device: string,
+	/**  0..=100. */
+	percent: number,
+};
+
 export type LifecycleState = {
 	scene: Scene,
 	/**  Dynamic Type multiplier, capped at 2.0. */
@@ -858,8 +884,8 @@ export type MeProfile = {
 };
 
 /**
- *  The status chip on a meeting row (M3). v1 produces only the first five;
- *  the last three are phase 15 and are never sent before pairing exists.
+ *  The status chip on a meeting row (M3). The last three are phase 15 and
+ *  only exist while a computer is paired.
  */
 export type MeetingChip = { kind: "recorded" } | { kind: "processingOnPhone"; percent: number } | { kind: "processedOnPhone" } | { kind: "waitingForModels" } | { kind: "failed" } | { kind: "synced" } | { kind: "waitingForWifi" } | { kind: "finalOnDesktop"; percent: number };
 
@@ -909,6 +935,16 @@ export type MeetingDetail = {
 	 *  `voice_memos`.
 	 */
 	sourceApp: string | null,
+	/**
+	 *  The audio lives on the paired computer: it recorded the meeting and
+	 *  none is kept here.
+	 */
+	audioOnPeer?: boolean,
+	/**
+	 *  A final pass is open on the paired computer: the transcript is read-only
+	 *  here until it comes back (phone only).
+	 */
+	leaseOpen?: LeaseOpen | null,
 };
 
 /**  What the library shows about a meeting's processing. */
@@ -1057,11 +1093,17 @@ export type MobileModelsStatus = {
 export type MobileSettings = {
 	/**
 	 *  What new recordings and imports use (Settings → Processing). `Desktop`
-	 *  is rejected until phase 15.
+	 *  needs a paired computer (`pairingNotAvailable` otherwise).
 	 */
 	defaultTarget: ProcessingTarget,
 	/**  Download models over Wi-Fi only (default true). */
 	modelsWifiOnly: boolean,
+	/**
+	 *  Hours the paired computer may stay away from a meeting handed to it
+	 *  before this phone processes it itself (1..=168; default 12). A phone
+	 *  below the live tier keeps waiting.
+	 */
+	desktopOfflineHours: number,
 };
 
 export type NoteBlockView = {
@@ -1086,7 +1128,7 @@ export type NotesLanguage =
 
 export type OnboardingState = {
 	completed: OnboardingStep[],
-	/**  Pairing exists (phase 15). False in v1. */
+	/**  Pairing exists (phase 15): the onboarding offers the pair step. */
 	syncAvailable: boolean,
 };
 
@@ -1111,7 +1153,10 @@ export type PersonChip = {
 export type ProcessingTarget = 
 /**  The final pass runs on this phone (needs the speech models and a capable device). */
 "phone" | 
-/**  Phase 15: a paired desktop. Listed but disabled until pairing exists. */
+/**
+ *  Phase 15: a paired desktop (it needs a pairing; the recording is
+ *  handed over under a lease once its audio is there).
+ */
 "desktop" | 
 /**
  *  Notes through the user's own cloud key, transcript text only, per

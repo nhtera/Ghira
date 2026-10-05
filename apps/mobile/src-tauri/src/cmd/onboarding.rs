@@ -24,7 +24,7 @@ pub enum OnboardingStep {
 #[serde(rename_all = "camelCase")]
 pub struct OnboardingState {
     pub completed: Vec<OnboardingStep>,
-    /// Pairing exists (phase 15). False in v1.
+    /// Pairing exists (phase 15): the onboarding offers the pair step.
     pub sync_available: bool,
 }
 
@@ -47,8 +47,7 @@ fn load(store: &ghi_store::store::Store) -> Result<OnboardingState, String> {
         .unwrap_or_default();
     Ok(OnboardingState {
         completed,
-        // Pairing is phase 15.
-        sync_available: false,
+        sync_available: true,
     })
 }
 

@@ -17,7 +17,7 @@
 //!   `microphoneDenied`, `diskLow` (< 500 MB), `micInUse` (voice enrollment
 //!   holds the microphone), `waitingForTranscription` (the previous recording
 //!   is still being transcribed after a minute), `alreadyRecording`,
-//!   `pairingNotAvailable` (the `desktop` target, until phase 15),
+//!   `pairingNotAvailable` (the `desktop` target with no computer paired),
 //!   `sensitiveNeedsTranscript` (sensitive mode without a live transcript).
 //! - Below the live tier recording is always allowed, whatever the `target`:
 //!   it records only, queues no jobs and is processed later. The same for
@@ -25,7 +25,8 @@
 //! - `record_start` is refused while a call is active (error `callActive`)
 //!   until the user acknowledged M6 (`call_acknowledged`), with
 //!   `microphone_denied`, with `disk_low` (< 500 MB free), for the `Desktop`
-//!   target, and for the `Phone` target on a device below the live tier. A
+//!   target while no computer is paired, and for the `Phone` target on a
+//!   device below the live tier. A
 //!   previous recording still being transcribed is waited for (up to a minute).
 //! - A below-tier device records only (`DeviceTier`): no job is queued, the
 //!   meeting stays `done` (recorded; the chip is "Recorded") and the session

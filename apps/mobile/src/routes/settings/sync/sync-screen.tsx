@@ -10,8 +10,9 @@ import { useTranslation } from "react-i18next";
 import type { SyncEvent } from "../../../bindings";
 import { ipc } from "../../../ipc";
 import { unwrap, useAction } from "../../../features/settings/api";
-import { Btn } from "../../../features/settings/controls";
+import { Btn, ChoiceRow } from "../../../features/settings/controls";
 import { Page } from "../../../features/settings/page";
+import { useMobileSettings } from "../../../features/settings/use-settings";
 import { relativeTime } from "../../../features/sync/format";
 import { HotspotHelp, PairScanPanel } from "../../../features/sync/pair-scan";
 import { syncErrorKey } from "../../../features/sync/scan-error";
@@ -19,6 +20,24 @@ import { usePairScan } from "../../../features/sync/use-pair-scan";
 import { useSync, useSyncEvents } from "../../../features/sync/use-sync";
 
 type Confirm = "unpair" | "wipe";
+
+/** The hours the computer may stay away before this phone processes a meeting itself. */
+const OFFLINE_HOURS = [6, 12, 24, 72] as const;
+
+/** "If your computer is away": the hours choice (the core keeps 1..168; others show no check). */
+function OfflineHours() {
+  const { t } = useTranslation();
+  const mobile = useMobileSettings();
+  const s = mobile.settings;
+  if (!s) return null;
+  return (
+    <ListSection header={t("mobile.sync.screen.offlineHeader")} footer={t("mobile.sync.screen.offlineFooter")}>
+      {OFFLINE_HOURS.map((h) => (
+        <ChoiceRow key={h} title={t(`mobile.sync.screen.offlineHours_${h}`)} selected={s.desktopOfflineHours === h} onPress={() => void mobile.save({ ...s, desktopOfflineHours: h })} />
+      ))}
+    </ListSection>
+  );
+}
 
 export function SyncScreen() {
   const { t, i18n } = useTranslation();
@@ -108,6 +127,7 @@ export function SyncScreen() {
                   {action.busy ? t("mobile.sync.screen.syncing") : t("mobile.sync.screen.syncNow")}
                 </Btn>
               </div>
+              <OfflineHours />
               {localOnly}
               <div className="mx-4 flex flex-col items-start gap-3">
                 <Btn onClick={() => setConfirm("unpair")}>{t("mobile.sync.unpair")}</Btn>

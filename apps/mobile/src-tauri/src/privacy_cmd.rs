@@ -130,13 +130,17 @@ pub fn share_dir(data: &Path) -> PathBuf {
 
 /// Deletes everything (see the module docs). `busy` says a recording or an
 /// import is running (asked under [`DATA_GUARD`]): refused then. A start or an
-/// import that is just beginning also counts as busy.
+/// import that is just beginning also counts as busy. `prepare` runs once
+/// nothing can start any more and the data is still there: the sync service
+/// has the paired computer delete what it got from this phone (waiting only
+/// while it is reachable); if it fails, nothing is deleted.
 pub fn delete_all(
     core: &Core,
     data: &Path,
     inbox_root: &Path,
     confirm: &str,
     busy: &dyn Fn() -> bool,
+    prepare: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {
     if !phrase_ok(confirm) {
         return Err("confirmMismatch".into());
@@ -147,8 +151,26 @@ pub fn delete_all(
     if busy() {
         return Err("busy".into());
     }
-    core.delete_everything()?;
+    core.delete_everything_with(prepare)?;
     wipe_side_data(data, inbox_root, true)
+}
+
+/// Restores an archive into a fresh install (`dest` and the key store are
+/// empty). The restored store has a new device gid and feed, so the pins it
+/// carried (and this device's old sync identity) cannot be used: they are
+/// dropped and the phone pairs again (doc 07 §3.1).
+#[allow(dead_code)] // the restore-from-backup flow has no screen yet; tested below
+pub fn restore_archive(
+    archive: &Path,
+    password: &str,
+    dest: &Path,
+    keystore: std::sync::Arc<dyn ghi_store::keys::KeyStore>,
+    secrets: &dyn ghi_store::keys::secrets::SecretStore,
+) -> Result<Store, String> {
+    let store = Store::import_archive(archive, password, dest, keystore, Default::default())
+        .map_err(|e| format!("restore: {e}"))?;
+    ghi_app::sync_service::drop_restored_pins(&store, secrets)?;
+    Ok(store)
 }
 
 /// What the app keeps next to the store goes with it (backlog, metrics, logs,
@@ -255,6 +277,15 @@ mod tests {
         store.finish_track(gid, TrackKind::Mic, w).unwrap();
     }
 
+    /// The account the sync identity lives under.
+    const IDENTITY_ACCOUNT_FOR_TEST: &str = "ghira.sync.identity";
+
+    fn ghi_sync_identity_for_test(secrets: &FileSecrets) {
+        secrets
+            .set(IDENTITY_ACCOUNT_FOR_TEST, b"old identity")
+            .unwrap();
+    }
+
     #[test]
     fn the_typed_phrase_ignores_case_accents_and_spaces() {
         for ok in ["DELETE", " delete ", "Delete", "XÓA", "xoa", "xóa"] {
@@ -297,14 +328,23 @@ mod tests {
 
         // It restores on a "new phone": a fresh key store and directory.
         let ks2 = Arc::new(MemoryKeyStore::default());
-        let restored = Store::import_archive(
+        // The old phone's sync identity is on the new one (a backup restore):
+        // it is dropped with the pins, the phone pairs again.
+        let secrets = FileSecrets::new(t.path().join("secrets"));
+        std::fs::create_dir_all(t.path().join("secrets")).unwrap();
+        ghi_sync_identity_for_test(&secrets);
+        let restored = restore_archive(
             &archive,
             "correct horse",
             &t.path().join("restored"),
             ks2.clone(),
-            Default::default(),
+            &secrets,
         )
         .unwrap();
+        assert!(
+            secrets.get(IDENTITY_ACCOUNT_FOR_TEST).unwrap().is_none(),
+            "the restored phone has no sync identity"
+        );
         let rows = restored.list_meetings(10, 0).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].gid, gid);
@@ -558,16 +598,16 @@ mod tests {
 
         // The typed phrase and a running recording or import are checked first.
         assert_eq!(
-            delete_all(&core, &data, &inbox, "nope", &|| false),
+            delete_all(&core, &data, &inbox, "nope", &|| false, &|| Ok(())),
             Err("confirmMismatch".into())
         );
         assert_eq!(
-            delete_all(&core, &data, &inbox, "DELETE", &|| true),
+            delete_all(&core, &data, &inbox, "DELETE", &|| true, &|| Ok(())),
             Err("busy".into())
         );
         assert!(std::fs::read_dir(data.join("store")).unwrap().count() > 0);
 
-        delete_all(&core, &data, &inbox, "delete", &|| false).unwrap();
+        delete_all(&core, &data, &inbox, "delete", &|| false, &|| Ok(())).unwrap();
         // The database and the audio are gone (the process lock file stays).
         let left: Vec<_> = std::fs::read_dir(data.join("store"))
             .unwrap()
@@ -583,7 +623,7 @@ mod tests {
         // A start or an import in flight holds the guard: the wipe refuses.
         let reading = DATA_GUARD.read().unwrap();
         assert_eq!(
-            delete_all(&core, &data, &inbox, "delete", &|| false),
+            delete_all(&core, &data, &inbox, "delete", &|| false, &|| Ok(())),
             Err("busy".into())
         );
         drop(reading);

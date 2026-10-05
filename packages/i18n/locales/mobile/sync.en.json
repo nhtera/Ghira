@@ -62,7 +62,13 @@
         "unpairAndWipeBody": "{{device}} deletes the copies it got from this phone the next time they connect on the same Wi-Fi. Until then they stay there. This can’t be undone.",
         "wipePending": "Waiting for {{device}} to delete the meetings it got from this phone. Keep both on the same Wi-Fi.",
         "wipeDone": "{{device}} deleted them. This phone is unpaired.",
-        "unpairedNotice": "Unpaired from {{device}}."
+        "unpairedNotice": "Unpaired from {{device}}.",
+        "offlineHeader": "If your computer is away",
+        "offlineFooter": "A meeting you sent to your computer is processed on this phone after it has been away this long (on phones that can). Until then it waits.",
+        "offlineHours_6": "6 hours",
+        "offlineHours_12": "12 hours",
+        "offlineHours_24": "1 day",
+        "offlineHours_72": "3 days"
       },
       "hotspot": {
         "title": "Can’t find your computer?",

@@ -110,6 +110,7 @@ fn main() {
             "sync_conflict_resolve",
             "sync_confirm_mass_delete",
             "sync_delete_everywhere_status",
+            "sync_delete_everywhere_skip",
             "sync_pair_scan_start",
             "sync_pair_scan_stop",
             "sync_lease_revoke",

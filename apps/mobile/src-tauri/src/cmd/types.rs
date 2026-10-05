@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Types shared by the mobile commands and events (phase 16 contracts).
 
+use ghi_app::sync_service::spoke::{GrantorState, SyncView};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -10,15 +11,16 @@ use specta::Type;
 pub enum ProcessingTarget {
     /// The final pass runs on this phone (needs the speech models and a capable device).
     Phone,
-    /// Phase 15: a paired desktop. Listed but disabled until pairing exists.
+    /// Phase 15: a paired desktop (it needs a pairing; the recording is
+    /// handed over under a lease once its audio is there).
     Desktop,
     /// Notes through the user's own cloud key, transcript text only, per
     /// meeting and after a preview. The transcript itself is still made on the phone.
     Cloud,
 }
 
-/// The status chip on a meeting row (M3). v1 produces only the first five;
-/// the last three are phase 15 and are never sent before pairing exists.
+/// The status chip on a meeting row (M3). The last three are phase 15 and
+/// only exist while a computer is paired.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(
     tag = "kind",
@@ -63,8 +65,24 @@ pub enum RecordPhase {
 
 /// The status chip for a library row (M3). `MeetingChipRow` carries it to the
 /// UI (`meeting_chips`), so 16-I has one per meeting without re-deriving it.
-/// v1 never produces the phase-15 chips.
-pub fn chip_for(row: &ghi_app::library::MeetingRow) -> MeetingChip {
+/// `sync` is where the meeting stands with the paired computer (empty without
+/// one): a lease open on the computer is "Final pass on <device> · %", a
+/// meeting that has not reached it (or whose computer is away) waits for
+/// Wi-Fi, and a processed meeting the computer has is synced.
+pub fn chip_for(row: &ghi_app::library::MeetingRow, sync: &SyncView) -> MeetingChip {
+    if let Some(l) = sync.lease {
+        match l.state {
+            GrantorState::Granted | GrantorState::Revoking => {
+                return MeetingChip::FinalOnDesktop { percent: l.percent };
+            }
+            GrantorState::Offered | GrantorState::Expired => return MeetingChip::WaitingForWifi,
+            GrantorState::Done | GrantorState::SelfTaken => {}
+        }
+    }
+    // Recorded for the computer and not handed over yet.
+    if sync.pending && row.job.is_none() {
+        return MeetingChip::WaitingForWifi;
+    }
     if let Some(job) = &row.job {
         if job.waiting_for_models {
             return MeetingChip::WaitingForModels;
@@ -75,6 +93,7 @@ pub fn chip_for(row: &ghi_app::library::MeetingRow) -> MeetingChip {
     }
     match row.status.as_str() {
         "failed" => MeetingChip::Failed,
+        "ready" if sync.synced => MeetingChip::Synced,
         "ready" => MeetingChip::ProcessedOnPhone,
         _ => MeetingChip::Recorded,
     }
@@ -117,18 +136,90 @@ mod tests {
         })
     }
 
+    use ghi_app::sync_service::spoke::LeaseView;
+
+    fn lease(state: GrantorState, percent: u8) -> SyncView {
+        SyncView {
+            device: Some("MacBook".into()),
+            lease: Some(LeaseView { state, percent }),
+            ..SyncView::default()
+        }
+    }
+
     #[test]
     fn chips_follow_the_row() {
-        assert_eq!(chip_for(&row("done", None)), MeetingChip::Recorded);
-        assert_eq!(chip_for(&row("ready", None)), MeetingChip::ProcessedOnPhone);
-        assert_eq!(chip_for(&row("failed", None)), MeetingChip::Failed);
+        let none = SyncView::default();
+        assert_eq!(chip_for(&row("done", None), &none), MeetingChip::Recorded);
         assert_eq!(
-            chip_for(&row("processing", job(0.426, false))),
+            chip_for(&row("ready", None), &none),
+            MeetingChip::ProcessedOnPhone
+        );
+        assert_eq!(chip_for(&row("failed", None), &none), MeetingChip::Failed);
+        assert_eq!(
+            chip_for(&row("processing", job(0.426, false)), &none),
             MeetingChip::ProcessingOnPhone { percent: 43 }
         );
         assert_eq!(
-            chip_for(&row("done", job(0.0, true))),
+            chip_for(&row("done", job(0.0, true)), &none),
             MeetingChip::WaitingForModels
+        );
+    }
+
+    #[test]
+    fn a_lease_open_on_the_computer_shows_its_progress() {
+        let r = row("processing", None);
+        assert_eq!(
+            chip_for(&r, &lease(GrantorState::Granted, 42)),
+            MeetingChip::FinalOnDesktop { percent: 42 }
+        );
+        assert_eq!(
+            chip_for(&r, &lease(GrantorState::Revoking, 7)),
+            MeetingChip::FinalOnDesktop { percent: 7 },
+            "until the computer answers the revoke"
+        );
+    }
+
+    #[test]
+    fn a_meeting_the_computer_has_not_taken_waits_for_wifi() {
+        let r = row("processing", None);
+        assert_eq!(
+            chip_for(&r, &lease(GrantorState::Offered, 0)),
+            MeetingChip::WaitingForWifi
+        );
+        assert_eq!(
+            chip_for(&r, &lease(GrantorState::Expired, 0)),
+            MeetingChip::WaitingForWifi,
+            "a computer that stayed away"
+        );
+        let pending = SyncView {
+            device: Some("MacBook".into()),
+            pending: true,
+            ..SyncView::default()
+        };
+        assert_eq!(chip_for(&r, &pending), MeetingChip::WaitingForWifi);
+    }
+
+    #[test]
+    fn a_processed_meeting_the_computer_has_is_synced() {
+        let synced = SyncView {
+            device: Some("MacBook".into()),
+            synced: true,
+            ..SyncView::default()
+        };
+        assert_eq!(chip_for(&row("ready", None), &synced), MeetingChip::Synced);
+        // Not processed yet: still just recorded.
+        assert_eq!(chip_for(&row("done", None), &synced), MeetingChip::Recorded);
+        // The computer's result came back: the lease is done, the meeting ready.
+        let mut done = lease(GrantorState::Done, 100);
+        done.synced = true;
+        assert_eq!(chip_for(&row("ready", None), &done), MeetingChip::Synced);
+        // A phone that took the job back shows its own progress.
+        assert_eq!(
+            chip_for(
+                &row("processing", job(0.5, false)),
+                &lease(GrantorState::SelfTaken, 0)
+            ),
+            MeetingChip::ProcessingOnPhone { percent: 50 }
         );
     }
 }

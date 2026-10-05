@@ -140,7 +140,7 @@ let voiceConsent = false;
 let enrolling = false;
 let enrollStartedAt = 0;
 let meProfile = false;
-let mobileSettings: MobileSettings = { defaultTarget: "phone", modelsWifiOnly: true };
+let mobileSettings: MobileSettings = { defaultTarget: "phone", modelsWifiOnly: true, desktopOfflineHours: 12 };
 let appSettings = {
   onboardingDone: false,
   detectMeetings: false,

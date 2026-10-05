@@ -61,7 +61,13 @@
         "unpairAndWipeBody": "{{device}} sẽ xoá các bản đã nhận từ điện thoại này ở lần kết nối tới trên cùng Wi-Fi. Trước đó chúng vẫn nằm ở đó. Không thể hoàn tác.",
         "wipePending": "Đang chờ {{device}} xoá các cuộc họp nhận từ điện thoại này. Giữ hai máy trên cùng Wi-Fi.",
         "wipeDone": "{{device}} đã xoá xong. Điện thoại này đã huỷ ghép.",
-        "unpairedNotice": "Đã huỷ ghép với {{device}}."
+        "unpairedNotice": "Đã huỷ ghép với {{device}}.",
+        "offlineHeader": "Khi máy tính vắng mặt",
+        "offlineFooter": "Cuộc họp đã gửi sang máy tính sẽ được xử lý ngay trên điện thoại này sau khoảng thời gian máy tính vắng mặt (trên các điện thoại làm được). Trước đó, cuộc họp chờ.",
+        "offlineHours_6": "6 giờ",
+        "offlineHours_12": "12 giờ",
+        "offlineHours_24": "1 ngày",
+        "offlineHours_72": "3 ngày"
       },
       "hotspot": {
         "title": "Không tìm thấy máy tính?",

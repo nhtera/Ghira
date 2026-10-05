@@ -628,6 +628,85 @@ fn refused_targets_and_idle_state() {
     assert_eq!(r.recorder.snapshot().phase, RecordPhase::Idle);
 }
 
+/// Pairs the rig's store with a computer (a pin; no network).
+fn pair_with_a_computer(store: &Store) {
+    store
+        .pin_device(
+            &ghi_store::sync::devices::NewDevice {
+                gid: "01a10db5-956d-729d-91b2-76be7b439cdd".into(),
+                name: "MacBook".into(),
+                platform: "desktop".into(),
+                role: ghi_store::sync::devices::DeviceRole::Hub,
+                static_pub: [7; 32],
+            },
+            &[9; 32],
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_desktop_recording_is_handed_over_not_processed_here() {
+    let r = rig(live_tier());
+    pair_with_a_computer(&r.store);
+    let mut req = request();
+    req.target = ProcessingTarget::Desktop;
+    let id = r.recorder.start(&req).unwrap();
+    feed(3);
+    wait_for("some audio", || r.recorder.snapshot().elapsed_s > 1.5);
+    r.recorder.stop().unwrap();
+    wait_for("the session to drain", || drained(&r));
+    let m = r.store.get_meeting(&id).unwrap();
+    assert_eq!(m.status, "processing", "waits for the computer");
+    assert!(
+        r.store.jobs_for_meeting(&id).unwrap().is_empty(),
+        "no local final pass"
+    );
+    assert_eq!(
+        ghi_app::sync_service::spoke::desktop_pending(&r.store),
+        vec![id.clone()],
+        "listed for the lease offer"
+    );
+    assert_eq!(r.seen.ran.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_computer_unpaired_during_the_recording_leaves_the_local_pass() {
+    let r = rig(live_tier());
+    pair_with_a_computer(&r.store);
+    let mut req = request();
+    req.target = ProcessingTarget::Desktop;
+    let id = r.recorder.start(&req).unwrap();
+    feed(2);
+    r.store
+        .unpin_device("01a10db5-956d-729d-91b2-76be7b439cdd")
+        .unwrap();
+    r.recorder.stop().unwrap();
+    wait_for("the session to drain", || drained(&r));
+    assert!(ghi_app::sync_service::spoke::desktop_pending(&r.store).is_empty());
+    let jobs = r.store.jobs_for_meeting(&id).unwrap();
+    assert!(
+        jobs.iter().any(|j| j.kind == FINAL_PASS_JOB),
+        "the phone processes it itself: {jobs:?}"
+    );
+}
+
+#[test]
+fn a_phone_below_the_tier_still_hands_a_recording_to_the_computer() {
+    let r = rig(low_tier());
+    pair_with_a_computer(&r.store);
+    let mut req = request();
+    req.target = ProcessingTarget::Desktop;
+    let id = r.recorder.start(&req).unwrap();
+    feed(2);
+    r.recorder.stop().unwrap();
+    wait_for("the session to drain", || drained(&r));
+    assert_eq!(r.store.get_meeting(&id).unwrap().status, "processing");
+    assert_eq!(
+        ghi_app::sync_service::spoke::desktop_pending(&r.store),
+        vec![id]
+    );
+}
+
 #[test]
 fn the_end_of_a_call_asks_even_without_an_interruption_end() {
     let r = rig(live_tier());

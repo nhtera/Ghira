@@ -110,39 +110,35 @@ export function DeleteAllSheet({ open, onOpenChange }: SheetProps) {
     }
     onOpenChange(o);
   };
-  const wipeHere = () =>
-    action.run(async () => {
-      unwrap(await ipc.commands.privacyDeleteAll(typed));
+  // One call does it all: the core has the computer delete what it got from this phone (waiting while it is
+  // reachable), then deletes here. While it waits, the status says for whom, and "Delete here only" ends the wait.
+  const everywhere = also && device !== null;
+  const confirm = () =>
+    void action.run(async () => {
+      unwrap(await ipc.commands.privacyDeleteAll(typed, everywhere));
+      setWaitingFor(null);
       onOpenChange(false);
       // Recent searches are words from meetings: they go too.
       clearRecentSearches();
       // Back to first launch: nothing is left to show.
       go("/onboarding", { replace: true });
     });
-  const confirm = () =>
-    void action.run(async () => {
-      if (!(also && device)) return void (await wipeHere());
-      unwrap(await ipc.commands.syncUnpairAndWipe(device.gid));
-      setWaitingFor(unwrap(await ipc.commands.syncDeleteEverywhereStatus()).waitingFor);
-    });
+  const hereOnly = () => void ipc.commands.syncDeleteEverywhereSkip().catch(() => undefined);
 
-  // While the computer has not answered, ask again; once it has, delete here.
+  // While the delete is running with the computer in it, ask who it is waiting for.
+  const working = action.busy && everywhere;
   useEffect(() => {
-    if (!waiting) return;
+    if (!working) return;
     const timer = window.setInterval(() => {
       ipc.commands.syncDeleteEverywhereStatus().then(
         (r) => {
-          if (r.status !== "ok") return;
-          if (r.data.state === "done") void wipeHere();
-          else setWaitingFor(r.data.waitingFor);
+          if (r.status === "ok") setWaitingFor(r.data.state === "waiting" ? r.data.waitingFor : null);
         },
         () => undefined,
       );
     }, 1000);
     return () => window.clearInterval(timer);
-    // wipeHere closes over the typed phrase, which cannot change while waiting.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waiting]);
+  }, [working]);
 
   return (
     <Sheet
@@ -154,7 +150,7 @@ export function DeleteAllSheet({ open, onOpenChange }: SheetProps) {
       {...labels}
       footer={
         waiting ? (
-          <Btn tone="danger" onClick={() => void wipeHere()} disabled={action.busy}>
+          <Btn tone="danger" onClick={hereOnly}>
             {t("mobile.sync.deleteAll.hereOnly")}
           </Btn>
         ) : (

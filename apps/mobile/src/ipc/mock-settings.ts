@@ -108,7 +108,7 @@ const freshApp = (): AppSettings => ({
   // The user has not chosen to offer cloud notes yet: the core refuses cloud_preview/cloud_send ("cloudOff").
   cloudOffered: false,
 });
-const freshMobile = (): MobileSettings => ({ defaultTarget: "phone", modelsWifiOnly: true });
+const freshMobile = (): MobileSettings => ({ defaultTarget: "phone", modelsWifiOnly: true, desktopOfflineHours: 12 });
 
 let app = freshApp();
 let mobile = freshMobile();
@@ -193,7 +193,7 @@ export function gateContent(script: Partial<Commands>): Partial<Commands> {
 export const lockListeners = new Set<(locked: boolean) => void>();
 const announceLock = (locked: boolean) => lockListeners.forEach((l) => l(locked));
 
-const foldPhrase = (s: string) =>
+export const foldPhrase = (s: string) =>
   s
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
@@ -232,8 +232,8 @@ const scripted: Partial<Commands> = {
   },
   mobileSettings: async () => ok(mobile),
   setMobileSettings: async (s) => {
-    if (s.defaultTarget === "desktop") return fail("desktopUnavailable");
-    mobile = { ...s };
+    // The Desktop target needs a pairing: the sync mock answers for it (`pairingNotAvailable`).
+    mobile = { ...s, desktopOfflineHours: Math.min(168, Math.max(1, Math.round(s.desktopOfflineHours))) };
     return ok(mobile);
   },
   getSettings: async () => ok(app),
@@ -380,7 +380,6 @@ const scripted: Partial<Commands> = {
     const item = hooks.inbox.find((i) => i.id === id);
     if (!item) return fail("notFound");
     if (item.state === "rejected") return fail(item.reason ?? "unreadable");
-    if (target === "desktop") return fail("desktopUnavailable");
     hooks.inbox = hooks.inbox.map((i) => (i.id === id ? { ...i, language, target, state: "importing" as const } : i));
     window.__ghiMock?.simulateMobileEvent({ type: "inboxChanged" });
     setTimeout(() => {

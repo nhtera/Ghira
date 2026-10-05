@@ -146,3 +146,13 @@ test("delete everything without a pairing has no extra question", async ({ page 
   await page.getByRole("button", { name: "Delete everything" }).click();
   await expect(page.getByRole("switch", { name: /Also delete/ })).toHaveCount(0);
 });
+
+test("how long the computer may be away before the phone processes for itself is a choice", async ({ page }) => {
+  await openSync(page, "/settings/sync", { sync: "paired" });
+  await expect(page.getByText("If your computer is away")).toBeVisible();
+  const twelve = page.getByRole("button", { name: /12 hours/ });
+  await expect(twelve.getByText("Selected")).toBeAttached();
+  await page.getByRole("button", { name: /1 day/ }).click();
+  await expect(page.getByRole("button", { name: /1 day/ }).getByText("Selected")).toBeAttached();
+  await expectAccessible(page);
+});

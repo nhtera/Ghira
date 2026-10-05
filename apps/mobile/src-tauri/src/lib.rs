@@ -29,6 +29,7 @@ pub mod session;
 mod share;
 #[cfg(feature = "test-hooks")]
 mod spikes;
+mod sync_link;
 #[cfg(all(test, target_os = "ios"))]
 mod test_swift;
 mod tier;

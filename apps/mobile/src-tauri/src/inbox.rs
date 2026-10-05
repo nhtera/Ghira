@@ -4,7 +4,7 @@
 //! `inbox/<uuid>/manifest.json` last:
 //!
 //! ```json
-//! { "file": "Memo.m4a", "lang": "auto|en|vi", "target": "phone|cloud",
+//! { "file": "Memo.m4a", "lang": "auto|en|vi", "target": "phone|cloud|desktop",
 //!   "source": "Voice Memos", "confirmed": true }
 //! ```
 //!
@@ -426,9 +426,10 @@ impl Inbox {
         hold: Option<ghi_core::import::Hold>,
         importer: &Importer,
     ) -> Result<String, String> {
-        if target == ProcessingTarget::Desktop {
-            return Err("desktopUnavailable".into());
-        }
+        // The `Desktop` target imports like the phone's: an imported file's
+        // audio never travels to the computer and so is never leased (doc 07
+        // §8); its text syncs like any meeting's.
+        let _ = target;
         let entry = read_entry(&self.root, id).ok_or("notFound")?;
         if let Err(r) = entry.verdict {
             return Err(r.code().into());
@@ -517,12 +518,7 @@ impl Inbox {
         let busy = self.busy().clone();
         scan(&self.root)
             .into_iter()
-            .filter(|e| {
-                e.confirmed
-                    && e.verdict.is_ok()
-                    && e.target != ProcessingTarget::Desktop
-                    && !busy.contains(&e.id)
-            })
+            .filter(|e| e.confirmed && e.verdict.is_ok() && !busy.contains(&e.id))
             .collect()
     }
 
@@ -1017,20 +1013,29 @@ mod tests {
     }
 
     #[test]
-    fn the_desktop_target_is_refused_until_pairing_exists() {
+    fn the_desktop_target_imports_like_the_phones() {
         let t = tempfile::tempdir().unwrap();
         write_item(t.path(), ID, &manifest("a.mp3"), Some(("a.mp3", b"x")));
         let inbox = Inbox::new(t.path().to_path_buf(), t.path().join("scratch"));
-        let never = |_: &Path, _: ImportOptions| -> Result<ImportReport, String> { unreachable!() };
+        let imported = |_: &Path, _: ImportOptions| -> Result<ImportReport, String> {
+            Ok(ImportReport {
+                meeting: "m1".into(),
+                duplicate: false,
+                duration_ms: 1,
+                channels: 1,
+                tracks: 1,
+                jobs: vec![],
+            })
+        };
         assert_eq!(
             inbox.import(
                 ID,
                 MeetingLanguage::Auto,
                 ProcessingTarget::Desktop,
                 None,
-                &never
+                &imported
             ),
-            Err("desktopUnavailable".into())
+            Ok("m1".into())
         );
     }
 

@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
 
 use ghi_app::core::{Core, CoreHooks};
+use ghi_app::sync_service::{SyncConfig, SyncService};
 use ghi_app::system::MeetingLanguage;
 use tauri::{AppHandle, Manager};
 
@@ -170,6 +171,9 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     app.manage(Arc::new(ghi_app::cloud_cmd::CloudPlans::default()));
     app.manage(Arc::new(crate::models_cmd::Downloads::default()));
 
+    let sync = start_sync(app, &core, &recorder, lifecycle);
+    app.manage(sync.clone());
+
     // Opens the store and recovers from a crash; the library and the
     // "recovered" notice are there on first paint.
     core.init_in_background();
@@ -184,8 +188,56 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             }
         });
     }
-    wire_app_lock(app.clone(), core, recorder, lifecycle);
+    wire_app_lock(app.clone(), core, recorder, lifecycle, sync);
     Ok(())
+}
+
+/// What this phone calls itself to its computer (iOS hides the user's device
+/// name from apps).
+const DEVICE_NAME: &str = "iPhone";
+
+/// Creates the LAN sync service as the spoke and starts its session loop:
+/// the events go to the webview as the typed `syncEvent`, a synced setting
+/// reloads the settings, and the hours the computer may stay away come from
+/// the phone settings.
+fn start_sync(
+    app: &AppHandle,
+    core: &Arc<Core>,
+    recorder: &Arc<Recorder>,
+    lifecycle: &'static Lifecycle,
+) -> Arc<SyncService> {
+    use tauri_specta::Event;
+    let (events, settings) = (app.clone(), app.clone());
+    let recording = {
+        let recorder = recorder.clone();
+        Arc::new(move || recorder.latest().is_some())
+    };
+    let mut cfg = SyncConfig::spoke(
+        DEVICE_NAME,
+        "ios",
+        crate::sync_link::MobileLink::new(recording),
+        move |e: ghi_app::sync_cmd::SyncEvent| {
+            let _ = e.emit(&events);
+        },
+        {
+            let core = core.clone();
+            move || core.settings_changed(&settings)
+        },
+    );
+    cfg.offline_hours = {
+        let core = core.clone();
+        Arc::new(move || {
+            core.store_even_locked()
+                .and_then(|s| crate::cmd::settings::load(&s))
+                .map_or(crate::cmd::settings::DEFAULT_OFFLINE_HOURS, |m| {
+                    m.desktop_offline_hours
+                })
+        })
+    };
+    let sync = SyncService::new(core.clone(), cfg);
+    sync.start();
+    sync.set_app_active(lifecycle.is_active());
+    sync
 }
 
 /// The app was launched in the background (a Live Activity intent, a
@@ -321,6 +373,7 @@ fn wire_app_lock(
     core: Arc<Core>,
     recorder: Arc<Recorder>,
     lifecycle: &'static Lifecycle,
+    sync: Arc<SyncService>,
 ) {
     let gate = Arc::new(BgLock::new(Box::new(crate::platform::continuous_ns)));
     let refresh = {
@@ -341,6 +394,8 @@ fn wire_app_lock(
                 }
             }
             Transition::Background => {
+                // The sync session says goodbye inside a background task.
+                sync.set_app_active(false);
                 // A recording carries on behind the cover; the lock engages
                 // when the app is opened again and the delay has passed.
                 if gate.background() && recorder.latest().is_none() {
@@ -348,6 +403,7 @@ fn wire_app_lock(
                 }
             }
             Transition::Active => {
+                sync.set_app_active(true);
                 if gate.foreground() {
                     ghi_app::lock_cmd::engage(&app, &core);
                 }

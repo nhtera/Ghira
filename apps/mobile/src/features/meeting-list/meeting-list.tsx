@@ -24,6 +24,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useDayLabel } from "./format";
 import { pullState, withDayHeaders } from "./group";
+import { useSync } from "../sync/use-sync";
 import { MeetingRowView } from "./meeting-row";
 import { useMeetingList } from "./use-meeting-list";
 
@@ -36,6 +37,7 @@ export function MeetingList() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const list = useMeetingList();
+  const computer = useSync().device?.name;
   const dayLabel = useDayLabel();
   const { collapsed, scrollRef, titleRef } = useLargeTitleCollapse();
   const listRef = useRef<HTMLDivElement>(null);
@@ -214,6 +216,7 @@ export function MeetingList() {
                     <MeetingRowView
                       row={item.row}
                       chip={list.chipOf(item.row.gid)}
+                      device={computer}
                       onOpen={() =>
                         void navigate({
                           to: "/meetings/$id",

@@ -18,6 +18,8 @@ const MAX_PEOPLE = 3;
 export type MeetingRowViewProps = {
   row: MeetingRow;
   chip: SyncChipKind | undefined;
+  /** The paired computer's name, for "Final pass on <device>". */
+  device?: string;
   onOpen: () => void;
   onRetry: () => void;
   onDelete: () => void;
@@ -26,6 +28,7 @@ export type MeetingRowViewProps = {
 export function MeetingRowView({
   row,
   chip,
+  device,
   onOpen,
   onRetry,
   onDelete,
@@ -147,6 +150,7 @@ export function MeetingRowView({
           {chip && (
             <SyncChip
               chip={chip}
+              device={device}
               onRetry={chip.kind === "failed" ? onRetry : undefined}
             />
           )}

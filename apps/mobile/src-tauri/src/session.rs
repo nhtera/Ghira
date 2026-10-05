@@ -70,6 +70,7 @@ pub const ERR_CALL_ACTIVE: &str = "callActive";
 pub const ERR_MIC_IN_USE: &str = "micInUse";
 pub const ERR_MIC_DENIED: &str = "microphoneDenied";
 pub const ERR_WAITING: &str = "waitingForTranscription";
+/// The `Desktop` target without a paired computer.
 pub const ERR_PAIRING: &str = "pairingNotAvailable";
 pub const ERR_RUNNING: &str = "alreadyRecording";
 /// Sensitive mode keeps nothing but the live transcript: without one (below
@@ -675,6 +676,10 @@ pub struct Session {
     stopped: AtomicBool,
     /// Job kinds queued once the engine has drained.
     job_kinds: Vec<&'static str>,
+    /// The `Desktop` target: no local final pass; the paired computer gets
+    /// the meeting under a lease (it falls back to the local jobs when no
+    /// computer is paired by the time the recording stops).
+    desktop: bool,
     language: Option<String>,
     title: String,
     fake_mic: Mutex<Option<FakeMic>>,
@@ -765,17 +770,11 @@ impl Recorder {
     ///
     /// Refused: another recording running, a call active without the M6
     /// acknowledgement, the microphone denied, less than 500 MB free, the
-    /// `Phone` target on a device below the live tier, the `Desktop` target.
+    /// `Phone` target on a device below the live tier, the `Desktop` target
+    /// without a paired computer.
     /// A previous recording still draining is waited for (up to a minute).
     pub fn start(self: &Arc<Self>, req: &RecordStart) -> Result<String, String> {
         let RecordMode::Room = req.mode;
-        match req.target {
-            // Pairing arrives in phase 15.
-            ProcessingTarget::Desktop => return Err(ERR_PAIRING.into()),
-            // Below the live tier a recording is always allowed: it records
-            // only, queues no jobs and is processed later.
-            ProcessingTarget::Phone | ProcessingTarget::Cloud => {}
-        }
         if call_active() && !req.call_acknowledged {
             return Err(ERR_CALL_ACTIVE.into());
         }
@@ -820,6 +819,10 @@ impl Recorder {
         }
         let _starting = Starting(&self.starting);
         let store = (self.deps.store)()?;
+        if req.target == ProcessingTarget::Desktop && !ghi_app::sync_service::spoke::has_hub(&store)
+        {
+            return Err(ERR_PAIRING.into());
+        }
         let hooks = self.hooks();
         let session = self.begin(&store, hooks.clone(), req);
         let session = match session {
@@ -1055,6 +1058,7 @@ impl Recorder {
                 }),
                 stopped: AtomicBool::new(false),
                 job_kinds,
+                desktop: req.target == ProcessingTarget::Desktop,
                 language: language.clone(),
                 title: title.clone(),
                 fake_mic: Mutex::new(fake_mic),
@@ -1336,7 +1340,14 @@ impl Session {
         // pass can read the bundle; if that fails no pass is queued now (the
         // next launch completes it and queues the pass) [RT-1].
         let discards = ghi_core::recover::complete_pending_discards(&self.store, Some(&self.id));
-        let job_kinds: &[&'static str] = if sensitive || discards.is_err() {
+        // The Desktop target hands the meeting over instead of queueing jobs:
+        // status `processing`, no local pass (the lease is offered once its
+        // rows, key and audio are on the computer; sync_spoke.rs).
+        let to_desktop = self.desktop
+            && !sensitive
+            && discards.is_ok()
+            && ghi_app::sync_service::spoke::has_hub(&self.store);
+        let job_kinds: &[&'static str] = if sensitive || discards.is_err() || to_desktop {
             &[]
         } else {
             &self.job_kinds
@@ -1352,6 +1363,12 @@ impl Session {
             }
         }
         let queued = (|| -> Result<(), String> {
+            if to_desktop {
+                self.store
+                    .set_meeting_status(&self.id, "processing")
+                    .map_err(io_err)?;
+                return ghi_app::sync_service::spoke::desktop_pending_add(&self.store, &self.id);
+            }
             if job_kinds.is_empty() {
                 return Ok(());
             }
@@ -1388,7 +1405,7 @@ impl Session {
             }
             self.set_state(SessionState::Ready);
         } else {
-            self.set_state(if job_kinds.is_empty() {
+            self.set_state(if job_kinds.is_empty() && !to_desktop {
                 SessionState::Idle
             } else {
                 SessionState::Processing

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // What sync means for one open meeting (M4): whether a final pass is open on
-// the computer (the transcript is read-only), whether its audio lives there,
-// a conflict copy waiting for a choice, and taking the job back.
+// the computer (the transcript is read-only), whether its audio lives there
+// (both are the core's `leaseOpen` and `audioOnPeer`), a conflict copy waiting
+// for a choice, and taking the job back.
 import { useCallback, useEffect, useState } from "react";
-import type { ConflictCopy, MeetingChip, MeetingDetail } from "../../bindings";
+import type { ConflictCopy, MeetingDetail } from "../../bindings";
 import { ipc } from "../../ipc";
 import { unwrap, useAction } from "../settings/api";
 import { useSync, useSyncEvents } from "./use-sync";
 
-export function useMeetingSync(meeting: string, detail: MeetingDetail | undefined, chip: MeetingChip | undefined, reload: () => void) {
+export function useMeetingSync(meeting: string, detail: MeetingDetail | undefined, reload: () => void) {
   const sync = useSync();
   const [conflicts, setConflicts] = useState<ConflictCopy[]>([]);
   const action = useAction();
@@ -35,15 +36,16 @@ export function useMeetingSync(meeting: string, detail: MeetingDetail | undefine
   );
 
   const paired = sync.device !== null;
-  // A final pass open on the computer: the lease is the chip (the phone reads, the computer writes).
-  const leaseOpen = paired && chip?.kind === "finalOnDesktop";
-  // The audio is on the computer: none here, and a pairing that could hold it. The meeting DTO has
-  // no audio-origin field yet, so this is derived from the chip; 15-J can replace it with the real one.
-  const audioOnDevice = paired && detail !== undefined && !detail.audioAvailable && (chip?.kind === "finalOnDesktop" || chip?.kind === "synced");
+  // A final pass open on the computer: the phone reads, the computer writes.
+  const lease = paired ? (detail?.leaseOpen ?? null) : null;
+  // The audio is on the computer: it recorded the meeting and none is kept here.
+  const audioOnDevice = paired && detail?.audioOnPeer === true;
 
   return {
-    device: sync.device?.name ?? null,
-    leaseOpen,
+    device: lease?.device ?? sync.device?.name ?? null,
+    leaseOpen: lease !== null,
+    /** How far the computer's final pass is, 0..100 (null: none open). */
+    leasePercent: lease?.percent ?? null,
     audioOnDevice,
     conflict: conflicts[0] ?? null,
     busy: action.busy,

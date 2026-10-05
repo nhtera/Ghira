@@ -67,7 +67,7 @@ pub async fn share_meeting_export(
 }
 
 /// The device tier is fixed for the life of the process: probed once.
-fn device_is_live() -> bool {
+pub(crate) fn device_is_live() -> bool {
     static LIVE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *LIVE.get_or_init(|| crate::tier::detect().tier == super::lifecycle::TierClass::Live)
 }
@@ -77,11 +77,15 @@ fn device_is_live() -> bool {
 /// device is below the live tier) shows as waiting for models, not as progress.
 pub fn chips(core: &ghi_app::core::Core, ids: &[String]) -> Result<Vec<MeetingChipRow>, String> {
     let can_process = crate::engine::engines_available(&core.models()) && device_is_live();
+    let store = core.store()?;
     Ok(ghi_app::library::rows_by_gid(core, ids)?
         .iter()
         .map(|r| MeetingChipRow {
             gid: r.gid.clone(),
-            chip: match super::types::chip_for(r) {
+            chip: match super::types::chip_for(
+                r,
+                &ghi_app::sync_service::spoke::meeting_sync_view(&store, &r.gid),
+            ) {
                 MeetingChip::ProcessingOnPhone { .. } if !can_process => {
                     MeetingChip::WaitingForModels
                 }

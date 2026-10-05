@@ -41,7 +41,7 @@ export function MeetingView({
   const when = useMeetingWhen();
   const navigate = useNavigate();
   const m = useMeeting(id);
-  const sync = useMeetingSync(id, m.detail, m.chip, m.reload);
+  const sync = useMeetingSync(id, m.detail, m.reload);
   const [taking, setTaking] = useState(false);
   const audio = useAudio(id, m.detail?.durationMs ?? null);
   const wave = useWaveform(id, Boolean(m.detail?.audioAvailable));

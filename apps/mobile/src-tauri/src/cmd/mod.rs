@@ -144,6 +144,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             ghi_app::sync_cmd::sync_conflict_resolve,
             ghi_app::sync_cmd::sync_confirm_mass_delete,
             ghi_app::sync_cmd::sync_delete_everywhere_status,
+            ghi_app::sync_cmd::sync_delete_everywhere_skip,
             ghi_app::sync_cmd::sync_pair_scan_start,
             ghi_app::sync_cmd::sync_pair_scan_stop,
             ghi_app::sync_cmd::sync_lease_revoke,

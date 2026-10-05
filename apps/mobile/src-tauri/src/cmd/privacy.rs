@@ -51,19 +51,33 @@ pub async fn privacy_export_all_share(
 /// (`DELETE` or `XÓA`, see `privacy_cmd::DELETE_PHRASES`; case and accents
 /// are ignored); Rust checks it again, so a stray call from the webview
 /// cannot wipe the phone. Refused while a recording or import runs (`busy`).
+///
+/// With `everywhere` and a paired computer, the computer is asked to delete
+/// what it got from this phone first, and this waits for it while it is
+/// reachable (`sync_delete_everywhere_status` says for whom;
+/// `sync_delete_everywhere_skip` ends the wait); the sync identity goes with
+/// the data.
 #[tauri::command]
 #[specta::specta]
 pub async fn privacy_delete_all(
     core: ghi_app::CoreState<'_>,
     recorder: tauri::State<'_, std::sync::Arc<crate::session::Recorder>>,
     inbox: tauri::State<'_, std::sync::Arc<crate::inbox::Inbox>>,
+    sync: tauri::State<'_, std::sync::Arc<ghi_app::sync_service::SyncService>>,
     confirm: String,
+    everywhere: bool,
 ) -> Result<(), String> {
     let (recorder, inbox) = (recorder.inner().clone(), inbox.inner().clone());
+    let sync = sync.inner().clone();
     ghi_app::blocking(&core, move |c| {
-        crate::privacy_cmd::delete_all(c, c.data_dir(), inbox.root(), &confirm, &|| {
-            recorder.latest().is_some() || inbox.importing()
-        })
+        crate::privacy_cmd::delete_all(
+            c,
+            c.data_dir(),
+            inbox.root(),
+            &confirm,
+            &|| recorder.latest().is_some() || inbox.importing(),
+            &|| sync.delete_everywhere_prepare(everywhere),
+        )
     })
     .await
 }
