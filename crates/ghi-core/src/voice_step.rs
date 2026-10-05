@@ -261,6 +261,29 @@ impl VoiceStep {
                     .collect::<HashSet<_>>(),
             };
             resolve(&mut ds, &cands, &enough, &policy);
+            // Numbers only (no names): the calibration evidence for T_HIGH,
+            // T_LOW and the policy on real devices.
+            let kind = |d: &Decision| match d {
+                Decision::Apply(_) => "apply",
+                Decision::Suggest(_) => "suggest",
+                Decision::Nothing => "nothing",
+            };
+            for (i, (c, d)) in clusters.iter().zip(&ds).enumerate() {
+                let mut scores: Vec<&Candidate> = c.cands.iter().collect();
+                scores.sort_by(|a, b| b.score.total_cmp(&a.score));
+                let me = |x: &Candidate| policy.me_person.as_deref() == Some(x.person_gid.as_str());
+                log::info!(
+                    "voice match cluster={i} best={:.3} best_is_me={} same_lang={} second={:.3} enough={} single={} raw={} final={}",
+                    scores.first().map_or(0.0, |x| x.score),
+                    scores.first().is_some_and(|x| me(x)),
+                    scores.first().is_some_and(|x| x.same_lang),
+                    scores.get(1).map_or(0.0, |x| x.score),
+                    enough.get(i).copied().unwrap_or(false),
+                    policy.single_cluster,
+                    kind(&c.decision),
+                    kind(d),
+                );
+            }
             for (c, d) in clusters.iter_mut().zip(ds) {
                 c.decision = d;
             }
