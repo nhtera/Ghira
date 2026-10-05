@@ -58,4 +58,93 @@ final class SmokeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(elapsed, seconds, "timer shows \(timer.label)")
         Ghira.stopButton(app).tap()
     }
+
+    /// Record with the fake mic and stay in the foreground for GHI_REC_SECONDS
+    /// (default 100), logging once a second what the screen shows (numbers
+    /// only: transcript text nodes and their characters). Compare with the
+    /// app's live.jsonl `ui` windows to tell a stalled engine from a stalled screen.
+    func testForegroundTranscriptKeepsMoving() throws {
+        let fakeMic = ProcessInfo.processInfo.environment["GHI_FAKE_MIC_PATH"] ?? ""
+        let seconds = Double(ProcessInfo.processInfo.environment["GHI_REC_SECONDS"] ?? "") ?? 100
+        let app = Ghira.app(env: ["GHI_KEYSTORE": "keychain", "GHI_IGNORE_THERMAL": "1"].merging(fakeMic.isEmpty ? [:] : ["GHI_FAKE_MIC": fakeMic]) { $1 })
+        app.launch()
+        Ghira.completeOnboarding(app)
+        Ghira.openRecordTab(app)
+        if !Ghira.stopButton(app).exists {
+            XCTAssertTrue(Ghira.recordButton(app).waitForExistence(timeout: 20), app.debugDescription)
+            Ghira.recordButton(app).tap()
+        }
+        let consent = app.buttons["Everyone knows, start recording"]
+        if consent.waitForExistence(timeout: 3) { consent.tap() }
+        XCTAssertTrue(Ghira.stopButton(app).waitForExistence(timeout: 20), "recording did not start\n" + app.debugDescription)
+        let start = Date()
+        var lastChars = -1
+        var lastChange = 0.0
+        var maxStill = 0.0
+        while Date().timeIntervalSince(start) < seconds {
+            let t = Date().timeIntervalSince(start)
+            func texts(_ e: XCUIElementSnapshot) -> [String] {
+                (e.elementType == .staticText && !e.label.isEmpty ? [e.label] : []) + e.children.flatMap { texts($0) }
+            }
+            // One atomic snapshot: the tree changes under a query by element.
+            guard let snap = try? app.snapshot() else { sleep(1); continue }
+            let labels = texts(snap)
+            let chars = labels.reduce(0) { $0 + $1.count }
+            if chars != lastChars { lastChars = chars; lastChange = t }
+            maxStill = max(maxStill, t - lastChange)
+            print("UIPROBE t=\(Int(t)) nodes=\(labels.count) chars=\(chars) still=\(Int(t - lastChange))")
+            sleep(1)
+        }
+        print("UIPROBE max_still_s=\(Int(maxStill))")
+        add(XCTAttachment(screenshot: app.screenshot()))
+        Ghira.stopButton(app).tap()
+    }
+
+    /// Record, leave for the home screen for a few seconds and come back: the
+    /// transcript must go on changing (text nodes on screen), not stay where
+    /// it was. Logs `UIPROBE` lines like the foreground test.
+    func testTranscriptGoesOnAfterHome() throws {
+        let fakeMic = ProcessInfo.processInfo.environment["GHI_FAKE_MIC_PATH"] ?? ""
+        let away = Double(ProcessInfo.processInfo.environment["GHI_AWAY_SECONDS"] ?? "") ?? 8
+        let app = Ghira.app(env: ["GHI_KEYSTORE": "keychain", "GHI_IGNORE_THERMAL": "1"].merging(fakeMic.isEmpty ? [:] : ["GHI_FAKE_MIC": fakeMic]) { $1 })
+        app.launch()
+        Ghira.completeOnboarding(app)
+        Ghira.openRecordTab(app)
+        if !Ghira.stopButton(app).exists {
+            XCTAssertTrue(Ghira.recordButton(app).waitForExistence(timeout: 20), app.debugDescription)
+            Ghira.recordButton(app).tap()
+        }
+        let consent = app.buttons["Everyone knows, start recording"]
+        if consent.waitForExistence(timeout: 3) { consent.tap() }
+        XCTAssertTrue(Ghira.stopButton(app).waitForExistence(timeout: 20), "recording did not start\n" + app.debugDescription)
+
+        func chars() -> Int {
+            func texts(_ e: XCUIElementSnapshot) -> Int {
+                (e.elementType == .staticText ? e.label.count : 0) + e.children.reduce(0) { $0 + texts($1) }
+            }
+            guard let snap = try? app.snapshot() else { return -1 }
+            return texts(snap)
+        }
+        func watch(_ name: String, _ seconds: Double) -> Double {
+            let start = Date()
+            var last = chars(), lastChange = 0.0, maxStill = 0.0
+            while Date().timeIntervalSince(start) < seconds {
+                let t = Date().timeIntervalSince(start)
+                let c = chars()
+                if c != last { last = c; lastChange = t }
+                maxStill = max(maxStill, t - lastChange)
+                print("UIPROBE \(name) t=\(Int(t)) chars=\(c) still=\(Int(t - lastChange))")
+                sleep(1)
+            }
+            return maxStill
+        }
+        let before = watch("before", 25)
+        XCUIDevice.shared.press(.home)
+        sleep(UInt32(away))
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
+        let after = watch("after", 30)
+        print("UIPROBE max_still_before=\(Int(before)) max_still_after=\(Int(after))")
+        Ghira.stopButton(app).tap()
+    }
 }

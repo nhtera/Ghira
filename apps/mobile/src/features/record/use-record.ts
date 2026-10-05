@@ -10,6 +10,12 @@ import type {
 import { ipc } from "../../ipc";
 import { initialModel, isCapturing, reducer, type Action, type RecordModel } from "./model";
 
+/** A snapshot slower than this is given up on (the core waits up to 10 s itself), so events never stay held. */
+const SNAPSHOT_WAIT_MS = 4000;
+/** After a failed snapshot, ask again this many times, this far apart. */
+const SNAPSHOT_RETRIES = 3;
+const SNAPSHOT_RETRY_MS = 1000;
+
 export type StartAck = { consent: boolean; call: boolean; sensitive: boolean };
 /** What the screen can say went wrong: a refused start, or a command that failed. */
 export type RecordError =
@@ -117,29 +123,78 @@ export function useRecord(setup: RecordSetup) {
   const [error, setError] = useState<RecordError | null>(null);
   // While a snapshot is being read, events are held and replayed on top of it.
   const held = useRef<Action[] | null>(null);
+  const reading = useRef(false);
+  const readAgain = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const send = useCallback((a: Action) => {
     if (held.current) held.current.push(a);
     else dispatch(a);
   }, []);
 
-  const refresh = useCallback(async () => {
-    held.current = [];
-    const r = await ipc.commands.recordSnapshot();
-    const events = held.current ?? [];
-    held.current = null;
-    if (r.status === "ok") dispatch({ type: "snapshot", state: r.data });
-    // Core events at or before the snapshot's seq are dropped by the reducer;
-    // of the phases only the last is replayed (it may be newer than the snapshot).
-    let lastPhase = -1;
-    events.forEach((a, i) => {
-      if (a.type === "mobile" && a.event.type === "phase") lastPhase = i;
-    });
-    events.forEach((a, i) => {
-      if (a.type === "mobile" && a.event.type === "phase" && i !== lastPhase) return;
-      dispatch(a);
-    });
+  /** The snapshot, or null when the read failed or took too long (the events must go on either way). */
+  const readSnapshot = useCallback(async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const r = await Promise.race([
+        ipc.commands.recordSnapshot(),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), SNAPSHOT_WAIT_MS);
+        }),
+      ]);
+      return r !== null && r.status === "ok" ? r.data : null;
+    } catch {
+      // The webview's bridge can fail right after a resume ("Load failed").
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }, []);
+
+  const refresh = useCallback(async () => {
+    // One read at a time: a second wake while one is open asks for another after it.
+    if (reading.current) {
+      readAgain.current = true;
+      return;
+    }
+    reading.current = true;
+    try {
+      let retries = 0;
+      for (;;) {
+        readAgain.current = false;
+        held.current = [];
+        const state = await readSnapshot();
+        const events = held.current ?? [];
+        held.current = null;
+        if (state) dispatch({ type: "snapshot", state });
+        // Core events at or before the snapshot's seq are dropped by the reducer;
+        // of the phases only the last is replayed (it may be newer than the snapshot).
+        let lastPhase = -1;
+        events.forEach((a, i) => {
+          if (a.type === "mobile" && a.event.type === "phase") lastPhase = i;
+        });
+        events.forEach((a, i) => {
+          if (state && a.type === "mobile" && a.event.type === "phase" && i !== lastPhase) return;
+          dispatch(a);
+        });
+        if (readAgain.current) continue;
+        // Without a snapshot the lines of the gap are missing: try again shortly (the events flow meanwhile).
+        if (state || retries >= SNAPSHOT_RETRIES || !alive.current) break;
+        retries += 1;
+        await new Promise((r) => setTimeout(r, SNAPSHOT_RETRY_MS));
+        if (!alive.current) break;
+      }
+    } finally {
+      held.current = null;
+      reading.current = false;
+    }
+  }, [readSnapshot]);
 
   useEffect(() => {
     let alive = true;

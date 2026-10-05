@@ -159,8 +159,185 @@ pub enum Update {
 /// queued before the discard (which then removes it).
 pub type Cuts = Arc<Mutex<Vec<(i64, i64)>>>;
 
+/// An unchanged partial is sent again after this long, so a screen that missed
+/// it (a reload, a snapshot that has none) shows it again within a second.
+const PARTIAL_KEEPALIVE: Duration = Duration::from_secs(1);
+
+/// What reached the UI bus, as numbers (no text), for the live metrics: it
+/// tells an engine that stopped producing from a screen that stopped showing.
+#[derive(Debug, Default)]
+pub struct UiStats(Mutex<UiInner>);
+
+#[derive(Debug, Default)]
+struct UiInner {
+    partials: u32,
+    /// Partials that went to the screen (the unchanged ones are held back).
+    partials_sent: u32,
+    /// Partials whose text equals the previous one (nothing new decoded).
+    partials_same: u32,
+    finals: u32,
+    /// Lines sent to the UI (a final can split into several).
+    lines: u32,
+    /// Of those, lines without a speaker yet.
+    lines_unattributed: u32,
+    last_partial_len: usize,
+    last_partial_hash: u64,
+    /// Sum of squares and count of the samples the engine was fed.
+    audio_sq: f64,
+    audio_n: u64,
+    /// Results the ASR handed back, partial or final, before any filtering.
+    asr_results: u32,
+    steps: u32,
+    /// Seconds of audio the ASR says it has processed, as of its last result.
+    asr_audio_s: f64,
+    /// The last change the screen could show (a new partial text or a line).
+    last_update: Option<Instant>,
+    last_final: Option<Instant>,
+    max_gap: Duration,
+    max_final_gap: Duration,
+}
+
+/// One window of [`UiStats`] (the counters reset after each read).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiWindow {
+    pub partials: u32,
+    pub partials_sent: u32,
+    pub partials_same: u32,
+    pub finals: u32,
+    pub lines: u32,
+    pub lines_unattributed: u32,
+    pub partial_chars: usize,
+    /// RMS of the audio the engine was fed (0..1): silence vs speech.
+    pub audio_rms: f64,
+    pub asr_results: u32,
+    pub steps: u32,
+    pub asr_audio_s: f64,
+    pub max_update_gap_s: f64,
+    pub max_final_gap_s: f64,
+}
+
+impl UiStats {
+    fn lock(&self) -> std::sync::MutexGuard<'_, UiInner> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The engine is about to be fed `pcm`.
+    pub fn audio(&self, pcm: &[f32]) {
+        let mut i = self.lock();
+        i.audio_sq += pcm
+            .iter()
+            .map(|&x| f64::from(x) * f64::from(x))
+            .sum::<f64>();
+        i.audio_n += pcm.len() as u64;
+        i.steps += 1;
+    }
+
+    /// The ASR handed back a result.
+    pub fn asr_result(&self, audio_processed: f64) {
+        let mut i = self.lock();
+        i.asr_results += 1;
+        i.asr_audio_s = audio_processed;
+    }
+
+    fn visible(i: &mut UiInner, now: Instant) {
+        if let Some(t) = i.last_update {
+            i.max_gap = i.max_gap.max(now.duration_since(t));
+        }
+        i.last_update = Some(now);
+    }
+
+    fn partial(&self, text: &str) {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut h);
+        let hash = h.finish();
+        let mut i = self.lock();
+        i.partials += 1;
+        i.last_partial_len = text.chars().count();
+        // The screen only changes when the text does.
+        if i.last_partial_hash == hash {
+            i.partials_same += 1;
+            return;
+        }
+        i.last_partial_hash = hash;
+        Self::visible(&mut i, Instant::now());
+    }
+
+    fn partial_sent(&self) {
+        self.lock().partials_sent += 1;
+    }
+
+    fn final_result(&self) {
+        let now = Instant::now();
+        let mut i = self.lock();
+        i.finals += 1;
+        if let Some(t) = i.last_final {
+            i.max_final_gap = i.max_final_gap.max(now.duration_since(t));
+        }
+        i.last_final = Some(now);
+    }
+
+    fn line(&self, unattributed: bool) {
+        let mut i = self.lock();
+        i.lines += 1;
+        i.lines_unattributed += u32::from(unattributed);
+        i.last_partial_hash = 0;
+        i.last_partial_len = 0;
+        Self::visible(&mut i, Instant::now());
+    }
+
+    /// The window since the last call; a gap still open counts up to `now`.
+    pub fn take(&self) -> UiWindow {
+        let now = Instant::now();
+        let mut i = self.lock();
+        let open = i
+            .last_update
+            .map_or(Duration::ZERO, |t| now.duration_since(t));
+        let open_final = i
+            .last_final
+            .map_or(Duration::ZERO, |t| now.duration_since(t));
+        let w = UiWindow {
+            partials: i.partials,
+            partials_sent: i.partials_sent,
+            partials_same: i.partials_same,
+            finals: i.finals,
+            lines: i.lines,
+            lines_unattributed: i.lines_unattributed,
+            partial_chars: i.last_partial_len,
+            asr_results: i.asr_results,
+            steps: i.steps,
+            asr_audio_s: i.asr_audio_s,
+            audio_rms: if i.audio_n == 0 {
+                0.0
+            } else {
+                (i.audio_sq / i.audio_n as f64).sqrt()
+            },
+            max_update_gap_s: i.max_gap.max(open).as_secs_f64(),
+            max_final_gap_s: i.max_final_gap.max(open_final).as_secs_f64(),
+        };
+        // The next window starts with the gap that is open now.
+        *i = UiInner {
+            last_partial_len: i.last_partial_len,
+            last_partial_hash: i.last_partial_hash,
+            last_update: i.last_update,
+            last_final: i.last_final,
+            max_gap: open,
+            max_final_gap: open_final,
+            ..UiInner::default()
+        };
+        w
+    }
+}
+
 /// Turns committed updates into lines, speakers, events and store writes.
 pub struct Applier {
+    stats: Arc<UiStats>,
+    /// The partial the screen has now and when it was sent: an unchanged one is
+    /// not sent again before `keepalive` (a step is 160 ms; the text changes
+    /// about once per chunk).
+    last_partial: Option<(String, Instant)>,
+    keepalive: Duration,
     cuts: Cuts,
     meeting: String,
     language: Option<String>,
@@ -207,6 +384,9 @@ impl Applier {
         persist: Sender<PersistMsg>,
     ) -> Applier {
         Applier {
+            stats: Arc::default(),
+            last_partial: None,
+            keepalive: PARTIAL_KEEPALIVE,
             cuts: Cuts::default(),
             meeting,
             language,
@@ -215,6 +395,16 @@ impl Applier {
             persist,
             generation: 0,
         }
+    }
+
+    pub fn stats(&self) -> Arc<UiStats> {
+        self.stats.clone()
+    }
+
+    /// Counts what reaches the UI into `stats` (the live metrics read it).
+    pub fn with_stats(mut self, stats: Arc<UiStats>) -> Applier {
+        self.stats = stats;
+        self
     }
 
     /// Drops the text of the spans in `cuts` (discards while recording).
@@ -239,15 +429,32 @@ impl Applier {
         let inside_cut = cuts.iter().any(|&(_, end)| now_ms <= end);
         for u in updates {
             match u {
-                Update::Partial(_) if inside_cut => {}
-                Update::Partial(text) => self.events.emit(Event::TranscriptPartial {
-                    meeting: self.meeting.clone(),
-                    track: 0,
-                    text,
-                }),
+                Update::Partial(_) if inside_cut => {
+                    // The screen drops its partial with the discard.
+                    self.last_partial = None;
+                }
+                Update::Partial(text) => {
+                    self.stats.partial(&text);
+                    let now = Instant::now();
+                    let fresh = self.last_partial.as_ref().is_none_or(|(last, at)| {
+                        *last != text || now.duration_since(*at) >= self.keepalive
+                    });
+                    if fresh {
+                        self.last_partial = Some((text.clone(), now));
+                        self.stats.partial_sent();
+                        self.events.emit(Event::TranscriptPartial {
+                            meeting: self.meeting.clone(),
+                            track: 0,
+                            text,
+                        })
+                    }
+                }
                 Update::Final {
                     text, words, segs, ..
-                } => self.final_line(&text, words, segs, offset, &cuts),
+                } => {
+                    self.stats.final_result();
+                    self.final_line(&text, words, segs, offset, &cuts)
+                }
             }
         }
         let mut ch = Vec::new();
@@ -332,32 +539,45 @@ impl Applier {
                 }
             })
             .collect();
-        for l in &out {
-            self.events.emit(Event::TranscriptFinal {
-                meeting: self.meeting.clone(),
-                line: LineInfo {
-                    gid: l.gid.clone(),
-                    speaker: l.speaker,
-                    t0_ms: l.t0_ms,
-                    t1_ms: l.t1_ms,
-                    text: l.text.clone(),
-                    overlap: l.overlap,
-                    words: l
-                        .text
-                        .split_whitespace()
-                        .zip(&l.words)
-                        .map(|(t, (a, b, c))| WordInfo {
-                            text: t.to_string(),
-                            t0_ms: *a,
-                            t1_ms: *b,
-                            low_confidence: c.is_some_and(|c| c < aligner::LOW_CONFIDENCE),
-                        })
-                        .collect(),
-                },
-            });
-        }
+        // The screen clears its partial with a line.
+        self.last_partial = None;
+        let events: Vec<Event> = out
+            .iter()
+            .map(|l| {
+                self.stats.line(l.speaker.is_none());
+                Event::TranscriptFinal {
+                    meeting: self.meeting.clone(),
+                    line: LineInfo {
+                        gid: l.gid.clone(),
+                        speaker: l.speaker,
+                        t0_ms: l.t0_ms,
+                        t1_ms: l.t1_ms,
+                        text: l.text.clone(),
+                        overlap: l.overlap,
+                        words: l
+                            .text
+                            .split_whitespace()
+                            .zip(&l.words)
+                            .map(|(t, (a, b, c))| WordInfo {
+                                text: t.to_string(),
+                                t0_ms: *a,
+                                t1_ms: *b,
+                                low_confidence: c.is_some_and(|c| c < aligner::LOW_CONFIDENCE),
+                            })
+                            .collect(),
+                    },
+                }
+            })
+            .collect();
+        // Queued for the store before the screen hears of them: a snapshot
+        // that notes the bus position and then flushes the store holds every
+        // line the bus had announced by then (the screen drops events at or
+        // before the snapshot's position).
         if !out.is_empty() {
             let _ = self.persist.send(PersistMsg::Lines(out));
+        }
+        for e in events {
+            self.events.emit(e);
         }
     }
 
@@ -381,9 +601,10 @@ impl Applier {
                 // The phone has no live renames, merges or splits.
                 _ => continue,
             };
-            self.events.emit(ev);
+            // Queued for the store before the screen hears of it (see `final_line`).
             let out = speaker_out(&self.tracker, id);
             let _ = self.persist.send(PersistMsg::Speaker(c, out));
+            self.events.emit(ev);
         }
     }
 }
@@ -530,10 +751,12 @@ fn live(ctx: &mut EngineCtx, engines: &Arc<dyn SpeechEngines>) -> Result<Flow, S
     }
     let (asr, diar) = opened?;
     let (asr, diar) = (RefCell::new(asr), RefCell::new(diar));
+    let stats = ctx.applier.stats();
     let collect = || -> Result<Vec<Update>, String> {
         let mut out = Vec::new();
         let mut asr = asr.borrow_mut();
         while let Some(r) = asr.next_result().map_err(err)? {
+            stats.asr_result(r.audio_processed);
             if !r.is_final {
                 out.push(Update::Partial(r.text));
                 continue;
@@ -562,6 +785,7 @@ fn live(ctx: &mut EngineCtx, engines: &Arc<dyn SpeechEngines>) -> Result<Flow, S
         &shared,
         &mut ctx.backlog,
         |pcm| {
+            stats.audio(pcm);
             asr.borrow_mut().push(pcm, SAMPLE_RATE).map_err(err)?;
             diar.borrow_mut().push(pcm, SAMPLE_RATE).map_err(err)?;
             collect()
@@ -1173,5 +1397,173 @@ mod tests {
         assert_eq!(model_file(&dir, MODELS[1]), None);
         assert_eq!(model_file(&dir, "no-such-model"), None);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn partials_sent(rx: &ghi_core::events::EventRx) -> Vec<String> {
+        rx.try_iter()
+            .filter_map(|e| match e.event {
+                Event::TranscriptPartial { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_unchanged_partial_is_not_sent_again_until_the_keepalive() {
+        let (tx, rx) = ghi_core::events::bus();
+        let (ptx, _prx) = crossbeam_channel::unbounded();
+        let mut applier = Applier::new("m".into(), None, tx, ptx);
+        applier.keepalive = Duration::from_millis(60);
+        let step = |a: &mut Applier, text: &str| a.apply(vec![Update::Partial(text.into())], 0, 0);
+        // Ten steps of one hypothesis, then it grows.
+        for _ in 0..10 {
+            step(&mut applier, "chốt scope");
+        }
+        step(&mut applier, "chốt scope cho");
+        assert_eq!(partials_sent(&rx), ["chốt scope", "chốt scope cho"]);
+        // Still unchanged after the keepalive: a screen that lost it gets it back.
+        std::thread::sleep(Duration::from_millis(80));
+        step(&mut applier, "chốt scope cho");
+        step(&mut applier, "chốt scope cho");
+        assert_eq!(partials_sent(&rx), ["chốt scope cho"]);
+    }
+
+    #[test]
+    fn the_same_partial_after_a_line_or_a_discard_is_sent_again() {
+        let (tx, rx) = ghi_core::events::bus();
+        let (ptx, _prx) = crossbeam_channel::unbounded();
+        let cuts = Cuts::default();
+        let mut applier = Applier::new("m".into(), None, tx, ptx).with_cuts(cuts.clone());
+        let partial =
+            |a: &mut Applier, now: u64| a.apply(vec![Update::Partial("and so".into())], 0, now);
+        partial(&mut applier, 0);
+        partial(&mut applier, 0);
+        assert_eq!(partials_sent(&rx).len(), 1);
+        // A line clears the screen's partial: the same words are news again.
+        let word = Word {
+            text: "hi".into(),
+            start: 0.0,
+            end: 0.5,
+            confidence: 0.9,
+            speaker: None,
+        };
+        applier.apply(
+            vec![Update::Final {
+                start: 0.0,
+                end: 0.5,
+                text: "hi".into(),
+                words: vec![word],
+                segs: vec![seg(1, 0.0, 1.0)],
+            }],
+            0,
+            0,
+        );
+        partial(&mut applier, 0);
+        assert_eq!(partials_sent(&rx), ["and so"]);
+        // A discard drops the partial on the screen; the engine is inside the cut,
+        // then its partial (the same words) comes back after it.
+        cuts.lock().unwrap().push((0, 1000));
+        partial(&mut applier, 16_000 / 2);
+        assert!(partials_sent(&rx).is_empty(), "inside the cut");
+        partial(&mut applier, 16_000 * 2);
+        assert_eq!(partials_sent(&rx), ["and so"]);
+    }
+
+    #[test]
+    fn a_line_is_queued_for_the_store_before_the_screen_hears_of_it() {
+        let (tx, rx) = ghi_core::events::bus();
+        let (ptx, prx) = crossbeam_channel::unbounded();
+        let mut applier = Applier::new("m".into(), None, tx, ptx);
+        // The screen's side: when the line event arrives, the store must have it.
+        let seen = std::thread::spawn(move || {
+            for e in rx {
+                if matches!(e.event, Event::TranscriptFinal { .. }) {
+                    return prx.len();
+                }
+            }
+            0
+        });
+        let word = Word {
+            text: "hi".into(),
+            start: 0.0,
+            end: 0.5,
+            confidence: 0.9,
+            speaker: None,
+        };
+        applier.apply(
+            vec![Update::Final {
+                start: 0.0,
+                end: 0.5,
+                text: "hi".into(),
+                words: vec![word],
+                segs: vec![seg(1, 0.0, 1.0)],
+            }],
+            0,
+            0,
+        );
+        drop(applier);
+        assert!(seen.join().unwrap() >= 1, "the persist message came first");
+    }
+
+    #[test]
+    fn ui_stats_count_a_window_and_the_gap_still_open() {
+        let stats = UiStats::default();
+        stats.audio(&[0.5; 4]);
+        stats.asr_result(1.0);
+        stats.partial("a");
+        stats.partial("a");
+        stats.partial("ab");
+        stats.final_result();
+        stats.line(true);
+        std::thread::sleep(Duration::from_millis(30));
+        let w = stats.take();
+        assert_eq!((w.partials, w.partials_same), (3, 1));
+        assert_eq!((w.finals, w.lines, w.lines_unattributed), (1, 1, 1));
+        assert_eq!((w.steps, w.asr_results), (1, 1));
+        assert!((w.audio_rms - 0.5).abs() < 1e-9);
+        assert!(
+            w.max_update_gap_s >= 0.03,
+            "the gap since the last change counts"
+        );
+        // The next window starts empty, but the open gap carries on.
+        std::thread::sleep(Duration::from_millis(30));
+        let w = stats.take();
+        assert_eq!((w.partials, w.finals, w.lines), (0, 0, 0));
+        assert!(w.max_update_gap_s >= 0.06);
+    }
+
+    #[test]
+    fn a_speaker_is_queued_for_the_store_before_the_screen_hears_of_it() {
+        let (tx, rx) = ghi_core::events::bus();
+        let (ptx, prx) = crossbeam_channel::unbounded();
+        let mut applier = Applier::new("m".into(), None, tx, ptx);
+        let seen = std::thread::spawn(move || {
+            for e in rx {
+                if matches!(e.event, Event::SpeakerArrived { .. }) {
+                    return prx.len();
+                }
+            }
+            0
+        });
+        let word = Word {
+            text: "hi".into(),
+            start: 0.0,
+            end: 0.5,
+            confidence: 0.9,
+            speaker: None,
+        };
+        applier.apply(
+            vec![Update::Final {
+                start: 0.0,
+                end: 0.5,
+                text: "hi".into(),
+                words: vec![word],
+                segs: vec![seg(1, 0.0, 1.0)],
+            }],
+            0,
+            0,
+        );
+        drop(applier);
+        assert!(seen.join().unwrap() >= 1, "the persist message came first");
     }
 }

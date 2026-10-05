@@ -35,6 +35,8 @@ pub struct Sample {
     /// Process footprint, MB.
     pub footprint_mb: Option<f64>,
     pub battery: Option<f64>,
+    /// What reached the screen's event bus in this window (numbers only).
+    pub ui: Option<crate::engine::UiWindow>,
 }
 
 pub struct Metrics {

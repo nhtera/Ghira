@@ -201,6 +201,8 @@ pub struct Shared {
     position: AtomicU64,
     meeting: String,
     events: EventTx,
+    /// What the applier sent to the UI (for the metrics).
+    pub ui: Arc<crate::engine::UiStats>,
 }
 
 impl Shared {
@@ -212,6 +214,7 @@ impl Shared {
             position: AtomicU64::new(0),
             meeting,
             events,
+            ui: Arc::default(),
         }
     }
 
@@ -371,7 +374,10 @@ impl Shared {
 
     pub fn set_thermal(&self, state: i32) {
         self.lock().thermal = Some(state);
-        self.gate.set_hot(state >= 2);
+        // Test hooks: a hot test phone must not hold the engine back (GHI_IGNORE_THERMAL).
+        let ignore =
+            cfg!(feature = "test-hooks") && std::env::var_os("GHI_IGNORE_THERMAL").is_some();
+        self.gate.set_hot(state >= 2 && !ignore);
         mobile_events::emit(MobileEvent::Thermal {
             level: state.clamp(0, 3) as u8,
         });
@@ -439,6 +445,7 @@ impl Shared {
             thermal: s.thermal.or(device.thermal),
             footprint_mb: device.memory_mb,
             battery: device.battery,
+            ui: Some(self.ui.take()),
         }
     }
 }
@@ -645,9 +652,14 @@ impl FakeMic {
 }
 
 /// Whether a test-hooks build was asked for the synthetic microphone
-/// (`GHI_FAKE_MIC`); never true otherwise.
+/// (`GHI_FAKE_MIC`); never true otherwise. With `GHI_FAKE_MIC_TAP` set the
+/// microphone is the real audio tap and Swift feeds it the WAV in
+/// `GHI_FAKE_MIC` (real speech for real engines); without it the tone above
+/// replaces the tap (scripted engines don't care what the audio is).
 pub fn fake_mic_from_env() -> bool {
-    cfg!(feature = "test-hooks") && std::env::var_os("GHI_FAKE_MIC").is_some()
+    cfg!(feature = "test-hooks")
+        && std::env::var_os("GHI_FAKE_MIC").is_some()
+        && std::env::var_os("GHI_FAKE_MIC_TAP").is_none()
 }
 
 /// The recording in progress (or draining).
@@ -993,6 +1005,7 @@ impl Recorder {
                         events.clone(),
                         persist_tx.clone(),
                     )
+                    .with_stats(shared.ui.clone())
                     .with_cuts(cuts.clone()),
                     language: language.clone(),
                     runner_idle: hooks.clone().map(|h| {

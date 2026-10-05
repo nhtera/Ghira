@@ -20,6 +20,10 @@ enum Ghira {
         }
         if let mic = ProcessInfo.processInfo.environment["GHI_FAKE_MIC_PATH"], !mic.isEmpty {
             app.launchEnvironment["GHI_FAKE_MIC"] = mic
+            // Real engines need the WAV's speech through the audio tap, not the tone.
+            if !(ProcessInfo.processInfo.environment["GHI_REAL_ENGINES"] ?? "").isEmpty {
+                app.launchEnvironment["GHI_FAKE_MIC_TAP"] = "1"
+            }
         }
         app.launchEnvironment.merge(env) { $1 }
         app.launchArguments += args
