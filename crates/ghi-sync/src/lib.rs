@@ -33,6 +33,7 @@ pub mod lease;
 pub mod mem;
 pub mod pair;
 pub mod qr;
+pub mod service;
 pub mod session;
 pub mod store;
 pub mod transport;

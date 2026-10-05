@@ -348,6 +348,10 @@ pub struct Store {
     /// Bumped by every [`Store::clear_embedding_cache`]; a reader that held the
     /// cache while it ran empties it again before letting go.
     pub(crate) emb_epoch: std::sync::atomic::AtomicU64,
+    /// Audio being received from a peer, by track gid, with the header the
+    /// sender offered it under (sync; one [`crate::bundle::RawImport`] per
+    /// track, so a page batch does not re-verify the whole `.part`).
+    pub(crate) raw_imports: Mutex<HashMap<String, (Vec<u8>, crate::bundle::RawImport)>>,
     /// Exclusive lock on `<dir>/.lock`, held for the store's lifetime.
     _lock: File,
 }
@@ -427,6 +431,7 @@ impl Store {
             voice_keys: Mutex::new(HashMap::new()),
             emb_cache: Mutex::default(),
             emb_epoch: std::sync::atomic::AtomicU64::new(0),
+            raw_imports: Mutex::new(HashMap::new()),
             _lock: lock,
         };
         let include = matches!(

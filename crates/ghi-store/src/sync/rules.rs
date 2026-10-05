@@ -16,14 +16,17 @@ pub fn winner<'a>(a: &'a Version, b: &'a Version) -> &'a Version {
     }
 }
 
-/// Rank of a meeting status: `recording < importing < processing < ready`.
-/// `None` for an unknown status.
+/// Rank of a meeting status:
+/// `recording < importing < done < processing < ready`. (`done` is what
+/// `finish_meeting` sets before a pass takes over; the recorder that never
+/// queues one leaves it there.) `None` for an unknown status.
 pub fn status_rank(status: &str) -> Option<u8> {
     match status {
         "recording" => Some(0),
         "importing" => Some(1),
-        "processing" => Some(2),
-        "ready" => Some(3),
+        "done" => Some(2),
+        "processing" => Some(3),
+        "ready" => Some(4),
         _ => None,
     }
 }
@@ -108,6 +111,8 @@ mod tests {
         assert!(status_rank("recording") < status_rank("ready"));
         assert_eq!(status_rank("bogus"), None);
         assert_eq!(merge_status("processing", "recording"), "processing");
+        assert_eq!(merge_status("done", "recording"), "done");
+        assert_eq!(merge_status("done", "processing"), "processing");
         assert_eq!(merge_status("importing", "ready"), "ready");
         assert_eq!(merge_status("ready", "bogus"), "ready");
     }

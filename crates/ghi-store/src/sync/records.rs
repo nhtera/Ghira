@@ -693,7 +693,7 @@ fn encode_person(conn: &Connection, own: &str, gid: &str) -> Result<Option<Perso
     let row = conn
         .query_row(
             "SELECT name, color_slot, is_me, created_at, lamport, origin, base_lamport, base_origin
-             FROM persons WHERE gid = ?1",
+             FROM persons WHERE gid = ?1 AND is_me = 0",
             [gid],
             |r| {
                 let (v, b) = stamp(conn, own, r, 4).map_err(to_sql)?;
@@ -715,7 +715,8 @@ fn encode_person(conn: &Connection, own: &str, gid: &str) -> Result<Option<Perso
 fn encode_speaker(conn: &Connection, own: &str, gid: &str) -> Result<Option<SpeakerRec>> {
     let row = conn
         .query_row(
-            "SELECT m.gid, s.label_idx, s.display_name_ct, p.gid, s.color_slot, s.is_me,
+            "SELECT m.gid, s.label_idx, s.display_name_ct,
+                    CASE WHEN p.is_me = 0 THEN p.gid END, s.color_slot, s.is_me,
                     s.not_person, t.gid, s.lamport, s.origin, s.base_lamport, s.base_origin
              FROM speakers s JOIN meetings m ON m.id = s.meeting_id
              LEFT JOIN persons p ON p.id = s.person_id

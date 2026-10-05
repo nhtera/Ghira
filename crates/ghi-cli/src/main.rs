@@ -162,6 +162,12 @@ enum Command {
         #[command(subcommand)]
         action: StoreAction,
     },
+    /// LAN sync between two data directories: `serve` (hub), `pair`, `run`
+    /// (spoke), `status` (`ghi.sync-*/1`).
+    Sync {
+        #[command(subcommand)]
+        action: cmd::sync::Action,
+    },
     /// Show processes using audio and what meeting auto-detect would do (`ghi.detect/1`).
     Detect {
         /// Poll every second for this many seconds; print one line per prompt.
@@ -347,6 +353,7 @@ fn run(command: Command) -> Result<(), ErrorDoc> {
             silent_s: silent_warn,
         }),
         Command::Recover { dir } => cmd::record::recover(&dir),
+        Command::Sync { action } => cmd::sync::run(&action),
         Command::Detect { watch } => cmd::detect::run(watch),
         Command::Models { action } => cmd::models::run(&action),
         Command::Decode(args) => cmd::decode::run(&args),

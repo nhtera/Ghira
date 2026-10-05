@@ -59,11 +59,13 @@ CREATE TABLE leases (
 CREATE INDEX leases_meeting ON leases(meeting_gid);
 
 -- Every meeting exchanged with a peer, in either direction: the scope of a
--- Wipe, and whether its DEK has gone out.
+-- Wipe, whether its DEK has gone out, and which of its tracks (bit 1 mic,
+-- 2 system, 4 file) the peer holds completely (audio transfer, doc 07 §7.7).
 CREATE TABLE peer_meetings (
     device_id    INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
     meeting_gid  TEXT NOT NULL,
     key_sent     INTEGER NOT NULL DEFAULT 0,
+    tracks_sent  INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (device_id, meeting_gid)
 ) WITHOUT ROWID;
 

@@ -202,9 +202,13 @@ impl<T: Transport> SpokeSession<T> {
 
     /// Pushes tombstones; returns the log position they cover.
     fn push_tombs(&mut self) -> Result<i64> {
+        let own = self.store.device_gid()?;
         let mut cur = self.hub_device_row()?.push_seq;
         loop {
-            let batch = self.store.tombs_since(cur, wire::MAX_BATCH_RECORDS)?;
+            let mut batch = self.store.tombs_since(cur, wire::MAX_BATCH_RECORDS)?;
+            // Tombstones applied from the hub (or relayed by it) are in the
+            // log too: only the ones this device made go back.
+            batch.tombs.retain(|t| t.origin == own);
             if !batch.tombs.is_empty() {
                 let n = batch.tombs.len();
                 let reply = self.call(&Message::PushTombs(PushTombs {
@@ -231,8 +235,18 @@ impl<T: Transport> SpokeSession<T> {
         let mut cur = self.hub_device_row()?.push_seq;
         loop {
             let batch = self.store.changes_since(cur, wire::MAX_BATCH_RECORDS)?;
-            if !batch.changes.is_empty() {
-                let mut rows: Vec<Record> = batch.changes.into_iter().map(|c| c.record).collect();
+            // `mark_clean` and applying the hub's rows re-log them: only rows
+            // changed here since the hub's version go out.
+            let mut rows: Vec<Record> = Vec::with_capacity(batch.changes.len());
+            for c in batch.changes {
+                if self
+                    .store
+                    .sync_dirty(c.record.kind().log_kind(), c.record.gid())?
+                {
+                    rows.push(c.record);
+                }
+            }
+            if !rows.is_empty() {
                 let keyed = attach_deks(self.store.as_ref(), &self.hub_device, &mut rows)?;
                 let versions: Vec<(String, i64)> = rows
                     .iter()

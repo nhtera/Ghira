@@ -9,9 +9,9 @@
 //! Peers are named by device gid.
 
 use ghi_store::Result;
-use ghi_store::StoreError;
 use ghi_store::store::Store;
 use ghi_store::sync::apply::{ApplyResult, TombResult};
+use ghi_store::sync::audio::RawOffer;
 use ghi_store::sync::devices::{Device, NewDevice};
 use ghi_store::sync::feed::{ChangeBatch, TombBatch};
 use ghi_store::sync::leases::Lease;
@@ -19,8 +19,8 @@ use ghi_store::sync::records::{Record, SettingRec, SyncTombstone};
 use ghi_store::sync::wipe::WipeReport;
 use zeroize::Zeroizing;
 
-use crate::audio::{OfferResult, TrackInfo};
-use crate::wire::TrackOffer;
+use crate::audio::{OfferResult, STORAGE_HEADROOM_BYTES, TrackInfo};
+use crate::wire::{RefuseReason, TrackOffer};
 
 /// The store operations of a sync session.
 pub trait SyncStore: Send + Sync {
@@ -120,6 +120,12 @@ pub trait SyncStore: Send + Sync {
     fn mark_track_sent(&self, _device_gid: &str, _track_gid: &str) -> Result<()> {
         Ok(())
     }
+    /// Spoke: whether a row has local changes the hub has not acknowledged.
+    /// `mark_clean` re-logs a row, so the spoke's push feed skips clean ones.
+    /// The default (everything is dirty) is for fakes that never re-log.
+    fn sync_dirty(&self, _kind: &str, _gid: &str) -> Result<bool> {
+        Ok(true)
+    }
     /// Receiver: decides an offer (refusals, resume point, complete).
     fn track_offer(&self, from_device: &str, offer: &TrackOffer) -> Result<OfferResult>;
     /// Receiver: verifies and appends page records; returns the new `have`.
@@ -132,10 +138,6 @@ pub trait SyncStore: Send + Sync {
         first: u64,
         records: &[Vec<u8>],
     ) -> Result<u64>;
-}
-
-fn audio_not_yet<T>(what: &'static str) -> Result<T> {
-    Err(StoreError::NotYet(what))
 }
 
 impl SyncStore for Store {
@@ -283,26 +285,86 @@ impl SyncStore for Store {
         Store::apply_synced(self, rec)
     }
 
-    // The raw audio hooks wait for `bundle::RawImport` (slice 15-D).
-    fn tracks_to_send(&self, _device_gid: &str) -> Result<Vec<TrackInfo>> {
-        audio_not_yet("sync store: tracks_to_send")
+    fn tracks_to_send(&self, device_gid: &str) -> Result<Vec<TrackInfo>> {
+        Ok(Store::tracks_to_send(self, device_gid)?
+            .into_iter()
+            .filter(|t| t.header.len() > 5)
+            .map(|t| TrackInfo {
+                magic: t.header[..4].to_vec(),
+                version: t.header[4],
+                prefix: t.header[5..].to_vec(),
+                track_gid: t.track_gid,
+                meeting_gid: t.meeting_gid,
+                pages: t.records,
+                bytes: t.bytes,
+            })
+            .collect())
     }
-    fn track_read_pages(&self, _track_gid: &str, _first: u64, _max: usize) -> Result<Vec<Vec<u8>>> {
-        audio_not_yet("sync store: track_read_pages")
+    fn track_read_pages(&self, track_gid: &str, first: u64, max: usize) -> Result<Vec<Vec<u8>>> {
+        Store::track_read_records(self, track_gid, first, max)
     }
-    fn track_offer(&self, _from_device: &str, _offer: &TrackOffer) -> Result<OfferResult> {
-        audio_not_yet("sync store: track_offer")
+    fn mark_track_sent(&self, device_gid: &str, track_gid: &str) -> Result<()> {
+        Store::mark_track_sent(self, device_gid, track_gid)
+    }
+    fn track_offer(&self, from_device: &str, offer: &TrackOffer) -> Result<OfferResult> {
+        let h = &offer.header;
+        let mut header = Vec::with_capacity(h.magic.0.len() + 1 + h.prefix.0.len());
+        header.extend_from_slice(&h.magic.0);
+        header.push(h.version);
+        header.extend_from_slice(&h.prefix.0);
+        let need = offer.bytes.saturating_add(STORAGE_HEADROOM_BYTES);
+        let free = free_bytes(self.dir());
+        Ok(
+            match Store::raw_offer(
+                self,
+                from_device,
+                &offer.meeting_gid,
+                &offer.track_gid,
+                &header,
+                free,
+                need,
+            )? {
+                RawOffer::Have(n) => OfferResult::Have(n),
+                RawOffer::Complete => OfferResult::Complete,
+                RawOffer::Deleted => OfferResult::Refuse(RefuseReason::Deleted),
+                RawOffer::NoKey => OfferResult::Refuse(RefuseReason::NoKey),
+                RawOffer::StorageFull => OfferResult::Refuse(RefuseReason::StorageFull),
+            },
+        )
     }
     fn track_push(
         &self,
         _from_device: &str,
-        _track_gid: &str,
-        _prefix: &[u8],
-        _first: u64,
-        _records: &[Vec<u8>],
+        track_gid: &str,
+        prefix: &[u8],
+        first: u64,
+        records: &[Vec<u8>],
     ) -> Result<u64> {
-        audio_not_yet("sync store: track_push")
+        Store::raw_push(self, track_gid, prefix, first, records)
     }
+    fn sync_dirty(&self, kind: &str, gid: &str) -> Result<bool> {
+        Store::sync_dirty(self, kind, gid)
+    }
+}
+
+/// Free bytes on the volume holding `dir`; `None` where it is not known (the
+/// offer is then not refused for space).
+#[cfg(target_vendor = "apple")]
+fn free_bytes(dir: &std::path::Path) -> Option<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
+    // SAFETY: a zeroed statvfs is a valid out-parameter; `path` is NUL-terminated.
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(path.as_ptr(), &mut st) } != 0 {
+        return None;
+    }
+    #[allow(clippy::unnecessary_cast, clippy::useless_conversion)]
+    Some(u64::from(st.f_bavail) * st.f_frsize as u64)
+}
+
+#[cfg(not(target_vendor = "apple"))]
+fn free_bytes(_dir: &std::path::Path) -> Option<u64> {
+    None
 }
 
 #[cfg(test)]

@@ -16,6 +16,7 @@
 //! module.
 
 pub mod apply;
+pub mod audio;
 pub mod conflicts;
 pub mod devices;
 pub mod feed;

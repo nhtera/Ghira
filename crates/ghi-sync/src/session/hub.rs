@@ -332,11 +332,14 @@ impl<T: Transport> HubSession<T> {
             return Ok(flow);
         }
         let max = (p.max as usize).min(wire::MAX_BATCH_RECORDS);
-        let batch = if max == 0 {
+        let mut batch = if max == 0 {
             Default::default()
         } else {
             self.store.tombs_since(p.since_seq, max)?
         };
+        // The spoke's own deletes (it pushed them) don't come back.
+        let spoke = self.spoke()?.gid.clone();
+        batch.tombs.retain(|t| t.origin != spoke);
         let upto = if max == 0 {
             p.since_seq
         } else {

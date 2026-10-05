@@ -2036,6 +2036,7 @@ dependencies = [
  "ghi-net",
  "ghi-speech",
  "ghi-store",
+ "ghi-sync",
  "hound",
  "libc",
  "serde",

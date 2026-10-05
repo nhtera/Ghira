@@ -103,3 +103,60 @@ pub fn open_store(dir: &Path) -> Result<Store, ErrorDoc> {
     let ks = keystore(dir)?;
     Store::open(dir, ks, Protection::default()).map_err(store_error)
 }
+
+/// Where the sync identity (the device's X25519 key) lives, apart from the
+/// master key. Debug builds: plain files in `<dir>.devsecrets` (a sibling of
+/// the data directory) unless `GHI_KEYSTORE=keychain`; otherwise the
+/// platform's secret store, one Keychain service per data directory.
+pub fn sync_secrets(
+    dir: &Path,
+) -> Result<Arc<dyn ghi_store::keys::secrets::SecretStore>, ErrorDoc> {
+    let abs = std::path::absolute(dir)
+        .map_err(|e| ErrorDoc::new(ErrorCode::BadInput, format!("{}: {e}", dir.display())))?;
+    #[cfg(debug_assertions)]
+    if std::env::var("GHI_KEYSTORE").as_deref() != Ok("keychain") {
+        let mut name = abs
+            .file_name()
+            .ok_or_else(|| {
+                ErrorDoc::new(
+                    ErrorCode::BadInput,
+                    format!("{}: name the data directory itself", dir.display()),
+                )
+            })?
+            .to_owned();
+        name.push(".devsecrets");
+        let path = abs.with_file_name(name);
+        std::fs::create_dir_all(&path)
+            .map_err(|e| ErrorDoc::new(ErrorCode::Internal, format!("{}: {e}", path.display())))?;
+        return Ok(Arc::new(ghi_store::keys::secrets::FileSecrets::new(path)));
+    }
+    platform_sync_secrets(&abs)
+}
+
+#[cfg(target_os = "macos")]
+fn platform_sync_secrets(
+    abs: &Path,
+) -> Result<Arc<dyn ghi_store::keys::secrets::SecretStore>, ErrorDoc> {
+    Ok(Arc::new(ghi_store::keys::secrets::KeychainSecrets::new(
+        &format!("{KEYCHAIN_SERVICE}.sync:{}", abs.display()),
+    )))
+}
+
+#[cfg(windows)]
+fn platform_sync_secrets(
+    abs: &Path,
+) -> Result<Arc<dyn ghi_store::keys::secrets::SecretStore>, ErrorDoc> {
+    Ok(Arc::new(ghi_store::keys::secrets::DpapiSecrets::new(
+        abs.join("keys").join("sync"),
+    )))
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn platform_sync_secrets(
+    _: &Path,
+) -> Result<Arc<dyn ghi_store::keys::secrets::SecretStore>, ErrorDoc> {
+    Err(ErrorDoc::new(
+        ErrorCode::NotImplemented,
+        "sync: no OS secret store on this platform yet",
+    ))
+}

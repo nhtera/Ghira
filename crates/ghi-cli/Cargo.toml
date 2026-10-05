@@ -23,6 +23,8 @@ nemo = ["ghi-speech/nemo", "ghi-core/nemo"]
 whisper = ["ghi-speech/whisper", "ghi-core/whisper"]
 # Voice profiles (speaker embeddings): `ghi voice ...`.
 voice = ["ghi-core/voice"]
+# mDNS for `ghi sync serve` (advertise) and `ghi sync run` (browse).
+mdns = ["ghi-net/mdns"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -38,6 +40,7 @@ ghi-net = { path = "../ghi-net" }
 ghi-models = { path = "../ghi-models" }
 ghi-speech = { path = "../ghi-speech" }
 ghi-store = { path = "../ghi-store" }
+ghi-sync = { path = "../ghi-sync" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -12,6 +12,7 @@ pub mod notes;
 pub mod record;
 pub mod session;
 pub mod store;
+pub mod sync;
 pub mod transcribe;
 #[cfg(feature = "voice")]
 pub mod voice;

@@ -8,6 +8,9 @@
 //! batch. `feed_id` identifies this database's log: a peer that sees a new one
 //! starts over from sequence 0.
 //!
+//! Me is a device-local person row (empty name): it is not in the feed, and a
+//! speaker linked to it travels with `is_me` and no `person_gid`.
+//!
 //! Cursors: a session keeps the lower of the two `upto_seq` values it got
 //! (rows, tombstones) as its push cursor. A tombstone batch that is drained
 //! reports the highest sequence number at read time, so a tombstone written
@@ -370,7 +373,7 @@ fn load_record(conn: &Connection, own: &str, kind: &str, gid: &str) -> Result<Op
             .query_row(
                 &format!(
                     "SELECT {h}, x.name, x.color_slot, x.is_me, x.created_at
-                     FROM persons x WHERE x.gid = ?2"
+                     FROM persons x WHERE x.gid = ?2 AND x.is_me = 0"
                 ),
                 params![own, gid],
                 |r| {
@@ -391,7 +394,7 @@ fn load_record(conn: &Connection, own: &str, kind: &str, gid: &str) -> Result<Op
             .query_row(
                 &format!(
                     "SELECT {h}, m.gid, x.label_idx, x.display_name_ct,
-                            (SELECT p.gid FROM persons p WHERE p.id = x.person_id),
+                            (SELECT p.gid FROM persons p WHERE p.id = x.person_id AND p.is_me = 0),
                             x.color_slot, x.is_me, x.not_person,
                             (SELECT s.gid FROM speakers s WHERE s.id = x.merged_into)
                      FROM speakers x {child} WHERE x.gid = ?2"
