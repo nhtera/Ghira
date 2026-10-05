@@ -65,7 +65,7 @@ pub trait SyncStore: Send + Sync {
         meeting_gid: &str,
     ) -> Result<Option<Zeroizing<[u8; 32]>>>;
     fn mark_key_sent(&self, device_gid: &str, meeting_gid: &str) -> Result<()>;
-    fn accept_dek(&self, meeting_gid: &str, dek: &[u8; 32]) -> Result<()>;
+    fn accept_dek(&self, meeting_gid: &str, dek: &[u8; 32], from_device: &str) -> Result<()>;
     fn peer_meetings(&self, device_gid: &str) -> Result<Vec<String>>;
 
     // --- leases
@@ -86,6 +86,22 @@ pub trait SyncStore: Send + Sync {
         margin_ms: i64,
     ) -> Result<bool>;
     fn lease_any_open_for(&self, meeting_gid: &str) -> Result<bool>;
+    /// Compare-and-set of a lease's state: moves it to `to` only if it is in
+    /// one of `from`; false when it was not (the commit or revoke that raced
+    /// won).
+    fn lease_transition(&self, job_uuid: &str, from: &[&str], to: &str) -> Result<bool>;
+    /// The revoke side of the revoke/commit race: `granted -> revoked`. True
+    /// means the revoke won (`Revoked`); false means the commit did
+    /// (`AlreadyDone`).
+    fn lease_revoke(&self, job_uuid: &str) -> Result<bool>;
+    /// Every lease of a meeting, newest epoch first.
+    fn leases_for_meeting(&self, meeting_gid: &str) -> Result<Vec<Lease>>;
+    /// Every lease that is still open (both roles).
+    fn leases_open(&self) -> Result<Vec<Lease>>;
+
+    // --- mass-delete confirmation (D13, per peer device)
+    fn mass_delete_confirmed(&self, device_gid: &str) -> Result<bool>;
+    fn set_mass_delete_confirmed(&self, device_gid: &str, confirmed: bool) -> Result<()>;
 
     // --- wipe and settings
     fn wipe_peer(&self, device_gid: &str) -> Result<WipeReport>;
@@ -98,6 +114,12 @@ pub trait SyncStore: Send + Sync {
     fn tracks_to_send(&self, device_gid: &str) -> Result<Vec<TrackInfo>>;
     /// Up to `max` verbatim page records of a local track from page `first`.
     fn track_read_pages(&self, track_gid: &str, first: u64, max: usize) -> Result<Vec<Vec<u8>>>;
+    /// Sender: the peer holds the whole track (`tracks_to_send` stops listing
+    /// it). Slice 15-F additive method; the default does nothing, so the
+    /// real store must override it once `tracks_to_send` filters on it.
+    fn mark_track_sent(&self, _device_gid: &str, _track_gid: &str) -> Result<()> {
+        Ok(())
+    }
     /// Receiver: decides an offer (refusals, resume point, complete).
     fn track_offer(&self, from_device: &str, offer: &TrackOffer) -> Result<OfferResult>;
     /// Receiver: verifies and appends page records; returns the new `have`.
@@ -196,8 +218,8 @@ impl SyncStore for Store {
     fn mark_key_sent(&self, device_gid: &str, meeting_gid: &str) -> Result<()> {
         Store::mark_key_sent(self, device_gid, meeting_gid)
     }
-    fn accept_dek(&self, meeting_gid: &str, dek: &[u8; 32]) -> Result<()> {
-        Store::accept_dek(self, meeting_gid, dek)
+    fn accept_dek(&self, meeting_gid: &str, dek: &[u8; 32], from_device: &str) -> Result<()> {
+        Store::accept_dek(self, meeting_gid, dek, from_device)
     }
     fn peer_meetings(&self, device_gid: &str) -> Result<Vec<String>> {
         Store::peer_meetings(self, device_gid)
@@ -229,6 +251,26 @@ impl SyncStore for Store {
     }
     fn lease_any_open_for(&self, meeting_gid: &str) -> Result<bool> {
         Store::lease_any_open_for(self, meeting_gid)
+    }
+
+    fn mass_delete_confirmed(&self, device_gid: &str) -> Result<bool> {
+        Store::mass_delete_confirmed(self, device_gid)
+    }
+    fn set_mass_delete_confirmed(&self, device_gid: &str, confirmed: bool) -> Result<()> {
+        Store::set_mass_delete_confirmed(self, device_gid, confirmed)
+    }
+
+    fn lease_transition(&self, job_uuid: &str, from: &[&str], to: &str) -> Result<bool> {
+        Store::lease_transition(self, job_uuid, from, to)
+    }
+    fn lease_revoke(&self, job_uuid: &str) -> Result<bool> {
+        Store::lease_revoke(self, job_uuid)
+    }
+    fn leases_for_meeting(&self, meeting_gid: &str) -> Result<Vec<Lease>> {
+        Store::leases_for_meeting(self, meeting_gid)
+    }
+    fn leases_open(&self) -> Result<Vec<Lease>> {
+        Store::leases_open(self)
     }
 
     fn wipe_peer(&self, device_gid: &str) -> Result<WipeReport> {
