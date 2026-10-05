@@ -91,6 +91,38 @@ pub fn copy_gid(target_gid: &str, field: &str, loser_lamport: i64, loser_origin:
     uuid::Uuid::new_v8(b).to_string()
 }
 
+/// The gid of a link re-pointed from a merged-away tag to its survivor: a
+/// UUIDv8 over `H(old link gid, survivor tag gid)`. Every device that folds
+/// the same pair makes the same new link, so they do not pile up.
+pub fn relink_gid(old_link_gid: &str, survivor_tag_gid: &str) -> String {
+    let mut h = Sha256::new();
+    for part in [
+        b"relink".as_slice(),
+        old_link_gid.as_bytes(),
+        survivor_tag_gid.as_bytes(),
+    ] {
+        h.update((part.len() as u64).to_be_bytes());
+        h.update(part);
+    }
+    let digest = h.finalize();
+    let mut b = [0u8; 16];
+    b.copy_from_slice(&digest[..16]);
+    uuid::Uuid::new_v8(b).to_string()
+}
+
+/// The merged-into edge to clear in a cycle: the one with the lowest version
+/// `(lamport, origin gid)`. `edges` are the versions of the cycle's rows, in
+/// any order; returns the index.
+pub fn weakest_edge(edges: &[Version]) -> usize {
+    let mut best = 0;
+    for (i, e) in edges.iter().enumerate() {
+        if *e < edges[best] {
+            best = i;
+        }
+    }
+    best
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,6 +164,25 @@ mod tests {
         assert_eq!(fence((1, 2), (1, 1)), Fence::Park);
         assert_eq!(fence((1, 0), (1, 1)), Fence::Superseded);
         assert_eq!(fence((0, 3), (0, 4)), Fence::Superseded);
+    }
+
+    #[test]
+    fn relink_gids_are_deterministic_and_distinct() {
+        let a = relink_gid("l1", "s");
+        assert_eq!(a, relink_gid("l1", "s"));
+        assert_ne!(a, relink_gid("l2", "s"));
+        assert_ne!(a, relink_gid("l1", "t"));
+        assert!(uuid::Uuid::parse_str(&a).is_ok());
+    }
+
+    #[test]
+    fn weakest_edge_is_the_lowest_version() {
+        let v = |lamport, origin: &str| Version {
+            lamport,
+            origin: origin.into(),
+        };
+        assert_eq!(weakest_edge(&[v(5, "a"), v(3, "z"), v(3, "b")]), 2);
+        assert_eq!(weakest_edge(&[v(1, "a")]), 0);
     }
 
     #[test]

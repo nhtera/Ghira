@@ -93,7 +93,7 @@ impl Ctx<'_> {
 
     /// Applies the parked records whose parent now exists or is tombstoned,
     /// until a pass changes nothing. A record that no longer validates is
-    /// dropped (the batch that delivered its parent must not fail for it).
+    /// dropped and logged (gid and code only; the batch that delivered its parent must not fail for it).
     /// Returns how many were applied.
     pub(crate) fn retry_parked(&mut self) -> Result<usize> {
         let (sender_id, sender_gid, spoke) = (self.sender_id, self.sender_gid.clone(), self.spoke);
@@ -139,10 +139,12 @@ impl Ctx<'_> {
                             applied += 1;
                         }
                     }
-                    Err(_) => {
+                    Err(e) => {
                         self.conn
                             .execute_batch("ROLLBACK TO retry_parked; RELEASE retry_parked")?;
                         self.unpark(&gid)?;
+                        // Gid and a fixed code only, never content.
+                        log::warn!("sync: parked record {gid} dropped ({})", error_code(&e));
                         progress = true;
                     }
                 }
@@ -155,6 +157,20 @@ impl Ctx<'_> {
         self.sender_gid = sender_gid;
         self.spoke = spoke;
         Ok(applied)
+    }
+}
+
+/// A fixed, content-free code for why a parked record was dropped.
+fn error_code(e: &crate::StoreError) -> String {
+    use crate::StoreError as E;
+    match e {
+        E::BadRecord { why, .. } => format!("bad_record: {why}"),
+        E::NotFound { kind, .. } => format!("not_found: {kind}"),
+        E::Decrypt => "decrypt".into(),
+        E::Tombstoned { .. } => "tombstoned".into(),
+        E::Db(_) => "db".into(),
+        E::Invalid(_) => "invalid".into(),
+        _ => "other".into(),
     }
 }
 

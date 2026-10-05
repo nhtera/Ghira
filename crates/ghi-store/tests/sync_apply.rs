@@ -1680,3 +1680,433 @@ fn sync_a_local_edit_takes_the_version_back_from_the_peer() {
     assert_eq!(outcomes(&r), vec![Merged]);
     assert_eq!(hub.store.conflict_copies(&w.m).unwrap().len(), 1);
 }
+
+// ------------------------------------------------- 15-C2b: deferred merge rules
+
+/// One direction of a sync session: everything `from` has (tombstones first)
+/// goes to `to`, as `from` would send it. Sending all of it again is what a
+/// repeated session amounts to: it must change nothing.
+fn flow(from: &Node, to: &Node) {
+    flow_as(from, to, false);
+}
+
+/// `ack`: `from` is a spoke whose rows count as pushed (clean) afterwards.
+fn flow_as(from: &Node, to: &Node, ack: bool) {
+    let t = from.store.tombs_since(0, 100_000).unwrap();
+    to.store.apply_tombs(&from.gid, &t.tombs).unwrap();
+    let mut seq = 0;
+    loop {
+        let b = from.store.changes_since(seq, 256).unwrap();
+        // The feed leaves a meeting's key out (it travels on its own).
+        let recs: Vec<Record> = b
+            .changes
+            .into_iter()
+            .map(|c| match c.record {
+                Record::Meeting(m) => rec(from, "meeting", &m.gid),
+                r => r,
+            })
+            .collect();
+        to.store.apply_rows(&from.gid, &recs).unwrap();
+        if ack {
+            for r in &recs {
+                from.store.mark_clean(r.gid(), r.version().lamport).unwrap();
+            }
+        }
+        seq = b.upto_seq;
+        if !b.more {
+            break;
+        }
+    }
+}
+
+/// A full round: spokes push, the hub merges, spokes pull.
+fn round(hub: &Node, spokes: &[&Node], order: &[usize]) {
+    for &i in order {
+        flow_as(spokes[i], hub, true);
+    }
+    for &i in order {
+        flow(hub, spokes[i]);
+    }
+}
+
+/// What the user sees of organisation, plus the tombstones.
+#[derive(Debug, PartialEq)]
+struct Org {
+    folders: Vec<(String, String)>,
+    tags: Vec<(String, String)>,
+    meetings: Vec<(String, Option<String>, Vec<String>)>,
+}
+
+fn org(n: &Node, ms: &[String]) -> Org {
+    let tags = n.store.meeting_tags(ms).unwrap();
+    let mut meetings: Vec<_> = ms
+        .iter()
+        .map(|m| {
+            let mut t: Vec<String> = tags
+                .get(m)
+                .map(|v| v.iter().map(|t| t.gid.clone()).collect())
+                .unwrap_or_default();
+            t.sort();
+            (m.clone(), n.store.get_meeting(m).unwrap().folder_gid, t)
+        })
+        .collect();
+    meetings.sort();
+    Org {
+        folders: n
+            .store
+            .folders()
+            .unwrap()
+            .into_iter()
+            .map(|f| (f.gid, f.name))
+            .collect(),
+        tags: n
+            .store
+            .tags()
+            .unwrap()
+            .into_iter()
+            .map(|t| (t.gid, t.name))
+            .collect(),
+        meetings,
+    }
+}
+
+fn done_meeting(n: &Node, title: &str) -> String {
+    let m = common::meeting(&n.store, title);
+    n.store.finish_meeting(&m, 1_000).unwrap();
+    m
+}
+
+#[test]
+fn sync_same_name_folders_and_tags_merge_to_the_lower_gid_in_any_order() {
+    for order in [[0usize, 1], [1, 0]] {
+        let (hub, a, b) = (node(), node(), node());
+        link(&hub, &a);
+        link(&hub, &b);
+        let (ma, mb) = (done_meeting(&a, "Họp A"), done_meeting(&b, "Họp B"));
+        let (fa, fb) = (
+            a.store.create_folder("Q4").unwrap().gid,
+            b.store.create_folder("Q4").unwrap().gid,
+        );
+        let (ta, tb) = (
+            a.store.create_tag("pricing").unwrap().gid,
+            b.store.create_tag("pricing").unwrap().gid,
+        );
+        a.store
+            .set_meeting_folder(std::slice::from_ref(&ma), Some(&fa))
+            .unwrap();
+        b.store
+            .set_meeting_folder(std::slice::from_ref(&mb), Some(&fb))
+            .unwrap();
+        a.store
+            .tag_meetings(std::slice::from_ref(&ma), &ta)
+            .unwrap();
+        b.store
+            .tag_meetings(std::slice::from_ref(&mb), &tb)
+            .unwrap();
+        let (folder, folder_lost) = if fa < fb { (&fa, &fb) } else { (&fb, &fa) };
+        let (tag, tag_lost) = if ta < tb { (&ta, &tb) } else { (&tb, &ta) };
+
+        round(&hub, &[&a, &b], &order);
+        round(&hub, &[&a, &b], &order);
+        let ms = vec![ma.clone(), mb.clone()];
+        for n in [&hub, &a, &b] {
+            let o = org(n, &ms);
+            assert_eq!(
+                o.folders,
+                vec![(folder.clone(), "Q4".to_string())],
+                "{order:?}"
+            );
+            assert_eq!(
+                o.tags,
+                vec![(tag.clone(), "pricing".to_string())],
+                "{order:?}"
+            );
+            for (_, f, t) in &o.meetings {
+                assert_eq!(f.as_ref(), Some(folder), "{order:?}");
+                assert_eq!(t, &vec![tag.clone()], "{order:?}");
+            }
+            assert!(n.store.is_tombstoned(folder_lost).unwrap());
+            assert!(n.store.is_tombstoned(tag_lost).unwrap());
+            assert!(!n.store.is_tombstoned(folder).unwrap());
+            assert!(!n.store.is_tombstoned(tag).unwrap());
+        }
+        // Same everywhere, and another session changes nothing.
+        let (h, sa, sb) = (org(&hub, &ms), org(&a, &ms), org(&b, &ms));
+        assert_eq!(h, sa);
+        assert_eq!(h, sb);
+        round(&hub, &[&a, &b], &order);
+        assert_eq!(org(&hub, &ms), h);
+        assert_eq!(org(&a, &ms), h);
+        assert_eq!(org(&b, &ms), h);
+    }
+}
+
+#[test]
+fn sync_late_links_and_folders_naming_a_folded_away_gid_follow_the_survivor() {
+    let (hub, a, b) = (node(), node(), node());
+    link(&hub, &a);
+    link(&hub, &b);
+    let m = done_meeting(&a, "Họp");
+    let (fa, fb) = (
+        a.store.create_folder("Q4").unwrap().gid,
+        b.store.create_folder("Q4").unwrap().gid,
+    );
+    let (ta, tb) = (
+        a.store.create_tag("pricing").unwrap().gid,
+        b.store.create_tag("pricing").unwrap().gid,
+    );
+    let (folder, lost_folder) = if fa < fb { (&fa, &fb) } else { (&fb, &fa) };
+    let (tag, lost_tag) = if ta < tb { (&ta, &tb) } else { (&tb, &ta) };
+    // The hub knows both; the loser is folded away.
+    flow(&a, &hub);
+    flow(&b, &hub);
+    assert!(hub.store.is_tombstoned(lost_folder).unwrap());
+    assert!(hub.store.is_tombstoned(lost_tag).unwrap());
+
+    // Later, a device that still uses the loser sends a meeting and a link.
+    let (loser_dev, lost_f, lost_t) = if lost_folder == &fa {
+        (&a, &fa, &ta)
+    } else {
+        (&b, &fb, &tb)
+    };
+    let lost_t = if lost_tag == lost_t { lost_t } else { lost_tag };
+    let lost_f = if lost_folder == lost_f {
+        lost_f
+    } else {
+        lost_folder
+    };
+    let Record::Meeting(mut mr) = rec(&a, "meeting", &m) else {
+        unreachable!()
+    };
+    mr.folder_gid = Some(lost_f.clone());
+    mr.version = ver(mr.version.lamport + 1, &a.gid);
+    mr.base = None;
+    let link_gid = common::gid(14, 3);
+    let lk = Record::MeetingTag(MeetingTagRec {
+        gid: link_gid.clone(),
+        version: ver(5_000, &loser_dev.gid),
+        meeting_gid: m.clone(),
+        tag_gid: lost_t.clone(),
+        ..Default::default()
+    });
+    push(&hub, &a, vec![Record::Meeting(mr), lk]);
+    assert_eq!(
+        hub.store.get_meeting(&m).unwrap().folder_gid.as_ref(),
+        Some(folder)
+    );
+    let tags = hub.store.meeting_tags(std::slice::from_ref(&m)).unwrap();
+    assert_eq!(
+        tags[&m].iter().map(|t| &t.gid).collect::<Vec<_>>(),
+        vec![tag]
+    );
+    assert!(hub.store.is_tombstoned(&link_gid).unwrap());
+}
+
+#[test]
+fn sync_a_rename_onto_another_folders_name_folds_the_higher_gid() {
+    let (hub, a) = (node(), node());
+    link(&hub, &a);
+    let m = done_meeting(&a, "Họp");
+    let f1 = a.store.create_folder("Alpha").unwrap().gid;
+    let f2 = a.store.create_folder("Beta").unwrap().gid;
+    a.store
+        .set_meeting_folder(std::slice::from_ref(&m), Some(&f1))
+        .unwrap();
+    flow(&a, &hub);
+    // The hub's user renames Beta to Alpha's name: a local rename is refused
+    // (Duplicate), so the collision comes as a peer's rename.
+    let Record::Folder(mut r) = rec(&a, "folder", &f2) else {
+        unreachable!()
+    };
+    r.version = ver(r.version.lamport + 10, &a.gid);
+    r.name = Some("alpha".into());
+    push(&hub, &a, vec![Record::Folder(r)]);
+    let (win, lose) = if f1 < f2 { (&f1, &f2) } else { (&f2, &f1) };
+    let folders = hub.store.folders().unwrap();
+    assert_eq!(folders.len(), 1);
+    assert_eq!(&folders[0].gid, win);
+    assert!(hub.store.is_tombstoned(lose).unwrap());
+    assert_eq!(
+        hub.store.get_meeting(&m).unwrap().folder_gid.as_ref(),
+        Some(win)
+    );
+}
+
+#[test]
+fn sync_same_name_people_stay_two_people_and_the_lower_gid_keeps_the_key() {
+    for order in [[0usize, 1], [1, 0]] {
+        let (hub, a, b) = (node(), node(), node());
+        link(&hub, &a);
+        link(&hub, &b);
+        let pa = a.store.add_person("Linh", 1).unwrap();
+        let pb = b.store.add_person("Linh", 2).unwrap();
+        round(&hub, &[&a, &b], &order);
+        round(&hub, &[&a, &b], &order);
+        let low = if pa < pb { &pa } else { &pb };
+        for n in [&hub, &a, &b] {
+            let conn = n.raw();
+            let names: Vec<(String, String)> = conn
+                .prepare("SELECT gid, name FROM persons WHERE is_me = 0 ORDER BY gid")
+                .unwrap()
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert_eq!(names.len(), 2, "{order:?}");
+            assert!(names.iter().all(|(_, n)| n == "Linh"), "{names:?}");
+            let plain: String = conn
+                .query_row("SELECT gid FROM persons WHERE name_key = 'linh'", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(&plain, low, "{order:?}");
+            assert!(!n.store.is_tombstoned(&pa).unwrap());
+            assert!(!n.store.is_tombstoned(&pb).unwrap());
+        }
+    }
+}
+
+/// A meeting created on `c`, copied to the hub and to two spokes, with
+/// `n` speakers. Returns the nodes, the meeting and the speaker gids.
+fn cycle_world(n: usize) -> (Node, Node, Node, Node, String, Vec<String>) {
+    let (hub, c, s1, s2) = (node(), node(), node(), node());
+    link(&hub, &c);
+    link(&hub, &s1);
+    link(&hub, &s2);
+    let m = done_meeting(&c, "Họp");
+    let speakers: Vec<String> = (0..n)
+        .map(|i| {
+            c.store
+                .add_speaker(
+                    &m,
+                    NewSpeaker {
+                        label_idx: i as i64,
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+        })
+        .collect();
+    flow(&c, &hub);
+    flow(&hub, &s1);
+    flow(&hub, &s2);
+    (hub, c, s1, s2, m, speakers)
+}
+
+fn merged_of(n: &Node, gid: &str) -> Option<String> {
+    n.raw()
+        .query_row(
+            "SELECT (SELECT x.gid FROM speakers x WHERE x.id = s.merged_into)
+             FROM speakers s WHERE s.gid = ?1",
+            [gid],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+/// Edge `from -> to` at lamport `l`, as the speaker row of `from` carries it.
+fn edge(c: &Node, from: &str, to: &str, l: i64) -> Record {
+    let Record::Speaker(mut r) = rec(c, "speaker", from) else {
+        unreachable!()
+    };
+    r.version = ver(l, &c.gid);
+    r.base = None;
+    r.merged_into = Some(to.into());
+    Record::Speaker(r)
+}
+
+#[test]
+fn sync_a_two_speaker_merge_cycle_is_broken_the_same_on_hub_and_spokes() {
+    let (hub, c, s1, s2, _m, sp) = cycle_world(2);
+    let e1 = edge(&c, &sp[0], &sp[1], 1_000); // S0 -> S1, the lower version
+    let e2 = edge(&c, &sp[1], &sp[0], 1_001);
+    // Hub: one order; the spokes get the edges from the hub in the others.
+    push(&hub, &c, vec![e1.clone(), e2.clone()]);
+    for (n, order) in [(&s1, vec![e2.clone(), e1.clone()]), (&s2, vec![e1, e2])] {
+        n.store.apply_rows(&hub.gid, &order).unwrap();
+    }
+    // And the other order on the hub.
+    let (hub2, c2, _, _, _, sp2) = cycle_world(2);
+    push(
+        &hub2,
+        &c2,
+        vec![
+            edge(&c2, &sp2[1], &sp2[0], 1_001),
+            edge(&c2, &sp2[0], &sp2[1], 1_000),
+        ],
+    );
+    assert_eq!(merged_of(&hub2, &sp2[0]), None);
+    assert_eq!(merged_of(&hub2, &sp2[1]), Some(sp2[0].clone()));
+    for n in [&hub, &s1, &s2] {
+        assert_eq!(merged_of(n, &sp[0]), None, "the lower edge is cleared");
+        assert_eq!(merged_of(n, &sp[1]), Some(sp[0].clone()));
+    }
+    // A redelivery changes nothing.
+    s1.store
+        .apply_rows(&hub.gid, &[edge(&c, &sp[0], &sp[1], 1_000)])
+        .unwrap();
+    assert_eq!(merged_of(&s1, &sp[0]), None);
+}
+
+#[test]
+fn sync_a_longer_merge_cycle_is_broken_at_its_lowest_version_in_any_order() {
+    let (hub, c, s1, s2, _m, sp) = cycle_world(3);
+    let e = [
+        edge(&c, &sp[0], &sp[1], 1_010),
+        edge(&c, &sp[1], &sp[2], 1_011),
+        edge(&c, &sp[2], &sp[0], 1_009), // the lowest: the one to go
+    ];
+    let pick = |ix: [usize; 3]| ix.iter().map(|&i| e[i].clone()).collect::<Vec<_>>();
+    push(&hub, &c, pick([0, 1, 2]));
+    s1.store.apply_rows(&hub.gid, &pick([2, 1, 0])).unwrap();
+    s2.store.apply_rows(&hub.gid, &pick([1, 2, 0])).unwrap();
+    for n in [&hub, &s1, &s2] {
+        assert_eq!(merged_of(n, &sp[0]), Some(sp[1].clone()));
+        assert_eq!(merged_of(n, &sp[1]), Some(sp[2].clone()));
+        assert_eq!(merged_of(n, &sp[2]), None);
+    }
+}
+
+static LOGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+struct Capture;
+
+impl log::Log for Capture {
+    fn enabled(&self, _: &log::Metadata) -> bool {
+        true
+    }
+    fn log(&self, r: &log::Record) {
+        LOGS.lock().unwrap().push(r.args().to_string());
+    }
+    fn flush(&self) {}
+}
+
+#[test]
+fn sync_a_parked_row_that_fails_on_retry_is_logged_by_gid_and_code() {
+    static CAP: Capture = Capture;
+    let _ = log::set_logger(&CAP);
+    log::set_max_level(log::LevelFilter::Info);
+    let (hub, s1) = (node(), node());
+    link(&hub, &s1);
+    let w = world(&s1);
+    // A speaker whose name is sealed under a key that is not the meeting's.
+    let Record::Speaker(mut sp) = rec(&s1, "speaker", &w.speaker) else {
+        unreachable!()
+    };
+    let wrong = Dek::from_bytes([9u8; 32]);
+    sp.display_name_ct = Some(seal(&wrong, "speakers", "display_name_ct", &sp.gid, "Linh"));
+    let r = push(&hub, &s1, vec![Record::Speaker(sp.clone())]);
+    assert_eq!(outcomes(&r), vec![Parked]);
+    assert_eq!(hub.store.pending_count().unwrap(), 1);
+
+    push(&hub, &s1, vec![rec(&s1, "meeting", &w.m)]);
+    assert_eq!(hub.store.pending_count().unwrap(), 0, "dropped");
+    assert!(hub.store.speakers(&w.m).unwrap().is_empty());
+    let logs = LOGS.lock().unwrap().clone();
+    let line = logs
+        .iter()
+        .find(|l| l.contains(&sp.gid))
+        .unwrap_or_else(|| panic!("no log line for the dropped row: {logs:?}"));
+    assert!(line.contains("bad_record"), "{line}");
+    assert!(!line.contains("Linh"), "no content in the log");
+}

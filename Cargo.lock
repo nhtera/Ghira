@@ -2228,6 +2228,7 @@ dependencies = [
  "ghi-text",
  "hkdf",
  "libc",
+ "log",
  "rand_core 0.6.4",
  "rusqlite",
  "security-framework",

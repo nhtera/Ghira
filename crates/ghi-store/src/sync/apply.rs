@@ -642,6 +642,11 @@ macro_rules! go {
     };
 }
 
+/// `settings` key prefix of "this folder/tag was folded into that one".
+/// Device-local (not a synced setting); it lets late records that name the
+/// dead gid land on the survivor.
+const REDIRECT: &str = "sync.redirect.";
+
 /// A meeting as its children see it.
 #[derive(Clone, Copy)]
 struct MInfo {
@@ -1164,7 +1169,18 @@ impl<'a> Ctx<'a> {
                     .optional()?;
                 match id {
                     Some(id) => Ref::Id(id),
-                    None if self.tombstoned(fg)? => Ref::Clear,
+                    None if self.tombstoned(fg)? => {
+                        let target: Option<i64> = match self.redirect(fg)? {
+                            Some(t) => self
+                                .conn
+                                .query_row("SELECT id FROM folders WHERE gid = ?1", [t], |r| {
+                                    r.get(0)
+                                })
+                                .optional()?,
+                            None => None,
+                        };
+                        target.map_or(Ref::Clear, Ref::Id)
+                    }
                     None => Ref::Keep,
                 }
             }
@@ -1468,6 +1484,13 @@ impl Named {
             Named::Tag => "tags",
         }
     }
+    /// The kind name of its tombstones.
+    fn kind(self) -> &'static str {
+        match self {
+            Named::Folder => "folder",
+            Named::Tag => "tag",
+        }
+    }
 }
 
 impl Ctx<'_> {
@@ -1623,31 +1646,50 @@ impl Ctx<'_> {
         Ok(Step::Done(outcome_of(verdict)))
     }
 
-    /// `key`, or a per-row variant if another row of `table` has it: two
-    /// devices that made the same name keep two rows until the collision merge
-    /// (slice 15-C2b) folds them.
+    /// The `name_key` a person takes. Same-name people made on two devices
+    /// stay two people (doc 07 Q6: "Linh" twice is not auto-merged), so the
+    /// unique index is kept by a per-gid suffix on the key only; the visible
+    /// name is never touched. The lower gid holds the plain key, whatever the
+    /// arrival order (the holder is demoted when a lower gid shows up).
     fn unique_key(&self, table: &str, key: &str, gid: &str) -> Result<String> {
+        let Some((id, other)) = self.key_holder(table, key, gid)? else {
+            return Ok(key.to_string());
+        };
+        if gid < other.as_str() {
+            self.conn.execute(
+                &format!("UPDATE {table} SET name_key = ?1 WHERE id = ?2"),
+                rusqlite::params![format!("{key}\u{1f}{other}"), id],
+            )?;
+            Ok(key.to_string())
+        } else {
+            Ok(format!("{key}\u{1f}{gid}"))
+        }
+    }
+
+    /// The other live row of `table` (not Me, for persons) that holds `key`.
+    fn key_holder(&self, table: &str, key: &str, gid: &str) -> Result<Option<(i64, String)>> {
         let filter = if table == "persons" {
             " AND is_me = 0"
         } else {
             ""
         };
-        let taken: bool = self.conn.query_row(
-            &format!(
-                "SELECT EXISTS (SELECT 1 FROM {table} WHERE name_key = ?1 AND gid <> ?2{filter})"
-            ),
-            [key, gid],
-            |r| r.get(0),
-        )?;
-        Ok(if taken {
-            format!("{key}\u{1f}{gid}")
-        } else {
-            key.to_string()
-        })
+        Ok(self
+            .conn
+            .query_row(
+                &format!("SELECT id, gid FROM {table} WHERE name_key = ?1 AND gid <> ?2{filter}"),
+                [key, gid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
     }
 
     // ----------------------------------------------------------- folder / tag
 
+    /// Folders and tags: two devices that made the same name (equal
+    /// `name_key`) merge into the row with the lower gid. The higher gid is
+    /// tombstoned (`superseded`) and everything that pointed at it is
+    /// re-pointed ([`Ctx::merge_named`]). The survivor depends only on the
+    /// two gids, so every device converges whatever the arrival order.
     fn named(
         &mut self,
         kind: Named,
@@ -1667,32 +1709,190 @@ impl Ctx<'_> {
                 let Some(name) = name.as_deref().map(clean).filter(|n| !n.is_empty()) else {
                     return bad(gid, "a name is required");
                 };
-                let key = self.unique_key(table, &crate::people::name_key(&name), gid)?;
+                let key = crate::people::name_key(&name);
+                let other = self.key_holder(table, &key, gid)?;
+                if let Some((_, og)) = &other
+                    && gid > og.as_str()
+                {
+                    // Not even inserted: the other row stands for it.
+                    self.fold_away(kind, gid, og)?;
+                    return Ok(Step::Done(ApplyOutcome::Tombstoned));
+                }
+                if let Some((oid, og)) = &other {
+                    self.park_key(table, *oid, &key, og)?;
+                }
                 let mut s = Set::default();
                 s.text("gid", gid);
                 s.text("name", &name);
                 s.text("name_key", &key);
                 s.int("created_at", created_at.unwrap_or_else(now_ms));
                 self.stamp(&mut s, v);
-                self.insert(table, &s)?;
+                let id = self.insert(table, &s)?;
+                if let Some((oid, og)) = other {
+                    self.fold_away(kind, &og, gid)?;
+                    self.repoint(kind, oid, id, gid)?;
+                    self.drop_row(kind, oid)?;
+                }
             }
             Verdict::Take | Verdict::Concurrent { rec_wins: true } => {
                 let meta = cur.expect("a row");
                 let mut s = Set::default();
+                let mut other = None;
                 if let Some(name) = name.as_deref().map(clean) {
                     if name.is_empty() {
                         return bad(gid, "a name is required");
                     }
-                    let key = self.unique_key(table, &crate::people::name_key(&name), gid)?;
+                    let key = crate::people::name_key(&name);
+                    other = self.key_holder(table, &key, gid)?;
+                    if let Some((oid, og)) = &other {
+                        if gid > og.as_str() {
+                            // Renamed onto a lower gid's name: this row folds
+                            // into it.
+                            self.fold_away(kind, gid, og)?;
+                            self.repoint(kind, meta.id, *oid, og)?;
+                            self.drop_row(kind, meta.id)?;
+                            return Ok(Step::Done(outcome_of(verdict)));
+                        }
+                        self.park_key(table, *oid, &key, og)?;
+                    }
                     s.text("name_key", &key);
                     s.text("name", &name);
                 }
                 self.stamp(&mut s, v);
                 self.update(table, meta.id, &s)?;
+                if let Some((oid, og)) = other {
+                    self.fold_away(kind, &og, gid)?;
+                    self.repoint(kind, oid, meta.id, gid)?;
+                    self.drop_row(kind, oid)?;
+                }
             }
             _ => {}
         }
         Ok(Step::Done(outcome_of(verdict)))
+    }
+
+    /// Moves `id`'s `name_key` out of the way (it is about to be deleted).
+    fn park_key(&self, table: &str, id: i64, key: &str, gid: &str) -> Result<()> {
+        self.conn.execute(
+            &format!("UPDATE {table} SET name_key = ?1 WHERE id = ?2"),
+            rusqlite::params![format!("{key}\u{1f}{gid}"), id],
+        )?;
+        Ok(())
+    }
+
+    /// Tombstones the folder/tag `loser` (`superseded`, a local write, so it
+    /// syncs) and remembers who stands for it: later records that name the
+    /// loser (a link, a meeting's folder) are read as naming the survivor.
+    fn fold_away(&mut self, kind: Named, loser: &str, survivor: &str) -> Result<()> {
+        let lamport = Store::alloc_lamport(self.conn, 1)?;
+        tombstones::write_from(
+            self.conn,
+            loser,
+            kind.kind(),
+            lamport,
+            Cause::Superseded,
+            None,
+        )?;
+        let json = serde_json::to_string(survivor)
+            .map_err(|e| crate::StoreError::Invalid(e.to_string()))?;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value_json) VALUES (?1, ?2)",
+            rusqlite::params![format!("{REDIRECT}{loser}"), json],
+        )?;
+        log::info!("sync: {} {loser} folded into {survivor}", kind.kind());
+        Ok(())
+    }
+
+    /// Points everything that referenced the row `from` at the row `to`
+    /// (gid `to_gid`): a tag's links become new links with deterministic gids
+    /// (the old ones are tombstoned `superseded`); a folder's meetings move
+    /// and their lamport moves with them (as `delete_folder` does), so the
+    /// change syncs.
+    fn repoint(&mut self, kind: Named, from: i64, to: i64, to_gid: &str) -> Result<()> {
+        let lamport = Store::alloc_lamport(self.conn, 1)?;
+        match kind {
+            Named::Folder => {
+                self.conn.execute(
+                    "UPDATE meetings SET folder_id = ?1, lamport = ?2, origin = NULL
+                     WHERE folder_id = ?3",
+                    rusqlite::params![to, lamport, from],
+                )?;
+            }
+            Named::Tag => {
+                let links: Vec<(String, i64)> = self
+                    .conn
+                    .prepare("SELECT gid, meeting_id FROM meeting_tags WHERE tag_id = ?1")?
+                    .query_map([from], |r| Ok((r.get(0)?, r.get(1)?)))?
+                    .collect::<rusqlite::Result<_>>()?;
+                for (old, meeting) in links {
+                    self.conn
+                        .execute("DELETE FROM meeting_tags WHERE gid = ?1", [&old])?;
+                    tombstones::write_from(
+                        self.conn,
+                        &old,
+                        "meeting_tag",
+                        lamport,
+                        Cause::Superseded,
+                        None,
+                    )?;
+                    self.relink(&old, meeting, to, to_gid, lamport)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// A link `meeting` -> tag `tag_id`, standing for the link `old`.
+    fn relink(
+        &mut self,
+        old: &str,
+        meeting: i64,
+        tag_id: i64,
+        tag_gid: &str,
+        lamport: i64,
+    ) -> Result<()> {
+        let gid = rules::relink_gid(old, tag_gid);
+        let have: bool = self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM meeting_tags WHERE meeting_id = ?1 AND tag_id = ?2)",
+            rusqlite::params![meeting, tag_id],
+            |r| r.get(0),
+        )?;
+        if have || self.tombstoned(&gid)? {
+            return Ok(());
+        }
+        self.conn.execute(
+            "INSERT INTO meeting_tags (gid, meeting_id, tag_id, lamport) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![gid, meeting, tag_id, lamport],
+        )?;
+        Ok(())
+    }
+
+    fn drop_row(&self, kind: Named, id: i64) -> Result<()> {
+        self.conn
+            .execute(&format!("DELETE FROM {} WHERE id = ?1", kind.table()), [id])?;
+        Ok(())
+    }
+
+    /// Who stands for the folded-away folder/tag `gid` (following a chain of
+    /// folds), if anyone.
+    fn redirect(&self, gid: &str) -> Result<Option<String>> {
+        let mut cur = gid.to_string();
+        for _ in 0..8 {
+            let next: Option<String> = self
+                .conn
+                .query_row(
+                    "SELECT value_json FROM settings WHERE key = ?1",
+                    [format!("{REDIRECT}{cur}")],
+                    |r| r.get::<_, String>(0),
+                )
+                .optional()?
+                .and_then(|j| serde_json::from_str(&j).ok());
+            match next {
+                Some(n) => cur = n,
+                None => break,
+            }
+        }
+        Ok((cur != gid).then_some(cur))
     }
 
     // --------------------------------------------------------------- speaker
@@ -1749,8 +1949,9 @@ impl Ctx<'_> {
                 s.opt_flag("is_me", rec.is_me);
                 s.opt_flag("not_person", rec.not_person);
                 self.stamp(&mut s, v);
-                self.insert("speakers", &s)?;
+                let id = self.insert("speakers", &s)?;
                 self.touched.insert(m.id);
+                self.break_merge_cycle(id, m.id)?;
             }
             Verdict::Take | Verdict::Concurrent { .. } => {
                 let (meta, cur_ct) = cur.as_ref().expect("a row");
@@ -1768,6 +1969,7 @@ impl Ctx<'_> {
                     s.opt_flag("not_person", rec.not_person);
                     self.stamp(&mut s, v);
                 }
+                let cycle_check = take && !s.is_empty();
                 if let (Some(text), Some(ct)) = (&name, &rec.display_name_ct) {
                     self.text_field(
                         verdict,
@@ -1791,10 +1993,65 @@ impl Ctx<'_> {
                     self.touched.insert(m.id);
                 }
                 self.update("speakers", meta.id, &s)?;
+                if cycle_check {
+                    self.break_merge_cycle(meta.id, m.id)?;
+                }
             }
             _ => {}
         }
         Ok(Step::Done(outcome_of(verdict)))
+    }
+
+    /// A `merged_into` cycle through `start` (S1 -> S2 -> S1, or longer) is
+    /// broken by clearing the edge whose row has the lowest version
+    /// `(lamport, origin gid)` (doc 07 §7.4).
+    ///
+    /// The clear is derived, not a new write: the row keeps its version, and
+    /// every device that holds the whole cycle clears the same edge, so the
+    /// result is the same on the hub and every spoke whatever the arrival
+    /// order, with no extra lamport (which would let several devices race
+    /// three versions of the same clear). A later version of a cleared row
+    /// that still carries the edge meets the same rule again.
+    fn break_merge_cycle(&mut self, start: i64, meeting: i64) -> Result<()> {
+        let mut path: Vec<(i64, i64, Option<i64>)> = Vec::new();
+        let mut cur = start;
+        loop {
+            let row: Option<(Option<i64>, i64, Option<i64>)> = self
+                .conn
+                .query_row(
+                    "SELECT merged_into, lamport, origin FROM speakers WHERE id = ?1",
+                    [cur],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .optional()?;
+            let Some((next, lamport, origin)) = row else {
+                return Ok(());
+            };
+            path.push((cur, lamport, origin));
+            match next {
+                None => return Ok(()),
+                Some(n) if n == start => break,
+                // Into some other chain (cycles never survive a write).
+                Some(n) if path.iter().any(|p| p.0 == n) => return Ok(()),
+                Some(n) => cur = n,
+            }
+            if path.len() > 100_000 {
+                return Ok(());
+            }
+        }
+        let mut versions = Vec::with_capacity(path.len());
+        for (_, lamport, origin) in &path {
+            versions.push(Version {
+                lamport: *lamport,
+                origin: self.gid_of(*origin)?,
+            });
+        }
+        let (id, ..) = path[rules::weakest_edge(&versions)];
+        self.conn
+            .execute("UPDATE speakers SET merged_into = NULL WHERE id = ?1", [id])?;
+        self.touched.insert(meeting);
+        log::info!("sync: a speaker merge cycle of {} was broken", path.len());
+        Ok(())
     }
 
     // --------------------------------------------------------------- segment
@@ -2200,6 +2457,28 @@ impl Ctx<'_> {
         let tag = match tag {
             Some(t) => t,
             None if self.tombstoned(&rec.tag_gid)? => {
+                // A tag folded into another: the link follows it.
+                let target: Option<(i64, String)> = match self.redirect(&rec.tag_gid)? {
+                    Some(t) => self
+                        .conn
+                        .query_row("SELECT id, gid FROM tags WHERE gid = ?1", [t], |r| {
+                            Ok((r.get(0)?, r.get(1)?))
+                        })
+                        .optional()?,
+                    None => None,
+                };
+                if let Some((tag_id, tag_gid)) = target {
+                    let lamport = Store::alloc_lamport(self.conn, 1)?;
+                    tombstones::write_from(
+                        self.conn,
+                        gid,
+                        "meeting_tag",
+                        lamport,
+                        Cause::Superseded,
+                        None,
+                    )?;
+                    self.relink(gid, m.id, tag_id, &tag_gid, lamport)?;
+                }
                 return Ok(Step::Done(ApplyOutcome::Tombstoned));
             }
             None => return Ok(Step::Park(rec.tag_gid.clone())),
