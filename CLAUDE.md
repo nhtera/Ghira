@@ -40,6 +40,7 @@ cargo deny check licenses bans advisories sources
 cargo clippy -p ghi-speech -p ghi-cli --all-targets --features ghi-cli/nemo -- -D warnings
 cargo test -p ghi-speech -p ghi-cli --features ghi-cli/nemo
 cargo test -p ghi-desktop --features nemo -- --ignored real_models --nocapture  # real-model Core harness (minutes; needs cargo build -p ghi-llm-worker; skips without models)
+cargo test -p ghi-core --features nemo --release --test live_bench -- --ignored --nocapture  # live transcript bench: caption lag, line length, WER (real time, ~3 min/set; GHI_LIVE_BENCH_SPEED=0 for WER only, one run at a time; sets from fetch_public_sets.py --sets fleurs-vi,fleurs-en,ami-sdm,ami-text,voxconverse,vimedcss,earnings21,vietmed)
 # Whisper final pass (optional; needs tools/scripts/build-whisper.sh and fetch-models.sh whisper-large-v3-turbo silero-vad):
 cargo clippy -p ghi-speech -p ghi-core -p ghi-cli --all-targets --features ghi-cli/nemo,ghi-cli/whisper -- -D warnings
 cargo test -p ghi-speech --features whisper && cargo test -p ghi-core --features nemo,whisper --test whisper_real -- --ignored --nocapture  # NeMo + Whisper in one process
