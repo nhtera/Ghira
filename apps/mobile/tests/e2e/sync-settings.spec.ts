@@ -67,13 +67,13 @@ test("Unpair and delete says what happens, waits for the computer, then confirms
   await page.getByRole("button", { name: "Unpair and delete on MacBook Pro" }).click();
   const sheet = page.getByRole("dialog", { name: "Unpair and delete on MacBook Pro?" });
   await expect(sheet).toContainText("the next time they connect on the same Wi-Fi");
-  await expect(sheet).toContainText("This can’t be undone.");
+  await expect(sheet).toContainText("This can’t be undone on MacBook Pro.");
   await sheet.getByRole("button", { name: "Unpair and delete on MacBook Pro" }).click();
-  await expect(page.getByTestId("wipe-pending")).toContainText("Waiting for MacBook Pro to delete the meetings it got from this phone");
+  await expect(page.getByTestId("wipe-pending")).toContainText("Waiting for MacBook Pro to delete the meetings it shares with this phone");
   await expect(page.getByRole("button", { name: /^Unpair/ })).toHaveCount(0);
   await expectAccessible(page);
   await mockHook(page, "syncSimulateWipeDone");
-  await expect(page.getByText("MacBook Pro deleted them. This phone is unpaired.")).toBeVisible();
+  await expect(page.getByText("MacBook Pro deleted them. They stay on this phone, which is now unpaired.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Scan the code" })).toBeVisible();
 });
 
