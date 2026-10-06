@@ -824,7 +824,6 @@ fn the_scripted_walk_is_replayable() {
 /// its own. The peer then never gets the meeting's lines or speakers, and the
 /// session still reports quiescence.
 #[test]
-#[ignore = "bug: a merge_speakers cycle written on one device strands the meeting's segments and speakers (never reach the hub); see report"]
 fn a_cycle_written_on_one_device_still_reaches_the_hub() {
     let mut w = World::new();
     apply(&mut w, 1, CREATE, [2, 1, 0]);
@@ -837,7 +836,11 @@ fn a_cycle_written_on_one_device_still_reaches_the_hub() {
         .map(|s| s.gid)
         .collect();
     w.s(1).merge_speakers(&sp[0], &sp[1]).unwrap();
-    w.s(1).merge_speakers(&sp[1], &sp[0]).unwrap();
+    // The store refuses the second merge, so no cycle is written.
+    assert!(matches!(
+        w.s(1).merge_speakers(&sp[1], &sp[0]),
+        Err(ghi_store::StoreError::AlreadyMerged { .. })
+    ));
     w.settle();
     assert_eq!(
         w.s(0).segments(&m).unwrap().len(),

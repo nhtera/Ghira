@@ -687,6 +687,11 @@ pub(crate) struct Ctx<'a> {
     gids: std::collections::HashMap<Option<i64>, String>,
     touched: BTreeSet<i64>,
     post: Post,
+    /// Set while parked speakers that wait on each other are applied
+    /// together: a `merged_into` target that is missing is left unset and
+    /// remembered in `deferred` (speaker id, target gid) for the edge pass.
+    pub(crate) defer_merge: bool,
+    pub(crate) deferred: Vec<(i64, String)>,
 }
 
 impl<'a> Ctx<'a> {
@@ -709,6 +714,8 @@ impl<'a> Ctx<'a> {
             gids: Default::default(),
             touched: BTreeSet::new(),
             post: Post::default(),
+            defer_merge: false,
+            deferred: Vec::new(),
         };
         if let Some(from) = from {
             ctx.set_sender(from)?;
@@ -1925,11 +1932,18 @@ impl Ctx<'_> {
             None => None,
         };
         let person = go!(self.reference("persons", rec.person_gid.as_deref(), None)?);
+        let mut edge: Option<String> = None;
         let merged = match rec.merged_into.as_deref() {
             Some(g) if g == gid => Flow::Go(Ref::Clear),
             other => self.reference("speakers", other, Some(m.id))?,
         };
-        let merged = go!(merged);
+        let merged = match merged {
+            Flow::Stop(Step::Park(target)) if self.defer_merge => {
+                edge = Some(target);
+                Ref::Clear
+            }
+            m => go!(m),
+        };
         let v = self.ver(&rec.version)?;
         let verdict = self.decide(cur.as_ref().map(|c| &c.0), v, rec.base.as_ref())?;
         match verdict {
@@ -1950,6 +1964,9 @@ impl Ctx<'_> {
                 self.stamp(&mut s, v);
                 let id = self.insert("speakers", &s)?;
                 self.touched.insert(m.id);
+                if let Some(t) = edge.take() {
+                    self.deferred.push((id, t));
+                }
                 self.break_merge_cycle(id, m.id)?;
             }
             Verdict::Take | Verdict::Concurrent { .. } => {
@@ -1969,6 +1986,9 @@ impl Ctx<'_> {
                     self.stamp(&mut s, v);
                 }
                 let cycle_check = take && !s.is_empty();
+                if take && let Some(t) = edge.take() {
+                    self.deferred.push((meta.id, t));
+                }
                 if let (Some(text), Some(ct)) = (&name, &rec.display_name_ct) {
                     self.text_field(
                         verdict,
@@ -1999,6 +2019,39 @@ impl Ctx<'_> {
             _ => {}
         }
         Ok(Step::Done(outcome_of(verdict)))
+    }
+
+    /// Sets the `merged_into` edges that [`Ctx::defer_merge`] left out, once
+    /// every speaker of the group exists, then breaks the cycles they close.
+    pub(crate) fn apply_deferred_edges(&mut self) -> Result<()> {
+        for (id, target) in std::mem::take(&mut self.deferred) {
+            let row: Option<(i64, i64)> = self
+                .conn
+                .query_row(
+                    "SELECT id, meeting_id FROM speakers WHERE gid = ?1",
+                    [&target],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            let mine: i64 = self.conn.query_row(
+                "SELECT meeting_id FROM speakers WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )?;
+            // A target that is still missing (or of another meeting) keeps
+            // the edge off; the record is not parked again, as its row exists.
+            let Some((tid, tm)) = row else { continue };
+            if tm != mine || tid == id {
+                continue;
+            }
+            self.conn.execute(
+                "UPDATE speakers SET merged_into = ?1 WHERE id = ?2",
+                [tid, id],
+            )?;
+            self.touched.insert(mine);
+            self.break_merge_cycle(id, mine)?;
+        }
+        Ok(())
     }
 
     /// A `merged_into` cycle through `start` (S1 -> S2 -> S1, or longer) is

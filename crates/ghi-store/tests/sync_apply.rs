@@ -2067,6 +2067,77 @@ fn sync_a_longer_merge_cycle_is_broken_at_its_lowest_version_in_any_order() {
     }
 }
 
+/// Speakers `0..n` (not synced anywhere) of a meeting the hub holds, as
+/// records forming the cycle `i -> i+1 -> .. -> 0`; the hub has no speaker.
+fn parked_cycle(n: usize) -> (Node, Node, Vec<String>, Vec<Record>) {
+    let (hub, c, _s1, _s2, _m, _sp) = cycle_world(0);
+    let m = c
+        .raw()
+        .query_row("SELECT gid FROM meetings", [], |r| r.get::<_, String>(0))
+        .unwrap();
+    let sp: Vec<String> = (0..n)
+        .map(|i| {
+            c.store
+                .add_speaker(
+                    &m,
+                    NewSpeaker {
+                        label_idx: i as i64,
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+        })
+        .collect();
+    let recs = (0..n)
+        .map(|i| edge(&c, &sp[i], &sp[(i + 1) % n], 1_000 + i as i64))
+        .collect();
+    (hub, c, sp, recs)
+}
+
+fn speaker_count(n: &Node) -> i64 {
+    n.raw()
+        .query_row("SELECT count(*) FROM speakers", [], |r| r.get(0))
+        .unwrap()
+}
+
+#[test]
+fn sync_parked_merge_cycles_apply_together_in_one_batch_or_split() {
+    for n in [2usize, 3] {
+        // The lowest version (index 0) loses its edge, whatever the split.
+        for split in [None, Some(1), Some(n - 1)] {
+            let (hub, c, sp, recs) = parked_cycle(n);
+            match split {
+                None => hub.store.apply_rows(&c.gid, &recs).unwrap(),
+                Some(k) => {
+                    hub.store.apply_rows(&c.gid, &recs[..k]).unwrap();
+                    assert_eq!(speaker_count(&hub), 0, "parked, n={n} k={k}");
+                    hub.store.apply_rows(&c.gid, &recs[k..]).unwrap()
+                }
+            };
+            assert_eq!(hub.store.pending_count().unwrap(), 0, "n={n} {split:?}");
+            assert_eq!(speaker_count(&hub), n as i64);
+            assert_eq!(merged_of(&hub, &sp[0]), None, "n={n} {split:?}");
+            for i in 1..n {
+                assert_eq!(merged_of(&hub, &sp[i]), Some(sp[(i + 1) % n].clone()));
+            }
+        }
+    }
+}
+
+#[test]
+fn sync_merge_speakers_refuses_a_merged_away_speaker() {
+    let (_hub, c, _s1, _s2, _m, sp) = cycle_world(3);
+    c.store.merge_speakers(&sp[0], &sp[1]).unwrap();
+    assert!(matches!(
+        c.store.merge_speakers(&sp[0], &sp[2]),
+        Err(StoreError::AlreadyMerged { .. })
+    ));
+    assert!(matches!(
+        c.store.merge_speakers(&sp[2], &sp[0]),
+        Err(StoreError::AlreadyMerged { .. })
+    ));
+}
+
 static LOGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 struct Capture;

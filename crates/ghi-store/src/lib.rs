@@ -100,6 +100,11 @@ pub enum StoreError {
     Tombstoned {
         gid: String,
     },
+    /// The speaker is already merged into another: merging it (or into it)
+    /// again would build a cycle.
+    AlreadyMerged {
+        gid: String,
+    },
     /// A result commit lost its lease (revoked or already done): nothing was
     /// written.
     Fenced,
@@ -138,6 +143,7 @@ impl fmt::Display for StoreError {
             StoreError::Limit { kind, max } => write!(f, "limit reached: at most {max} {kind}"),
             StoreError::Duplicate { kind } => write!(f, "a {kind} with that name already exists"),
             StoreError::Tombstoned { gid } => write!(f, "{gid} was deleted"),
+            StoreError::AlreadyMerged { gid } => write!(f, "speaker {gid} is already merged"),
             StoreError::Fenced => f.write_str("the job's lease is no longer granted"),
             StoreError::NotYet(what) => write!(f, "not implemented yet: {what}"),
             StoreError::BadRecord { gid, why } => write!(f, "bad record {gid}: {why}"),

@@ -173,17 +173,26 @@ impl Store {
     pub fn merge_speakers(&self, from_gid: &str, into_gid: &str) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
+        // A speaker that is merged away already is refused on either side:
+        // the app hides it, and merging through it would build a cycle.
         let speaker = |gid: &str| -> Result<(i64, i64, bool)> {
-            tx.query_row(
-                "SELECT id, meeting_id, is_me FROM speakers WHERE gid = ?1",
-                [gid],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
-            .optional()?
-            .ok_or_else(|| StoreError::NotFound {
-                kind: "speaker",
-                gid: gid.to_string(),
-            })
+            let (id, meeting, me, merged): (i64, i64, bool, Option<i64>) = tx
+                .query_row(
+                    "SELECT id, meeting_id, is_me, merged_into FROM speakers WHERE gid = ?1",
+                    [gid],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+                .optional()?
+                .ok_or_else(|| StoreError::NotFound {
+                    kind: "speaker",
+                    gid: gid.to_string(),
+                })?;
+            if merged.is_some() {
+                return Err(StoreError::AlreadyMerged {
+                    gid: gid.to_string(),
+                });
+            }
+            Ok((id, meeting, me))
         };
         let (from, m1, from_me) = speaker(from_gid)?;
         let (into, m2, _) = speaker(into_gid)?;

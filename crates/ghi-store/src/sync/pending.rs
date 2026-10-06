@@ -82,6 +82,85 @@ impl Ctx<'_> {
         Ok(())
     }
 
+    /// Finds parked speakers whose `merged_into` chain leads back through
+    /// other parked speakers (S1 -> S2 -> S1, or longer), inserts them without
+    /// the edge, then sets the edges and breaks the cycle by the usual rule.
+    /// Returns how many left the queue.
+    fn apply_parked_cycles(&mut self) -> Result<usize> {
+        let waits: std::collections::BTreeMap<String, String> = self
+            .conn
+            .prepare("SELECT gid, parent_gid FROM sync_pending WHERE kind = ?1")?
+            .query_map([super::records::RecordKind::Speaker.log_kind()], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        // Members of a cycle: following the waits comes back to the start.
+        let members: Vec<&String> = waits
+            .keys()
+            .filter(|start| {
+                let mut cur = *start;
+                for _ in 0..waits.len() {
+                    match waits.get(cur) {
+                        Some(n) if n == *start => return true,
+                        Some(n) => cur = n,
+                        None => return false,
+                    }
+                }
+                false
+            })
+            .collect();
+        if members.is_empty() {
+            return Ok(0);
+        }
+        let (sender_id, sender_gid, spoke) = (self.sender_id, self.sender_gid.clone(), self.spoke);
+        eprintln!("CYCLEPATH {}", members.len());
+        self.defer_merge = true;
+        let mut left = 0;
+        for gid in members {
+            let (json, at): (String, i64) = self.conn.query_row(
+                "SELECT record, received_at FROM sync_pending WHERE gid = ?1",
+                [gid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            self.conn.execute_batch("SAVEPOINT retry_cycle")?;
+            let kept = self.deferred.len();
+            let result = match serde_json::from_str::<Parked>(&json) {
+                Ok(p) => match self.set_sender(&p.from) {
+                    Ok(()) => self.apply_one(&p.rec),
+                    Err(e) => Err(e),
+                },
+                Err(e) => Err(crate::StoreError::Invalid(e.to_string())),
+            };
+            match result {
+                Ok(ApplyOutcome::Parked) => {
+                    self.conn.execute(
+                        "UPDATE sync_pending SET received_at = ?2 WHERE gid = ?1",
+                        rusqlite::params![gid, at],
+                    )?;
+                    self.conn.execute_batch("RELEASE retry_cycle")?;
+                }
+                Ok(_) => {
+                    self.conn.execute_batch("RELEASE retry_cycle")?;
+                    left += 1;
+                }
+                Err(e) => {
+                    self.conn
+                        .execute_batch("ROLLBACK TO retry_cycle; RELEASE retry_cycle")?;
+                    self.deferred.truncate(kept);
+                    self.unpark(gid)?;
+                    log::warn!("sync: parked record {gid} dropped ({})", error_code(&e));
+                    left += 1;
+                }
+            }
+        }
+        self.defer_merge = false;
+        self.sender_id = sender_id;
+        self.sender_gid = sender_gid;
+        self.spoke = spoke;
+        self.apply_deferred_edges()?;
+        Ok(left)
+    }
+
     /// Drops what waited too long.
     pub(crate) fn expire_pending(&mut self) -> Result<()> {
         self.conn.execute(
@@ -150,6 +229,11 @@ impl Ctx<'_> {
                 }
             }
             if !progress {
+                // Parked speakers that wait on each other (a merge cycle)
+                // never resolve one by one: apply them together.
+                if self.apply_parked_cycles()? > 0 {
+                    continue;
+                }
                 break;
             }
         }
