@@ -83,18 +83,16 @@ mod sys {
         (u128::from(ticks) * numer / denom) as u64
     }
 
-    /// `kern.boottime` (seconds and microseconds since the epoch).
+    /// `kern.bootsessionuuid`: names the boot and, unlike `kern.boottime`,
+    /// does not move when the wall clock is stepped (NTP after wake).
     pub fn boot_id() -> String {
-        let mut tv = libc::timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        };
-        let mut len = std::mem::size_of::<libc::timeval>();
-        // SAFETY: the name is NUL-terminated, `tv` and `len` are valid for the call.
+        let mut buf = [0u8; 64];
+        let mut len = buf.len();
+        // SAFETY: the name is NUL-terminated, `buf` and `len` are valid for the call.
         let rc = unsafe {
             libc::sysctlbyname(
-                c"kern.boottime".as_ptr(),
-                (&mut tv as *mut libc::timeval).cast(),
+                c"kern.bootsessionuuid".as_ptr(),
+                buf.as_mut_ptr().cast(),
                 &mut len,
                 std::ptr::null_mut(),
                 0,
@@ -103,7 +101,12 @@ mod sys {
         if rc != 0 {
             return "boot-unknown".to_string();
         }
-        format!("{}.{:06}", tv.tv_sec, tv.tv_usec)
+        let raw = &buf[..len.min(buf.len())];
+        let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+        match std::str::from_utf8(&raw[..end]) {
+            Ok(s) if !s.is_empty() => s.to_string(),
+            _ => "boot-unknown".to_string(),
+        }
     }
 }
 
@@ -246,6 +249,9 @@ mod tests {
         let b = c.now_cont_ns();
         assert!(b >= a);
         assert!(!c.boot_id().is_empty());
+        assert_eq!(c.boot_id(), c.boot_id());
+        #[cfg(target_vendor = "apple")]
+        assert_ne!(c.boot_id(), "boot-unknown");
         assert!(c.wall_ms() > 1_700_000_000_000);
     }
 }

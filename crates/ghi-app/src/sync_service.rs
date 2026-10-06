@@ -40,7 +40,7 @@ use ghi_core::jobs::{Fence, FenceAt, JobLease};
 use ghi_core::notes_job::NOTES_FINAL_JOB;
 use ghi_core::session::{FINAL_PASS_JOB, JOB_PAYLOAD_VERSION};
 use ghi_net::lan::{self, LanStream, Limits, Listener};
-use ghi_store::jobs::Job;
+use ghi_store::jobs::{Job, JobState};
 use ghi_store::keys::secrets::SecretStore;
 use ghi_store::store::Store;
 use ghi_store::sync::apply::{ApplyOutcome, ApplyResult, TombResult};
@@ -263,6 +263,10 @@ enum Seen {
     Lease,
 }
 
+/// How many times one lease's job is started: the first, plus restarts after
+/// the fence dropped it (a reboot suspended the lease and it was renewed).
+const MAX_LEASE_RUNS: usize = 5;
+
 /// The store a hub node serves: the app's own, watched so a merge that made a
 /// conflict copy or changed a synced setting is announced.
 struct Watched {
@@ -304,7 +308,6 @@ impl SyncStore for Watched {
         fn mark_key_sent(&self, device_gid: &str, meeting_gid: &str) -> StoreResult<()>;
         fn accept_dek(&self, meeting_gid: &str, dek: &[u8; 32], from_device: &str) -> StoreResult<()>;
         fn peer_meetings(&self, device_gid: &str) -> StoreResult<Vec<String>>;
-        fn lease_renew(&self, job_uuid: &str, ttl_ms: i64, deadline_cont_ns: i64, boot_id: &str) -> StoreResult<()>;
         fn lease_state(&self, job_uuid: &str) -> StoreResult<Option<Lease>>;
         fn lease_fence_ok(&self, job_uuid: &str, now_cont_ns: i64, boot_id: &str, margin_ms: i64) -> StoreResult<bool>;
         fn lease_any_open_for(&self, meeting_gid: &str) -> StoreResult<bool>;
@@ -323,6 +326,26 @@ impl SyncStore for Watched {
         fn sync_dirty(&self, kind: &str, gid: &str) -> StoreResult<bool>;
         fn track_offer(&self, from_device: &str, offer: &TrackOffer) -> StoreResult<OfferResult>;
         fn track_push(&self, from_device: &str, track_gid: &str, prefix: &[u8], first: u64, records: &[Vec<u8>]) -> StoreResult<u64>;
+    }
+
+    /// A renewal can revive a lease whose job the fence dropped (a reboot
+    /// suspended it): its job may need to start again.
+    fn lease_renew(
+        &self,
+        job_uuid: &str,
+        ttl_ms: i64,
+        deadline_cont_ns: i64,
+        boot_id: &str,
+    ) -> StoreResult<()> {
+        SyncStore::lease_renew(
+            self.store.as_ref(),
+            job_uuid,
+            ttl_ms,
+            deadline_cont_ns,
+            boot_id,
+        )?;
+        (self.seen)(Seen::Lease);
+        Ok(())
     }
 
     fn lease_open(&self, lease: &Lease) -> StoreResult<Lease> {
@@ -1194,12 +1217,32 @@ impl SyncService {
             let Ok(jobs) = store.jobs_for_meeting(&l.meeting_gid) else {
                 continue;
             };
-            let exists = jobs.iter().any(|j| {
+            // A job the fence dropped is completed, so only a job that is
+            // still active (or ended some other way) counts: a renewed lease
+            // whose job was dropped gets a fresh one.
+            let of_lease = |j: &&Job| {
                 j.kind == kind
                     && j.payload.get("lease").and_then(serde_json::Value::as_str)
                         == Some(l.job_uuid.as_str())
-            });
-            if exists {
+            };
+            let mine: Vec<&Job> = jobs.iter().filter(of_lease).collect();
+            // Anything but a fenced (completed) job blocks; so do too many
+            // fenced runs of one lease.
+            if mine.iter().any(|j| j.state != JobState::Done) || mine.len() >= MAX_LEASE_RUNS {
+                continue;
+            }
+            // A restart only for a lease that holds right now: one still
+            // suspended by a reboot waits for the phone to renew it.
+            let clock = SystemClock;
+            let holds = store
+                .lease_fence_ok(
+                    &l.job_uuid,
+                    i64::try_from(clock.now_cont_ns()).unwrap_or(i64::MAX),
+                    &clock.boot_id(),
+                    0,
+                )
+                .unwrap_or(false);
+            if !mine.is_empty() && !holds {
                 continue;
             }
             match store.enqueue_job(

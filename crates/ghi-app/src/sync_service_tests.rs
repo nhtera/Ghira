@@ -73,6 +73,12 @@ pub(super) fn script() -> Script {
 }
 
 pub(super) fn handlers(_: &Arc<Store>, _: &std::path::Path) -> Vec<Arc<dyn JobHandler>> {
+    handlers_when(always_ready())
+}
+
+/// The hub's handlers, held back until `ready` says so (a computer that is
+/// busy or asleep).
+pub(super) fn handlers_when(ready: ghi_core::jobs::Ready) -> Vec<Arc<dyn JobHandler>> {
     let engines: Arc<dyn SpeechEngines> = FakeEngines::new(script());
     let llm: ghi_core::notes_job::LlmFactory =
         Arc::new(|_| Ok(Box::new(OneLiner) as Box<dyn Llm + Send>));
@@ -80,7 +86,7 @@ pub(super) fn handlers(_: &Arc<Store>, _: &std::path::Path) -> Vec<Arc<dyn JobHa
         Arc::new(FinalPassJob {
             engines: Arc::new(move || Ok(engines.clone())),
             chunk_s: 600.0,
-            ready: always_ready(),
+            ready: ready.clone(),
             voice: None,
         }),
         Arc::new(NotesJob {
@@ -88,7 +94,7 @@ pub(super) fn handlers(_: &Arc<Store>, _: &std::path::Path) -> Vec<Arc<dyn JobHa
             version: 2,
             template: ghi_llm::template::builtin("general").unwrap(),
             llm,
-            ready: always_ready(),
+            ready,
         }),
     ]
 }
@@ -929,6 +935,80 @@ fn the_fence_follows_the_lease_and_ignores_unleased_jobs() {
         .lease_renew("l1", 120_000, now + 90_000_000_000, "other-boot")
         .unwrap();
     assert!(!fence(&l1, FenceAt::Claim));
+}
+
+#[test]
+fn a_leased_job_dropped_by_the_fence_runs_again_when_the_lease_is_renewed() {
+    let hub = hub();
+    let store = hub.store();
+    let m = record_meeting(&store);
+    let clock = SystemClock;
+    let now = i64::try_from(clock.now_cont_ns()).unwrap();
+    let granted = |boot: &str| Lease {
+        job_uuid: "l1".into(),
+        meeting_gid: m.clone(),
+        role: LeaseRole::Holder,
+        epoch: 1,
+        kinds: vec![FINAL_PASS_JOB.into()],
+        state: "granted".into(),
+        ttl_ms: 3_600_000,
+        deadline_cont_ns: Some(now + 3_600_000_000_000),
+        boot_id: Some(boot.into()),
+        wall_deadline_ms: None,
+        progress: 0.0,
+        peer_gid: None,
+    };
+    // The computer rebooted since the lease was granted: the fence refuses it.
+    store.lease_open(&granted("an earlier boot")).unwrap();
+    hub.svc.start_lease_jobs();
+    let pass_jobs = || -> Vec<ghi_store::jobs::Job> {
+        store
+            .jobs_for_meeting(&m)
+            .unwrap()
+            .into_iter()
+            .filter(|j| j.kind == FINAL_PASS_JOB)
+            .collect()
+    };
+    assert_eq!(pass_jobs().len(), 1);
+    wait_for("the fenced job to be dropped", 30, || {
+        pass_jobs()
+            .iter()
+            .all(|j| j.state == ghi_store::jobs::JobState::Done)
+    });
+    // Nothing runs again until the lease is renewed (not on its own).
+    hub.svc.start_lease_jobs();
+    assert_eq!(
+        pass_jobs().len(),
+        1,
+        "a dropped job is not restarted blindly"
+    );
+
+    // The phone is back and renews it: through the store the service watches.
+    let svc = hub.svc.clone();
+    let watched = Watched {
+        store: store.clone(),
+        seen: Arc::new(move |s| svc.on_seen(s)),
+    };
+    SyncStore::lease_renew(
+        &watched,
+        "l1",
+        3_600_000,
+        now + 3_600_000_000_000,
+        &clock.boot_id(),
+    )
+    .unwrap();
+    wait_for("the job to be queued and run again", 60, || {
+        store
+            .lease_state("l1")
+            .unwrap()
+            .is_some_and(|l| l.state == "done")
+    });
+    let jobs = pass_jobs();
+    assert_eq!(jobs.len(), 2, "one new job for the renewed lease: {jobs:?}");
+    assert_eq!(jobs[1].payload["lease"], "l1");
+    // And a lease that is done starts nothing more.
+    hub.svc.start_lease_jobs();
+    assert_eq!(pass_jobs().len(), 2);
 }
 
 #[test]
