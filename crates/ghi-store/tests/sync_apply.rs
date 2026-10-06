@@ -450,6 +450,37 @@ fn sync_tombstones_for_unknown_kinds_and_bad_gids_are_refused() {
 }
 
 #[test]
+fn sync_a_tombstone_origin_must_be_a_canonical_gid() {
+    let (hub, s1) = (node(), node());
+    link(&hub, &s1);
+    let mk = |n: u16, origin: &str| SyncTombstone {
+        gid: common::gid(6, n),
+        kind: "segment".into(),
+        lamport: 1,
+        origin: origin.into(),
+        cause: None,
+    };
+    let long = "a".repeat(40);
+    let r = hub
+        .store
+        .apply_tombs(
+            &s1.gid,
+            &[
+                mk(1, "not-a-uuid"),
+                mk(2, ""),
+                mk(3, &long),
+                mk(4, &s1.gid.to_uppercase().replace('-', "")),
+                mk(5, &s1.gid),
+            ],
+        )
+        .unwrap();
+    assert_eq!(r.applied, vec![common::gid(6, 5)]);
+    assert_eq!(r.rejected.len(), 4);
+    // No device row was invented for a refused origin.
+    assert!(!hub.store.is_tombstoned(&common::gid(6, 1)).unwrap());
+}
+
+#[test]
 fn sync_regenerate_keeps_an_edited_block_as_a_new_user_block() {
     let (hub, s1) = (node(), node());
     link(&hub, &s1);

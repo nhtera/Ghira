@@ -757,6 +757,34 @@ fn speaker_merges_in_opposite_directions_make_a_cycle_every_device_reads_alike()
     );
 }
 
+/// A merge made on one device while another renames (and links a person to)
+/// the speaker being merged: the whole row of the winner wins everywhere. A
+/// record without an edge used to keep the loser's local edge, so the hub and
+/// the spoke settled on different `merged_into` at equal versions.
+#[test]
+fn a_merge_racing_a_rename_of_the_merged_speaker_converges_both_ways() {
+    for merger in [0usize, 1] {
+        let renamer = if merger == 0 { 1 } else { 0 };
+        let mut w = World::new();
+        apply(&mut w, 1, CREATE, [1, 1, 0]);
+        w.sync_step(1, None, false, false);
+        w.settle();
+        let m = w.meetings(1)[0].clone();
+        let sp: Vec<String> = w
+            .s(1)
+            .speakers(&m)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.gid)
+            .collect();
+        assert!(sp.len() >= 2);
+        w.s(merger).merge_speakers(&sp[0], &sp[1]).unwrap();
+        w.s(renamer).rename_speaker(&sp[0], Some("Minh")).unwrap();
+        w.settle();
+        w.assert_converged();
+    }
+}
+
 #[test]
 fn a_meeting_deleted_on_one_spoke_while_the_other_edits_ends_dead_everywhere() {
     let mut w = World::new();
@@ -816,6 +844,37 @@ fn the_scripted_walk_is_replayable() {
         Do(2, 18, [0, 1, 0]),
         Sy(1, Some(2), false, false),
         Do(2, 11, [0, 0, 1]),
+    ]);
+}
+
+/// The hub sent a meeting it recorded with no audio origin once a spoke had
+/// edited it (the feed took "last written here" for "recorded here"), so the
+/// other spoke believed it recorded the meeting and later claimed the audio
+/// origin, which the first spoke then refused as an immutable change. Shrunk
+/// from the random walk.
+#[test]
+fn a_meeting_a_spoke_edited_still_names_the_hub_as_its_audio_origin() {
+    run(&[
+        Do(0, 121, [44, 97, 216]),
+        Sy(1, Some(16), true, true),
+        Do(1, 124, [167, 5, 116]),
+        Sy(1, None, true, true),
+        Sy(2, None, false, true),
+        Do(2, 166, [187, 211, 197]),
+    ]);
+}
+
+/// A meeting put in a folder and then taken out again on the hub: the second
+/// record has no folder, which has to clear the one the other spoke holds.
+#[test]
+fn a_meeting_taken_out_of_its_folder_leaves_it_everywhere() {
+    run(&[
+        Do(1, 180, [118, 154, 185]),
+        Sy(1, None, true, false),
+        Do(0, 26, [92, 29, 77]),
+        Do(0, 185, [50, 186, 248]),
+        Sy(2, None, false, true),
+        Do(0, 89, [251, 77, 36]),
     ]);
 }
 

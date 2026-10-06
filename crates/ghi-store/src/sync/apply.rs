@@ -1154,14 +1154,23 @@ impl<'a> Ctx<'a> {
 
         // Immutable fields never change after create.
         if let Some((_, c)) = &cur {
-            let differs = rec.started_at.is_some_and(|v| v != c.started_at)
-                || rec.source.as_ref().is_some_and(|v| *v != c.source)
-                || rec.mode.as_ref().is_some_and(|v| *v != c.mode)
-                || matches!((rec.created_at, c.created_at), (Some(a), Some(b)) if a != b)
-                || matches!((&rec.source_hash, &c.source_hash), (Some(a), Some(b)) if a != b)
-                || matches!((audio_origin, c.audio_origin), (Some(a), Some(b)) if a != Some(b));
-            if differs {
-                return bad(gid, "immutable field changed");
+            let field = if rec.started_at.is_some_and(|v| v != c.started_at) {
+                Some("immutable started_at changed")
+            } else if rec.source.as_ref().is_some_and(|v| *v != c.source) {
+                Some("immutable source changed")
+            } else if rec.mode.as_ref().is_some_and(|v| *v != c.mode) {
+                Some("immutable mode changed")
+            } else if matches!((rec.created_at, c.created_at), (Some(a), Some(b)) if a != b) {
+                Some("immutable created_at changed")
+            } else if matches!((&rec.source_hash, &c.source_hash), (Some(a), Some(b)) if a != b) {
+                Some("immutable source_hash changed")
+            } else if matches!((audio_origin, c.audio_origin), (Some(a), Some(b)) if a != Some(b)) {
+                Some("immutable audio_origin changed")
+            } else {
+                None
+            };
+            if let Some(field) = field {
+                return bad(gid, field);
             }
         }
 
@@ -1262,7 +1271,13 @@ impl<'a> Ctx<'a> {
                     s.opt_text("source_app", &rec.source_app);
                     s.opt_blob("calendar_ct", &rec.calendar_ct);
                     s.opt_blob("track_speakers_ct", &rec.track_speakers_ct);
-                    folder.set(&mut s, "folder_id");
+                    if rec.folder_gid.is_none() {
+                        // The winner's row is in no folder (a meeting taken
+                        // out of one): `Keep` would leave the old folder.
+                        s.put("folder_id", Value::Null);
+                    } else {
+                        folder.set(&mut s, "folder_id");
+                    }
                     self.stamp(&mut s, v);
                 }
                 if let (Some(text), Some(ct)) = (&title, &rec.title_ct) {
@@ -1931,9 +1946,18 @@ impl Ctx<'_> {
             Some(ct) => Some(self.open(&dek, "speakers", "display_name_ct", gid, ct)?),
             None => None,
         };
-        let person = go!(self.reference("persons", rec.person_gid.as_deref(), None)?);
+        // Like the edge below, the person and the name are the whole row's:
+        // none in the record clears the local value.
+        let person = match rec.person_gid.as_deref() {
+            None => Ref::Clear,
+            some => go!(self.reference("persons", some, None)?),
+        };
         let mut edge: Option<String> = None;
+        // The record is the whole row: no edge in it clears the local one
+        // (`Keep` would leave a device that lost a concurrent merge-vs-rename
+        // with the edge the winner does not have).
         let merged = match rec.merged_into.as_deref() {
+            None => Flow::Go(Ref::Clear),
             Some(g) if g == gid => Flow::Go(Ref::Clear),
             other => self.reference("speakers", other, Some(m.id))?,
         };
@@ -2007,6 +2031,36 @@ impl Ctx<'_> {
                             rec_ver: v,
                         },
                     )?;
+                }
+                if take && name.is_none() && cur_ct.is_some() {
+                    // The winner has no name: the stored one goes, as a
+                    // conflict copy when the two were concurrent.
+                    if matches!(verdict, Verdict::Concurrent { .. })
+                        && let Some(text) = cur_ct.as_deref().and_then(|ct| {
+                            open_text(&dek, ct, &row_aad("speakers", "display_name_ct", gid)).ok()
+                        })
+                    {
+                        let none = Bytes(Vec::new());
+                        self.make_copy(
+                            &TextField {
+                                kind: "speaker",
+                                table: "speakers",
+                                col: "display_name_ct",
+                                target: gid,
+                                meeting: m.id,
+                                dek: &dek,
+                                rec_ct: &none,
+                                rec_text: "",
+                                cur_ct: None,
+                                cur: meta,
+                                rec_ver: v,
+                            },
+                            &text,
+                            meta.lamport,
+                            meta.origin,
+                        )?;
+                    }
+                    s.put("display_name_ct", Value::Null);
                 }
                 if !s.is_empty() {
                     self.touched.insert(m.id);
@@ -2669,7 +2723,7 @@ impl Ctx<'_> {
         let Some(kind) = known.iter().find(|k| k.log_kind() == t.kind) else {
             return Ok(Tomb::Rejected);
         };
-        if !canonical(&t.gid) || t.lamport < 0 || t.origin.is_empty() || t.origin.len() > 64 {
+        if !canonical(&t.gid) || !canonical(&t.origin) || t.lamport < 0 {
             return Ok(Tomb::Rejected);
         }
         let kind = kind.log_kind();

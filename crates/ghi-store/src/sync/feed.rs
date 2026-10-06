@@ -303,7 +303,7 @@ fn load_record(conn: &Connection, own: &str, kind: &str, gid: &str) -> Result<Op
                             x.transcript_epoch, x.ai_epoch, x.audio_retained_until,
                             CASE WHEN x.audio_origin IS NOT NULL
                                  THEN (SELECT d.gid FROM devices d WHERE d.id = x.audio_origin)
-                                 WHEN x.source <> 'file' AND x.origin IS NULL THEN ?1
+                                 WHEN x.source <> 'file' THEN ?1
                             END,
                             x.source_hash, x.source_app,
                             (SELECT f.gid FROM folders f WHERE f.id = x.folder_id),
