@@ -416,7 +416,8 @@ impl<T: Transport> SpokeSession<T> {
     }
 
     /// Asks the hub to unpair (`Control::Unpair`) or wipe what it holds of
-    /// this phone (`Control::Wipe`), then applies the same here.
+    /// this phone (`Control::Wipe`), then drops the pin here. This device keeps
+    /// all its meetings.
     pub fn send_control(&mut self, ctl: Control) -> Result<ControlOutcome> {
         self.transport.set_recv_timeout(Some(self.timing.silence))?;
         if !self.greeted {
@@ -431,7 +432,7 @@ impl<T: Transport> SpokeSession<T> {
             (Message::WipeDone, true) | (Message::Ok, false) => {}
             _ => return Err(unexpected("Control")),
         }
-        let outcome = control::apply_control(self.store.as_ref(), &self.hub_device, &ctl)?;
+        let outcome = control::apply_sent(self.store.as_ref(), &self.hub_device, &ctl)?;
         self.report.closed_by = Some(outcome);
         self.closed = true;
         Ok(outcome)

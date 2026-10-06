@@ -53,6 +53,21 @@ pub fn apply_control(
     }
 }
 
+/// The local half of a command this device *sent* and the peer confirmed:
+/// only the pin goes. A wipe shreds what the *receiver* holds; the sender
+/// keeps every copy of its own (doc 07 §3.5).
+pub fn apply_sent(
+    store: &dyn SyncStore,
+    to_device: &str,
+    control: &Control,
+) -> Result<ControlOutcome> {
+    unpin(store, to_device)?;
+    Ok(match control {
+        Control::Unpair => ControlOutcome::Unpaired,
+        Control::Wipe { .. } => ControlOutcome::Wiped,
+    })
+}
+
 /// The command a session must deliver first to `device_gid`
 /// (`wipe_pending` or `unpair_pending`), if any.
 pub fn pending_for(store: &dyn SyncStore, device_gid: &str) -> Result<Vec<Control>> {
@@ -143,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn a_phone_that_wipes_the_desktop_shreds_only_what_they_exchanged_without_tombstones() {
+    fn a_phone_that_wipes_the_desktop_keeps_all_its_own_copies() {
         let (hub, phone) = rig();
         let (mut s, server) = connected(&hub, &phone);
         assert_eq!(
@@ -155,16 +170,16 @@ mod tests {
         );
         drop(s);
         server.join().unwrap().unwrap();
-        // Both directions of `peer_meetings` go, on both devices; what was
-        // never exchanged stays.
-        for store in [&hub, &phone] {
-            assert!(store.row("m1").is_none() && store.row("h1").is_none());
-            assert!(store.dek("m1").is_none());
-        }
+        // The computer shreds everything it shares with the phone, no
+        // tombstones; the phone loses only its pin.
+        assert!(hub.row("m1").is_none() && hub.row("h1").is_none());
+        assert!(hub.dek("m1").is_none());
         assert!(hub.row("own").is_some());
+        assert!(phone.row("m1").is_some() && phone.row("h1").is_some());
+        assert!(phone.dek("m1").is_some(), "the sender keeps its keys");
         assert!(phone.row("phone-own").is_some());
         assert!(!hub.is_tombstoned("m1"), "a wipe never writes tombstones");
-        assert!(!phone.is_tombstoned("h1"));
+        assert!(!phone.is_tombstoned("m1") && !phone.is_tombstoned("h1"));
         assert!(hub.device_ids().is_empty() && phone.device_ids().is_empty());
     }
 
