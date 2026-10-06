@@ -484,6 +484,11 @@ impl Holder {
         if !store.peer_meetings(from_device)?.contains(&req.meeting_gid) {
             return Ok(RequestOutcome::Refused(RefuseReason::NoKey));
         }
+        // Only the device that recorded the audio may lease it: a meeting
+        // recorded here (or by another peer) never involves a lease (doc 07 §8).
+        if store.meeting_audio_origin_gid(&req.meeting_gid)?.as_deref() != Some(from_device) {
+            return Ok(RequestOutcome::Refused(RefuseReason::Unsupported));
+        }
         // A higher epoch is the phone's answer to a lease it saw expire: the
         // older one must not commit any more.
         for old in store.leases_for_meeting(&req.meeting_gid)? {
@@ -842,6 +847,35 @@ mod tests {
         r.hub.delete_local("m1", "meeting", None);
         assert_eq!(refused(ask(&base, "phone-a")), RefuseReason::Deleted);
         assert!(r.hub.all_leases().is_empty());
+    }
+
+    #[test]
+    fn the_holder_refuses_a_meeting_the_requester_did_not_record() {
+        let r = rig();
+        // Recorded on the desktop and exchanged with the phone (key sent).
+        r.hub.put_local(meeting("m-own"));
+        r.hub.set_dek("m-own", [9; 32]);
+        r.hub.mark_key_sent("phone-a", "m-own").unwrap();
+        let req = ProcessRequest {
+            job_uuid: "j-own".into(),
+            meeting_gid: "m-own".into(),
+            epoch: 1,
+            kinds: vec!["final_pass".into()],
+            ttl_ms: 1000,
+        };
+        let out = Holder
+            .on_request(r.hub.as_ref(), r.hub_clock.as_ref(), "phone-a", &req)
+            .unwrap();
+        assert_eq!(out, RequestOutcome::Refused(RefuseReason::Unsupported));
+        assert!(r.hub.all_leases().is_empty());
+        // A meeting another phone recorded is not phone-a's to lease either.
+        let mut other = req.clone();
+        other.meeting_gid = "m1".into();
+        other.job_uuid = "j-other".into();
+        let out = Holder
+            .on_request(r.hub.as_ref(), r.hub_clock.as_ref(), "phone-b", &other)
+            .unwrap();
+        assert!(matches!(out, RequestOutcome::Refused(_)));
     }
 
     #[test]

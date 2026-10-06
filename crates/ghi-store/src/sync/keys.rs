@@ -148,6 +148,20 @@ impl Store {
         }
     }
 
+    /// The gid of the paired device that recorded the meeting; `None` when it
+    /// was recorded or imported here (or is unknown).
+    pub fn meeting_audio_origin_gid(&self, meeting_gid: &str) -> Result<Option<String>> {
+        let conn = self.conn();
+        Ok(conn
+            .query_row(
+                "SELECT d.gid FROM meetings m JOIN devices d ON d.id = m.audio_origin
+                 WHERE m.gid = ?1",
+                [meeting_gid],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
     /// Meetings exchanged with a peer, in either direction (a Wipe's scope).
     pub fn peer_meetings(&self, device_gid: &str) -> Result<Vec<String>> {
         let conn = self.conn();
