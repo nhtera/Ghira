@@ -28,6 +28,8 @@ final class SyncPairTests: XCTestCase {
         app.launch()
         Ghira.completeOnboarding(app)
         let cancel = openScanner(app)
+        // The camera prompt on a real phone (once).
+        if Ghira.onDevice { Ghira.allowSystemAlert() }
         XCTAssertTrue(cancel.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.staticTexts["ghira.qr-guidance"].exists)
         cancel.tap()
@@ -58,10 +60,16 @@ final class SyncPairTests: XCTestCase {
     /// app answers its own scan with GHI_FAKE_QR, shows the paired computer, and the session
     /// that follows marks it synced. Skips without a code file (needs a running hub).
     func testInjectedScanPairs() throws {
-        guard let path = ProcessInfo.processInfo.environment["GHI_FAKE_QR_FILE"], !path.isEmpty else {
+        // A phone cannot read the host's file: run.sh hands a device run the code itself.
+        let env = ProcessInfo.processInfo.environment
+        let code: String
+        if let given = env["GHI_FAKE_QR"], !given.isEmpty {
+            code = given.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let path = env["GHI_FAKE_QR_FILE"], !path.isEmpty {
+            code = try String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
             throw XCTSkip("GHI_FAKE_QR_FILE not set (a 0600 file with the pairing code of `ghi sync serve --print-qr`)")
         }
-        let code = try String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         XCTAssertFalse(code.isEmpty, "the code file is empty")
         let app = Ghira.app(env: ["GHI_FAKE_QR": code])
         app.launch()
@@ -74,6 +82,9 @@ final class SyncPairTests: XCTestCase {
         // that paired in the onboarding's pair step, which scans by itself, is paired already.)
         let scan = app.buttons["Scan the code"]
         if scan.waitForExistence(timeout: 5) { scan.tap() }
+        // A real phone asks once for the local network when the app first
+        // looks for the computer.
+        if Ghira.onDevice { Ghira.allowSystemAlert(timeout: 8) }
         // Paired: the computer's card, then the first session's "Last synced".
         XCTAssertTrue(app.staticTexts["Paired computer"].waitForExistence(timeout: 30), "not paired\n" + app.debugDescription)
         XCTAssertTrue(

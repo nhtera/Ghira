@@ -37,6 +37,14 @@ enum Ghira {
         XCUIApplication(bundleIdentifier: "com.apple.springboard")
     }
 
+    /// Accepts a system permission alert (camera, local network) if one shows
+    /// within `timeout`: a real phone asks once, the Simulator never does.
+    static func allowSystemAlert(timeout: TimeInterval = 5) {
+        let labels = ["Allow", "OK", "Cho phép"]
+        let allow = springboard.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
+        if allow.waitForExistence(timeout: timeout) { allow.tap() }
+    }
+
     /// The simulator has no Lock command in simctl; the private selector works.
     static func pressLockButton() {
         XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))

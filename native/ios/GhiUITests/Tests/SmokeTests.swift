@@ -24,7 +24,10 @@ final class SmokeTests: XCTestCase {
     /// Record with the fake mic, go home, lock for GHI_BG_SECONDS (default
     /// 120), come back: the timer must have kept running (not suspended).
     func testRecordingSurvivesHomeAndLock() throws {
-        let fakeMic = ProcessInfo.processInfo.environment["GHI_FAKE_MIC_PATH"] ?? ""
+        // On a phone the real microphone records: with the fake mic iOS suspends
+        // the app some 15-20 s into the background (seen 2026-10-06, iOS 27), and
+        // this test checks the clock, not the words.
+        let fakeMic = Ghira.onDevice ? "" : (ProcessInfo.processInfo.environment["GHI_FAKE_MIC_PATH"] ?? "")
         let seconds = Double(ProcessInfo.processInfo.environment["GHI_BG_SECONDS"] ?? "") ?? 120
         let app = Ghira.app(env: fakeMic.isEmpty ? [:] : ["GHI_FAKE_MIC": fakeMic])
         app.launch()

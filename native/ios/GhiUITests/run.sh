@@ -16,6 +16,8 @@
 # reset or uninstalled. Simulator-only tests skip themselves. GHI_DEVICE_CTL_ID=<devicectl id> copies
 # GHI_FAKE_MIC_PATH (a host WAV) into the app's Documents/fake-mic.wav before the run.
 # GHI_XCODE_ACTION=build-for-testing prepares the runner without touching the phone.
+# GHI_FAKE_QR_FILE=<0600 file from `ghi sync serve --print-qr`> pairs the phone with that hub
+# (SyncPairTests/testInjectedScanPairs; the phone must be on the same Wi-Fi).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 sim="$here/../../../apps/mobile/scripts/sim.sh"
@@ -34,6 +36,13 @@ if [[ -n "${GHI_DEVICE_UDID:-}" ]]; then
     mic="Documents/fake-mic.wav" # the test hooks resolve a relative path against the app's home
   fi
   export TEST_RUNNER_GHI_FAKE_MIC_PATH="$mic"
+  # SyncPairTests on a phone: the pairing code itself (the runner cannot read a host file).
+  # One-time and short-lived; never printed.
+  qr="${GHI_FAKE_QR_FILE:-${TEST_RUNNER_GHI_FAKE_QR_FILE:-}}"
+  if [[ -n "$qr" && -r "$qr" ]]; then
+    TEST_RUNNER_GHI_FAKE_QR="$(tr -d '\n' <"$qr")"
+    export TEST_RUNNER_GHI_FAKE_QR
+  fi
 else
   udid="$("$sim" udid)"
   destination="platform=iOS Simulator,id=$udid"
