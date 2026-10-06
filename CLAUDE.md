@@ -207,6 +207,19 @@ release artifacts. Build/install: `apps/mobile/scripts/build-ios.sh [--release|-
 `target/nemo-ios`). Never touch a connected iPhone from automation. The About
 licenses are generated: `pnpm gen:licenses:mobile` (`src/generated/licenses.json`).
 
+LAN sync (phase 15; spec `Plans/docs/07-sync-protocol.md`, plan `phase-15-plan.md`): desktop = hub,
+phone = spoke, star topology. `crates/ghi-sync`: Noise `IKpsk2` over TCP (`snow`; QR pairing payload
+`GHI1:`+base45 CBOR, one-time 120 s PSK, then a pinned pair PSK), CBOR wire messages, hub/spoke sessions
+(push then pull, tombstones first), resumable verified audio (phone → desktop, `bundle::RawImport`), leases
+for the desktop final pass (epochs, sleep-inclusive clock, fence in the `ghi-core` job runner), unpair/wipe
+control, `service` (HubNode, pair/run helpers) and the GHIX "Export for another device" fallback. Sockets and
+mDNS only in `ghi-net::lan` (`is_lan` on bind/accept/connect, no 0.0.0.0, `listeners_open()`; mDNS feature
+`mdns` desktop/CLI only; iOS uses NWBrowser in `GhiSync.swift`). Store side `ghi-store/src/sync/` (feed via
+`sync_log` triggers, devices incl. 'known' relay origins, keys, leases, merge engine `apply.rs`/`rules.rs`,
+parked rows, conflict copies, folder/tag folds); migration 0009. App: `ghi-app` `sync_service.rs` (hub +
+listener lifecycle, closed when locked) and `sync_spoke.rs` (phone loop, lease grantor); `ghi sync
+serve|pair|run|status|export|import`. Voice profiles never sync in v1.
+
 Speech engines: `crates/ghi-speech` (NeMo-Speech.cpp FFI, feature `nemo`); models
 pinned in `crates/ghi-models/registry.toml`; decision record `Plans/docs/06`.
 Optional final-pass ASR (feature `whisper`, desktop + CLI, not mobile): Whisper
