@@ -58,7 +58,7 @@ const REC_ENTRY_RECORDS: usize = 256;
 const TOMB_ENTRY: usize = 1000;
 
 /// What an export wrote or an import applied.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ExportReport {
     /// Meetings written, or on import taken (new, merged or already here).
     pub meetings: usize,
@@ -69,6 +69,9 @@ pub struct ExportReport {
     pub tracks: usize,
     /// Bundle bytes written, or stored by this import.
     pub audio_bytes: u64,
+    /// On import: the gids of the meetings taken (new, merged or already
+    /// here). Empty for an export.
+    pub taken: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -183,6 +186,7 @@ pub fn export_for_device_with(
         tombstones: tombs.len(),
         tracks: tracks.len(),
         audio_bytes,
+        taken: Vec::new(),
     })
 }
 
@@ -236,7 +240,10 @@ pub fn import_from_device(store: &Store, path: &Path, passphrase: &str) -> Resul
             if matches!(rec, Record::Meeting(_)) {
                 match outcome {
                     ApplyOutcome::Tombstoned => report.refused += 1,
-                    _ => report.meetings += 1,
+                    _ => {
+                        report.meetings += 1;
+                        report.taken.push(rec.gid().to_string());
+                    }
                 }
             }
         }

@@ -154,14 +154,24 @@ pub fn device_export(
 }
 
 /// Merges a sealed export from another device into the store.
+///
+/// `process`: the computer (a device that runs final passes) also queues the
+/// final pass of what a phone recorded for it and nobody processed (see
+/// [`ghi_core::recover::queue_imported_passes`]). The job runner picks it up
+/// within its next wake-up.
 pub fn device_import(
     store: &Store,
     path: &Path,
     passphrase: &str,
+    process: bool,
 ) -> Result<DeviceTransfer, String> {
-    import_from_device(store, path, passphrase)
-        .map(|r| transfer(path, r))
-        .map_err(transfer_error)
+    let report = import_from_device(store, path, passphrase).map_err(transfer_error)?;
+    if process && let Err(e) = ghi_core::recover::queue_imported_passes(store, &report.taken) {
+        // The meetings are in; the next import (or the phone's own sync)
+        // can still get them processed.
+        log::warn!("imported meetings not queued for processing: {e}");
+    }
+    Ok(transfer(path, report))
 }
 
 #[cfg(test)]
@@ -207,11 +217,11 @@ mod device_tests {
         assert_eq!((out.meetings, out.refused, out.tracks), (1, 0, 0));
 
         assert_eq!(
-            device_import(&b, &file, "wrong horse").unwrap_err(),
+            device_import(&b, &file, "wrong horse", false).unwrap_err(),
             ERR_WRONG_PASSPHRASE
         );
         assert!(b.list_meetings(10, 0).unwrap().is_empty());
-        let took = device_import(&b, &file, "correct horse").unwrap();
+        let took = device_import(&b, &file, "correct horse", false).unwrap();
         assert_eq!((took.meetings, took.refused), (1, 0));
         assert_eq!(b.get_meeting(&m.gid).unwrap().title, "Họp tuần");
 
@@ -219,9 +229,59 @@ mod device_tests {
         let junk = t.path().join("junk.ghix");
         std::fs::write(&junk, b"not a Ghira archive at all, just text").unwrap();
         assert_eq!(
-            device_import(&b, &junk, "correct horse").unwrap_err(),
+            device_import(&b, &junk, "correct horse", false).unwrap_err(),
             ERR_NOT_AN_EXPORT
         );
+    }
+
+    #[test]
+    fn a_phone_meeting_nobody_processed_gets_its_final_pass_on_the_computer() {
+        use ghi_core::session::FINAL_PASS_JOB;
+        use ghi_store::store::TrackKind;
+
+        let t = tempfile::tempdir().unwrap();
+        let (phone, mac) = (store(&t.path().join("a")), store(&t.path().join("b")));
+        let make = |title: &str, status: &str, audio: bool| {
+            let m = phone
+                .create_meeting(NewMeeting {
+                    title: title.into(),
+                    ..Default::default()
+                })
+                .unwrap()
+                .gid;
+            if audio {
+                let mut w = phone.open_track(&m, TrackKind::Mic).unwrap();
+                w.append(b"page").unwrap();
+                phone.finish_track(&m, TrackKind::Mic, w).unwrap();
+            }
+            phone.finish_meeting(&m, 1_000).unwrap();
+            phone.set_meeting_status(&m, status).unwrap();
+            m
+        };
+        let waiting = make("chờ xử lý", "processing", true);
+        let no_audio = make("không có âm thanh", "processing", false);
+        let done = make("đã xong", "ready", true);
+        let file = t.path().join("phone.ghix");
+        device_export(&phone, None, "correct horse", &file).unwrap();
+
+        // A phone importing it (process = false) queues nothing.
+        let other = store(&t.path().join("c"));
+        device_import(&other, &file, "correct horse", false).unwrap();
+        assert!(other.jobs_for_meeting(&waiting).unwrap().is_empty());
+
+        device_import(&mac, &file, "correct horse", true).unwrap();
+        assert!(mac.meeting_audio_origin(&waiting).unwrap().is_some());
+        let jobs = mac.jobs_for_meeting(&waiting).unwrap();
+        assert_eq!(jobs.len(), 1, "{jobs:?}");
+        assert_eq!(jobs[0].kind, FINAL_PASS_JOB);
+        assert_eq!(jobs[0].payload["epoch"], 1);
+        assert!(jobs[0].payload.get("lease").is_none(), "no live grantor");
+        assert!(mac.jobs_for_meeting(&no_audio).unwrap().is_empty());
+        assert!(mac.jobs_for_meeting(&done).unwrap().is_empty());
+
+        // The same file again queues nothing twice.
+        device_import(&mac, &file, "correct horse", true).unwrap();
+        assert_eq!(mac.jobs_for_meeting(&waiting).unwrap().len(), 1);
     }
 
     #[test]

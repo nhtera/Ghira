@@ -65,7 +65,9 @@ pub async fn sync_import_from_device(
         return Ok(None);
     };
     blocking(&core, move |c| {
-        device_import(&*c.store()?, &path, &passphrase).map(Some)
+        let out = device_import(&*c.store()?, &path, &passphrase, true)?;
+        c.notify_jobs();
+        Ok(Some(out))
     })
     .await
 }

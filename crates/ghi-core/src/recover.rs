@@ -53,6 +53,53 @@ fn leased_elsewhere(store: &Store, gid: &str) -> Result<bool, String> {
         || store.lease_any_open_for(gid).map_err(err)?)
 }
 
+/// A sealed export (doc 07 §10) can bring in meetings a phone recorded for
+/// this computer that were never processed: `processing`, the audio is here,
+/// and nothing runs them (no lease, because no phone is connected to grant
+/// one). Queues their final pass locally, at the epoch above every lease this
+/// device ever saw for the meeting (`1` if none), so the result outranks the
+/// phone's live transcript and, when the phone next syncs, replaces it (the
+/// higher epoch wins, §8). A meeting with a pass queued or running, an open
+/// lease or no audio is left alone, so importing a file again queues nothing
+/// twice. Returns how many passes were queued.
+pub fn queue_imported_passes(store: &Store, meetings: &[String]) -> Result<usize, String> {
+    let mut queued = 0;
+    for gid in meetings {
+        let Ok(m) = store.get_meeting(gid) else {
+            continue;
+        };
+        if m.status != "processing"
+            || store.meeting_audio_origin(gid).map_err(err)?.is_none()
+            || store.tracks(gid).map_err(err)?.is_empty()
+            || store.lease_any_open_for(gid).map_err(err)?
+            || store
+                .active_job(gid, FINAL_PASS_JOB)
+                .map_err(err)?
+                .is_some()
+        {
+            continue;
+        }
+        let epoch = store
+            .leases_for_meeting(gid)
+            .map_err(err)?
+            .iter()
+            .map(|l| l.epoch + i64::from(l.state == "self_taken"))
+            .max()
+            .unwrap_or(0)
+            + 1;
+        store
+            .enqueue_job(
+                Some(gid),
+                FINAL_PASS_JOB,
+                JOB_PAYLOAD_VERSION,
+                &serde_json::json!({ "epoch": epoch }),
+            )
+            .map_err(err)?;
+        queued += 1;
+    }
+    Ok(queued)
+}
+
 /// The desktop: notes and final pass for what a crash left.
 pub fn recover(store: &Store) -> Result<Recovered, String> {
     recover_with_kinds(store, &[NOTES_LIVE_JOB, FINAL_PASS_JOB])
