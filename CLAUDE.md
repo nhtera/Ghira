@@ -65,6 +65,13 @@ apps/mobile/scripts/selftest-ios.sh <16k wav>   # on-device ASR throughput + tex
 ./tools/scripts/check-no-test-hooks.sh <release libghi_mobile_lib.a | Ghira.app>   # --expect-hooks on a hooked build
 pnpm gen:licenses && pnpm gen:licenses:mobile   # About -> Licenses data; CI fails on a diff (license.yml)
 # CI picks the simulator with GHI_SIM_UDID (sim.sh create); locally the default is iPhone 17 Pro, iOS 26.3.
+# LAN sync verification (phase 15, 15-L): the in-memory tests (convergence, mitm, lease race, delete -> undecryptable,
+# retention, audio resume, trigger guard) run with `cargo test --workspace`; PROPTEST_CASES=300 raises the convergence cases (default 32).
+# The socket tests (real listener on a private address + `lsof -a`, the `ghi sync serve` process) skip with a message unless
+# GHI_SYNC_LAN_IP is a private address of this Mac (there is no loopback bypass):
+GHI_SYNC_LAN_IP=$(ipconfig getifaddr en0) cargo test -p ghi-sync --test listener_audit -- --nocapture   # needs `cargo build -p ghi-cli` for the process test
+(cd crates/ghi-sync && cargo +nightly fuzz run record fuzz/corpus/record fuzz/seeds/record -- -max_total_time=60)   # also frame, track_pages, and message/qr with their fuzz/seeds/<target>; standalone crate, CI only type-checks it
+cargo test -p ghi-store --release --test sync_trigger_cost -- --ignored --nocapture   # bench: cost of the sync_log triggers on segment inserts
 # eval kit (phase 2), from tools/eval:
 uv sync --locked && uv run ruff check && uv run ruff format --check && uv run pytest -q
 ```

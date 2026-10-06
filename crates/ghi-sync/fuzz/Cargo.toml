@@ -1,0 +1,73 @@
+[package]
+name = "ghi-sync-fuzz"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+# Standalone: not a member of the repository workspace (cargo-fuzz builds it
+# on nightly with sanitizers). Run from crates/ghi-sync:
+#   cargo +nightly fuzz run <target> -- -max_total_time=60
+[workspace]
+members = ["."]
+
+[package.metadata]
+cargo-fuzz = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+ciborium = "0.2"
+base45 = "3"
+tempfile = "3"
+ghi-sync = { path = ".." }
+ghi-store = { path = "../../ghi-store" }
+ghi-net = { path = "../../ghi-net" }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "frame"
+path = "fuzz_targets/frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "message"
+path = "fuzz_targets/message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "record"
+path = "fuzz_targets/record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qr"
+path = "fuzz_targets/qr.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "track_pages"
+path = "fuzz_targets/track_pages.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "seed"
+path = "src/bin/seed.rs"
+test = false
+doc = false
+bench = false

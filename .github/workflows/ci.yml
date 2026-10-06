@@ -88,6 +88,14 @@ jobs:
           else
             cargo test --workspace --locked
           fi
+      # Sync (phase 15) fuzz targets: type-check only here (the 60 s runs are
+      # `cargo +nightly fuzz run <target>`, see CLAUDE.md). A standalone crate,
+      # not in the workspace, so the workspace steps never see it.
+      - name: Sync fuzz targets (build only)
+        if: runner.os == 'macOS'
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo +nightly check --manifest-path crates/ghi-sync/fuzz/Cargo.toml --bins
       - name: Tauri build (unsigned, no bundle)
         working-directory: apps/desktop
         run: pnpm tauri build --no-bundle -- --locked
