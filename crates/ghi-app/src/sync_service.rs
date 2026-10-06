@@ -248,8 +248,9 @@ pub struct SyncService {
     /// "Delete here only": the wipe's wait ends.
     skip_wipe: AtomicBool,
     /// Devices "Delete everything" moved to `wipe_pending` (and were not
-    /// before): they go back to paired if the delete does not happen.
-    queued_wipes: Mutex<Vec<String>>,
+    /// before): they go back to where they were (paired, or waiting for an
+    /// unpair, `true`) if the delete does not happen.
+    queued_wipes: Mutex<Vec<(String, bool)>>,
     /// The phone's side (idle on the desktop).
     spoke: spoke::Shared,
 }
@@ -1512,9 +1513,12 @@ impl SyncService {
             log::warn!("devices stay queued for a wipe: the store is not open");
             return;
         };
-        for gid in &queued {
+        for (gid, was_unpair) in &queued {
             if let Err(e) = store.clear_wipe_pending(gid) {
                 log::warn!("a device stays queued for a wipe: {e}");
+            } else if *was_unpair && let Err(e) = store.set_unpair_pending(gid) {
+                // The user's unpair stays an unpair.
+                log::warn!("an unpair was not restored: {e}");
             }
         }
         let mut st = lock(&self.state);
@@ -1541,7 +1545,8 @@ impl SyncService {
             let was = d.state == StoreDeviceState::WipePending;
             store.set_wipe_pending(&d.gid).map_err(|e| e.to_string())?;
             if !was {
-                lock(&self.queued_wipes).push(d.gid.clone());
+                let unpair = d.state == StoreDeviceState::UnpairPending;
+                lock(&self.queued_wipes).push((d.gid.clone(), unpair));
             }
         }
         // The devices that can still take it, with the listener up (hub) or

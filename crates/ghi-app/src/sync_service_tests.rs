@@ -1047,3 +1047,28 @@ fn a_new_session_of_a_device_replaces_its_stale_one() {
     );
     hub.svc.stop();
 }
+
+#[test]
+fn rolling_back_a_delete_everything_keeps_an_unpair_that_was_waiting() {
+    let hub = hub_with(Vec::new(), Duration::ZERO);
+    let (away, near) = (spoke(), spoke());
+    pair(&hub, &away);
+    pair(&hub, &near);
+    hub.svc.unpair(&away.identity.device_gid).unwrap();
+    hub.svc.delete_everywhere_prepare(true).unwrap();
+    let state = |s: &Spoke| {
+        hub.store()
+            .device(&s.identity.device_gid)
+            .unwrap()
+            .unwrap()
+            .state
+    };
+    assert_eq!(state(&away), StoreDeviceState::WipePending);
+    hub.svc.rollback_wipes();
+    assert_eq!(
+        state(&away),
+        StoreDeviceState::UnpairPending,
+        "still an unpair"
+    );
+    assert_eq!(state(&near), StoreDeviceState::Paired);
+}
