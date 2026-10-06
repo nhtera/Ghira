@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // 15-I: the Desktop processing target on the scripted mock: pickable once a
-// computer is paired (record screen, import inbox), off with "Pair a computer first" otherwise.
+// computer is paired (record screen), off with "Pair a computer first" otherwise.
 import { expect, test, type Page } from "@playwright/test";
 import { expectAccessible } from "./helpers";
 import { startRecording } from "./record-support";
@@ -43,26 +43,20 @@ test.describe("record screen", () => {
 });
 
 test.describe("import inbox", () => {
-  test("paired: My computer is a choice", async ({ page }) => {
-    await openSync(page, "/settings", { sync: "paired" });
-    await seed(page, [item("standup")]);
-    await page.getByRole("status").filter({ hasText: "waiting to import" }).getByRole("button", { name: "Review" }).click();
-    const dialog = page.getByRole("dialog", { name: "Waiting to import" });
-    const mine = dialog.getByRole("button", { name: "My computer" });
-    await expect(mine).toBeEnabled();
-    await mine.click();
-    await expect(mine).toHaveAttribute("aria-pressed", "true");
-    await dialog.getByRole("button", { name: "Import", exact: true }).click();
-    await expect(dialog.getByText("Importing…")).toBeVisible();
-  });
-
-  test("not paired: off with the reason", async ({ page }) => {
-    await openSync(page, "/settings", { sync: "off" });
-    await seed(page, [item("standup")]);
-    await page.getByRole("status").filter({ hasText: "waiting to import" }).getByRole("button", { name: "Review" }).click();
-    const dialog = page.getByRole("dialog", { name: "Waiting to import" });
-    await expect(dialog.getByRole("button", { name: "My computer" })).toBeDisabled();
-    await expect(dialog.getByTestId("need-pair")).toHaveText("Pair a computer first");
-    await expectAccessible(page);
-  });
+  // An imported file's audio never travels to the computer (inbox.rs), so the
+  // sheet does not offer it, paired or not.
+  for (const sync of ["paired", "off"]) {
+    test(`${sync}: no computer choice, and it says where the file is processed`, async ({ page }) => {
+      await openSync(page, "/settings", { sync });
+      await seed(page, [item("standup")]);
+      await page.getByRole("status").filter({ hasText: "waiting to import" }).getByRole("button", { name: "Review" }).click();
+      const dialog = page.getByRole("dialog", { name: "Waiting to import" });
+      await expect(dialog.getByText("Imported files are processed on this phone.")).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "My computer" })).toHaveCount(0);
+      await expect(dialog.getByTestId("need-pair")).toHaveCount(0);
+      await expectAccessible(page);
+      await dialog.getByRole("button", { name: "Import", exact: true }).click();
+      await expect(dialog.getByText("Importing…")).toBeVisible();
+    });
+  }
 });

@@ -283,6 +283,7 @@
       "unknownSize": "Size unknown",
       "added": "Added to {{app}}",
       "desktopDisabled": "Pair a computer first",
+      "processedOnPhone": "Imported files are processed on this phone.",
       "closeToast": "Dismiss",
       "hide": "Hide notice",
       "none": "None"

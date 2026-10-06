@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// One waiting file in the M5 sheet: pick the language and where to process
-// it, then import; or remove it. Importing and rejected items only report.
+// One waiting file in the M5 sheet: pick the language, then import (imported
+// files are processed on this phone); or remove it. Importing and rejected
+// items only report.
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -11,7 +12,6 @@ import type {
 import { formatBytes } from "../models/format-bytes";
 import { knownError } from "../settings/api";
 import { Btn } from "../settings/controls";
-import { NeedPair, useDesktopTarget } from "../sync";
 import { ChoiceGroup } from "./choice-group";
 
 export function InboxRow({
@@ -27,10 +27,8 @@ export function InboxRow({
 }) {
   const { t, i18n } = useTranslation();
   const [language, setLanguage] = useState<MeetingLanguage>(item.language);
-  const [target, setTarget] = useState<ProcessingTarget>(
-    item.target === "desktop" ? "phone" : item.target,
-  );
-  const desktop = useDesktopTarget();
+  // Never the computer: imported files are processed on this phone.
+  const target: ProcessingTarget = item.target === "cloud" ? "cloud" : "phone";
   const size =
     item.sizeBytes == null
       ? t("mobile.inbox.unknownSize")
@@ -77,20 +75,11 @@ export function InboxRow({
               { value: "vi", label: t("mobile.import.lang.vi") },
             ]}
           />
-          <ChoiceGroup
-            label={t("mobile.import.processOn")}
-            value={target}
-            onChange={setTarget}
-            options={[
-              { value: "phone", label: t("mobile.import.target.phone") },
-              {
-                value: "desktop",
-                label: t("mobile.import.target.desktop"),
-                disabled: !desktop.paired,
-              },
-            ]}
-          />
-          {desktop.available && !desktop.paired && <NeedPair link={false} />}
+          {/* An imported file's audio never travels to the computer: it is
+              processed here, whatever the record target is. */}
+          <p className="text-ios-footnote m-0 text-muted">
+            {t("mobile.inbox.processedOnPhone")}
+          </p>
           {error && (
             <p role="alert" className="text-ios-footnote m-0 text-rec-ink">
               {t(`mobile.settings.error.${knownError(error)}`)}

@@ -18,7 +18,8 @@ test("waiting files raise a banner; Review opens the choices", async ({ page }) 
   await banner.getByRole("button", { name: "Review" }).click();
   const dialog = page.getByRole("dialog", { name: "Waiting to import" });
   await expect(dialog.getByText("standup.m4a")).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "My computer" }).first()).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "My computer" })).toHaveCount(0);
+  await expect(dialog.getByText("Imported files are processed on this phone.").first()).toBeVisible();
   await expectAccessible(page);
 });
 
