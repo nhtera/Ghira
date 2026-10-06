@@ -177,7 +177,10 @@ fn pair(hub: &Hub, phone: &Phone) {
     *phone.link.scan.lock().unwrap() = Some(Ok(code_for(hub)));
     phone.svc.pair_scan().unwrap();
     assert_eq!(phone.svc.devices().unwrap().len(), 1);
-    assert_eq!(hub.svc.devices().unwrap().len(), 1);
+    // The hub's side of the pairing finishes on its own thread.
+    wait_for("the hub to list the phone", 10, || {
+        hub.svc.devices().unwrap().len() == 1
+    });
 }
 
 /// What mobile's `finish` does for a Desktop-target recording.
@@ -627,14 +630,34 @@ fn a_refusing_hub_never_costs_the_phone_its_pin() {
     let phone = phone(&hub);
     pair(&hub, &phone);
     let spoke_gid = phone.store().sync_device_gid().unwrap();
+    // The session that pairing opens ends with an "away" report once the hub
+    // forgets the phone, and a down state is reported once: let it settle
+    // first (and end), so the refusal below is the first thing reported.
+    wait_for("a session", 20, || {
+        phone.link.open.load(Ordering::SeqCst) == 1
+    });
+    phone.svc.set_app_active(false);
+    wait_for("the session to end", 20, || {
+        phone.link.open.load(Ordering::SeqCst) == 0
+    });
     // The desktop forgets the phone without telling it. Whatever closes the
     // handshake (this, a second Ghira computer, a full hub) is only "can't
     // reach": the pin and its Wipe scope stay.
     hub.store().unpin_device(&spoke_gid).unwrap();
     let _ = code_for(&hub);
     let before = phone.link.connects.load(Ordering::SeqCst);
-    phone.svc.spoke_run_now();
+    phone.svc.set_app_active(true);
     wait_for_connects(&phone, before, 3);
+    wait_for("the refusal to be reported", 20, || {
+        phone.events().iter().any(|e| {
+            matches!(
+                e,
+                SyncEvent::Error {
+                    code: SyncErrorCode::Refused
+                }
+            )
+        })
+    });
     assert_eq!(phone.svc.devices().unwrap().len(), 1, "the pin stays");
     let events = phone.events();
     assert!(

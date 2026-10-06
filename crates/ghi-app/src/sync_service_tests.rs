@@ -1118,13 +1118,15 @@ fn a_new_session_of_a_device_replaces_its_stale_one() {
     let mut new = open(&phone);
     wait_for("the old session to end", 5, || old.ping().is_err());
     assert!(new.ping().is_ok(), "the new session lives");
-    assert_eq!(
+    // The registry drops the stale entry when its thread has finished
+    // reporting, a moment after the phone saw the socket close.
+    wait_for("the stale entry to leave the registry", 5, || {
         lock(&hub.svc.sessions)
             .values()
             .filter(|e| e.device.is_some())
-            .count(),
-        1
-    );
+            .count()
+            == 1
+    });
     hub.svc.stop();
 }
 
