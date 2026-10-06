@@ -34,12 +34,20 @@ const MAX_NAME: usize = 128;
 const MAX_PLATFORM: usize = 32;
 
 /// The hub's open pairing window.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PairingWindow {
     psk: Psk,
     expires_cont_ns: u64,
     burned: bool,
     failures: u32,
+    /// A pairing runs on this window right now (its network I/O is done
+    /// without any lock held); a second QR-PSK peer is turned away.
+    in_progress: bool,
+    /// The peer showed it holds the QR PSK (a frame decrypted) or stalled:
+    /// only then does a failed pairing count toward a new QR. A peer whose
+    /// first frame does not decrypt or that hangs up (a phone with an old
+    /// pin, which cannot tell the hub from the handshake alone) does not.
+    proven: bool,
 }
 
 impl PairingWindow {
@@ -51,6 +59,8 @@ impl PairingWindow {
             expires_cont_ns: clock.now_cont_ns().saturating_add(ttl),
             burned: false,
             failures: 0,
+            in_progress: false,
+            proven: false,
         })
     }
 
@@ -67,6 +77,36 @@ impl PairingWindow {
     /// many failures.
     pub fn usable(&self, clock: &dyn Clock) -> bool {
         !self.burned && self.failures < MAX_QR_FAILURES && !self.expired(clock)
+    }
+
+    /// Whether a new QR-PSK handshake may start now: usable and not busy.
+    pub fn acceptable(&self, clock: &dyn Clock) -> bool {
+        self.usable(clock) && !self.in_progress
+    }
+
+    /// Marks a pairing as running; `false` when one already is.
+    pub fn begin(&mut self) -> bool {
+        !std::mem::replace(&mut self.in_progress, true)
+    }
+
+    /// Whether this is the same window (same QR PSK) as `other`.
+    pub fn same_as(&self, other: &PairingWindow) -> bool {
+        self.psk == other.psk
+    }
+
+    /// Folds the failed pairing run on a copy back into this window.
+    pub fn finish(&mut self, ran: &PairingWindow) {
+        self.in_progress = false;
+        self.burned |= ran.burned;
+        if ran.proven {
+            self.failures += 1;
+        }
+    }
+
+    /// Too many failed pairings: the QR is dead and the UI must show a new
+    /// one (an expiry or a burn by success is not this).
+    pub fn failed_out(&self) -> bool {
+        self.failures >= MAX_QR_FAILURES
     }
 
     /// Burns the PSK (on `PairHello`).
@@ -120,7 +160,17 @@ pub fn accept_pairing(
         return Err(bad("pairing window closed"));
     }
     transport.set_recv_timeout(Some(PAIR_HELLO_TIMEOUT))?;
-    let (id, decoded) = recv_msg(transport)?;
+    let bytes = match transport.recv() {
+        Ok(b) => b,
+        Err(SyncError::Timeout) => {
+            // It stalled: that is an attack on the QR, not a mixed-up phone.
+            window.proven = true;
+            return Err(SyncError::Timeout);
+        }
+        Err(e) => return Err(e),
+    };
+    window.proven = true;
+    let (id, decoded) = wire::decode_any(&bytes)?;
     let Decoded::Known(Message::PairHello(hello)) = decoded else {
         return Err(bad("expected PairHello"));
     };

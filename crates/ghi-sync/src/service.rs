@@ -148,7 +148,7 @@ impl HubNode {
         let qr = self
             .window()
             .as_ref()
-            .filter(|w| w.usable(self.clock.as_ref()))
+            .filter(|w| w.acceptable(self.clock.as_ref()))
             .map(|w| w.psk().clone());
         let resolver = Resolver {
             store: self.store.as_ref(),
@@ -162,36 +162,75 @@ impl HubNode {
                 }
             })?;
         if resolver.used_qr.get() {
-            let mut guard = self.window();
-            let Some(window) = guard.as_mut() else {
-                return Err(SyncError::Wire("pairing window closed".into()));
-            };
-            let paired = pair::accept_pairing(
-                self.store.as_ref(),
-                self.clock.as_ref(),
-                &self.identity,
-                window,
-                &mut t,
-                &self.name,
-                self.port,
-            );
-            return match paired {
-                Ok(p) => {
-                    *guard = None;
-                    Ok(Served::Paired(p))
-                }
-                Err(e) => {
-                    window.record_failure();
-                    if let (Some(l), Some(ip)) = (limits, peer_ip) {
-                        l.report_handshake_failure(ip);
-                    }
-                    Err(e)
-                }
-            };
+            return self.pair_peer(&mut t, peer_ip, limits);
         }
         HubSession::new(Arc::clone(&self.store), Arc::clone(&self.clock), t)
             .serve()
             .map(Served::Session)
+    }
+}
+
+impl HubNode {
+    /// The pairing that follows a QR-PSK handshake. The window lock is held
+    /// only to take a copy and to fold the outcome back: the network I/O
+    /// (up to 20 s) runs without it, so sessions, `close_pairing` and
+    /// `stop` never wait on a stalled pairer.
+    fn pair_peer<S: ByteStream>(
+        &self,
+        t: &mut NoiseTransport<S>,
+        peer_ip: Option<IpAddr>,
+        limits: Option<&Limits>,
+    ) -> Result<Served> {
+        let mut run = {
+            let mut guard = self.window();
+            let Some(window) = guard.as_mut().filter(|w| w.usable(self.clock.as_ref())) else {
+                return Err(SyncError::Wire("pairing window closed".into()));
+            };
+            let snapshot = window.clone();
+            if !window.begin() {
+                return Err(SyncError::Wire("a pairing is already running".into()));
+            }
+            snapshot
+        };
+        let paired = pair::accept_pairing(
+            self.store.as_ref(),
+            self.clock.as_ref(),
+            &self.identity,
+            &mut run,
+            t,
+            &self.name,
+            self.port,
+        );
+        let mut guard = self.window();
+        // The window may have been closed or replaced meanwhile: then the
+        // outcome does not concern the new one.
+        let same = guard.as_ref().is_some_and(|w| w.same_as(&run));
+        match paired {
+            Ok(p) => {
+                if same {
+                    *guard = None;
+                }
+                Ok(Served::Paired(p))
+            }
+            Err(e) => {
+                if same && let Some(w) = guard.as_mut() {
+                    w.finish(&run);
+                }
+                drop(guard);
+                if let (Some(l), Some(ip)) = (limits, peer_ip) {
+                    l.report_handshake_failure(ip);
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// The window was used up by failed pairings: a new QR is needed (the
+    /// UI shows one). Not true for an expiry or a successful pairing.
+    pub fn pairing_failed_out(&self) -> bool {
+        self.window()
+            .as_ref()
+            .is_some_and(PairingWindow::failed_out)
     }
 }
 
