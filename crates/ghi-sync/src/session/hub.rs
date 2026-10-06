@@ -265,25 +265,27 @@ impl<T: Transport> HubSession<T> {
         Ok(Flow::Close)
     }
 
+    /// Answers a held tombstone batch; the session stays open.
+    fn hold(&mut self, id: u32, count: usize) -> Result<Flow> {
+        self.reply(
+            id,
+            &error_msg(ErrorCode::NeedsConfirm, Some(count.to_string())),
+        )
+    }
+
     fn on_push_tombs(&mut self, id: u32, b: wire::PushTombs) -> Result<Flow> {
         let from = self.spoke()?.gid.clone();
         if !self.guard.allows(self.store.as_ref(), &from, &b.tombs)? {
             self.report.needs_confirm = self.guard.held();
-            return self.refuse(
-                id,
-                ErrorCode::NeedsConfirm,
-                Some(self.guard.held().to_string()),
-            );
+            // Only this batch is held: the session goes on with rows, audio
+            // and leases, and the spoke sends the batch again later.
+            return self.hold(id, self.guard.held());
         }
         let res = self.store.apply_tombs(&from, &b.tombs)?;
         if res.needs_confirm > 0 {
             // The store holds its own guard too: same outcome.
             self.report.needs_confirm = res.needs_confirm;
-            return self.refuse(
-                id,
-                ErrorCode::NeedsConfirm,
-                Some(res.needs_confirm.to_string()),
-            );
+            return self.hold(id, res.needs_confirm);
         }
         self.guard.settle(self.store.as_ref(), &from)?;
         self.report.tombs_pushed += b.tombs.len();

@@ -130,15 +130,15 @@ test("Import from another device words a wrong passphrase, then imports and says
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("another device's mass delete waits for an answer and Keep them refuses it", async ({ page }) => {
+test("another device's mass delete waits for an answer and Not now holds it", async ({ page }) => {
   await open(page);
   await expect(page.getByTestId("device-device-iphone")).toBeVisible();
   await mock(page, "syncSet", "needsConfirm");
   const dialog = page.getByRole("dialog", { name: "iPhone 16 deleted 12 meetings" });
-  await expect(dialog).toContainText("Nothing is deleted until you choose.");
+  await expect(dialog).toContainText("Nothing is deleted until you choose, and everything else keeps syncing.");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Keep them" }).click();
+  await dialog.getByRole("button", { name: "Not now" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 

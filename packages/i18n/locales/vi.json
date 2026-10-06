@@ -974,9 +974,9 @@
       "deleteWaiting": "Đang chờ {{device}}…",
       "deleteUnreached": "Không kết nối được với {{devices}}. Máy đó vẫn giữ bản của nó và sẽ hiện “{{device}} đã huỷ ghép”.",
       "massDeleteTitle_other": "{{device}} đã xoá {{count}} cuộc họp",
-      "massDeleteBody": "Xoá luôn ở đây? Sẽ không xoá gì cho đến khi bạn chọn.",
+      "massDeleteBody": "Xoá luôn ở đây? Sẽ không xoá gì cho đến khi bạn chọn, còn mọi thứ khác vẫn được đồng bộ.",
       "massDeleteApply": "Xoá ở đây",
-      "massDeleteKeep": "Giữ lại",
+      "massDeleteKeep": "Để sau",
       "error": {
         "unreachable": "Không kết nối được với thiết bị kia. Kiểm tra hai máy có cùng Wi-Fi không.",
         "refused": "Thiết bị kia không còn chấp nhận máy này. Hãy ghép nối lại.",

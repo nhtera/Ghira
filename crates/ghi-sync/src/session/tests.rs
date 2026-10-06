@@ -420,19 +420,25 @@ fn a_mass_delete_waits_for_the_users_confirmation() {
     for i in 0..11 {
         a.delete_local(&format!("m{i:02}"), "meeting", Some(TombCause::Meeting));
     }
+    a.put_local(meeting("fresh"));
     let (mine, theirs) = sync_once(&hub, &a, 1);
-    assert!(matches!(
-        mine,
-        Err(SyncError::Peer(ErrorCode::NeedsConfirm))
-    ));
+    let mine = mine.expect("a held batch does not fail the session");
+    assert_eq!(mine.tombs_held, 11);
     assert_eq!(theirs.unwrap().needs_confirm, 11);
-    assert_eq!(hub.row_gids().len(), 12, "not applied");
+    assert!(hub.row("m00").is_some(), "the deletes are not applied");
+    assert_eq!(hub.row_gids().len(), 13, "but the new row went through");
     let (push, ..) = a.cursors("hub").unwrap();
     assert!(push < a.head(), "not acked, so the cursor stays");
+    // Asked again by the next session (not a permanent block), still held.
+    let (mine, theirs) = sync_once(&hub, &a, 1);
+    assert_eq!(mine.unwrap().tombs_held, 11);
+    assert_eq!(theirs.unwrap().needs_confirm, 11);
     // The user confirms on the hub; the resent batch applies, once.
     hub.confirm_mass_delete("phone-a");
     sync_once(&hub, &a, 1).0.unwrap();
-    assert_eq!(hub.row_gids(), ["m11"]);
+    let mut left = hub.row_gids();
+    left.sort();
+    assert_eq!(left, ["fresh", "m11"]);
     use crate::store::SyncStore;
     assert!(!hub.mass_delete_confirmed("phone-a").unwrap(), "spent");
 }
@@ -472,12 +478,19 @@ fn the_hub_holds_a_mass_delete_it_would_send_too() {
     }
     hub.confirm_mass_delete("phone-a");
     sync_once(&hub, &a, 1).0.unwrap();
+    hub.put_local(meeting("later"));
     let r = sync_once(&hub, &b, 2).0.unwrap();
     assert_eq!(r.needs_confirm, 11);
-    assert_eq!(b.row_gids().len(), 12);
+    assert_eq!(
+        b.row_gids().len(),
+        13,
+        "the held deletes wait, a new row does not"
+    );
     b.confirm_mass_delete("hub");
     sync_once(&hub, &b, 2).0.unwrap();
-    assert_eq!(b.row_gids(), ["m11"]);
+    let mut left = b.row_gids();
+    left.sort();
+    assert_eq!(left, ["later", "m11"]);
 }
 
 #[test]

@@ -779,11 +779,17 @@ fn a_mass_delete_waits_for_the_user_and_applies_after_accept() {
     for g in &gids {
         phone.store.delete_meeting(g).unwrap();
     }
+    // A new meeting made meanwhile still syncs: only the delete batch waits.
+    let fresh = phone
+        .store
+        .create_meeting(NewMeeting {
+            title: "fresh".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    phone.store.finish_meeting(&fresh.gid, 1_000).unwrap();
     let (mine, theirs) = sync_raw(&hub, &phone);
-    assert!(matches!(
-        mine,
-        Err(SyncError::Peer(ghi_sync::wire::ErrorCode::NeedsConfirm))
-    ));
+    assert!(mine.unwrap().tombs_held >= gids.len());
     let Ok(Served::Session(theirs)) = theirs else {
         panic!("the hub ends the session cleanly");
     };
@@ -799,6 +805,7 @@ fn a_mass_delete_waits_for_the_user_and_applies_after_accept() {
         gids.iter().all(|g| store.get_meeting(g).is_ok()),
         "nothing applied yet"
     );
+    assert!(store.get_meeting(&fresh.gid).is_ok(), "rows keep syncing");
 
     hub.svc.confirm_mass_delete(true).unwrap();
     assert_eq!(

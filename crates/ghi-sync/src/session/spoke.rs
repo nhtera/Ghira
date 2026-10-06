@@ -211,10 +211,20 @@ impl<T: Transport> SpokeSession<T> {
             batch.tombs.retain(|t| t.origin == own);
             if !batch.tombs.is_empty() {
                 let n = batch.tombs.len();
-                let reply = self.call(&Message::PushTombs(PushTombs {
+                let reply = match self.call(&Message::PushTombs(PushTombs {
                     tombs: batch.tombs,
                     upto_seq: batch.upto_seq,
-                }))?;
+                })) {
+                    Ok(r) => r,
+                    // The hub's user has to confirm this batch. Only it
+                    // waits: the position stays below it (the rows still go),
+                    // and a later session offers it again.
+                    Err(SyncError::Peer(ErrorCode::NeedsConfirm)) => {
+                        self.report.tombs_held = n;
+                        return Ok(cur);
+                    }
+                    Err(e) => return Err(e),
+                };
                 match reply {
                     Message::Ack(Ack { upto_seq, .. }) if upto_seq == batch.upto_seq => {}
                     _ => return Err(unexpected("PushTombs")),
@@ -342,8 +352,11 @@ impl<T: Transport> SpokeSession<T> {
                     .guard
                     .allows(self.store.as_ref(), &self.hub_device, &batch.tombs)?
                 {
+                    // Held for the user: this batch waits, the rows do not
+                    // (the position stays below it; a later session asks
+                    // again).
                     self.report.needs_confirm = self.guard.held();
-                    return Ok(());
+                    break cur;
                 }
                 self.store.apply_tombs(&self.hub_device, &batch.tombs)?;
                 self.guard.settle(self.store.as_ref(), &self.hub_device)?;

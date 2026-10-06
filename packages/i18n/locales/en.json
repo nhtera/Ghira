@@ -998,9 +998,9 @@
       "deleteUnreached": "{{devices}} couldn’t be reached. It keeps its copies and will show “Unpaired by {{device}}”.",
       "massDeleteTitle_one": "{{device}} deleted {{count}} meeting",
       "massDeleteTitle_other": "{{device}} deleted {{count}} meetings",
-      "massDeleteBody": "Delete them here too? Nothing is deleted until you choose.",
+      "massDeleteBody": "Delete them here too? Nothing is deleted until you choose, and everything else keeps syncing.",
       "massDeleteApply": "Delete them here",
-      "massDeleteKeep": "Keep them",
+      "massDeleteKeep": "Not now",
       "error": {
         "unreachable": "Couldn’t reach the other device. Check that both are on the same Wi-Fi.",
         "refused": "The other device no longer accepts this one. Pair them again.",

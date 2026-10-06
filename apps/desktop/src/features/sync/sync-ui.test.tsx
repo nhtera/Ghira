@@ -109,7 +109,7 @@ describe("Settings > Sync", () => {
     mock().syncSet("needsConfirm");
     const dialog = await screen.findByRole("dialog", { name: "iPhone 16 deleted 12 meetings" });
     const confirm = vi.spyOn(ipc.commands, "syncConfirmMassDelete");
-    await user.click(within(dialog).getByRole("button", { name: "Keep them" }));
+    await user.click(within(dialog).getByRole("button", { name: "Not now" }));
     await waitFor(() => expect(confirm).toHaveBeenCalledWith(false));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });

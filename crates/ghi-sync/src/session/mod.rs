@@ -70,8 +70,13 @@ pub struct SessionReport {
     pub tombs_pushed: usize,
     pub tombs_pulled: usize,
     pub tracks_sent: usize,
-    /// Meeting deletes held for the user's confirmation.
+    /// Meeting deletes held for the user's confirmation (hub: pushed by the
+    /// spoke; spoke: sent by the hub). Only that batch waits; rows, audio and
+    /// leases go on.
     pub needs_confirm: usize,
+    /// Spoke: tombstones the hub held for its user's confirmation; they are
+    /// sent again by a later session.
+    pub tombs_held: usize,
     /// Set when a `Wipe` or `Unpair` ended the session.
     pub closed_by: Option<ControlOutcome>,
     /// Hub: leases opened by this session (`job_uuid`s); the caller enqueues
