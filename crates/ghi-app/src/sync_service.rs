@@ -1287,7 +1287,11 @@ impl SyncService {
             // The phone is told when it next connects (or on its next ping);
             // the listener stays up until then.
             store.set_unpair_pending(gid).map_err(|e| e.to_string())?;
-            if let Some(e) = lock(&self.state).known.as_mut().and_then(|k| k.get_mut(gid)) {
+            if let Some(e) = lock(&self.state)
+                .known
+                .as_mut()
+                .and_then(|k| k.get_mut(gid))
+            {
                 e.1 = StoreDeviceState::UnpairPending;
             }
             self.reconcile();
