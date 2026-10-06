@@ -235,11 +235,13 @@ fn a_scanned_code_pairs_and_the_phone_shows_the_computer() {
         "{:?}",
         phone.events()
     );
-    assert!(
+    // The hub emits its event from the connection thread, after the phone's
+    // scan has already returned.
+    wait_for("the hub's Paired event", 5, || {
         hub.events()
             .iter()
             .any(|e| matches!(e, SyncEvent::Paired { device } if device.name == "iPhone"))
-    );
+    });
     // Already paired: no second scan.
     assert_eq!(phone.svc.pair_scan(), Err(ERR_ALREADY_PAIRED.to_string()));
 }
@@ -670,6 +672,9 @@ fn delete_everything_does_not_wait_for_a_hub_that_was_not_seen_lately() {
     let phone = phone_with(&hub, Arc::new(handlers), Duration::ZERO);
     pair(&hub, &phone);
     hub.svc.stop();
+    // A zero window means "seen in an earlier millisecond than now" (the
+    // service compares `now - last_seen <= 0`): let the pairing's own stamp age.
+    thread::sleep(Duration::from_millis(50));
     let t = Instant::now();
     phone.svc.delete_everywhere_prepare(true).unwrap();
     assert!(t.elapsed() < Duration::from_secs(10), "{:?}", t.elapsed());
