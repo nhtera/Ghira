@@ -25,6 +25,7 @@ function PairDialog({ onOpenChange }: { onOpenChange: (open: boolean) => void })
   const [nonce, setNonce] = useState(0); // a new number asks the core for a new code
   const [paired, setPaired] = useState<DeviceRow | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [renewed, setRenewed] = useState(false); // the last code was used up by failed tries
 
   const offer = useQuery({
     queryKey: ["sync-pair-offer", nonce],
@@ -56,14 +57,20 @@ function PairDialog({ onOpenChange }: { onOpenChange: (open: boolean) => void })
   }, [expired]);
   useEffect(() => () => void ipc.commands.syncPairClose(), []);
 
-  useSyncEvents((e) => {
-    if (e.type === "paired") setPaired(e.device);
-  });
-
   const regenerate = () => {
     setNow(Date.now());
     setNonce((n) => n + 1);
   };
+
+  useSyncEvents((e) => {
+    if (e.type === "paired") setPaired(e.device);
+    // Three failed tries spent the code: the core dropped it; show a new one.
+    if (e.type === "pairCodeSpent") {
+      setRenewed(true);
+      regenerate();
+    }
+  });
+
   const phase: Phase = paired ? { kind: "paired", device: paired } : offer.isError ? { kind: "failed" } : expired ? { kind: "expired" } : offer.data ? { kind: "showing", src: offer.data.src } : { kind: "loading" };
 
   const unpair = async (device: DeviceRow) => {
@@ -104,6 +111,11 @@ function PairDialog({ onOpenChange }: { onOpenChange: (open: boolean) => void })
           {phase.kind === "showing" && (
             <p data-testid="pair-countdown" className="text-small m-0 text-muted">
               {t("settings.sync.pairCountdown", { time: formatCountdown(left) })}
+            </p>
+          )}
+          {renewed && phase.kind === "showing" && (
+            <p role="status" className="text-small m-0 text-warn">
+              {t("settings.sync.pairRenewed")}
             </p>
           )}
           {phase.kind === "loading" && (

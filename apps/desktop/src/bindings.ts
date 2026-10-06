@@ -1794,7 +1794,7 @@ export type SyncEvent = { type: "paired"; device: DeviceRow } |
  */
 { type: "needsConfirm"; device: string; count: number } | 
 /**  The wipe finished (here, or the peer confirmed it). */
-{ type: "wipeDone"; gid: string } | { type: "error"; code: SyncErrorCode };
+{ type: "wipeDone"; gid: string } | { type: "pairCodeSpent" } | { type: "error"; code: SyncErrorCode };
 
 export type SyncStatus = {
 	enabled: boolean,

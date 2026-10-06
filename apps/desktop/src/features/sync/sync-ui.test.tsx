@@ -16,6 +16,7 @@ import { MassDeleteDialog, useMassDelete } from "./mass-delete-dialog";
 type Hooks = {
   syncSet(s: string): void;
   syncSimulatePaired(): void;
+  syncSimulatePairCodeSpent(): void;
   syncSimulateWipeDone(): void;
   syncSimulateProgress(n: number): void;
   syncSetDeleteEverywhere(s: string, w?: string[]): void;
@@ -207,6 +208,20 @@ describe("pairing sheet", () => {
     expect(await screen.findByRole("status", { name: "" })).toBeTruthy();
     expect(screen.getAllByText("Paired with iPhone 16").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Unpair" })).toBeTruthy();
+  });
+
+  it("asks for and shows a new code when failed tries used the old one up", async () => {
+    mock().syncSet("pairing");
+    const user = userEvent.setup();
+    const open = vi.spyOn(ipc.commands, "syncPairOpen");
+    renderSettings(<SyncSection />);
+    await user.click(await screen.findByRole("button", { name: "Pair a phone" }));
+    await screen.findByAltText("Pairing code for your phone");
+    expect(open).toHaveBeenCalledTimes(1);
+    act(() => mock().syncSimulatePairCodeSpent());
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("That code was used up by failed tries. Scan this new one.")).toBeTruthy();
+    expect(await screen.findByAltText("Pairing code for your phone")).toBeTruthy();
   });
 
   it("closes the pairing listener when the sheet closes", async () => {

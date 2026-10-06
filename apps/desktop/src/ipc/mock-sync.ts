@@ -9,7 +9,7 @@
 //   conflict       paired, and the meeting has a conflict copy
 //   needsConfirm   paired, the phone deleted 12 meetings and waits for an answer
 //   error          paired, the last session failed (code "unreachable")
-// Other hooks: syncSimulatePaired, syncSimulateWipeDone, syncSimulateProgress,
+// Other hooks: syncSimulatePaired, syncSimulatePairCodeSpent, syncSimulateWipeDone, syncSimulateProgress,
 // syncSetDeleteEverywhere, syncTransferNext (the next file export or import:
 // "cancel" the dialog, "wrongPassphrase", "notAnExport" or "refused" 1 meeting).
 import type { ConflictCopy, DeleteEverywhereStatus, DeviceRow, DeviceTransfer, SyncEvent, SyncStatus } from "../bindings";
@@ -77,6 +77,7 @@ export interface SyncMock {
   hooks: {
     syncSet(state: MockSyncState): void;
     syncSimulatePaired(): void;
+    syncSimulatePairCodeSpent(): void;
     syncSimulateWipeDone(): void;
     syncSimulateProgress(pending: number): void;
     syncSetDeleteEverywhere(state: DeleteEverywhereStatus["state"], waitingFor?: string[]): void;
@@ -192,6 +193,7 @@ export function createSyncMock(): SyncMock {
     listeners,
     hooks: {
       syncSet: set,
+      syncSimulatePairCodeSpent: () => emit({ type: "pairCodeSpent" }),
       syncSimulatePaired: () => {
         const d = phone();
         devices = [d];

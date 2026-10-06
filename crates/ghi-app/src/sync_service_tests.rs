@@ -958,3 +958,34 @@ fn a_local_delete_is_pending_until_the_phone_has_it_then_progress_says_zero() {
     });
     assert_eq!(last, Some(0), "the UI's \"deleted on all devices\"");
 }
+
+#[test]
+fn three_failed_pairings_tell_the_sheet_to_show_a_new_code() {
+    use ghi_sync::transport::{NoiseTransport, Transport};
+    let hub = hub();
+    hub.svc.set_enabled(true).unwrap();
+    lock(&hub.svc.state).pairing_until = Some(Instant::now() + PAIR_TTL);
+    hub.svc.reconcile();
+    let node = hub.svc.node().expect("the sheet brings the node up");
+    let qr = ghi_sync::qr::parse(&node.open_pairing_code(&[]).unwrap()).unwrap();
+    let spent = |hub: &Hub| {
+        hub.events()
+            .iter()
+            .filter(|e| matches!(e, SyncEvent::PairCodeSpent))
+            .count()
+    };
+    for n in 1..=3 {
+        let (a, b) = mem_pipe();
+        let (svc, nd) = (hub.svc.clone(), node.clone());
+        let server = thread::spawn(move || svc.serve_connection(&nd, a, None, None));
+        let me = Identity::generate().unwrap();
+        let mut t =
+            NoiseTransport::initiate(b, &me.secret, &qr.pk, &qr.psk, &ghi_sync::wire::MAJORS)
+                .unwrap();
+        t.send(b"nonsense").unwrap();
+        drop(t);
+        assert!(server.join().unwrap().is_err());
+        assert_eq!(spent(&hub), usize::from(n == 3), "after {n}");
+    }
+    assert!(!node.pairing_open(), "the dead code is dropped");
+}

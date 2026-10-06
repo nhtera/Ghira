@@ -961,6 +961,13 @@ impl SyncService {
     ) -> ghi_sync::Result<Served> {
         let r = node.serve(stream, ip, limits);
         self.after_serve(&r);
+        if node.pairing_failed_out() {
+            // Three failed pairings: the code is dead. Drop it and tell the
+            // sheet, which shows a new one.
+            node.close_pairing();
+            lock(&self.state).pairing_until = None;
+            self.emit(SyncEvent::PairCodeSpent);
+        }
         r
     }
 

@@ -195,6 +195,9 @@ pub enum SyncEvent {
     WipeDone {
         gid: String,
     },
+    /// Three pairing attempts failed: the shown code is dead. The pairing
+    /// sheet asks for a new one (`sync_pair_open`).
+    PairCodeSpent,
     Error {
         code: SyncErrorCode,
     },
