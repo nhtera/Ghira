@@ -20,7 +20,7 @@ use ghi_sync::transport::ByteStream;
 
 use super::spoke::*;
 use super::tests::{
-    Hub, handlers, hub, hub_with, hub_with_handlers, record_meeting, texts, wait_for,
+    Hub, handlers, handlers_when, hub, hub_with, hub_with_handlers, record_meeting, texts, wait_for,
 };
 use super::*;
 use crate::core::{Core, CoreHooks};
@@ -486,7 +486,7 @@ fn a_hub_that_stays_away_is_replaced_by_the_phone_after_the_hours() {
 }
 
 #[test]
-fn a_phone_below_the_tier_keeps_waiting_for_the_desktop() {
+fn a_phone_below_the_tier_closes_a_lease_the_computer_never_answers_and_does_not_run_the_pass() {
     let hub = idle_hub();
     let phone = phone(&hub);
     pair(&hub, &phone);
@@ -508,8 +508,15 @@ fn a_phone_below_the_tier_keeps_waiting_for_the_desktop() {
     )
     .unwrap();
     phone.svc.poke();
-    thread::sleep(Duration::from_millis(2500));
-    assert_eq!(grantor_lease(&store, &meeting).unwrap().state, "granted");
+    // It cannot take the job back: the lease is closed and the meeting
+    // shown as waiting for the computer (not for Wi-Fi), never run here.
+    wait_for("the lease to expire", 30, || {
+        grantor_lease(&store, &meeting).is_some_and(|l| l.state == "expired")
+    });
+    assert_eq!(
+        meeting_sync_view(&store, &meeting).lease.map(|l| l.state),
+        Some(GrantorState::Expired)
+    );
     assert!(
         store
             .jobs_for_meeting(&meeting)
@@ -517,6 +524,94 @@ fn a_phone_below_the_tier_keeps_waiting_for_the_desktop() {
             .iter()
             .all(|j| j.kind != FINAL_PASS_JOB)
     );
+}
+
+#[test]
+fn a_computer_that_slept_past_the_lease_gets_the_meeting_again_and_makes_one_v2() {
+    // The computer is not ready to work (its lid is shut) until `awake`.
+    let awake = Arc::new(AtomicBool::new(false));
+    let gate = awake.clone();
+    let gated = move |_: &Arc<Store>, _: &std::path::Path| -> Vec<Arc<dyn JobHandler>> {
+        let gate = gate.clone();
+        handlers_when(Arc::new(move || gate.load(Ordering::SeqCst)))
+    };
+    let hub = hub_with_handlers(Vec::new(), REACHABLE_WITHIN, Arc::new(gated));
+    let phone = phone(&hub);
+    pair(&hub, &phone);
+    phone.link.capable.store(false, Ordering::SeqCst);
+    let meeting = record_meeting(&phone.store());
+    let live = phone
+        .store()
+        .get_meeting(&meeting)
+        .unwrap()
+        .transcript_version;
+    let store = phone.store();
+    stop_for_desktop(&phone, &meeting);
+    wait_for("the lease to be granted", 30, || {
+        grantor_lease(&store, &meeting).is_some_and(|l| l.state == "granted")
+    });
+    let first = grantor_lease(&store, &meeting).unwrap();
+
+    // More than the lease's time passes with the lid shut: on the computer
+    // the lease is over (its job is fenced when it wakes).
+    assert!(
+        hub.store()
+            .lease_transition(&first.job_uuid, &["granted", "running"], "expired")
+            .unwrap()
+    );
+    phone.svc.poke();
+
+    // The phone cannot run the pass, so it offers the meeting again, at the
+    // next epoch, and the computer takes it.
+    wait_for("the second lease", 60, || {
+        store.leases_for_meeting(&meeting).unwrap().iter().any(|l| {
+            l.role == LeaseRole::Grantor && l.epoch == first.epoch + 1 && l.state == "granted"
+        })
+    });
+    assert_eq!(
+        store
+            .leases_for_meeting(&meeting)
+            .unwrap()
+            .iter()
+            .filter(|l| l.role == LeaseRole::Grantor && l.state == "expired")
+            .count(),
+        1
+    );
+    assert!(desktop_pending(&store).is_empty());
+
+    awake.store(true, Ordering::SeqCst);
+    hub.core.notify_jobs();
+    wait_for("v2 on the computer", 60, || {
+        hub.store()
+            .get_meeting(&meeting)
+            .unwrap()
+            .transcript_version
+            > live
+    });
+    wait_for("v2 on the phone", 60, || {
+        store.get_meeting(&meeting).unwrap().transcript_version
+            == hub
+                .store()
+                .get_meeting(&meeting)
+                .unwrap()
+                .transcript_version
+    });
+    wait_for("the lease to close", 30, || {
+        store.leases_for_meeting(&meeting).unwrap().iter().any(|l| {
+            l.role == LeaseRole::Grantor && l.epoch == first.epoch + 1 && l.state == "done"
+        })
+    });
+    // Exactly one result: the version moved once, under the second epoch.
+    assert_eq!(
+        hub.store()
+            .get_meeting(&meeting)
+            .unwrap()
+            .transcript_version,
+        live + 1
+    );
+    assert_eq!(transcript_epoch(&hub.store(), &meeting), first.epoch + 1);
+    assert_eq!(texts(&store, &meeting), texts(&hub.store(), &meeting));
+    assert!(store.get_meeting(&meeting).unwrap().status == "ready");
 }
 
 /// Waits until the phone has dialled `n` more times than `since`.

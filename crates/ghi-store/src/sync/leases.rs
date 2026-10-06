@@ -310,4 +310,21 @@ impl Store {
         let rows = stmt.query_map([], lease_from_row)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
+
+    /// Meetings whose newest grantor lease expired and was never replaced: the
+    /// phone could not run the pass itself and the desktop did not finish, so
+    /// they must be offered again at the next epoch.
+    pub fn meetings_with_expired_lease(&self) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT l.meeting_gid FROM leases l
+             WHERE l.role = 'grantor' AND l.state = 'expired'
+               AND NOT EXISTS (SELECT 1 FROM leases n
+                               WHERE n.meeting_gid = l.meeting_gid AND n.role = 'grantor'
+                                 AND n.id <> l.id AND n.epoch >= l.epoch)
+             ORDER BY l.id",
+        )?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
 }

@@ -29,14 +29,20 @@ pub enum ProcessingTarget {
 )]
 pub enum MeetingChip {
     Recorded,
-    ProcessingOnPhone { percent: u8 },
+    ProcessingOnPhone {
+        percent: u8,
+    },
     ProcessedOnPhone,
     WaitingForModels,
     Failed,
     // Phase 15.
     Synced,
     WaitingForWifi,
-    FinalOnDesktop { percent: u8 },
+    /// The computer had the pass and its lease ran out; offered again when it is back.
+    WaitingForComputer,
+    FinalOnDesktop {
+        percent: u8,
+    },
 }
 
 /// What the session is doing, for the UI and the Live Activity.
@@ -75,7 +81,8 @@ pub fn chip_for(row: &ghi_app::library::MeetingRow, sync: &SyncView) -> MeetingC
             GrantorState::Granted | GrantorState::Revoking => {
                 return MeetingChip::FinalOnDesktop { percent: l.percent };
             }
-            GrantorState::Offered | GrantorState::Expired => return MeetingChip::WaitingForWifi,
+            GrantorState::Offered => return MeetingChip::WaitingForWifi,
+            GrantorState::Expired => return MeetingChip::WaitingForComputer,
             GrantorState::Done | GrantorState::SelfTaken => {}
         }
     }
@@ -188,7 +195,7 @@ mod tests {
         );
         assert_eq!(
             chip_for(&r, &lease(GrantorState::Expired, 0)),
-            MeetingChip::WaitingForWifi,
+            MeetingChip::WaitingForComputer,
             "a computer that stayed away"
         );
         let pending = SyncView {

@@ -17,6 +17,7 @@
       "finalOnDesktop": "Final pass on {{device}} · {{percent}}%",
       "processedOnPhone": "Processed on phone",
       "synced": "Synced",
+      "waitingForComputer": "Waiting for {{device}}",
       "waitingForWifi": "Waiting for Wi-Fi"
     },
     "common": {

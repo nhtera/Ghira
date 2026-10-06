@@ -307,9 +307,16 @@ impl Grantor {
             "done" => {
                 store.lease_transition(&l.job_uuid, &["granted", "running"], "done")?;
             }
-            // The desktop gave it up: nothing to do until `G` passes and the
-            // phone may take the job back (`poll`).
-            "revoked" | "expired" => {}
+            // The desktop's deadline passed (it slept, or it never got to the
+            // job): it cannot commit under this lease any more, so `G` is now.
+            // `poll` then has the phone take the job back, or (a phone that
+            // cannot run it) close the lease so the meeting is offered again
+            // at the next epoch.
+            "expired" => {
+                let now = cont_now(clock);
+                store.lease_renew(&l.job_uuid, l.ttl_ms, now, &clock.boot_id())?;
+            }
+            "revoked" => {}
             // queued / running: the desktop renewed H, so G moves too.
             _ => self.stamp(store, clock, l)?,
         }
@@ -341,7 +348,8 @@ impl Grantor {
     /// Whether anything is due: a lease whose `G` passed is expired
     /// ([`Grantor::state_of`]); the phone takes the job back (`epoch + 1`)
     /// only if it is `capable` of running the pass and `G + offline_after_ms`
-    /// has passed too. After a reboot
+    /// has passed too; a phone that is not capable closes the lease as
+    /// `expired` so the meeting can be offered again. After a reboot
     /// only wall time is left, so an hour of grace is added.
     pub fn poll(
         &self,
@@ -362,15 +370,26 @@ impl Grantor {
             };
             // `Expired` is derived, not stored: G passed and the lease is still
             // open (see `state_of`). Take the job back only if allowed to.
-            if capable
-                && past_g_ms >= offline_after_ms.max(0)
-                && store.lease_transition(
+            if capable {
+                if past_g_ms >= offline_after_ms.max(0)
+                    && store.lease_transition(
+                        &l.job_uuid,
+                        &["offered", "granted", "running"],
+                        "self_taken",
+                    )?
+                {
+                    actions.push(GrantorAction::SelfTake(take_back(&l)));
+                }
+            } else if past_g_ms >= 0 {
+                // A phone below the final-pass tier cannot run it: the lease
+                // is closed (`expired`) and the meeting offered again, at
+                // `epoch + 1`, when the desktop is next reachable (it may
+                // have been asleep). The newer epoch fences the old holder.
+                store.lease_transition(
                     &l.job_uuid,
                     &["offered", "granted", "running"],
-                    "self_taken",
-                )?
-            {
-                actions.push(GrantorAction::SelfTake(take_back(&l)));
+                    "expired",
+                )?;
             }
         }
         Ok(actions)
@@ -464,6 +483,16 @@ impl Holder {
         // No meeting exchanged with this device: no key, nothing to process.
         if !store.peer_meetings(from_device)?.contains(&req.meeting_gid) {
             return Ok(RequestOutcome::Refused(RefuseReason::NoKey));
+        }
+        // A higher epoch is the phone's answer to a lease it saw expire: the
+        // older one must not commit any more.
+        for old in store.leases_for_meeting(&req.meeting_gid)? {
+            if old.role == LeaseRole::Holder
+                && old.epoch < req.epoch
+                && HOLDER_OPEN.contains(&old.state.as_str())
+            {
+                store.lease_transition(&old.job_uuid, &HOLDER_OPEN, "expired")?;
+            }
         }
         let lease = Lease {
             job_uuid: req.job_uuid.clone(),
@@ -833,14 +862,7 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        // Not capable (no A16+): it waits however long.
         r.advance(2 * HOUR);
-        assert!(
-            Grantor
-                .poll(r.phone.as_ref(), r.phone_clock.as_ref(), n, false)
-                .unwrap()
-                .is_empty()
-        );
         assert_eq!(
             Grantor.state_of(r.phone_clock.as_ref(), &r.phone_lease(&req.job_uuid)),
             Some(GrantorState::Expired)
@@ -869,6 +891,70 @@ mod tests {
         );
         // A later offer for the meeting is above the epoch the take-back used.
         assert_eq!(r.offer().epoch, 3);
+    }
+
+    #[test]
+    fn a_phone_that_cannot_run_the_pass_offers_again_after_the_lease_expired() {
+        let r = rig();
+        let first = r.offer();
+        r.sync().0.unwrap();
+        // The Mac's lid is shut for longer than the lease: its job is fenced.
+        r.advance(Duration::from_millis(
+            (DEFAULT_TTL_MS + GRACE_MS) as u64 + 1000,
+        ));
+        assert!(
+            !Holder
+                .fence_ok(r.hub.as_ref(), r.hub_clock.as_ref(), &first.job_uuid, 0)
+                .unwrap()
+        );
+        // Not capable: nothing to run here, so the lease is closed as expired
+        // (and stays so: a second poll does nothing).
+        for _ in 0..2 {
+            assert!(
+                Grantor
+                    .poll(r.phone.as_ref(), r.phone_clock.as_ref(), 0, false)
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        assert_eq!(r.phone_lease(&first.job_uuid).state, "expired");
+        // The Mac wakes up; the phone offers the meeting again at epoch + 1.
+        let second = r.offer();
+        assert_eq!(second.epoch, first.epoch + 1);
+        assert_ne!(second.job_uuid, first.job_uuid);
+        let (_, hub_rep) = r.sync();
+        assert_eq!(hub_rep.unwrap().new_leases, vec![second.job_uuid.clone()]);
+        // The newer epoch fences the older holder lease for good.
+        assert_eq!(r.hub.lease(&first.job_uuid).unwrap().state, "expired");
+        assert_eq!(r.hub.lease(&second.job_uuid).unwrap().state, "granted");
+        let hub = r.hub.as_ref();
+        assert!(!Holder.finish(hub, &first.job_uuid).unwrap());
+        assert!(Holder.finish(hub, &second.job_uuid).unwrap(), "exactly one");
+        // The phone learns of the result.
+        let (mine, _) = r.sync();
+        assert_eq!(mine.unwrap().lease_infos[0].state, "done");
+        assert_eq!(r.phone_lease(&second.job_uuid).state, "done");
+    }
+
+    #[test]
+    fn a_holder_that_says_expired_is_taken_at_its_word() {
+        let r = rig();
+        let req = r.offer();
+        r.sync().0.unwrap();
+        // The Mac slept past H, but G (H + grace) has not passed on the phone.
+        r.advance(Duration::from_millis(DEFAULT_TTL_MS as u64 + 1000));
+        let (mine, _) = r.sync();
+        assert_eq!(mine.unwrap().lease_infos[0].state, "expired");
+        let l = r.phone_lease(&req.job_uuid);
+        assert_eq!(
+            Grantor.state_of(r.phone_clock.as_ref(), &l),
+            Some(GrantorState::Expired),
+            "G is now: no waiting out the grace"
+        );
+        let acts = Grantor
+            .poll(r.phone.as_ref(), r.phone_clock.as_ref(), 0, true)
+            .unwrap();
+        assert!(matches!(acts.as_slice(), [GrantorAction::SelfTake(_)]));
     }
 
     #[test]
@@ -933,6 +1019,27 @@ mod tests {
                 .fence_ok(r.hub.as_ref(), r.hub_clock.as_ref(), &req.job_uuid, 0)
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn a_wall_clock_step_in_the_same_boot_does_not_suspend_the_lease() {
+        let r = rig();
+        let req = r.offer();
+        r.sync().0.unwrap();
+        // NTP steps the wall clock after wake, forward and back: the boot
+        // (and the sleep-inclusive clock) are the same.
+        for wall in [1_800_000_000_000, 1_600_000_000_000] {
+            r.hub_clock.set_wall_ms(wall);
+            r.phone_clock.set_wall_ms(wall);
+            assert!(
+                Holder
+                    .fence_ok(r.hub.as_ref(), r.hub_clock.as_ref(), &req.job_uuid, 0)
+                    .unwrap()
+            );
+        }
+        let (mine, _) = r.sync();
+        assert_eq!(mine.unwrap().lease_infos[0].state, "queued");
+        assert_eq!(r.phone_lease(&req.job_uuid).state, "granted");
     }
 
     #[test]

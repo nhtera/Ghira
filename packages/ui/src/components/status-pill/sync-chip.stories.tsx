@@ -12,6 +12,7 @@ const KINDS: SyncChipKind[] = [
   { kind: "failed" },
   { kind: "synced" },
   { kind: "waitingForWifi" },
+  { kind: "waitingForComputer" },
   { kind: "finalOnDesktop", percent: 62 },
 ];
 

@@ -17,6 +17,7 @@
       "finalOnDesktop": "Xử lý cuối trên {{device}} · {{percent}}%",
       "processedOnPhone": "Đã xử lý trên điện thoại",
       "synced": "Đã đồng bộ",
+      "waitingForComputer": "Chờ {{device}}",
       "waitingForWifi": "Chờ Wi-Fi"
     },
     "common": {

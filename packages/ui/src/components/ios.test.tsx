@@ -183,6 +183,7 @@ describe("SyncChip", () => {
     [{ kind: "failed" }, "Failed"],
     [{ kind: "synced" }, "Synced"],
     [{ kind: "waitingForWifi" }, "Waiting for Wi-Fi"],
+    [{ kind: "waitingForComputer" }, "Waiting for MacBook"],
     [{ kind: "finalOnDesktop", percent: 40 }, "Final pass on MacBook · 40%"],
   ];
   it.each(CASES)("%j shows an icon and text", (chip, text) => {

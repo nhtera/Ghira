@@ -615,6 +615,20 @@ impl SyncService {
         let hours = (self.cfg.offline_hours)().clamp(1, 168);
         let ttl_ms = i64::from(hours) * 3_600_000;
         let mut offered = false;
+        // A lease that ran out on the computer (it slept past the deadline)
+        // sends the meeting back to the waiting list, unless its result is
+        // here already: the pass is offered again at the next epoch.
+        for gid in store.meetings_with_expired_lease().unwrap_or_default() {
+            match store.get_meeting(&gid) {
+                Ok(m) if m.status == "ready" => {}
+                Ok(_) => {
+                    if let Err(e) = desktop_pending_add(store, &gid) {
+                        log::warn!("lease expired: {e}");
+                    }
+                }
+                Err(_) => {}
+            }
+        }
         for gid in desktop_pending(store) {
             match store.get_meeting(&gid) {
                 Ok(_) => {}
@@ -624,12 +638,13 @@ impl SyncService {
                 }
                 Err(_) => continue,
             }
-            let leased = store
-                .leases_for_meeting(&gid)
-                .unwrap_or_default()
+            let leases = store.leases_for_meeting(&gid).unwrap_or_default();
+            // Any grantor lease but an expired one means it was handed over.
+            let leased = leases
                 .iter()
-                .any(|l| l.role == LeaseRole::Grantor);
-            if leased {
+                .any(|l| l.role == LeaseRole::Grantor && l.state != "expired");
+            let ready = store.get_meeting(&gid).is_ok_and(|m| m.status == "ready");
+            if leased || (ready && !leases.is_empty()) {
                 desktop_pending_remove(store, &gid);
                 continue;
             }

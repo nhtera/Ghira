@@ -889,7 +889,7 @@ export type MeProfile = {
  *  The status chip on a meeting row (M3). The last three are phase 15 and
  *  only exist while a computer is paired.
  */
-export type MeetingChip = { kind: "recorded" } | { kind: "processingOnPhone"; percent: number } | { kind: "processedOnPhone" } | { kind: "waitingForModels" } | { kind: "failed" } | { kind: "synced" } | { kind: "waitingForWifi" } | { kind: "finalOnDesktop"; percent: number };
+export type MeetingChip = { kind: "recorded" } | { kind: "processingOnPhone"; percent: number } | { kind: "processedOnPhone" } | { kind: "waitingForModels" } | { kind: "failed" } | { kind: "synced" } | { kind: "waitingForWifi" } | { kind: "waitingForComputer" } | { kind: "finalOnDesktop"; percent: number };
 
 export type MeetingChipRow = {
 	gid: string,

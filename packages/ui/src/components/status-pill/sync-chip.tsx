@@ -15,6 +15,7 @@ export type SyncChipKind =
   | { kind: "failed" }
   | { kind: "synced" }
   | { kind: "waitingForWifi" }
+  | { kind: "waitingForComputer" }
   | { kind: "finalOnDesktop"; percent: number };
 
 export type SyncChipProps = {
@@ -33,6 +34,7 @@ const TONE: Record<SyncChipKind["kind"], { icon: IconName; cls: string }> = {
   failed: { icon: "error", cls: "bg-sunk text-ink" },
   synced: { icon: "cloud_done", cls: "bg-transparent text-muted" },
   waitingForWifi: { icon: "wifi_off", cls: "bg-sunk text-muted" },
+  waitingForComputer: { icon: "laptop_mac", cls: "bg-sunk text-muted" },
   finalOnDesktop: { icon: "laptop_mac", cls: "bg-accent-soft text-accent" },
 };
 
@@ -48,6 +50,7 @@ export function SyncChip({ chip, device, onRetry, className }: SyncChipProps) {
     failed: () => t(onRetry ? "mobile.chip.failed" : "mobile.chip.failedNoRetry"),
     synced: () => t("mobile.chip.synced"),
     waitingForWifi: () => t("mobile.chip.waitingForWifi"),
+    waitingForComputer: () => t("mobile.chip.waitingForComputer", { device: device ?? t("mobile.target.desktop") }),
     finalOnDesktop: () => t("mobile.chip.finalOnDesktop", { device: device ?? t("mobile.target.desktop"), percent }),
   }[chip.kind]();
   const base = cn("inline-flex min-h-[1.625rem] items-center gap-1.5 rounded-[1rem] px-2.5 py-0.5 text-start text-ios-caption1 font-semibold", cls, className);
