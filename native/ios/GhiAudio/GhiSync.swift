@@ -106,8 +106,11 @@ private final class QrScanner: NSObject, AVCaptureMetadataOutputObjectsDelegate 
 
     func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject],
                         from connection: AVCaptureConnection) {
-        guard let text = objects.compactMap({ ($0 as? AVMetadataMachineReadableCodeObject)?.stringValue }).first,
-              !text.isEmpty
+        // Only a Ghira pairing code ends the scan; any other QR is ignored and
+        // the camera keeps looking. The value is never logged.
+        guard let text = objects
+            .compactMap({ ($0 as? AVMetadataMachineReadableCodeObject)?.stringValue })
+            .first(where: { $0.hasPrefix("GHI1:") })
         else { return }
         finish(text)
     }
