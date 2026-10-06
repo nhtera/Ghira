@@ -996,3 +996,54 @@ fn three_failed_pairings_tell_the_sheet_to_show_a_new_code() {
     }
     assert!(!node.pairing_open(), "the dead code is dropped");
 }
+
+#[test]
+fn a_new_session_of_a_device_replaces_its_stale_one() {
+    use ghi_sync::service::initiate_hub;
+    use ghi_sync::session::spoke::SpokeSession;
+    let _turn = NET.lock().unwrap_or_else(|e| e.into_inner());
+    let lan = ghi_net::lan::lan_addrs();
+    if lan.is_empty() {
+        eprintln!("no private network address here: skipped");
+        return;
+    }
+    let hub = hub_with(lan, REACHABLE_WITHIN);
+    hub.svc.start();
+    hub.svc.set_enabled(true).unwrap();
+    let phone = spoke();
+    pair(&hub, &phone);
+    wait_for("the listener", 5, || hub.svc.listening());
+    let addr = loop {
+        let found = lock(&hub.svc.state)
+            .running
+            .as_ref()
+            .and_then(|r| lock(&r.addrs).first().copied());
+        if let Some(a) = found {
+            break a;
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
+
+    let open = |phone: &Spoke| {
+        let stream = ghi_net::lan::connect(addr, ghi_net::lan::CONNECT_TIMEOUT).unwrap();
+        let store = phone.store.clone() as Arc<dyn SyncStore>;
+        let (t, hub_dev) = initiate_hub(store.as_ref(), &phone.identity, stream).unwrap();
+        let mut s = SpokeSession::new(store, Arc::new(SystemClock), t, hub_dev.gid);
+        s.run_once().unwrap();
+        s
+    };
+    let mut old = open(&phone);
+    assert!(!old.ping().unwrap());
+    // The phone reconnects (it never said Bye): the hub drops the stale one.
+    let mut new = open(&phone);
+    wait_for("the old session to end", 5, || old.ping().is_err());
+    assert!(new.ping().is_ok(), "the new session lives");
+    assert_eq!(
+        lock(&hub.svc.sessions)
+            .values()
+            .filter(|e| e.device.is_some())
+            .count(),
+        1
+    );
+    hub.svc.stop();
+}

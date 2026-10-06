@@ -44,6 +44,9 @@ pub struct HubSession<T: Transport> {
     /// Tracks offered in this session (`track_gid` -> pages).
     offers: HashMap<String, u64>,
     last_activity_ns: u64,
+    /// Told the spoke's device gid once `Hello` identified it (the service
+    /// keeps one session per device).
+    identified: Option<Box<dyn FnMut(&str) + Send>>,
 }
 
 /// What the spoke's confirmation of `ctl` means for the report.
@@ -76,7 +79,14 @@ impl<T: Transport> HubSession<T> {
             pending_keys: Vec::new(),
             offers: HashMap::new(),
             last_activity_ns: now,
+            identified: None,
         }
+    }
+
+    /// Calls `f` with the device gid once the spoke is identified.
+    pub fn on_identified(mut self, f: impl FnMut(&str) + Send + 'static) -> Self {
+        self.identified = Some(Box::new(f));
+        self
     }
 
     /// Replaces the ping, silence and idle limits (tests).
@@ -252,6 +262,9 @@ impl<T: Transport> HubSession<T> {
             feed_id: self.store.feed_id()?,
             pending,
         };
+        if let Some(f) = self.identified.as_mut() {
+            f(&dev.gid);
+        }
         self.spoke = Some(dev);
         self.reply(id, &Message::HelloOk(ok))
     }

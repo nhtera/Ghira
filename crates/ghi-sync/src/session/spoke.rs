@@ -83,6 +83,14 @@ impl<T: Transport> SpokeSession<T> {
         self
     }
 
+    /// A flag that, once set, ends a pass after the request in flight (the
+    /// current batch or audio chunk): the report says `interrupted` and the
+    /// caller sends `Bye`.
+    pub fn with_stop(mut self, stop: Arc<std::sync::atomic::AtomicBool>) -> Self {
+        self.rpc.with_stop(stop);
+        self
+    }
+
     /// Replaces the versions offered in `Hello` (tests of version skew).
     pub fn with_protos(mut self, protos: Vec<Proto>) -> Self {
         self.protos = protos;
@@ -123,12 +131,23 @@ impl<T: Transport> SpokeSession<T> {
                 return Ok(self.report.clone());
             }
         }
+        self.report.interrupted = false;
+        self.rpc.arm(true);
+        let ran = self.phases();
+        self.rpc.arm(false);
+        match ran {
+            Err(_) if self.rpc.interrupted() => self.report.interrupted = true,
+            other => other?,
+        }
+        Ok(self.report.clone())
+    }
+
+    fn phases(&mut self) -> Result<()> {
         let tomb_pos = self.push_tombs()?;
         self.push_rows(tomb_pos)?;
         self.leases()?;
         self.audio()?;
-        self.pull()?;
-        Ok(self.report.clone())
+        self.pull()
     }
 
     /// `Hello` / `HelloOk`, then any pending `Control` the hub carries.

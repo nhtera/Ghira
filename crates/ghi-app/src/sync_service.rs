@@ -79,10 +79,11 @@ pub const PORT_KEY: &str = "sync.port";
 pub const REBIND_EVERY: Duration = Duration::from_secs(10);
 /// How long a pairing code works.
 pub const PAIR_TTL: Duration = Duration::from_secs(120);
-/// Connections from one address at the same time: the live session and one
-/// the reconnect has not yet replaced (the pool of `ghi_net::lan::MAX_SESSIONS`
-/// is the cap over all of them).
-const MAX_PER_ADDRESS: usize = 2;
+/// Connections from one address at the same time. A device has one session
+/// (a new one replaces the old as soon as `Hello` names the device); this is
+/// only the bound for connections that have not said who they are yet (the
+/// pool of `ghi_net::lan::MAX_SESSIONS` is the cap over all of them).
+const MAX_PER_ADDRESS: usize = 4;
 /// How long "Delete everything" waits for devices to take their `Wipe`.
 pub const WIPE_WAIT: Duration = Duration::from_secs(120);
 /// How long an unpair waits for the device to come and take it (doc 07 §3.5);
@@ -228,6 +229,8 @@ struct State {
 struct SessionEntry {
     kill: Arc<AtomicBool>,
     ip: IpAddr,
+    /// The device this session serves, once `Hello` named it.
+    device: Option<String>,
 }
 
 /// See the module docs.
@@ -927,6 +930,7 @@ impl SyncService {
                 SessionEntry {
                     kill: kill.clone(),
                     ip,
+                    device: None,
                 },
             );
         }
@@ -939,7 +943,14 @@ impl SyncService {
                     id,
                 };
                 if let Ok(stream) = Killable::new(stream, kill) {
-                    let _ = me.serve_connection(&node, stream, Some(ip), Some(&limits));
+                    let again = me.clone();
+                    let _ = me.serve_connection_with(
+                        &node,
+                        stream,
+                        Some(ip),
+                        Some(&limits),
+                        move |gid| again.replace_older_sessions(id, gid),
+                    );
                 }
                 // The store is let go before the registry says so.
                 drop(node);
@@ -959,7 +970,20 @@ impl SyncService {
         ip: Option<IpAddr>,
         limits: Option<&Limits>,
     ) -> ghi_sync::Result<Served> {
-        let r = node.serve(stream, ip, limits);
+        self.serve_connection_with(node, stream, ip, limits, |_| {})
+    }
+
+    /// [`SyncService::serve_connection`], telling `identified` the device gid
+    /// once a session knows who it serves.
+    pub fn serve_connection_with<S: ByteStream>(
+        self: &Arc<Self>,
+        node: &HubNode,
+        stream: S,
+        ip: Option<IpAddr>,
+        limits: Option<&Limits>,
+        identified: impl FnMut(&str) + Send + 'static,
+    ) -> ghi_sync::Result<Served> {
+        let r = node.serve_with(stream, ip, limits, identified);
         self.after_serve(&r);
         if node.pairing_failed_out() {
             // Three failed pairings: the code is dead. Drop it and tell the
@@ -969,6 +993,21 @@ impl SyncService {
             self.emit(SyncEvent::PairCodeSpent);
         }
         r
+    }
+
+    /// One session per device (doc 07 §5.3): session `id` serves `gid`, so
+    /// any older session of that device is stale (a phone that went to the
+    /// background or changed networks) and ends now.
+    fn replace_older_sessions(&self, id: u64, gid: &str) {
+        let mut sessions = lock(&self.sessions);
+        for (other, e) in sessions.iter() {
+            if *other != id && e.device.as_deref() == Some(gid) {
+                e.kill.store(true, Ordering::Release);
+            }
+        }
+        if let Some(me) = sessions.get_mut(&id) {
+            me.device = Some(gid.to_string());
+        }
     }
 
     // --- what a connection did -----------------------------------------

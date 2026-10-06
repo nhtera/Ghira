@@ -88,6 +88,9 @@ pub struct SessionReport {
     pub take_back: Vec<crate::lease::TakeBack>,
     /// Hub: tracks whose last page arrived (`track_gid`s).
     pub tracks_received: Vec<String>,
+    /// Spoke: the app left the foreground and the pass ended between two
+    /// requests, before it was done.
+    pub interrupted: bool,
 }
 
 /// The versions this build offers.
@@ -137,10 +140,43 @@ pub struct Rpc {
     next: u32,
     /// The last `Error` the peer sent (code and detail, never content).
     pub last_error: Option<ErrorBody>,
+    /// While armed and set, no new request goes out (the app left the
+    /// foreground: finish the request in flight, then say `Bye`).
+    stop: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    armed: bool,
+    interrupted: bool,
 }
 
 impl Rpc {
+    /// Sets the flag that stops new requests while [`Rpc::arm`]ed.
+    pub fn with_stop(&mut self, stop: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+        self.stop = Some(stop);
+    }
+
+    /// Starts or ends a stretch in which the stop flag is honoured.
+    pub(crate) fn arm(&mut self, on: bool) {
+        self.armed = on;
+        if on {
+            self.interrupted = false;
+        }
+    }
+
+    /// Whether the stop flag cut the stretch short.
+    pub(crate) fn interrupted(&self) -> bool {
+        self.interrupted
+    }
+
     pub fn call(&mut self, t: &mut dyn Transport, msg: &Message) -> Result<Message> {
+        if self.armed
+            && self
+                .stop
+                .as_ref()
+                .is_some_and(|s| s.load(std::sync::atomic::Ordering::Acquire))
+        {
+            // Between requests nothing is half done: the caller may send Bye.
+            self.interrupted = true;
+            return Err(SyncError::Closed);
+        }
         self.next = self.next.wrapping_add(1);
         let id = self.next;
         send_msg(t, id, msg)?;

@@ -145,6 +145,19 @@ impl HubNode {
         peer_ip: Option<IpAddr>,
         limits: Option<&Limits>,
     ) -> Result<Served> {
+        self.serve_with(stream, peer_ip, limits, |_| {})
+    }
+
+    /// [`HubNode::serve`], telling `identified` the device gid once a session
+    /// knows who it serves (the caller then replaces that device's older
+    /// session).
+    pub fn serve_with<S: ByteStream>(
+        &self,
+        stream: S,
+        peer_ip: Option<IpAddr>,
+        limits: Option<&Limits>,
+        identified: impl FnMut(&str) + Send + 'static,
+    ) -> Result<Served> {
         let qr = self
             .window()
             .as_ref()
@@ -165,6 +178,7 @@ impl HubNode {
             return self.pair_peer(&mut t, peer_ip, limits);
         }
         HubSession::new(Arc::clone(&self.store), Arc::clone(&self.clock), t)
+            .on_identified(identified)
             .serve()
             .map(Served::Session)
     }

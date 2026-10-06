@@ -586,3 +586,35 @@ fn a_new_hub_feed_id_restarts_the_pull_from_zero() {
     assert_eq!(feed.as_deref(), Some(hub.feed_id().unwrap().as_str()));
     assert_eq!(a.applied_rows(), before, "the same version is a no-op");
 }
+
+#[test]
+fn a_pass_stops_between_requests_when_the_app_leaves_and_resumes_later() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let hub = hub_store();
+    let a = paired_spoke(&hub, "phone-a", 1);
+    a.put_local(meeting("m1"));
+    let seen: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
+    let (x, y) = MemDuplex::pair(spoke_key(1), HUB_KEY);
+    let (hs, seen2) = (hub.clone(), seen.clone());
+    let server = thread::spawn(move || {
+        HubSession::new(hs, clock(), y)
+            .on_identified(move |gid| seen2.lock().unwrap().push(gid.to_string()))
+            .serve()
+    });
+    let stop = Arc::new(AtomicBool::new(true));
+    let mut s = SpokeSession::new(a.clone(), clock(), x, "hub".into()).with_stop(stop.clone());
+    // The app is already in the background: the pass ends before it sends
+    // anything, and `Bye` closes the session cleanly.
+    let rep = s.run_once().unwrap();
+    assert!(rep.interrupted);
+    assert_eq!((rep.rows_pushed, rep.rows_pulled), (0, 0));
+    assert!(hub.row("m1").is_none());
+    // Back in the foreground: the same session carries on.
+    stop.store(false, Ordering::Release);
+    let rep = s.run_once().unwrap();
+    assert!(!rep.interrupted);
+    assert!(hub.row("m1").is_some());
+    s.bye().unwrap();
+    server.join().unwrap().unwrap();
+    assert_eq!(*seen.lock().unwrap(), ["phone-a"]);
+}

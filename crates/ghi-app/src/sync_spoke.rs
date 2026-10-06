@@ -165,6 +165,9 @@ struct SpokeState {
 /// The phone's loop state (idle on the desktop).
 #[derive(Default)]
 pub(super) struct Shared {
+    /// Set while the app is not in the foreground: a pass in flight ends
+    /// after its current request and the loop says `Bye`.
+    stop: Arc<AtomicBool>,
     st: Mutex<SpokeState>,
     wake: (Mutex<bool>, Condvar),
     thread: Mutex<Option<JoinHandle<()>>>,
@@ -413,6 +416,8 @@ impl SyncService {
         let Some(link) = self.cfg.link.as_ref() else {
             return;
         };
+        // Raised before anything else: the pass in flight stops at once.
+        self.spoke.stop.store(!active, Ordering::Release);
         let begun = if active { 0 } else { link.begin_bg() };
         {
             let mut st = self.spoke_st();
@@ -743,7 +748,8 @@ impl SyncService {
                         Arc::new(SystemClock),
                         transport,
                         hub.gid.clone(),
-                    );
+                    )
+                    .with_stop(self.spoke.stop.clone());
                     return Ok(Conn {
                         session,
                         hub: hub.gid,
