@@ -807,3 +807,57 @@ fn a_synced_value_writes_the_underlying_setting_last_writer_wins() {
             .is_none()
     );
 }
+
+#[test]
+fn retention_keeps_audio_that_still_has_to_reach_the_computer() {
+    let (_tmp, store) = open();
+    let hub = peer(1);
+    store.pin_device(&hub, &PSK).unwrap();
+    let make = |title: &str| {
+        let m = store
+            .create_meeting(ghi_store::store::NewMeeting {
+                title: title.into(),
+                audio_retained_until: Some(1_000),
+                ..Default::default()
+            })
+            .unwrap()
+            .gid;
+        store
+            .add_segment(&m, common::seg(0, 1000, "xin chào"))
+            .unwrap();
+        let mut w = store.open_track(&m, TrackKind::Mic).unwrap();
+        w.append(b"audio-page").unwrap();
+        store.finish_track(&m, TrackKind::Mic, w).unwrap();
+        store.finish_meeting(&m, 1000).unwrap();
+        m
+    };
+    let (plain, waiting, expired) = (make("thường"), make("chờ máy tính"), make("hết hạn"));
+    store
+        .set_setting("sync.desktop_pending", &serde_json::json!([waiting]))
+        .unwrap();
+    let mut l = lease("job-x", &expired, "expired");
+    l.role = LeaseRole::Grantor;
+    l.peer_gid = Some(hub.gid.clone());
+    store.lease_open(&l).unwrap();
+    assert_eq!(
+        store.meetings_with_expired_lease().unwrap(),
+        vec![expired.clone()]
+    );
+
+    let report = store.retention_sweep(2_000).unwrap();
+    assert_eq!(report.meetings, 1);
+    assert!(!store.audio_available(&plain).unwrap());
+    assert!(store.audio_available(&waiting).unwrap());
+    assert!(store.audio_available(&expired).unwrap());
+
+    // Once the expired lease has a successor the meeting is no longer
+    // "waiting" by that rule (its open lease protects it instead).
+    let mut next = lease("job-y", &expired, "offered");
+    next.role = LeaseRole::Grantor;
+    next.epoch = 2;
+    next.peer_gid = Some(hub.gid.clone());
+    store.lease_open(&next).unwrap();
+    assert!(store.meetings_with_expired_lease().unwrap().is_empty());
+    assert_eq!(store.retention_sweep(2_000).unwrap().meetings, 0);
+    assert!(store.audio_available(&expired).unwrap());
+}

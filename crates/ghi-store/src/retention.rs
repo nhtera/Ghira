@@ -20,6 +20,10 @@ use crate::store::{Store, now_ms};
 use crate::tombstones::Cause;
 use crate::{Result, StoreError, tombstones};
 
+/// The store setting listing the meetings a phone recorded for its computer
+/// and has not handed over yet (`ghi-core` `recover::DESKTOP_PENDING_KEY`).
+const DESKTOP_PENDING_KEY: &str = "sync.desktop_pending";
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RetentionReport {
     pub meetings: u32,
@@ -28,8 +32,10 @@ pub struct RetentionReport {
 
 impl Store {
     /// Deletes the audio of meetings whose `audio_retained_until <= now_ms`,
-    /// except those with a final pass queued or running or an open sync lease
-    /// (doc 07 §7.8).
+    /// except those with a final pass queued or running, an open sync lease
+    /// (doc 07 §7.8), or audio still waiting to go to the computer (listed in
+    /// `sync.desktop_pending`, or whose lease expired and will be offered
+    /// again): the phone's only copy of what the computer has yet to process.
     pub fn retention_sweep(&self, now_ms_: i64) -> Result<RetentionReport> {
         let due: Vec<(i64, String)> = {
             let conn = self.conn();
@@ -46,8 +52,16 @@ impl Store {
             let rows = stmt.query_map([now_ms_], |r| Ok((r.get(0)?, r.get(1)?)))?;
             rows.collect::<rusqlite::Result<_>>()?
         };
+        let mut waiting: Vec<String> = self
+            .get_setting(DESKTOP_PENDING_KEY)?
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        waiting.extend(self.meetings_with_expired_lease()?);
         let mut report = RetentionReport::default();
         for (id, gid) in due {
+            if waiting.contains(&gid) {
+                continue;
+            }
             let n = match self.remove_audio(id, &gid) {
                 Ok(n) => n,
                 // A malformed gid (never written by the store) must not stop
