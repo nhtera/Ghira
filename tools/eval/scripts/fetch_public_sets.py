@@ -8,6 +8,12 @@ Sets (all free to download for this use, see LICENCES below):
   ami-sdm     AMI meetings, far-field mic Array1-01          diarization, CC-BY-4.0
   voxconverse VoxConverse test files                         diarization, CC-BY-4.0
   vimedcss    ViMedCSS Vietnamese-English code-switch speech ASR only, CC-BY-4.0
+  ami-text    AMI reference TEXT for the ami-sdm meetings        needs ami-sdm audio, CC-BY-4.0
+  earnings21  Earnings-21 long earnings calls + transcripts     ASR only, CC-BY-SA-4.0
+  vietmed     VietMed test split, Vietnamese medical speech     ASR only, MIT
+
+The last three feed the live-transcript benchmark (long-form / conversational audio with
+reference text). ami-text writes into data/ami-sdm/refs/ and leaves ami-sdm's manifest alone.
 
 Data lands in tools/eval/data/<set>/ (git-ignored). Nothing is committed.
 Only the standard library and PyYAML are used.
@@ -30,6 +36,7 @@ import shutil
 import ssl
 import sys
 import tarfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -42,7 +49,16 @@ import yaml
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "data"
 UA = "ghi-eval-fetch/0.1 (+https://github.com/ghira)"
 TIMEOUT = 60
-ALL_SETS = ("fleurs-vi", "fleurs-en", "ami-sdm", "voxconverse", "vimedcss")
+ALL_SETS = (
+    "fleurs-vi",
+    "fleurs-en",
+    "ami-sdm",
+    "voxconverse",
+    "vimedcss",
+    "ami-text",
+    "earnings21",
+    "vietmed",
+)
 DEFAULT_SETS = ("fleurs-vi", "ami-sdm")
 
 # --- Sources, pinned to immutable revisions -------------------------------------------------
@@ -145,6 +161,34 @@ VIMED_ROWS = (
 VIMED_SMALL_N = 30
 VIMED_FULL_N = 1614
 
+# AMI reference text: edinburghcstr/ami, config ihm (per-segment text with begin_time, end_time,
+# speaker_id, meeting_id; the 16 meetings above all sit in the test split). Text only, no audio
+# column is read. The datasets-server /filter endpoint selects one meeting; it answers "the
+# dataset index is loading" the first time, so the fetcher retries for a few minutes.
+AMI_TEXT_FILTER = (
+    "https://datasets-server.huggingface.co/filter?dataset=edinburghcstr/ami"
+    "&config=ihm&split=test&where={where}&offset={offset}&length={length}"
+)
+AMI_TEXT_SMALL = ["IS1009a"]
+HF_RETRIES = 12  # x HF_RETRY_WAIT_S = ~4 min for the server to build the index
+HF_RETRY_WAIT_S = 20
+
+# Earnings-21 (Revai/earnings21): the repo stores 44 calls as wav/<id>.wav (not parquet) and
+# metadata.jsonl holds, per call, audio_length, unique_speakers and the full transcript in "text".
+# Both are fetched from a pinned revision. Small = the shortest call (~18 min, ~35 MB).
+EARNINGS_REV = "33b26fbc8bb1e1ab1815d89867c65f13ffdb7422"  # verified 2026-10-06
+EARNINGS_BASE = f"https://huggingface.co/datasets/Revai/earnings21/resolve/{EARNINGS_REV}"
+EARNINGS_META = f"{EARNINGS_BASE}/metadata.jsonl"
+EARNINGS_SMALL_N = 1
+
+# VietMed (leduckhai/VietMed): the labeled test split is served as rows with audio, text,
+# utterance_id (utt_id_test_NNNNNN). Segments are short consecutive utterances.
+VIETMED_ROWS = (
+    "https://datasets-server.huggingface.co/rows?dataset=leduckhai/VietMed"
+    "&config=default&split=test&offset={offset}&length={length}"
+)
+VIETMED_SMALL_N = 60
+
 LICENCES = {
     "fleurs-en": {
         "licence": "CC-BY-4.0",
@@ -186,6 +230,30 @@ LICENCES = {
             "Audio is cut from public YouTube videos; do not redistribute it."
         ),
     },
+    "ami-text": {
+        "licence": "CC-BY-4.0",
+        "attribution": (
+            "AMI Meeting Corpus (Carletta et al., 2005), http://groups.inf.ed.ac.uk/ami, "
+            "CC BY 4.0. Reference text: https://huggingface.co/datasets/edinburghcstr/ami "
+            "(config ihm, word-level transcripts joined per segment)."
+        ),
+    },
+    "earnings21": {
+        "licence": "CC-BY-SA-4.0",
+        "attribution": (
+            'Earnings-21 (Del Rio et al., "Earnings-21: A Practical Benchmark for ASR in the '
+            'Wild", Interspeech 2021), Rev.com, CC BY-SA 4.0, via '
+            "https://huggingface.co/datasets/Revai/earnings21. Derivative text stays CC BY-SA."
+        ),
+    },
+    "vietmed": {
+        "licence": "MIT (as declared by the dataset authors)",
+        "attribution": (
+            'VietMed (Le-Duc, "VietMed: A Dataset and Benchmark for Automatic Speech '
+            'Recognition of Vietnamese in the Medical Domain", LREC-COLING 2024), '
+            "https://huggingface.co/datasets/leduckhai/VietMed, MIT. Test split."
+        ),
+    },
     "published-hyp": {
         "licence": "MIT (pyannote.audio pipeline outputs)",
         "attribution": (
@@ -202,6 +270,9 @@ SIZES = {
     "ami-sdm": "small ~60 MB (2 meetings, ~31 min); full ~700 MB (16 meetings)",
     "voxconverse": "small ~15 MB (7 files, ~7 min; the host is slow, allow ~10 min); full ~4.3 GB zip (232 files)",
     "vimedcss": "small ~40 MB (30 utterances); full ~2 GB (1614 utterances)",
+    "ami-text": "small ~0.1 MB text (IS1009a); full ~2 MB (16 meetings, no audio; run ami-sdm too)",
+    "earnings21": "small ~35 MB (1 call, ~18 min); full ~2.5 GB (44 calls)",
+    "vietmed": "small ~10 MB (60 consecutive test utterances); full test split, ~1 GB",
 }
 
 
@@ -733,12 +804,133 @@ def fetch_vimedcss(out: Path, subset: str, **_) -> None:
     write_notice(set_dir, "vimedcss")
 
 
+def hf_json(url: str) -> dict:
+    """GET a datasets-server JSON page; wait while the server is still building its index."""
+    for attempt in range(HF_RETRIES):
+        try:
+            page = json.loads(http_get(url))
+        except urllib.error.HTTPError as e:
+            try:
+                page = json.loads(e.read())
+            except ValueError:
+                raise e from None
+        if "error" not in page:
+            return page
+        if "loading" not in str(page["error"]) or attempt == HF_RETRIES - 1:
+            raise SystemExit(f"datasets-server error for {url[:100]}: {page['error']}")
+        log(f"  {page['error']}; waiting {HF_RETRY_WAIT_S}s")
+        time.sleep(HF_RETRY_WAIT_S)
+    raise SystemExit("unreachable")
+
+
+def hf_rows(url_fmt: str, n: int | None, **kw) -> list[dict]:
+    """Page a datasets-server rows/filter URL: n rows, or all of them when n is None."""
+    rows: list[dict] = []
+    while n is None or len(rows) < n:
+        length = 100 if n is None else min(100, n - len(rows))
+        page = hf_json(url_fmt.format(offset=len(rows), length=length, **kw))
+        got = [r["row"] for r in page["rows"]]
+        if not got:
+            break
+        rows += got
+    return rows
+
+
+def fetch_ami_text(out: Path, subset: str, **_) -> None:
+    set_dir = out / "ami-sdm"  # beside the audio; the ami-sdm manifest is left untouched
+    ids = AMI_TEST if subset == "full" else AMI_TEXT_SMALL
+    (set_dir / "refs").mkdir(parents=True, exist_ok=True)
+    for mid in ids:
+        where = urllib.parse.quote(f"\"meeting_id\"='{mid}'")
+        segs = hf_rows(AMI_TEXT_FILTER, None, where=where)
+        segs = [s for s in segs if s["meeting_id"] == mid and s["text"].strip()]
+        if not segs:
+            raise SystemExit(f"no reference segments for {mid}")
+        for s_ in segs:
+            s_["text"] = re.sub(r"\s+", " ", s_["text"]).strip()
+        segs.sort(key=lambda s: (s["begin_time"], s["end_time"]))
+        (set_dir / "refs" / f"{mid}.txt").write_text(
+            " ".join(s["text"].strip() for s in segs) + "\n", encoding="utf-8"
+        )
+        tsv = [
+            f"{s['begin_time']:.3f}\t{s['end_time']:.3f}\t{s['speaker_id']}\t"
+            + re.sub(r"\s+", " ", s["text"]).strip()
+            for s in segs
+        ]
+        (set_dir / "refs" / f"{mid}.segments.tsv").write_text(
+            "\n".join(tsv) + "\n", encoding="utf-8"
+        )
+        log(f"  {mid}: {len(segs)} segments")
+    write_notice(set_dir / "refs", "ami-text")
+    if not (set_dir / "audio").is_dir():
+        log("  note: no data/ami-sdm/audio yet; run --sets ami-sdm for the audio")
+
+
+def fetch_earnings21(out: Path, subset: str, **_) -> None:
+    set_dir = out / "earnings21"
+    meta = [
+        json.loads(line) for line in http_get(EARNINGS_META).decode("utf-8").splitlines() if line
+    ]
+    meta.sort(key=lambda m: m["audio_length"])
+    if subset != "full":
+        meta = meta[:EARNINGS_SMALL_N]
+    files = []
+    for m in meta:
+        fid = safe_id(Path(m["file_name"]).stem)
+        log(f"  {fid}: {m['audio_length'] / 60:.1f} min")
+        fetch_big(f"{EARNINGS_BASE}/{m['file_name']}", set_dir / "audio" / f"{fid}.wav")
+        ref = set_dir / "refs" / f"{fid}.txt"
+        ref.parent.mkdir(parents=True, exist_ok=True)
+        ref.write_text(m["text"].strip() + "\n", encoding="utf-8")
+        files.append(
+            {
+                "id": fid,
+                "audio": f"audio/{fid}.wav",
+                "ref": f"refs/{fid}.txt",
+                "lang": "en",
+                "setting": "other",
+                "playback": "na",
+                "speakers": max(1, int(m.get("unique_speakers") or 1)),
+            }
+        )
+    write_manifest(set_dir, "earnings21", files)
+    write_notice(set_dir, "earnings21")
+
+
+def fetch_vietmed(out: Path, subset: str, **_) -> None:
+    set_dir = out / "vietmed"
+    rows = hf_rows(VIETMED_ROWS, None if subset == "full" else VIETMED_SMALL_N)
+    files = []
+    for row in rows:
+        fid = safe_id(row["utterance_id"])
+        fetch_big(row["audio"][0]["src"], set_dir / "audio" / f"{fid}.wav")
+        ref = set_dir / "refs" / f"{fid}.txt"
+        ref.parent.mkdir(parents=True, exist_ok=True)
+        ref.write_text(row["text"].strip() + "\n", encoding="utf-8")
+        files.append(
+            {
+                "id": fid,
+                "audio": f"audio/{fid}.wav",
+                "ref": f"refs/{fid}.txt",
+                "lang": "vi",
+                "setting": "other",
+                "playback": "na",
+                "speakers": 1,
+            }
+        )
+    write_manifest(set_dir, "vietmed", files)
+    write_notice(set_dir, "vietmed")
+
+
 FETCHERS = {
     "fleurs-vi": fetch_fleurs,
     "fleurs-en": fetch_fleurs_en,
     "ami-sdm": fetch_ami,
     "voxconverse": fetch_voxconverse,
     "vimedcss": fetch_vimedcss,
+    "ami-text": fetch_ami_text,
+    "earnings21": fetch_earnings21,
+    "vietmed": fetch_vietmed,
 }
 
 
@@ -767,6 +959,20 @@ def plan(name: str, subset: str, with_hyp: bool, out: Path) -> list[str]:
         lines += [VOX_RTTM.format(rev=rev, id=i) for i in ids]
         if with_hyp:
             lines += [f"{PUB_RTTM[0]}  (gated: needs HF_TOKEN)", f"{PUB_EVAL[0]}  (gated)"]
+    elif name == "ami-text":
+        ids = AMI_TEST if subset == "full" else AMI_TEXT_SMALL
+        lines = [
+            AMI_TEXT_FILTER.format(where=f"meeting_id={i}", offset=0, length=100) + "  (text only)"
+            for i in ids
+        ]
+    elif name == "earnings21":
+        n = "all 44" if subset == "full" else f"the {EARNINGS_SMALL_N} shortest"
+        lines = [EARNINGS_META, f"{EARNINGS_BASE}/wav/<id>.wav  ({n} calls)"]
+    elif name == "vietmed":
+        n = "all" if subset == "full" else VIETMED_SMALL_N
+        lines = [
+            VIETMED_ROWS.format(offset=0, length=100) + f"  ({n} rows, then one wav URL per row)"
+        ]
     else:
         n = VIMED_FULL_N if subset == "full" else VIMED_SMALL_N
         lines = [VIMED_ROWS.format(offset=0, length=n) + "  (then one wav URL per row)"]
@@ -810,7 +1016,8 @@ def main(argv: list[str] | None = None) -> int:
         except OSError as e:  # URLError, timeouts, disk errors
             log(f"  FAILED: {e}\n  Re-run the same command; finished files are skipped.")
             return 1
-        log(f"  done -> {args.out / name / 'manifest.yaml'}")
+        done = "ami-sdm/refs" if name == "ami-text" else f"{name}/manifest.yaml"
+        log(f"  done -> {args.out / done}")
     return 0
 
 

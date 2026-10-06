@@ -255,6 +255,85 @@ def build_vox(fps, monkeypatch, ids):
             monkeypatch.setitem(fps.VOX_RTTM_SHA256, (rev, i), sha(r))
 
 
+def test_ami_text(fps, tmp_path, monkeypatch):
+    monkeypatch.setattr(fps, "AMI_TEXT_SMALL", ["IS1009a"])
+    seg = lambda b, e, spk, t, mid="IS1009a": {  # noqa: E731
+        "row": {"meeting_id": mid, "begin_time": b, "end_time": e, "speaker_id": spk, "text": t}
+    }
+    rows = [seg(5.0, 6.0, "B", "second  one"), seg(1.0, 2.5, "A", "first"), seg(9, 9.5, "A", " ")]
+    where = "%22meeting_id%22%3D%27IS1009a%27"
+    first = fps.AMI_TEXT_FILTER.format(where=where, offset=0, length=100)
+    fps.net.files[first] = json.dumps({"rows": rows}).encode()
+    fps.net.files[fps.AMI_TEXT_FILTER.format(where=where, offset=3, length=100)] = b'{"rows": []}'
+    sdm = tmp_path / "ami-sdm"
+    (sdm / "audio").mkdir(parents=True)
+    (sdm / "manifest.yaml").write_text("untouched", encoding="utf-8")
+
+    assert fps.main(["--sets", "ami-text", "--out", str(tmp_path)]) == 0
+    assert (sdm / "refs/IS1009a.txt").read_text(encoding="utf-8") == "first second one\n"
+    assert (sdm / "refs/IS1009a.segments.tsv").read_text(encoding="utf-8") == (
+        "1.000\t2.500\tA\tfirst\n5.000\t6.000\tB\tsecond one\n"
+    )
+    assert (sdm / "manifest.yaml").read_text(encoding="utf-8") == "untouched"
+    assert all("audio" not in u for u in fps.net.requests)
+
+
+def test_hf_json_waits_while_index_loads(fps, monkeypatch):
+    waits = []
+    monkeypatch.setattr(fps.time, "sleep", waits.append)
+    replies = iter([b'{"error": "the dataset index is loading"}', b'{"rows": []}'])
+    monkeypatch.setattr(fps, "http_get", lambda url, headers=None: next(replies))
+    assert fps.hf_json("https://example.test/x") == {"rows": []}
+    assert waits == [fps.HF_RETRY_WAIT_S]
+    monkeypatch.setattr(fps, "http_get", lambda url, headers=None: b'{"error": "boom"}')
+    with pytest.raises(SystemExit, match="boom"):
+        fps.hf_json("https://example.test/x")
+
+
+def test_earnings21_small_picks_shortest(fps, tmp_path):
+    meta = [
+        {"file_name": "wav/111.wav", "audio_length": 3000.0, "unique_speakers": 4, "text": "long"},
+        {
+            "file_name": "wav/222.wav",
+            "audio_length": 60.0,
+            "unique_speakers": 3,
+            "text": " short  ",
+        },
+    ]
+    fps.net.files[fps.EARNINGS_META] = "\n".join(json.dumps(m) for m in meta).encode()
+    fps.net.files[f"{fps.EARNINGS_BASE}/wav/222.wav"] = wav_bytes(1.0)
+
+    assert fps.main(["--sets", "earnings21", "--out", str(tmp_path)]) == 0
+    m = check_manifest(tmp_path / "earnings21", {"222"})
+    assert (m["files"][0]["lang"], m["files"][0]["speakers"]) == ("en", 3)
+    assert (tmp_path / "earnings21/refs/222.txt").read_text(encoding="utf-8") == "short\n"
+    assert not any("111" in u for u in fps.net.requests)
+
+
+def test_vietmed(fps, tmp_path, monkeypatch):
+    monkeypatch.setattr(fps, "VIETMED_SMALL_N", 2)
+    rows = [
+        {
+            "row": {
+                "utterance_id": f"utt_id_test_00000{i}",
+                "text": f"câu {i} y tế ",
+                "audio": [{"src": f"https://example.test/vm{i}.wav"}],
+            }
+        }
+        for i in range(2)
+    ]
+    fps.net.files[fps.VIETMED_ROWS.format(offset=0, length=2)] = json.dumps({"rows": rows}).encode()
+    for i in range(2):
+        fps.net.files[f"https://example.test/vm{i}.wav"] = wav_bytes(1.0)
+
+    assert fps.main(["--sets", "vietmed", "--out", str(tmp_path)]) == 0
+    m = check_manifest(tmp_path / "vietmed", {"utt_id_test_000000", "utt_id_test_000001"})
+    assert all(e["lang"] == "vi" for e in m["files"])
+    assert (tmp_path / "vietmed/refs/utt_id_test_000000.txt").read_text(encoding="utf-8") == (
+        "câu 0 y tế\n"
+    )
+
+
 def test_voxconverse_with_published_hyp(fps, tmp_path, monkeypatch, capsys):
     ids = ["aepyx", "aggyz"]
     build_vox(fps, monkeypatch, ids)
