@@ -119,24 +119,30 @@ impl Store {
                 ),
                 params![sealed, lamport, target],
             )?;
-            if n > 0 {
-                if let Some((fts, col)) = fts {
-                    let id: i64 = tx.query_row(
-                        &format!("SELECT id FROM {table} WHERE gid = ?1"),
-                        [&target],
-                        |r| r.get(0),
-                    )?;
-                    tx.execute(&format!("DELETE FROM {fts} WHERE rowid = ?1"), [id])?;
-                    let norm = fold::fold(&text);
-                    if !norm.is_empty() {
-                        tx.execute(
-                            &format!("INSERT INTO {fts} (rowid, {col}) VALUES (?1, ?2)"),
-                            params![id, norm],
-                        )?;
-                    }
-                }
-                crate::embeddings::bump_index_gen(&tx, meeting_id)?;
+            if n == 0 {
+                // The target was superseded or deleted: keep the copy so the
+                // chosen text is not lost silently.
+                return Err(StoreError::NotFound {
+                    kind: "conflict target",
+                    gid: target,
+                });
             }
+            if let Some((fts, col)) = fts {
+                let id: i64 = tx.query_row(
+                    &format!("SELECT id FROM {table} WHERE gid = ?1"),
+                    [&target],
+                    |r| r.get(0),
+                )?;
+                tx.execute(&format!("DELETE FROM {fts} WHERE rowid = ?1"), [id])?;
+                let norm = fold::fold(&text);
+                if !norm.is_empty() {
+                    tx.execute(
+                        &format!("INSERT INTO {fts} (rowid, {col}) VALUES (?1, ?2)"),
+                        params![id, norm],
+                    )?;
+                }
+            }
+            crate::embeddings::bump_index_gen(&tx, meeting_id)?;
         }
         tombstones::write(&tx, gid, "conflict_copy", lamport, Cause::User)?;
         tx.execute("DELETE FROM conflict_copies WHERE gid = ?1", [gid])?;
