@@ -14,7 +14,14 @@ use ghi_store::store::{NewMeeting, NewSegment, Store};
 /// An in-memory key store (the file-based one exists only in debug builds,
 /// and the bench also runs in release).
 #[derive(Default)]
-pub struct MemKeyStore(Mutex<Option<KeyRing>>);
+pub struct MemKeyStore(Mutex<Option<KeyRing>>, std::sync::atomic::AtomicUsize);
+
+impl MemKeyStore {
+    /// How many times the ring was saved (one begin and one finish per rotation).
+    pub fn saves(&self) -> usize {
+        self.1.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
 
 impl KeyStore for MemKeyStore {
     fn load(&self) -> Result<Option<KeyRing>, StoreError> {
@@ -22,6 +29,7 @@ impl KeyStore for MemKeyStore {
     }
     fn save(&self, ring: &KeyRing, _: Protection) -> Result<(), StoreError> {
         *self.0.lock().unwrap() = Some(ring.clone());
+        self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(())
     }
     fn delete(&self) -> Result<(), StoreError> {
@@ -39,7 +47,7 @@ pub fn keys() -> Keys {
 
 /// A key store that already holds `ring`.
 pub fn keys_with(ring: KeyRing) -> Keys {
-    Arc::new(MemKeyStore(Mutex::new(Some(ring))))
+    Arc::new(MemKeyStore(Mutex::new(Some(ring)), Default::default()))
 }
 
 /// The ring currently in the key store.

@@ -184,9 +184,8 @@ impl Store {
                 q("SELECT gid FROM voice_profiles WHERE gid IN (SELECT gid FROM tombstones)")?,
             )
         };
-        for gid in meetings {
-            self.delete_meeting_local(&gid)?;
-        }
+        // One rotation of the wrap secret for the batch.
+        self.delete_meetings_local(&meetings)?;
         for gid in profiles {
             match self.delete_voice_profile(&gid) {
                 Ok(()) | Err(StoreError::NotFound { .. }) => {}

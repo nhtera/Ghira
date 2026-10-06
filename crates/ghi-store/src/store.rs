@@ -2237,6 +2237,48 @@ impl Store {
         self.delete_meeting_inner(gid, false)
     }
 
+    /// [`Store::delete_meeting_local`] for many meetings: each key is shredded
+    /// and its rows go, but the wrap secret rotates **once** for the batch (a
+    /// rotation re-wraps every remaining key, so one per meeting is quadratic
+    /// while the store lock is held). Same crash safety: the ring stays
+    /// "rotating" from the first shred until the rotation at the end, and an
+    /// open finishes whatever was interrupted. A meeting already gone counts
+    /// for nothing; any other failure stops the batch after rotating for what
+    /// was shredded. Returns how many were deleted.
+    pub fn delete_meetings_local(&self, gids: &[String]) -> Result<usize> {
+        let mut deleted = 0;
+        let mut failure = None;
+        for gid in gids {
+            match self.delete_step(gid, false, false) {
+                Ok(()) => deleted += 1,
+                Err(StoreError::NotFound { .. }) => {}
+                Err(e) => {
+                    failure = Some(e);
+                    break;
+                }
+            }
+        }
+        let rotated = if deleted > 0 || failure.is_some() {
+            self.rotate_wraps(true)
+        } else {
+            Ok(())
+        };
+        let compacted = if deleted > 0 {
+            self.compact_after_deletes()
+        } else {
+            Ok(())
+        };
+        match failure {
+            Some(e) => Err(e),
+            None => rotated.and(compacted).map(|()| deleted),
+        }
+    }
+
+    fn compact_after_deletes(&self) -> Result<()> {
+        migrate::purge_snapshots(&snapshots_dir(&self.dir))?;
+        compact_locked(&self.conn())
+    }
+
     fn delete_meeting_inner(&self, gid: &str, tombstone: bool) -> Result<()> {
         let deleted = self.delete_before_rotation(gid, tombstone);
         // The key is gone either way: rotate so no earlier copy can unwrap it.
@@ -2254,6 +2296,12 @@ impl Store {
     }
 
     fn delete_before_rotation(&self, gid: &str, tombstone: bool) -> Result<()> {
+        self.delete_step(gid, tombstone, true)
+    }
+
+    /// Shreds one meeting and removes its rows; `compact` also compacts the
+    /// store (a batch does that once at its end).
+    fn delete_step(&self, gid: &str, tombstone: bool, compact: bool) -> Result<()> {
         check_gid(gid)?;
         Store::meeting_ref(&self.conn(), gid)?;
         // Start the rotation first: a crash anywhere below leaves the ring
@@ -2271,7 +2319,7 @@ impl Store {
             tx.commit()?;
         }
         self.shred_key(gid)?;
-        self.finish_delete_with(gid, tombstone)
+        self.finish_delete_with(gid, tombstone, compact)
     }
 
     /// Step 2 of [`Store::delete_meeting`], on its own. Public only so tests
@@ -2300,10 +2348,10 @@ impl Store {
 
     /// Steps 3-5 of [`Store::delete_meeting`] (files, rows, compaction).
     fn finish_delete(&self, gid: &str) -> Result<()> {
-        self.finish_delete_with(gid, true)
+        self.finish_delete_with(gid, true, true)
     }
 
-    fn finish_delete_with(&self, gid: &str, tombstone: bool) -> Result<()> {
+    fn finish_delete_with(&self, gid: &str, tombstone: bool, compact: bool) -> Result<()> {
         remove_dir_if_exists(&self.bundle_dir(gid)?)?;
         let mut conn = self.conn();
         let m = Store::meeting_ref(&conn, gid)?;
@@ -2328,6 +2376,9 @@ impl Store {
         tx.execute("DELETE FROM meetings WHERE id = ?1", [m.id])?;
         crate::people::gc_persons_with(&tx, &persons, tombstone)?;
         tx.commit()?;
+        if !compact {
+            return Ok(());
+        }
         migrate::purge_snapshots(&snapshots_dir(&self.dir))?;
         compact_locked(&conn)
     }

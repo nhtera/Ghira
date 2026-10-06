@@ -495,6 +495,51 @@ fn wipe_removes_the_peers_meetings_without_tombstones() {
     assert!(store.device(&b.gid).unwrap().is_some());
 }
 
+#[test]
+fn wiping_many_meetings_rotates_the_wrap_secret_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, keys) = common::open(tmp.path());
+    let a = peer(1);
+    store.pin_device(&a, &PSK).unwrap();
+    let kept = finished(&store, "giữ lại");
+    let mut shared = Vec::new();
+    for i in 0..200 {
+        let m = finished(&store, &format!("chung {i}"));
+        store.meeting_dek_for_peer(&a.gid, &m).unwrap();
+        shared.push(m);
+    }
+    let saves = keys.saves();
+    let began = std::time::Instant::now();
+    let report = store.wipe_peer(&a.gid).unwrap();
+    let took = began.elapsed();
+    assert_eq!(report.meetings, 200);
+    // One rotation: the ring is saved when it begins and when it finishes
+    // (the pin removal saves nothing).
+    assert_eq!(keys.saves() - saves, 2, "one rotation for the whole wipe");
+    assert!(took < std::time::Duration::from_secs(60), "{took:?}");
+    assert!(matches!(
+        store.get_meeting(&shared[0]),
+        Err(StoreError::NotFound { .. })
+    ));
+    // What stays still opens under the rotated secret.
+    assert_eq!(store.segments(&kept).unwrap().len(), 1);
+    assert!(!common::ring(&keys).is_rotating());
+}
+
+#[test]
+fn a_wiped_batch_that_crashes_before_the_rotation_finishes_on_open() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, keys) = common::open(tmp.path());
+    let kept = finished(&store, "giữ lại");
+    let gone = finished(&store, "xoá");
+    store.delete_meeting_before_rotation(&gone).unwrap();
+    assert!(common::ring(&keys).is_rotating());
+    drop(store);
+    let store = common::reopen(tmp.path(), &keys);
+    assert!(!common::ring(&keys).is_rotating());
+    assert_eq!(store.segments(&kept).unwrap().len(), 1);
+}
+
 // ----------------------------------------------------------------- leases
 
 fn lease(job: &str, meeting: &str, state: &str) -> Lease {
