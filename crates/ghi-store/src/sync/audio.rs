@@ -270,6 +270,22 @@ impl Store {
         Ok(have)
     }
 
+    /// Drops the open imports of these tracks (a transfer session ended or
+    /// failed): closes their `.part` handles. The parts stay on disk, the
+    /// next offer resumes them.
+    pub fn raw_abandon(&self, track_gids: &[String]) {
+        let mut imports = self.raw_imports();
+        for gid in track_gids {
+            imports.remove(gid);
+        }
+    }
+
+    /// Number of open raw imports (tests).
+    #[doc(hidden)]
+    pub fn raw_imports_open(&self) -> usize {
+        self.raw_imports().len()
+    }
+
     fn raw_imports(
         &self,
     ) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, (Vec<u8>, bundle::RawImport)>>

@@ -308,6 +308,8 @@ impl SyncStore for Watched {
         fn mark_key_sent(&self, device_gid: &str, meeting_gid: &str) -> StoreResult<()>;
         fn accept_dek(&self, meeting_gid: &str, dek: &[u8; 32], from_device: &str) -> StoreResult<()>;
         fn peer_meetings(&self, device_gid: &str) -> StoreResult<Vec<String>>;
+        fn meeting_audio_origin_gid(&self, meeting_gid: &str) -> StoreResult<Option<String>>;
+        fn track_abandon(&self, track_gids: &[String]) -> ();
         fn lease_state(&self, job_uuid: &str) -> StoreResult<Option<Lease>>;
         fn lease_fence_ok(&self, job_uuid: &str, now_cont_ns: i64, boot_id: &str, margin_ms: i64) -> StoreResult<bool>;
         fn lease_any_open_for(&self, meeting_gid: &str) -> StoreResult<bool>;

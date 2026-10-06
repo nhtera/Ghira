@@ -458,6 +458,17 @@ mod tests {
         );
         assert_eq!(hub.part_pages("t1"), Some(6));
         assert!(hub.complete_track("t1").is_none());
+        // The dropped session closed the half-received import.
+        assert_eq!(hub.open_imports(), 0);
+    }
+
+    #[test]
+    fn a_finished_transfer_leaves_no_import_open() {
+        let (hub, phone) = rig();
+        phone.add_local_track(track("t1", PREFIX, pages(4, 100)));
+        sync_once(&hub, &phone, 1).0.unwrap();
+        assert!(hub.complete_track("t1").is_some());
+        assert_eq!(hub.open_imports(), 0);
     }
 
     #[test]

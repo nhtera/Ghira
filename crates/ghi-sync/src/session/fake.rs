@@ -71,6 +71,9 @@ struct Inner {
     deks: BTreeMap<String, [u8; 32]>,
     key_sent: BTreeSet<(String, String)>,
     peer_meetings: BTreeSet<(String, String)>,
+    audio_origins: BTreeMap<String, String>,
+    /// Tracks with an open import (the real store's open `.part` handle).
+    open_imports: BTreeSet<String>,
     leases: BTreeMap<String, Lease>,
     confirmed: BTreeSet<String>,
     // audio
@@ -221,6 +224,11 @@ impl FakeSyncStore {
 
     pub fn set_free_bytes(&self, n: u64) {
         self.g().free_bytes = n;
+    }
+
+    /// Tracks whose import is still open (a leaked handle in the real store).
+    pub fn open_imports(&self) -> usize {
+        self.g().open_imports.len()
     }
 
     pub fn part_pages(&self, track_gid: &str) -> Option<usize> {
@@ -444,6 +452,8 @@ impl SyncStore for FakeSyncStore {
                     g.deks.insert(gid.clone(), dek);
                 }
                 g.peer_meetings.insert((from_device.into(), gid.clone()));
+                let origin = m.audio_origin.clone().unwrap_or_else(|| from_device.into());
+                g.audio_origins.entry(gid.clone()).or_insert(origin);
             }
             let outcome = match g.rows.get(&gid) {
                 None => ApplyOutcome::Accepted,
@@ -617,6 +627,9 @@ impl SyncStore for FakeSyncStore {
         }
         g.deks.insert(meeting_gid.into(), *dek);
         Ok(())
+    }
+    fn meeting_audio_origin_gid(&self, meeting_gid: &str) -> Res<Option<String>> {
+        Ok(self.g().audio_origins.get(meeting_gid).cloned())
     }
     fn peer_meetings(&self, device_gid: &str) -> Res<Vec<String>> {
         Ok(self
@@ -860,7 +873,14 @@ impl SyncStore for FakeSyncStore {
                 0
             }
         };
+        g.open_imports.insert(offer.track_gid.clone());
         Ok(OfferResult::Have(have))
+    }
+    fn track_abandon(&self, track_gids: &[String]) {
+        let mut g = self.g();
+        for gid in track_gids {
+            g.open_imports.remove(gid);
+        }
     }
     fn track_push(
         &self,
@@ -887,6 +907,7 @@ impl SyncStore for FakeSyncStore {
         }
         let have = part.pages.len() as u64;
         if have == part.total {
+            g.open_imports.remove(track_gid);
             let done = g.parts.remove(track_gid).unwrap_or_default();
             g.complete
                 .insert(track_gid.to_string(), (done.prefix, done.pages));

@@ -68,6 +68,8 @@ pub trait SyncStore: Send + Sync {
     fn mark_key_sent(&self, device_gid: &str, meeting_gid: &str) -> Result<()>;
     fn accept_dek(&self, meeting_gid: &str, dek: &[u8; 32], from_device: &str) -> Result<()>;
     fn peer_meetings(&self, device_gid: &str) -> Result<Vec<String>>;
+    /// The paired device that recorded the meeting (`None`: recorded here).
+    fn meeting_audio_origin_gid(&self, meeting_gid: &str) -> Result<Option<String>>;
 
     // --- leases
     fn lease_open(&self, lease: &Lease) -> Result<Lease>;
@@ -139,6 +141,9 @@ pub trait SyncStore: Send + Sync {
         first: u64,
         records: &[Vec<u8>],
     ) -> Result<u64>;
+    /// Receiver: a transfer session ended with these tracks half received;
+    /// closes their open `.part` handles (the parts stay for a resume).
+    fn track_abandon(&self, _track_gids: &[String]) {}
 }
 
 impl SyncStore for Store {
@@ -229,6 +234,10 @@ impl SyncStore for Store {
     }
     fn peer_meetings(&self, device_gid: &str) -> Result<Vec<String>> {
         Store::peer_meetings(self, device_gid)
+    }
+
+    fn meeting_audio_origin_gid(&self, meeting_gid: &str) -> Result<Option<String>> {
+        Store::meeting_audio_origin_gid(self, meeting_gid)
     }
 
     fn lease_open(&self, lease: &Lease) -> Result<Lease> {
@@ -345,6 +354,9 @@ impl SyncStore for Store {
         records: &[Vec<u8>],
     ) -> Result<u64> {
         Store::raw_push(self, track_gid, prefix, first, records)
+    }
+    fn track_abandon(&self, track_gids: &[String]) {
+        Store::raw_abandon(self, track_gids);
     }
     fn sync_dirty(&self, kind: &str, gid: &str) -> Result<bool> {
         Store::sync_dirty(self, kind, gid)

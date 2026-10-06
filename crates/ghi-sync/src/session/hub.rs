@@ -66,6 +66,17 @@ enum Flow {
     Close,
 }
 
+impl<T: Transport> Drop for HubSession<T> {
+    /// A session that ends (or fails) mid-transfer must not keep the `.part`
+    /// files of its unfinished tracks open.
+    fn drop(&mut self) {
+        if !self.offers.is_empty() {
+            let gids: Vec<String> = self.offers.keys().cloned().collect();
+            self.store.track_abandon(&gids);
+        }
+    }
+}
+
 impl<T: Transport> HubSession<T> {
     pub fn new(store: Arc<dyn SyncStore>, clock: Arc<dyn Clock>, transport: T) -> Self {
         let now = clock.now_cont_ns();
