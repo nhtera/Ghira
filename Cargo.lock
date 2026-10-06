@@ -2248,6 +2248,7 @@ version = "0.1.0"
 dependencies = [
  "base45",
  "ciborium",
+ "ghi-core",
  "ghi-net",
  "ghi-store",
  "libc",
@@ -2256,6 +2257,7 @@ dependencies = [
  "qrcode",
  "rand_core 0.6.4",
  "serde",
+ "serde_json",
  "snow",
  "tempfile",
  "uuid",
