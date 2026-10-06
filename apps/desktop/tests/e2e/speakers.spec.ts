@@ -58,7 +58,7 @@ test("the voice option is not offered (third-party profiles are off)", async ({ 
 const addLines = (page: Page) =>
   page.evaluate(() => {
     const emit = (window as unknown as Mock).__ghiMock.simulateCoreEvent;
-    for (const i of [1, 2]) emit({ type: "transcriptFinal", meeting: "", line: { gid: `split-${i}`, speaker: 2, t0Ms: 200_000 + i * 3000, t1Ms: 201_500 + i * 3000, text: `split candidate ${i}`, overlap: false, words: [] } });
+    for (const i of [1, 2]) emit({ type: "transcriptFinal", track: 0, meeting: "", line: { gid: `split-${i}`, speaker: 2, t0Ms: 200_000 + i * 3000, t1Ms: 201_500 + i * 3000, text: `split candidate ${i}`, overlap: false, words: [] } });
   });
 
 test("split two lines off to a new speaker", async ({ page }) => {

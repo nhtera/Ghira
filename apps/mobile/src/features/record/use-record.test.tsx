@@ -54,7 +54,7 @@ const partial = (seq: number, text: string): CoreEvent => ({ seq, atMs: null, ev
 const final = (seq: number, gid: string, text: string): CoreEvent => ({
   seq,
   atMs: null,
-  event: { type: "transcriptFinal", meeting: "m-1", line: { gid, speaker: null, t0Ms: seq * 100, t1Ms: seq * 100 + 50, text, overlap: false, words: [] } },
+  event: { type: "transcriptFinal", track: 0, meeting: "m-1", line: { gid, speaker: null, t0Ms: seq * 100, t1Ms: seq * 100 + 50, text, overlap: false, words: [] } },
 });
 const wake = () => {
   Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });

@@ -240,7 +240,7 @@ function addLines(n: number) {
     const t0 = lines.length * 4000;
     const line: LineInfo = { gid: `l-${lines.length + 1}`, speaker: id, t0Ms: t0, t1Ms: t0 + 3500, text: SAMPLE[lines.length % SAMPLE.length], overlap: false, words: [] };
     lines = [...lines, line];
-    core({ type: "transcriptFinal", meeting: "m-1", line });
+    core({ type: "transcriptFinal", track: 0, meeting: "m-1", line });
   }
 }
 

@@ -210,6 +210,7 @@ mod loaded {
             device: device(args),
             chunk_ms: Some(asr_chunk_ms(pass)),
             endpointing: true,
+            eou_ms: None,
         })
         .map_err(speech_error)?;
         Ok((asr, engine))

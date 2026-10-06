@@ -80,7 +80,7 @@ describe("phase", () => {
     const m = run([
       mobile({ type: "phase", phase: "live" }),
       core({ type: "speakerArrived", meeting: "m", speaker: speaker(1) }),
-      core({ type: "transcriptFinal", meeting: "m", line: line("a", 1) }),
+      core({ type: "transcriptFinal", track: 0, meeting: "m", line: line("a", 1) }),
       mobile({ type: "phase", phase: "done" }),
     ]);
     expect(m.lines).toEqual([]);
@@ -191,16 +191,16 @@ describe("transcript", () => {
   it("announces a speaker turn once, not every line", () => {
     let m = run([
       ...speakers,
-      core({ type: "transcriptFinal", meeting: "m", line: line("a", 1) }),
+      core({ type: "transcriptFinal", track: 0, meeting: "m", line: line("a", 1) }),
     ]);
     expect(m.announce).toEqual({ name: "Speaker 1", n: 1 });
     m = run(
-      [core({ type: "transcriptFinal", meeting: "m", line: line("b", 1) })],
+      [core({ type: "transcriptFinal", track: 0, meeting: "m", line: line("b", 1) })],
       m,
     );
     expect(m.announce?.n).toBe(1);
     m = run(
-      [core({ type: "transcriptFinal", meeting: "m", line: line("c", 2) })],
+      [core({ type: "transcriptFinal", track: 0, meeting: "m", line: line("c", 2) })],
       m,
     );
     expect(m.announce).toEqual({ name: "Speaker 2", n: 2 });
@@ -232,14 +232,14 @@ describe("transcript", () => {
     expect(m.lines).toHaveLength(1);
     m = run(
       [
-        core({ type: "transcriptFinal", meeting: "m", line: line("a", 1) }, 5),
-        core({ type: "transcriptFinal", meeting: "m", line: line("b", 1) }, 6),
+        core({ type: "transcriptFinal", track: 0, meeting: "m", line: line("a", 1) }, 5),
+        core({ type: "transcriptFinal", track: 0, meeting: "m", line: line("b", 1) }, 6),
       ],
       m,
     );
     expect(m.lines.map((l) => l.key)).toEqual(["a", "b"]);
     m = run(
-      [core({ type: "transcriptFinal", meeting: "m", line: line("b", 1) }, 7)],
+      [core({ type: "transcriptFinal", track: 0, meeting: "m", line: line("b", 1) }, 7)],
       m,
     );
     expect(m.lines).toHaveLength(2);
@@ -268,7 +268,7 @@ describe("transcript", () => {
     );
     expect(m.partial).toBe("chốt scope");
     m = run(
-      [core({ type: "transcriptFinal", meeting: "m", line: line("a", null) })],
+      [core({ type: "transcriptFinal", track: 0, meeting: "m", line: line("a", null) })],
       m,
     );
     expect(m.partial).toBe("");
@@ -313,15 +313,15 @@ describe("transcript", () => {
   it("does not announce a provisional speaker", () => {
     const m = run([
       core({ type: "speakerArrived", meeting: "m", speaker: { ...speaker(1), provisional: true } }),
-      core({ type: "transcriptFinal", meeting: "m", line: line("a", 1) }),
+      core({ type: "transcriptFinal", track: 0, meeting: "m", line: line("a", 1) }),
     ]);
     expect(m.announce).toBeNull();
   });
 
   it("stars the line a mark falls on, once, and ignores a mark the snapshot already has", () => {
     const withLines = run([
-      core({ type: "transcriptFinal", meeting: "m", line: { ...line("a", 1), t0Ms: 0 } }),
-      core({ type: "transcriptFinal", meeting: "m", line: { ...line("b", 1), t0Ms: 5000 } }),
+      core({ type: "transcriptFinal", track: 0, meeting: "m", line: { ...line("a", 1), t0Ms: 0 } }),
+      core({ type: "transcriptFinal", track: 0, meeting: "m", line: { ...line("b", 1), t0Ms: 5000 } }),
     ]);
     const marked = run([core({ type: "markAdded", meeting: "m", tMs: 6000 })], withLines);
     expect(marked.lines.map((l) => l.marked)).toEqual([false, true]);
@@ -406,9 +406,9 @@ describe("sensitive mode and discard", () => {
   it("a discard removes the lines that end after the cut, the marks from it, and the partial", () => {
     let m = run([
       core({ type: "sessionStarted", meeting: "m", mode: "room", language: null, title: "" }),
-      core({ type: "transcriptFinal", meeting: "m", line: at("a", 0, 3000) }),
-      core({ type: "transcriptFinal", meeting: "m", line: at("b", 4000, 7000) }),
-      core({ type: "transcriptFinal", meeting: "m", line: at("c", 8000, 9000) }),
+      core({ type: "transcriptFinal", track: 0, meeting: "m", line: at("a", 0, 3000) }),
+      core({ type: "transcriptFinal", track: 0, meeting: "m", line: at("b", 4000, 7000) }),
+      core({ type: "transcriptFinal", track: 0, meeting: "m", line: at("c", 8000, 9000) }),
       core({ type: "markAdded", meeting: "m", tMs: 2000 }),
       core({ type: "markAdded", meeting: "m", tMs: 8500 }),
       core({ type: "transcriptPartial", meeting: "m", track: 0, text: "dở dang" }),

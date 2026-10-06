@@ -732,7 +732,9 @@ export type Event = { type: "stateChanged"; meeting: string; state: SessionState
  */
 { type: "sessionStarted"; meeting: string; mode: string; language: string | null; title: string } | { type: "transcriptPartial"; meeting: string; 
 /**  0 = mic, 1 = system. */
-track: number; text: string } | { type: "transcriptFinal"; meeting: string; line: LineInfo } | { type: "speakerArrived"; meeting: string; speaker: SpeakerInfo } | 
+track: number; text: string } | { type: "transcriptFinal"; meeting: string; 
+/**  The track whose words in progress this line ends: 0 = mic, 1 = system. */
+track: number; line: LineInfo } | { type: "speakerArrived"; meeting: string; speaker: SpeakerInfo } | 
 /**  A provisional speaker became "Speaker N". */
 { type: "speakerConfirmed"; meeting: string; speaker: SpeakerInfo } | { type: "speakerRenamed"; meeting: string; speaker: SpeakerInfo } | { type: "speakersMerged"; meeting: string; from: number; into: number } | 
 /**

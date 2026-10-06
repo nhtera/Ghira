@@ -32,6 +32,11 @@ pub trait SpeechEngines: Send + Sync {
     fn checkpoint_id(&self) -> String {
         format!("engine:{}", self.chunk_ms())
     }
+    /// Whether the live engine should reopen its ASR stream after this final
+    /// line (a fresh stream for the next utterance).
+    fn reset_after(&self, _line: &str) -> bool {
+        false
+    }
 }
 /// `id:sha256` of the registry model a file is (callers verify the file
 /// against the registry before loading); a file the registry doesn't know
@@ -75,11 +80,24 @@ mod nemo {
             chunk_ms: u32,
             device: Device,
         ) -> Result<Self> {
+            Self::load_tuned(asr_model, diar_model, chunk_ms, None, device)
+        }
+
+        /// [`NemoEngines::load`] with the trailing silence (ms) that ends an
+        /// utterance; `None` = the library default (the live bench tunes it).
+        pub fn load_tuned(
+            asr_model: &Path,
+            diar_model: &Path,
+            chunk_ms: u32,
+            eou_ms: Option<u32>,
+            device: Device,
+        ) -> Result<Self> {
             let asr = Asr::new(&AsrConfig {
                 model: asr_model.to_path_buf(),
                 device,
                 chunk_ms: Some(chunk_ms),
                 endpointing: true,
+                eou_ms,
             })?;
             let diar = Diarizer::new(&DiarConfig {
                 model: diar_model.to_path_buf(),
@@ -90,10 +108,14 @@ mod nemo {
                 asr: Arc::new(asr),
                 diar: Arc::new(diar),
                 chunk_ms,
+                // Pauses decide where lines end: another value is another pass.
                 tag: format!(
-                    "nemo:{}:{}:{chunk_ms}",
+                    "nemo:{}:{}:{chunk_ms}{}",
                     super::model_tag(asr_model),
-                    super::model_tag(diar_model)
+                    super::model_tag(diar_model),
+                    eou_ms
+                        .filter(|&e| e != ghi_speech::nemo::EOU_MS)
+                        .map_or(String::new(), |e| format!(":eou{e}"))
                 ),
             })
         }
@@ -117,6 +139,15 @@ mod nemo {
 
         fn checkpoint_id(&self) -> String {
             self.tag.clone()
+        }
+
+        /// After a Vietnamese line (Vietnamese is written with diacritics): a
+        /// fresh Nemotron stream reads Vietnamese and code-switched speech
+        /// better (live bench, 2026-10-06: ViMedCSS 35% -> 19% WER, VietMed
+        /// 22% -> 18%, FLEURS vi 16% -> 15%), while English reads as well or
+        /// better with its context kept (AMI, Earnings-21 flat).
+        fn reset_after(&self, line: &str) -> bool {
+            ghi_text::has_diacritics(line)
         }
     }
 }
@@ -353,6 +384,192 @@ impl SpeechEngines for FakeEngines {
 
     fn chunk_ms(&self) -> u32 {
         self.chunk_ms
+    }
+}
+
+/// One talker reading `words` back to back, one word per `step` seconds from
+/// `start`, with a second of silence (an utterance ends) after the word counts
+/// in `pauses`. Unlike [`Script`], times are on the meeting clock.
+#[derive(Debug, Clone, Default)]
+pub struct Talk {
+    pub words: Vec<String>,
+    pub start: f64,
+    pub step: f64,
+    pub pauses: Vec<usize>,
+}
+
+impl Talk {
+    fn word_end(&self, i: usize) -> f64 {
+        let pauses = self.pauses.iter().filter(|&&p| p <= i).count();
+        self.start + (i + 1) as f64 * self.step + pauses as f64
+    }
+
+    /// Words that began before `t` (meeting seconds).
+    fn begun(&self, t: f64) -> usize {
+        (0..self.words.len())
+            .take_while(|&i| self.word_end(i) - self.step < t)
+            .count()
+    }
+}
+
+/// Fake engines over a [`Talk`] for one track, where streams share the meeting
+/// clock (counted by the diarizer, which hears every block once): a reopened
+/// ASR stream hears only what follows, as a real one does. A line with
+/// diacritics asks for a fresh stream, as NeMo's does.
+pub struct TalkEngines {
+    talk: Talk,
+    clock: Arc<std::sync::Mutex<(f64, u32)>>,
+}
+
+impl TalkEngines {
+    pub fn new(talk: Talk) -> Arc<TalkEngines> {
+        Arc::new(TalkEngines {
+            talk,
+            clock: Arc::default(),
+        })
+    }
+
+    /// ASR streams opened so far.
+    pub fn opened(&self) -> u32 {
+        self.clock.lock().unwrap_or_else(|e| e.into_inner()).1
+    }
+}
+
+struct TalkAsr {
+    talk: Talk,
+    clock: Arc<std::sync::Mutex<(f64, u32)>>,
+    /// Meeting time when the stream opened.
+    origin: f64,
+    /// Next word not yet in a final.
+    next: usize,
+    partial: String,
+    out: Vec<AsrResult>,
+    /// Finished, and its last final (finishing again repeats it, as NeMo does).
+    finished: Option<Option<AsrResult>>,
+}
+
+impl TalkAsr {
+    fn result(&self, from: usize, to: usize, is_final: bool) -> AsrResult {
+        let t = &self.talk;
+        AsrResult {
+            is_final,
+            text: t.words[from..to].join(" "),
+            words: (from..to)
+                .map(|i| Word {
+                    text: t.words[i].clone(),
+                    start: t.word_end(i) - t.step - self.origin,
+                    end: t.word_end(i) - self.origin,
+                    confidence: 0.9,
+                    speaker: None,
+                })
+                .collect(),
+            languages: Vec::new(),
+            audio_processed: 0.0,
+        }
+    }
+
+    /// Finishing flushes what was buffered: a word cut by the flush is this
+    /// stream's (the next one hears only what follows).
+    fn produce(&mut self, finishing: bool) {
+        let now = self.clock.lock().unwrap_or_else(|e| e.into_inner()).0;
+        let t = &self.talk;
+        let heard = if finishing {
+            t.begun(now)
+        } else {
+            (0..t.words.len())
+                .take_while(|&i| t.word_end(i) <= now)
+                .count()
+        };
+        self.next = self.next.max(t.begun(self.origin));
+        let end = match t.pauses.iter().find(|&&p| p > self.next && p <= heard) {
+            Some(&p) => Some(p),
+            None if finishing && heard > self.next => Some(heard),
+            None => None,
+        };
+        if let Some(end) = end {
+            self.out.push(self.result(self.next, end, true));
+            self.next = end;
+            self.partial.clear();
+        } else if heard > self.next {
+            let p = t.words[self.next..heard].join(" ");
+            if p != self.partial {
+                self.partial = p;
+                self.out.push(self.result(self.next, heard, false));
+            }
+        }
+    }
+}
+
+impl AsrStream for TalkAsr {
+    fn push(&mut self, _: &[f32], _: u32) -> Result<()> {
+        self.produce(false);
+        Ok(())
+    }
+    fn finish(&mut self) -> Result<()> {
+        if let Some(last) = &self.finished {
+            self.out.extend(last.clone());
+            return Ok(());
+        }
+        self.produce(true);
+        self.finished = Some(self.out.iter().rfind(|r| r.is_final).cloned());
+        Ok(())
+    }
+    fn next_result(&mut self) -> Result<Option<AsrResult>> {
+        Ok((!self.out.is_empty()).then(|| self.out.remove(0)))
+    }
+}
+
+/// One speaker throughout; it moves the meeting clock.
+struct TalkDiar {
+    clock: Arc<std::sync::Mutex<(f64, u32)>>,
+}
+
+impl DiarStream for TalkDiar {
+    fn push(&mut self, pcm: &[f32], sample_rate: u32) -> Result<()> {
+        self.clock.lock().unwrap_or_else(|e| e.into_inner()).0 +=
+            pcm.len() as f64 / f64::from(sample_rate);
+        Ok(())
+    }
+    fn finish(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn segments(&self) -> Result<Vec<SpeakerSegment>> {
+        let now = self.clock.lock().unwrap_or_else(|e| e.into_inner()).0;
+        Ok(vec![SpeakerSegment {
+            start: 0.0,
+            end: now,
+            speaker: 1,
+        }])
+    }
+}
+
+impl SpeechEngines for TalkEngines {
+    fn asr(&self, _language: Option<&str>) -> Result<BoxAsr> {
+        let mut c = self.clock.lock().unwrap_or_else(|e| e.into_inner());
+        c.1 += 1;
+        Ok(Box::new(TalkAsr {
+            talk: self.talk.clone(),
+            clock: self.clock.clone(),
+            origin: c.0,
+            next: 0,
+            partial: String::new(),
+            out: Vec::new(),
+            finished: None,
+        }))
+    }
+
+    fn diar(&self) -> Result<BoxDiar> {
+        Ok(Box::new(TalkDiar {
+            clock: self.clock.clone(),
+        }))
+    }
+
+    fn chunk_ms(&self) -> u32 {
+        560
+    }
+
+    fn reset_after(&self, line: &str) -> bool {
+        ghi_text::has_diacritics(line)
     }
 }
 

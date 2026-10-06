@@ -547,6 +547,7 @@ impl Applier {
                 self.stats.line(l.speaker.is_none());
                 Event::TranscriptFinal {
                     meeting: self.meeting.clone(),
+                    track: 0,
                     line: LineInfo {
                         gid: l.gid.clone(),
                         speaker: l.speaker,
@@ -731,7 +732,7 @@ pub enum Flow {
 }
 
 fn live(ctx: &mut EngineCtx, engines: &Arc<dyn SpeechEngines>) -> Result<Flow, String> {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     let shared = ctx.shared.clone();
     let err = |e: ghi_speech::SpeechError| e.to_string();
     // Opening streams may touch the GPU too.
@@ -752,29 +753,79 @@ fn live(ctx: &mut EngineCtx, engines: &Arc<dyn SpeechEngines>) -> Result<Flow, S
     let (asr, diar) = opened?;
     let (asr, diar) = (RefCell::new(asr), RefCell::new(diar));
     let stats = ctx.applier.stats();
-    let collect = || -> Result<Vec<Update>, String> {
+    // Stream seconds pushed (the diarizer's clock); where the ASR stream in
+    // use opened on it; when the utterance in progress showed its first words
+    // (and those words); whether the last line asks for a fresh stream.
+    let pushed = Cell::new(0.0f64);
+    let asr_base = Cell::new(0.0f64);
+    let partial_from = Cell::new(None::<f64>);
+    let partial = RefCell::new(String::new());
+    let reset = Cell::new(false);
+    let language = ctx.language.clone();
+    // A long utterance (no pause) is cut, and a line the engine asks for starts
+    // a fresh stream (as ghi-core live does): checked every step.
+    let cut_due = || match partial_from.get() {
+        Some(from) => ghi_core::live::cut_due(&partial.borrow(), pushed.get() - from),
+        None => reset.get(),
+    };
+    // `cut`: false once the session stopped (the stream is already finished;
+    // finishing it again would repeat its last final).
+    let collect = |cut: bool| -> Result<Vec<Update>, String> {
         let mut out = Vec::new();
         let mut asr = asr.borrow_mut();
-        while let Some(r) = asr.next_result().map_err(err)? {
-            stats.asr_result(r.audio_processed);
+        let mut flushed = false;
+        loop {
+            let Some(r) = asr.next_result().map_err(err)? else {
+                if flushed {
+                    // The cut's final is out: go on with a fresh stream.
+                    *asr = engines.asr(language.as_deref()).map_err(err)?;
+                    asr_base.set(pushed.get());
+                    reset.set(false);
+                } else if cut && cut_due() {
+                    asr.finish().map_err(err)?;
+                    flushed = true;
+                    partial_from.set(None);
+                    continue;
+                }
+                break;
+            };
+            // Stream times on the diarizer's clock.
+            let base = asr_base.get();
+            stats.asr_result(r.audio_processed + base);
             if !r.is_final {
+                if partial_from.get().is_none() {
+                    partial_from.set(Some(pushed.get()));
+                }
+                partial.replace(r.text.clone());
                 out.push(Update::Partial(r.text));
                 continue;
             }
+            partial_from.set(None);
+            partial.borrow_mut().clear();
             let text = r.text.trim().to_string();
             if text.is_empty() {
                 continue;
             }
-            let (start, end) = match (r.words.first(), r.words.last()) {
+            reset.set(engines.reset_after(&text));
+            let words: Vec<Word> = r
+                .words
+                .into_iter()
+                .map(|w| Word {
+                    start: w.start + base,
+                    end: w.end + base,
+                    ..w
+                })
+                .collect();
+            let (start, end) = match (words.first(), words.last()) {
                 (Some(a), Some(b)) => (a.start, b.end),
-                _ => (r.audio_processed, r.audio_processed),
+                _ => (r.audio_processed + base, r.audio_processed + base),
             };
             let segs = diar.borrow().segments().map_err(err)?;
             out.push(Update::Final {
                 start,
                 end,
                 text,
-                words: r.words,
+                words,
                 segs,
             });
         }
@@ -786,14 +837,15 @@ fn live(ctx: &mut EngineCtx, engines: &Arc<dyn SpeechEngines>) -> Result<Flow, S
         &mut ctx.backlog,
         |pcm| {
             stats.audio(pcm);
+            pushed.set(pushed.get() + pcm.len() as f64 / RATE);
             asr.borrow_mut().push(pcm, SAMPLE_RATE).map_err(err)?;
             diar.borrow_mut().push(pcm, SAMPLE_RATE).map_err(err)?;
-            collect()
+            collect(true)
         },
         || {
             asr.borrow_mut().finish().map_err(err)?;
             diar.borrow_mut().finish().map_err(err)?;
-            collect()
+            collect(false)
         },
         |updates, offset, now| applier.borrow_mut().apply(updates, offset, now),
     )
@@ -1467,6 +1519,80 @@ mod tests {
         assert!(partials_sent(&rx).is_empty(), "inside the cut");
         partial(&mut applier, 16_000 * 2);
         assert_eq!(partials_sent(&rx), ["and so"]);
+    }
+
+    /// Runs `talk` through the engine; the lines (text, start ms) and the ASR
+    /// streams opened.
+    fn talk_lines(
+        name: &str,
+        talk: ghi_core::engines::Talk,
+        seconds: usize,
+    ) -> (Vec<(String, i64)>, u32) {
+        let (shared, backlog, dir) = setup(name, seconds);
+        let engines = ghi_core::engines::TalkEngines::new(talk);
+        let provider: EnginesProvider = {
+            let e = engines.clone();
+            Arc::new(move || Ok(e.clone() as Arc<dyn SpeechEngines>))
+        };
+        let (tx, rx) = ghi_core::events::bus();
+        let (ptx, _prx) = crossbeam_channel::unbounded();
+        run(EngineCtx {
+            shared,
+            backlog,
+            provider,
+            applier: Applier::new("m".into(), None, tx, ptx),
+            language: None,
+            runner_idle: None,
+        });
+        std::fs::remove_dir_all(dir).unwrap();
+        let lines = rx
+            .try_iter()
+            .filter_map(|e| match e.event {
+                Event::TranscriptFinal { line, .. } => Some((line.text, line.t0_ms)),
+                _ => None,
+            })
+            .collect();
+        (lines, engines.opened())
+    }
+
+    fn words(n: usize, w: &str) -> Vec<String> {
+        (1..=n).map(|i| format!("{w}{i}")).collect()
+    }
+
+    /// Continuous speech without a pause is cut into lines (the stream is
+    /// reopened): every word once, in order.
+    #[test]
+    fn a_long_utterance_is_cut_without_losing_or_repeating_words() {
+        let talk = ghi_core::engines::Talk {
+            words: words(60, "w"),
+            start: 0.5,
+            step: 0.5,
+            pauses: Vec::new(),
+        };
+        let (lines, opened) = talk_lines("longcut", talk.clone(), 32);
+        assert!(lines.len() >= 2 && opened >= 2, "cut: {lines:?}");
+        let heard: Vec<&str> = lines.iter().flat_map(|l| l.0.split_whitespace()).collect();
+        assert_eq!(heard, talk.words);
+    }
+
+    /// A Vietnamese line starts a fresh stream; its words stay on the clock;
+    /// one the stop produced is not finished twice (a repeated line).
+    #[test]
+    fn a_vietnamese_line_starts_a_fresh_stream() {
+        let talk = ghi_core::engines::Talk {
+            words: words(12, "đ"),
+            start: 0.5,
+            step: 0.5,
+            // The last line comes out of the stop itself (no pause before it).
+            pauses: vec![4, 8],
+        };
+        let (lines, opened) = talk_lines("vireset", talk.clone(), 10);
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(opened >= 3, "{opened}");
+        let heard: Vec<&str> = lines.iter().flat_map(|l| l.0.split_whitespace()).collect();
+        assert_eq!(heard, talk.words);
+        // The third line (from word 9, after two 1 s pauses) on the meeting clock.
+        assert_eq!(lines[2].1, 6_500, "{lines:?}");
     }
 
     #[test]

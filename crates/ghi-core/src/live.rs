@@ -10,8 +10,10 @@
 //! - Call mode: the mic track is Me (no voice matching yet); the system track
 //!   is transcribed and diarized.
 //! - Room mode: the mic track is transcribed and diarized.
-//! - A partial running 15 s without a final is force-finalized (the stream is
-//!   flushed and reopened).
+//! - A long partial is cut: at its next sentence end after [`SOFT_CUT_S`], or
+//!   wherever it is at [`FORCE_FINAL_S`] (the stream is flushed and reopened).
+//! - After a line the engine asks for ([`SpeechEngines::reset_after`]: NeMo,
+//!   a Vietnamese one) the stream is reopened too.
 //! - A gap in the frames (ASR fell behind and skipped) reopens the streams at
 //!   the new position; the final pass fills the hole.
 //! - Discard drops the ASR text in progress (streams reopened) but keeps the
@@ -34,8 +36,10 @@ use crate::speakers::{Change, Source, SpeakerId, SpeakerTracker};
 const RATE: f64 = SAMPLE_RATE as f64;
 /// Frames per pushed block (100 ms).
 const BLOCK_FRAMES: usize = 10;
+/// A partial this long (seconds of audio) ends at its next sentence end.
+pub const SOFT_CUT_S: f64 = 8.0;
 /// A partial this long (seconds of audio) without a final is forced out.
-pub const FORCE_FINAL_S: f64 = 15.0;
+pub const FORCE_FINAL_S: f64 = 12.0;
 const HEALTH_EVERY: Duration = Duration::from_secs(1);
 /// Skipped audio up to this long (samples) is replaced by silence for the
 /// diarizer instead of restarting it.
@@ -195,6 +199,14 @@ pub fn line_language(text: &str, fixed: Option<&str>) -> Option<String> {
     )
 }
 
+/// Whether a partial that has run `running_s` seconds of audio should end now:
+/// at a sentence end once it is long, anywhere once it is too long (continuous
+/// speech without the pause that ends an utterance).
+pub fn cut_due(partial: &str, running_s: f64) -> bool {
+    running_s >= FORCE_FINAL_S
+        || (running_s >= SOFT_CUT_S && partial.trim_end().ends_with(['.', '?', '!', '…']))
+}
+
 fn ms(s: f64) -> i64 {
     (s * 1000.0).round() as i64
 }
@@ -207,6 +219,8 @@ struct AsrTrack {
     pushed: u64,
     partial: String,
     partial_since: Option<u64>,
+    /// The engine asked for a fresh stream after the last final.
+    reset: bool,
 }
 
 struct Diar {
@@ -277,6 +291,7 @@ impl Engine {
                     pushed: 0,
                     partial: String::new(),
                     partial_since: None,
+                    reset: false,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -409,7 +424,7 @@ impl Engine {
         }
         for i in 0..self.asr.len() {
             self.drain(i);
-            self.force_final_if_stuck(i);
+            self.cut_if_due(i);
         }
         let mut ch = Vec::new();
         self.tracker.tick(self.now_pos as f64 / RATE, &mut ch);
@@ -437,6 +452,7 @@ impl Engine {
             if r.is_final {
                 self.asr[i].partial.clear();
                 self.asr[i].partial_since = None;
+                self.asr[i].reset = self.engines.reset_after(&r.text);
                 self.final_result(i, r);
             } else if r.text != self.asr[i].partial {
                 if self.asr[i].partial_since.is_none() {
@@ -452,13 +468,22 @@ impl Engine {
         }
     }
 
-    fn force_final_if_stuck(&mut self, i: usize) {
-        let Some(since) = self.asr[i].partial_since else {
-            return;
+    fn cut_if_due(&mut self, i: usize) {
+        let due = match self.asr[i].partial_since {
+            Some(since) => {
+                let running = self.now_pos.saturating_sub(since) as f64 / RATE;
+                cut_due(&self.asr[i].partial, running)
+            }
+            // Nothing in progress: the fresh stream the last line asked for.
+            None => self.asr[i].reset,
         };
-        if (self.now_pos.saturating_sub(since)) as f64 / RATE < FORCE_FINAL_S {
+        if !due {
             return;
         }
+        // Once only, even if the reopen fails: a finished stream finished
+        // again repeats its last final (NeMo).
+        self.asr[i].reset = false;
+        self.asr[i].partial_since = None;
         if let Err(e) = self.asr[i].stream.finish() {
             self.error(format!("asr: {e}"));
         }
@@ -475,6 +500,7 @@ impl Engine {
                 t.pushed = 0;
                 t.partial.clear();
                 t.partial_since = None;
+                t.reset = false;
             }
             Err(e) => self.error(format!("asr: {e}")),
         }
@@ -629,6 +655,7 @@ impl Engine {
         for l in &out {
             self.events.emit(Event::TranscriptFinal {
                 meeting: self.meeting(),
+                track: track.index() as u8,
                 line: LineInfo {
                     gid: l.gid.clone(),
                     speaker: l.speaker,

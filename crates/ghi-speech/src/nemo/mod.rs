@@ -45,7 +45,12 @@ pub struct AsrConfig {
     pub chunk_ms: Option<u32>,
     /// Emit a final per utterance on trailing silence, instead of one final at the end.
     pub endpointing: bool,
+    /// The trailing silence (ms) that ends an utterance; `None` = [`EOU_MS`].
+    pub eou_ms: Option<u32>,
 }
+
+/// Trailing silence that ends an utterance by default (ms).
+pub const EOU_MS: u32 = 800;
 
 #[derive(Debug, Clone, Default)]
 pub struct AsrOptions {
@@ -91,7 +96,7 @@ impl Asr {
             size: size_of::<sys::EndpointingConfig>(),
             enable: cfg.endpointing,
             vad_based: false,
-            stop_history_eou_ms: 800,
+            stop_history_eou_ms: cfg.eou_ms.unwrap_or(EOU_MS).min(i32::MAX as u32) as i32,
         };
         let config = sys::RecognizerConfig {
             size: size_of::<sys::RecognizerConfig>(),
@@ -563,6 +568,7 @@ mod tests {
             device: Device::Cpu,
             chunk_ms: None,
             endpointing: false,
+            eou_ms: None,
         })
         .err()
         .unwrap();

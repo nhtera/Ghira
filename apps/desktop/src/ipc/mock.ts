@@ -94,6 +94,7 @@ function playLine(s: Session) {
   const step = (LINE_MS * 0.8) / words.length;
   emit({
     type: "transcriptFinal",
+    track: line.s === 0 ? 0 : 1,
     meeting: s.id,
     line: {
       gid: `${s.id}-l${s.next}`,

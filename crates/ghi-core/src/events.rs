@@ -125,6 +125,8 @@ pub enum Event {
     },
     TranscriptFinal {
         meeting: String,
+        /// The track whose words in progress this line ends: 0 = mic, 1 = system.
+        track: u8,
         line: LineInfo,
     },
     SpeakerArrived {

@@ -126,11 +126,14 @@ export function reduce(s: LiveState, env: CoreEvent): LiveState {
       return { ...s, session: { mode: e.mode, language: e.language, title: e.title, consentConfirmed: false, sensitive: false }, seq };
     case "transcriptPartial":
       return { ...s, partial: { ...s.partial, [e.track]: e.text }, seq };
-    case "transcriptFinal":
-      // A final ends the words in progress (lines carry no track; the next
-      // partial comes within a chunk). A line already known (by gid) is skipped.
+    case "transcriptFinal": {
+      // A final ends the words in progress on its own track only: in a call
+      // the other side may be mid-sentence. A line already known (by gid) is skipped.
       if (e.line.gid && s.lines.some((l) => l.gid === e.line.gid)) return { ...s, seq };
-      return { ...s, lines: [...s.lines, e.line], partial: {}, seq };
+      const partial = { ...s.partial };
+      delete partial[e.track];
+      return { ...s, lines: [...s.lines, e.line], partial, seq };
+    }
     case "speakerArrived":
     case "speakerConfirmed":
     case "speakerRenamed":

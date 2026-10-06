@@ -34,7 +34,7 @@ describe("live reducer", () => {
       { type: "stateChanged", meeting: M, state: "recording" },
       { type: "speakerArrived", meeting: M, speaker: speaker(1, "Speaker 1") },
       { type: "transcriptPartial", meeting: M, track: 0, text: "xin" },
-      { type: "transcriptFinal", meeting: M, line: line(1, 1000, 2000, "xin chào mọi người") },
+      { type: "transcriptFinal", track: 0, meeting: M, line: line(1, 1000, 2000, "xin chào mọi người") },
       { type: "speakerRenamed", meeting: M, speaker: speaker(1, "Linh") },
       { type: "markAdded", meeting: M, tMs: 2500 },
       { type: "health", meeting: M, asrLagS: 0.4, asrSkippedS: 0, aec: true },
@@ -47,13 +47,23 @@ describe("live reducer", () => {
     expect([s.asrLagS, s.aec]).toEqual([0.4, true]);
   });
 
+  it("a call: a final ends the words in progress of its own track only", () => {
+    const s = run([
+      { type: "stateChanged", meeting: M, state: "starting" },
+      { type: "transcriptPartial", meeting: M, track: 1, text: "so the budget" },
+      { type: "transcriptPartial", meeting: M, track: 0, text: "yes" },
+      { type: "transcriptFinal", track: 0, meeting: M, line: line(1, 0, 500, "yes") },
+    ]);
+    expect(s.partial).toEqual({ 1: "so the budget" });
+  });
+
   it("merge moves lines; discard drops what came after the cut", () => {
     const s = run([
       { type: "stateChanged", meeting: M, state: "starting" },
       { type: "speakerArrived", meeting: M, speaker: speaker(1, "Speaker 1") },
       { type: "speakerArrived", meeting: M, speaker: speaker(2, "Speaker 2") },
-      { type: "transcriptFinal", meeting: M, line: line(1, 0, 1000, "a") },
-      { type: "transcriptFinal", meeting: M, line: line(2, 1000, 2000, "b") },
+      { type: "transcriptFinal", track: 0, meeting: M, line: line(1, 0, 1000, "a") },
+      { type: "transcriptFinal", track: 0, meeting: M, line: line(2, 1000, 2000, "b") },
       { type: "markAdded", meeting: M, tMs: 1500 },
       { type: "speakersMerged", meeting: M, from: 2, into: 1 },
       { type: "discardApplied", meeting: M, fromMs: 1200 },
@@ -75,12 +85,12 @@ describe("live reducer", () => {
   it("a new session starts clean; other meetings' events are ignored", () => {
     const first = run([
       { type: "stateChanged", meeting: M, state: "starting" },
-      { type: "transcriptFinal", meeting: M, line: line(1, 0, 1000, "a") },
+      { type: "transcriptFinal", track: 0, meeting: M, line: line(1, 0, 1000, "a") },
       { type: "stateChanged", meeting: M, state: "processing" },
     ]);
     const s = run(
       [
-        { type: "transcriptFinal", meeting: "older", line: line(1, 0, 1000, "x") },
+        { type: "transcriptFinal", track: 0, meeting: "older", line: line(1, 0, 1000, "x") },
         { type: "stateChanged", meeting: "m2", state: "starting" },
       ],
       first,
@@ -139,9 +149,9 @@ describe("snapshot", () => {
     expect([s.meeting, s.lines.length, s.speakers[1].label, s.startedAtMs]).toEqual([M, 1, "Linh", 95_000]);
     // An event from before the snapshot, and a line it already has: no change.
     s = reduce(s, { seq: 9, atMs: 0, event: { type: "markAdded", meeting: M, tMs: 1 } });
-    s = reduce(s, { seq: 11, atMs: 0, event: { type: "transcriptFinal", meeting: M, line: line(1, 0, 1000, "a") } });
+    s = reduce(s, { seq: 11, atMs: 0, event: { type: "transcriptFinal", track: 0, meeting: M, line: line(1, 0, 1000, "a") } });
     expect([s.marks, s.lines.length]).toEqual([[500], 1]);
-    s = reduce(s, { seq: 12, atMs: 0, event: { type: "transcriptFinal", meeting: M, line: line(1, 1000, 2000, "b") } });
+    s = reduce(s, { seq: 12, atMs: 0, event: { type: "transcriptFinal", track: 0, meeting: M, line: line(1, 1000, 2000, "b") } });
     expect(s.lines.length).toBe(2);
   });
 });
@@ -190,8 +200,8 @@ describe("split", () => {
     const s = run([
       { type: "stateChanged", meeting: M, state: "starting" },
       { type: "speakerArrived", meeting: M, speaker: speaker(1, "Speaker 1") },
-      { type: "transcriptFinal", meeting: M, line: line(1, 0, 1000, "a") },
-      { type: "transcriptFinal", meeting: M, line: line(1, 1000, 2000, "b") },
+      { type: "transcriptFinal", track: 0, meeting: M, line: line(1, 0, 1000, "a") },
+      { type: "transcriptFinal", track: 0, meeting: M, line: line(1, 1000, 2000, "b") },
       { type: "speakerSplit", meeting: M, from: 1, speaker: speaker(2, "Speaker 2"), lines: ["g1000"] },
     ]);
     expect(s.lines.map((l) => [l.text, l.speaker])).toEqual([["a", 1], ["b", 2]]);

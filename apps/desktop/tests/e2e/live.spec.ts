@@ -149,7 +149,7 @@ test("a long transcript is virtualized; scrolling up stops following and jump to
   await page.evaluate(() => {
     const emit = (window as unknown as Mock).__ghiMock.simulateCoreEvent;
     for (let i = 0; i < 400; i++) {
-      emit({ type: "transcriptFinal", meeting: "", line: { gid: `bulk-${i}`, speaker: 1, t0Ms: 100_000 + i * 2000, t1Ms: 101_500 + i * 2000, text: `bulk line number ${i}`, overlap: false, words: [] } });
+      emit({ type: "transcriptFinal", track: 0, meeting: "", line: { gid: `bulk-${i}`, speaker: 1, t0Ms: 100_000 + i * 2000, t1Ms: 101_500 + i * 2000, text: `bulk line number ${i}`, overlap: false, words: [] } });
     }
   });
   const rows = page.getByRole("main").locator("ol > li");
@@ -210,7 +210,7 @@ test("more than eight voices: Others · 3 on the lane, a +3 chip, and the note o
 
 test("a call stacks lines that overlap in time and marks them", async ({ page }) => {
   await record(page);
-  const base = { type: "transcriptFinal", line: { speaker: 1, text: "Chốt ngân sách trước thứ Sáu", overlap: true, words: [] } };
+  const base = { type: "transcriptFinal", track: 0, line: { speaker: 1, text: "Chốt ngân sách trước thứ Sáu", overlap: true, words: [] } };
   await emit(page, { ...base, line: { ...base.line, gid: "ov-1", t0Ms: 600_000, t1Ms: 606_000 } });
   await emit(page, { ...base, line: { ...base.line, gid: "ov-2", speaker: 2, text: "Cho tôi nói với", t0Ms: 604_000, t1Ms: 609_000 } });
   const stack = page.getByTestId("transcript-stack");
