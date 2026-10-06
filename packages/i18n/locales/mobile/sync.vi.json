@@ -39,7 +39,7 @@
       },
       "error": {
         "unreachable": "Không kết nối được với máy tính. Kiểm tra hai máy có cùng Wi-Fi không.",
-        "refused": "Máy tính không còn chấp nhận điện thoại này. Hãy ghép nối lại.",
+        "refused": "Không kết nối được với máy tính. Nếu bạn đã hủy ghép nối điện thoại này trên máy tính, hãy hủy ghép nối ở đây rồi ghép nối lại.",
         "upgradeRequired": "Một trong hai ứng dụng cần cập nhật trước khi đồng bộ được.",
         "storageFull": "Không đủ dung lượng để đồng bộ xong.",
         "locked": "Mở khoá {{app}} để đồng bộ.",

@@ -16,9 +16,10 @@
 //! local change and when a `Pong` says the hub has news. Addresses are tried
 //! in this order: the last good one, those from the pairing code, what the
 //! platform's Bonjour browse found. Going to the background ends the session
-//! with `Bye` inside a background task; the lock ends it too. A hub that
-//! closes the handshake of a pinned device twice in a row has unpaired it: the
-//! pin is dropped and the UI says "Unpaired by <name>".
+//! with `Bye` inside a background task; the lock ends it too. A refused
+//! handshake never drops the pin (anything on the LAN can close one): the UI
+//! says it can't reach the computer, and a hub that unpairs the phone delivers
+//! `Control::Unpair` inside a session.
 //!
 //! **Processing on the desktop.** A meeting recorded or imported with the
 //! `Desktop` target is listed in [`DESKTOP_PENDING_KEY`] and gets no local job.
@@ -58,8 +59,6 @@ const LOOP_TICK: Duration = Duration::from_secs(1);
 const POLL_EVERY: Duration = Duration::from_secs(5);
 /// How long a command waits for the loop to let go of its connection.
 const HOLD_WAIT: Duration = Duration::from_secs(5);
-/// Refused handshakes in a row that mean the hub unpaired this phone.
-const REFUSALS_TO_DROP: u32 = 2;
 /// How long the camera scan waits for a code.
 pub const SCAN_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -159,7 +158,6 @@ struct SpokeState {
     holding: bool,
     /// The background task begun when the app left the foreground.
     bg: u64,
-    refusals: u32,
     reported_down: bool,
     last_pending: Option<u32>,
 }
@@ -512,7 +510,6 @@ impl SyncService {
                     {
                         let mut st = self.spoke_st();
                         st.qr_addrs = code.addrs.clone();
-                        st.refusals = 0;
                         st.reported_down = false;
                     }
                     self.on_paired(&p.device_gid);
@@ -768,9 +765,8 @@ impl SyncService {
         })
     }
 
-    /// A failed open: tell the UI once, back off, and drop the pin when the
-    /// hub keeps refusing.
-    fn spoke_down(self: &Arc<Self>, store: &Arc<Store>, down: Down, back: &mut Backoff) {
+    /// A failed open: tell the UI once and back off. The pin always stays.
+    fn spoke_down(self: &Arc<Self>, down: Down, back: &mut Backoff) {
         back.fail();
         match down {
             Down::Unreachable => {
@@ -780,32 +776,14 @@ impl SyncService {
                 }
             }
             Down::Other(code) => self.report_error(code),
+            // Anything on the LAN can close a handshake (another Ghira
+            // computer, a full hub, a reset): that never drops the pin. A
+            // hub that unpaired this phone says so with `Control::Unpair`
+            // inside a session; the user can unpair by hand.
             Down::Refused => {
-                let n = {
-                    let mut st = self.spoke_st();
-                    st.refusals += 1;
-                    st.refusals
-                };
-                if n < REFUSALS_TO_DROP {
+                let first = !std::mem::replace(&mut self.spoke_st().reported_down, true);
+                if first {
                     self.report_error(SyncErrorCode::Refused);
-                    return;
-                }
-                self.spoke_st().refusals = 0;
-                let Some(hub) = store.devices().ok().and_then(|d| {
-                    d.into_iter()
-                        .find(|d| d.role == ghi_store::sync::devices::DeviceRole::Hub)
-                }) else {
-                    return;
-                };
-                if store.unpin_device(&hub.gid).is_ok() {
-                    if let Some(k) = lock(&self.state).known.as_mut() {
-                        k.remove(&hub.gid);
-                    }
-                    self.emit(SyncEvent::Unpaired {
-                        gid: hub.gid,
-                        name: hub.name,
-                        by_peer: true,
-                    });
                 }
             }
         }
@@ -880,7 +858,6 @@ impl SyncService {
                     back.reset();
                     {
                         let mut st = self.spoke_st();
-                        st.refusals = 0;
                         st.reported_down = false;
                         st.holding = true;
                         st.run_now = true;
@@ -888,7 +865,7 @@ impl SyncService {
                     *conn = Some(c);
                 }
                 Err(d) => {
-                    self.spoke_down(&store, d, back);
+                    self.spoke_down(d, back);
                     return;
                 }
             }
@@ -994,7 +971,6 @@ impl SyncService {
         {
             let mut st = self.spoke_st();
             st.reported_down = false;
-            st.refusals = 0;
         }
         lock(&self.state).last_error = None;
         self.on_pass(&store, &c.hub, &report);

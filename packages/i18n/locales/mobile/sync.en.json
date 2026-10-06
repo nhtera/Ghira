@@ -39,7 +39,7 @@
       },
       "error": {
         "unreachable": "Couldn’t reach your computer. Check that both are on the same Wi-Fi.",
-        "refused": "Your computer no longer accepts this phone. Pair them again.",
+        "refused": "Can’t reach your computer. If you unpaired this phone there, unpair it here and pair again.",
         "upgradeRequired": "One of the two apps needs an update before they can sync.",
         "storageFull": "There isn’t enough storage space to finish syncing.",
         "locked": "Unlock {{app}} to sync.",

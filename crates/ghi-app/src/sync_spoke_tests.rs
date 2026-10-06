@@ -32,7 +32,8 @@ fn fake_addr() -> SocketAddr {
 
 /// The phone's platform: pipes to the hub's node, a scripted scan.
 struct PipeLink {
-    hub: Arc<SyncService>,
+    /// Who the phone's sockets reach (a test can point it elsewhere).
+    hub: Mutex<Arc<SyncService>>,
     scan: Mutex<Option<Result<String, ScanError>>>,
     capable: AtomicBool,
     /// Hub-side sessions currently open.
@@ -44,7 +45,7 @@ struct PipeLink {
 impl PipeLink {
     fn new(hub: &Hub) -> Arc<Self> {
         Arc::new(PipeLink {
-            hub: hub.svc.clone(),
+            hub: Mutex::new(hub.svc.clone()),
             scan: Mutex::new(None),
             capable: AtomicBool::new(true),
             open: Arc::new(AtomicUsize::new(0)),
@@ -57,11 +58,12 @@ impl PipeLink {
 impl SpokeLink for PipeLink {
     fn connect(&self, _addr: SocketAddr) -> io::Result<Box<dyn ByteStream>> {
         self.connects.fetch_add(1, Ordering::SeqCst);
-        let Some(node) = self.hub.node() else {
+        let hub = lock(&self.hub).clone();
+        let Some(node) = hub.node() else {
             return Err(io::ErrorKind::ConnectionRefused.into());
         };
         let (a, b) = mem_pipe();
-        let (svc, open) = (self.hub.clone(), self.open.clone());
+        let (svc, open) = (hub, self.open.clone());
         open.fetch_add(1, Ordering::SeqCst);
         thread::spawn(move || {
             let _ = svc.serve_connection(&node, a, None, None);
@@ -517,27 +519,33 @@ fn a_phone_below_the_tier_keeps_waiting_for_the_desktop() {
     );
 }
 
+/// Waits until the phone has dialled `n` more times than `since`.
+fn wait_for_connects(phone: &Phone, since: usize, n: usize) {
+    wait_for("more connection attempts", 40, || {
+        phone.link.connects.load(Ordering::SeqCst) >= since + n
+    });
+}
+
 #[test]
-fn a_hub_that_refuses_the_handshake_twice_has_unpaired_the_phone() {
+fn a_refusing_hub_never_costs_the_phone_its_pin() {
     let hub = hub();
     let phone = phone(&hub);
     pair(&hub, &phone);
     let spoke_gid = phone.store().sync_device_gid().unwrap();
-    // The desktop forgets the phone without telling it (the fallback when
-    // nothing was delivered).
+    // The desktop forgets the phone without telling it. Whatever closes the
+    // handshake (this, a second Ghira computer, a full hub) is only "can't
+    // reach": the pin and its Wipe scope stay.
     hub.store().unpin_device(&spoke_gid).unwrap();
-    // The hub keeps listening (another phone is being paired), so the phone
-    // is refused rather than finding nobody there.
     let _ = code_for(&hub);
+    let before = phone.link.connects.load(Ordering::SeqCst);
     phone.svc.spoke_run_now();
-    wait_for("the pin to be dropped", 30, || {
-        phone.svc.devices().unwrap().is_empty()
-    });
+    wait_for_connects(&phone, before, 3);
+    assert_eq!(phone.svc.devices().unwrap().len(), 1, "the pin stays");
     let events = phone.events();
     assert!(
-        events
+        !events
             .iter()
-            .any(|e| matches!(e, SyncEvent::Unpaired { name, by_peer: true, .. } if name == "Mac")),
+            .any(|e| matches!(e, SyncEvent::Unpaired { .. })),
         "{events:?}"
     );
     assert!(
@@ -547,8 +555,41 @@ fn a_hub_that_refuses_the_handshake_twice_has_unpaired_the_phone() {
                 code: SyncErrorCode::Refused
             }
         )),
-        "the first refusal is told too: {events:?}"
+        "{events:?}"
     );
+}
+
+#[test]
+fn another_hub_on_the_lan_that_cannot_read_the_handshake_keeps_the_pin() {
+    let hub = hub();
+    let phone = phone(&hub);
+    pair(&hub, &phone);
+    wait_for("a session", 20, || {
+        phone.link.open.load(Ordering::SeqCst) == 1
+    });
+    // The phone's sockets now reach a different computer (another static key).
+    let stranger = super::tests::hub();
+    let _ = code_for(&stranger);
+    *lock(&phone.link.hub) = stranger.svc.clone();
+    phone.svc.set_app_active(false);
+    wait_for("the session to end", 20, || {
+        phone.link.open.load(Ordering::SeqCst) == 0
+    });
+    let before = phone.link.connects.load(Ordering::SeqCst);
+    phone.svc.set_app_active(true);
+    wait_for_connects(&phone, before, 3);
+    assert_eq!(phone.svc.devices().unwrap().len(), 1);
+    assert!(
+        !phone
+            .events()
+            .iter()
+            .any(|e| matches!(e, SyncEvent::Unpaired { .. }))
+    );
+    // The real hub is back: the session resumes with the same pin.
+    *lock(&phone.link.hub) = hub.svc.clone();
+    wait_for("a session again", 30, || {
+        phone.link.open.load(Ordering::SeqCst) == 1
+    });
 }
 
 #[test]
