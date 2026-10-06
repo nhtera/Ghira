@@ -86,7 +86,7 @@ pub const MIGRATIONS: &[Migration] = &[
 
 /// Syncable tables and the `kind` their `sync_log` rows (and tombstones) use,
 /// in feed order: parents before children.
-pub(crate) const SYNC_TABLES: [(&str, &str); 14] = [
+pub const SYNC_TABLES: [(&str, &str); 14] = [
     ("folders", "folder"),
     ("persons", "person"),
     ("tags", "tag"),
@@ -104,8 +104,10 @@ pub(crate) const SYNC_TABLES: [(&str, &str); 14] = [
 ];
 
 /// Columns that never go on the wire (or are derived from ones that do): an
-/// UPDATE touching only these does not log. `id` is a local rowid.
-const LOCAL_ONLY_COLUMNS: [&str; 9] = [
+/// UPDATE touching only these does not log. `id` is a local rowid. Public so
+/// the trigger guard test (`tests/sync_triggers_guard.rs`) can hold every
+/// other column of every sync table to being compared.
+pub const LOCAL_ONLY_COLUMNS: [&str; 9] = [
     "id",
     "dek_wrapped",
     "key_wrapped",
