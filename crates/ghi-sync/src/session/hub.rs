@@ -24,6 +24,9 @@ use crate::wire::{
 };
 use crate::{Result, SyncError};
 
+/// Called with the spoke's device gid once `Hello` identified it.
+type IdentifiedHook = Box<dyn FnMut(&str) + Send>;
+
 /// One session from an already authenticated spoke.
 pub struct HubSession<T: Transport> {
     store: Arc<dyn SyncStore>,
@@ -46,7 +49,7 @@ pub struct HubSession<T: Transport> {
     last_activity_ns: u64,
     /// Told the spoke's device gid once `Hello` identified it (the service
     /// keeps one session per device).
-    identified: Option<Box<dyn FnMut(&str) + Send>>,
+    identified: Option<IdentifiedHook>,
 }
 
 /// What the spoke's confirmation of `ctl` means for the report.

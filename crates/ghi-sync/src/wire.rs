@@ -1092,7 +1092,7 @@ mod tests {
     fn the_item_count_nesting_and_list_lengths_are_checked_before_decoding() {
         // A row list declared far over its cap, with the bytes to back it.
         let mut over = vec![0x99, 0x10, 0x00]; // array of 4096
-        over.extend(std::iter::repeat(0x80).take(4096));
+        over.extend(std::iter::repeat_n(0x80, 4096));
         let err = decode(&raw_push_rows(&over)).unwrap_err();
         assert!(err.to_string().contains("cap"), "{err}");
 
@@ -1106,7 +1106,7 @@ mod tests {
         let mut rows = vec![0x99, 0x01, 0x00];
         for _ in 0..256 {
             rows.extend_from_slice(&[0x99, 0x2e, 0xe0]);
-            rows.extend(std::iter::repeat(0x00).take(12_000));
+            rows.extend(std::iter::repeat_n(0x00, 12_000));
         }
         let msg = raw_push_rows(&rows);
         assert!(msg.len() < MAX_MESSAGE);
