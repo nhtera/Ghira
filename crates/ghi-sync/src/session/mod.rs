@@ -107,7 +107,8 @@ pub(crate) fn send_msg(t: &mut dyn Transport, id: u32, msg: &Message) -> Result<
 }
 
 pub(crate) fn recv_msg(t: &mut dyn Transport) -> Result<(u32, Decoded)> {
-    let bytes = t.recv()?;
+    // The frame may carry a meeting key: wiped once decoded.
+    let bytes = zeroize::Zeroizing::new(t.recv()?);
     wire::decode_any(&bytes)
 }
 

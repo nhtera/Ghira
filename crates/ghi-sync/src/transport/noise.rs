@@ -195,7 +195,7 @@ impl<S: ByteStream> NoiseTransport<S> {
     }
 
     fn send_frame(&mut self, more: bool, chunk: &[u8]) -> Result<()> {
-        let mut plain = Vec::with_capacity(1 + chunk.len());
+        let mut plain = zeroize::Zeroizing::new(Vec::with_capacity(1 + chunk.len()));
         plain.push(if more { FLAG_MORE } else { 0 });
         plain.extend_from_slice(chunk);
         let n = self
@@ -275,7 +275,7 @@ impl<S: ByteStream> Transport for NoiseTransport<S> {
         }
         loop {
             let ct = self.next_frame()?;
-            let mut plain = vec![0u8; ct.len()];
+            let mut plain = zeroize::Zeroizing::new(vec![0u8; ct.len()]);
             let n = match self.state.read_message(&ct, &mut plain) {
                 Ok(n) => n,
                 Err(_) => {
@@ -295,6 +295,7 @@ impl<S: ByteStream> Transport for NoiseTransport<S> {
             };
             if flags & !FLAG_MORE != 0 || self.partial.len() + chunk.len() > MAX_MESSAGE {
                 self.broken = true;
+                zeroize::Zeroize::zeroize(&mut self.partial);
                 return Err(SyncError::Wire("bad frame".into()));
             }
             self.partial.extend_from_slice(chunk);

@@ -282,10 +282,13 @@ impl<T: Transport> SpokeSession<T> {
                     .map(|r| (r.gid().to_string(), r.version().lamport))
                     .collect();
                 let n = rows.len();
-                let reply = self.call(&Message::PushRows(PushRows {
+                let mut msg = Message::PushRows(PushRows {
                     rows: rows.into_iter().map(WireRecord).collect(),
                     upto_seq: batch.upto_seq,
-                }))?;
+                });
+                let reply = self.call(&msg);
+                msg.wipe_secrets();
+                let reply = reply?;
                 let Message::Ack(ack) = reply else {
                     return Err(unexpected("PushRows"));
                 };
@@ -404,8 +407,10 @@ impl<T: Transport> SpokeSession<T> {
             };
             let had_rows = !batch.rows.is_empty();
             if had_rows {
-                let rows: Vec<Record> = batch.rows.into_iter().map(|r| r.0).collect();
-                self.store.apply_rows(&self.hub_device, &rows)?;
+                let mut rows: Vec<Record> = batch.rows.into_iter().map(|r| r.0).collect();
+                let applied = self.store.apply_rows(&self.hub_device, &rows);
+                wire::wipe_records(&mut rows);
+                applied?;
                 self.store.retry_pending()?;
                 self.report.rows_pulled += rows.len();
             }

@@ -314,8 +314,10 @@ impl<T: Transport> HubSession<T> {
 
     fn on_push_rows(&mut self, id: u32, b: wire::PushRows) -> Result<Flow> {
         let from = self.spoke()?.gid.clone();
-        let rows: Vec<Record> = b.rows.into_iter().map(|r| r.0).collect();
-        let res = self.store.apply_rows(&from, &rows)?;
+        let mut rows: Vec<Record> = b.rows.into_iter().map(|r| r.0).collect();
+        let applied = self.store.apply_rows(&from, &rows);
+        wire::wipe_records(&mut rows);
+        let res = applied?;
         self.store.retry_pending()?;
         self.report.rows_pushed += rows.len();
         self.reply(
@@ -418,14 +420,14 @@ impl<T: Transport> HubSession<T> {
             self.pending_keys.push((batch.upto_seq, keyed));
         }
         self.report.rows_pulled += rows.len();
-        self.reply(
-            id,
-            &Message::Rows(RowsBatch {
-                rows: rows.into_iter().map(WireRecord).collect(),
-                upto_seq: batch.upto_seq,
-                more: batch.more,
-            }),
-        )
+        let mut msg = Message::Rows(RowsBatch {
+            rows: rows.into_iter().map(WireRecord).collect(),
+            upto_seq: batch.upto_seq,
+            more: batch.more,
+        });
+        let sent = self.reply(id, &msg);
+        msg.wipe_secrets();
+        sent
     }
 
     fn on_track_offer(&mut self, id: u32, offer: wire::TrackOffer) -> Result<Flow> {

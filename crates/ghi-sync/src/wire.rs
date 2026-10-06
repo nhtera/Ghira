@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Result, SyncError};
 use ghi_store::sync::records::{self, Bytes};
+use zeroize::Zeroize;
 
 pub use ghi_store::sync::apply::ApplyOutcome;
 pub use ghi_store::sync::records::SyncTombstone;
@@ -477,12 +478,161 @@ fn de<T: serde::de::DeserializeOwned>(body: &Value) -> Result<T> {
         .map_err(|_| wire_err("malformed body"))
 }
 
+/// Overwrites every byte string in a decoded CBOR value (a received body may
+/// carry a meeting key or a pair PSK).
+fn wipe_value(v: &mut Value) {
+    match v {
+        Value::Bytes(b) => b.zeroize(),
+        Value::Array(a) => a.iter_mut().for_each(wipe_value),
+        Value::Map(m) => m.iter_mut().for_each(|(k, v)| {
+            wipe_value(k);
+            wipe_value(v);
+        }),
+        Value::Tag(_, inner) => wipe_value(inner),
+        _ => {}
+    }
+}
+
+/// Overwrites the meeting keys carried by `rows` (after they were applied or
+/// sent): a key must not outlive its use in memory.
+pub fn wipe_records(rows: &mut [records::Record]) {
+    for r in rows {
+        if let records::Record::Meeting(m) = r
+            && let Some(d) = m.dek.as_mut()
+        {
+            d.0.zeroize();
+        }
+    }
+}
+
+impl Message {
+    /// Overwrites the secrets a message carries (meeting keys in row batches,
+    /// the pair PSK of `PairAccept`). Call after it was sent.
+    pub fn wipe_secrets(&mut self) {
+        match self {
+            Message::PushRows(b) => b
+                .rows
+                .iter_mut()
+                .for_each(|r| wipe_records(std::slice::from_mut(&mut r.0))),
+            Message::Rows(b) => b
+                .rows
+                .iter_mut()
+                .for_each(|r| wipe_records(std::slice::from_mut(&mut r.0))),
+            Message::PairAccept(a) => a.pair_psk.0.zeroize(),
+            _ => {}
+        }
+    }
+}
+
+/// Most CBOR items one message may hold (a 4 MiB message of one-byte items
+/// would otherwise expand about 50x into [`Value`]s).
+const MAX_ITEMS: u64 = 1_000_000;
+/// Deepest nesting a message may have.
+const MAX_DEPTH: usize = 24;
+/// Containers at the envelope, body and list-field levels may not declare
+/// more than this many entries (the exact caps are checked after decoding).
+const MAX_TOP_LEN: u64 = MAX_LIST as u64;
+
+/// Walks the CBOR headers of `bytes` without building anything and refuses
+/// what would be costly to decode: too many items, too deep, a top-level list
+/// declared far over its cap, indefinite lengths, a length that runs past the
+/// input, or trailing bytes.
+fn prescan(bytes: &[u8]) -> Result<()> {
+    let bad = || wire_err("not a CBOR message");
+    let mut pos = 0usize;
+    let mut items = 0u64;
+    // Entries still to read in each open container.
+    let mut open: Vec<u64> = Vec::new();
+    loop {
+        // A finished container pops (also for the root once it is done).
+        while open.last() == Some(&0) {
+            open.pop();
+        }
+        if pos == bytes.len() {
+            return if open.is_empty() && items > 0 {
+                Ok(())
+            } else {
+                Err(bad())
+            };
+        }
+        if open.is_empty() && items > 0 {
+            return Err(bad()); // trailing bytes
+        }
+        let head = bytes[pos];
+        pos += 1;
+        let (major, info) = (head >> 5, head & 0x1f);
+        let arg_len = match info {
+            0..=23 => 0,
+            24 => 1,
+            25 => 2,
+            26 => 4,
+            27 => 8,
+            _ => return Err(bad()), // indefinite lengths and reserved values
+        };
+        let end = pos
+            .checked_add(arg_len)
+            .filter(|e| *e <= bytes.len())
+            .ok_or_else(bad)?;
+        let arg = if info < 24 {
+            u64::from(info)
+        } else {
+            bytes[pos..end]
+                .iter()
+                .fold(0u64, |a, b| (a << 8) | u64::from(*b))
+        };
+        pos = end;
+        if let Some(n) = open.last_mut() {
+            *n -= 1;
+        }
+        items += 1;
+        if items > MAX_ITEMS {
+            return Err(wire_err("message has too many items"));
+        }
+        match major {
+            // Strings: the payload is skipped, and must be there.
+            2 | 3 => {
+                let stop = usize::try_from(arg)
+                    .ok()
+                    .and_then(|l| pos.checked_add(l))
+                    .filter(|e| *e <= bytes.len())
+                    .ok_or_else(bad)?;
+                pos = stop;
+            }
+            4 | 5 => {
+                let n = if major == 5 {
+                    arg.checked_mul(2).ok_or_else(bad)?
+                } else {
+                    arg
+                };
+                // Every entry takes at least one byte.
+                if n > (bytes.len() - pos) as u64 {
+                    return Err(bad());
+                }
+                if open.len() < 3 && arg > MAX_TOP_LEN {
+                    return Err(wire_err("list over its cap"));
+                }
+                if open.len() >= MAX_DEPTH {
+                    return Err(wire_err("message nests too deep"));
+                }
+                open.push(n);
+            }
+            // A tag wraps the next item.
+            6 => {
+                open.push(1);
+                items -= 1;
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Decodes one frame, keeping unknown types apart. The size cap and the list
 /// caps are checked before anything is acted on.
 pub fn decode_any(bytes: &[u8]) -> Result<(u32, Decoded)> {
     if bytes.len() > MAX_MESSAGE {
         return Err(wire_err("message too large"));
     }
+    prescan(bytes)?;
     let value: Value = ciborium::from_reader(bytes).map_err(|_| wire_err("not a CBOR message"))?;
     let Value::Map(entries) = value else {
         return Err(wire_err("envelope is not a map"));
@@ -499,7 +649,9 @@ pub fn decode_any(bytes: &[u8]) -> Result<(u32, Decoded)> {
     }
     let t = t.ok_or_else(|| wire_err("missing type"))?;
     let id = id.ok_or_else(|| wire_err("missing id"))?;
-    let Some(msg) = message_from(t, &body)? else {
+    let msg = message_from(t, &body);
+    wipe_value(&mut body);
+    let Some(msg) = msg? else {
         return Ok((id, Decoded::Unknown(t)));
     };
     validate(&msg, bytes.len())?;
@@ -926,6 +1078,83 @@ mod tests {
         assert!(decode(&envelope(18, vec![], Value::Text("x".into()))).is_err());
         // Over the 4 MiB cap.
         assert!(decode(&vec![0u8; MAX_MESSAGE + 1]).is_err());
+    }
+
+    /// `{ t: 7, id: 1, b: { rows: <rows> } }` by hand, around raw CBOR.
+    fn raw_push_rows(rows: &[u8]) -> Vec<u8> {
+        let mut out = vec![0xa3, 0x61, b't', 0x07, 0x62, b'i', b'd', 0x01, 0x61, b'b'];
+        out.extend_from_slice(&[0xa1, 0x64, b'r', b'o', b'w', b's']);
+        out.extend_from_slice(rows);
+        out
+    }
+
+    #[test]
+    fn the_item_count_nesting_and_list_lengths_are_checked_before_decoding() {
+        // A row list declared far over its cap, with the bytes to back it.
+        let mut over = vec![0x99, 0x10, 0x00]; // array of 4096
+        over.extend(std::iter::repeat(0x80).take(4096));
+        let err = decode(&raw_push_rows(&over)).unwrap_err();
+        assert!(err.to_string().contains("cap"), "{err}");
+
+        // A tiny message of nested arrays: too deep.
+        let mut deep = vec![0x81; 200];
+        deep.push(0x00);
+        assert!(prescan(&deep).is_err());
+
+        // 256 rows of 12 000 one-byte items: 3 M items in 3 MB, refused by
+        // count before a single Value exists.
+        let mut rows = vec![0x99, 0x01, 0x00];
+        for _ in 0..256 {
+            rows.extend_from_slice(&[0x99, 0x2e, 0xe0]);
+            rows.extend(std::iter::repeat(0x00).take(12_000));
+        }
+        let msg = raw_push_rows(&rows);
+        assert!(msg.len() < MAX_MESSAGE);
+        let err = prescan(&msg).unwrap_err();
+        assert!(err.to_string().contains("items"), "{err}");
+
+        // Indefinite lengths, lengths past the input, and trailing bytes.
+        assert!(prescan(&[0x9f, 0x00, 0xff]).is_err());
+        assert!(prescan(&[0x82, 0x00]).is_err());
+        assert!(prescan(&[0x65, b'a']).is_err());
+        assert!(prescan(&[0x00, 0x00]).is_err());
+        // What the encoder writes passes.
+        assert!(prescan(&encode(3, &Message::Ping).unwrap()).is_ok());
+        assert!(
+            prescan(&[0xc1, 0x1a, 0, 0, 0, 1]).is_ok(),
+            "a tag wraps one item"
+        );
+    }
+
+    #[test]
+    fn keys_in_a_sent_or_received_batch_are_overwritten() {
+        let mut m = records::MeetingRec {
+            gid: "m".into(),
+            dek: Some(Bytes(vec![7; 32])),
+            ..Default::default()
+        };
+        let mut msg = Message::PushRows(PushRows {
+            rows: vec![Record(records::Record::Meeting(m.clone()))],
+            upto_seq: 1,
+        });
+        msg.wipe_secrets();
+        let Message::PushRows(b) = &msg else { panic!() };
+        let records::Record::Meeting(w) = &b.rows[0].0 else {
+            panic!()
+        };
+        assert!(w.dek.as_ref().unwrap().0.is_empty(), "wiped and emptied");
+        let mut rows = [records::Record::Meeting(std::mem::take(&mut m))];
+        wipe_records(&mut rows);
+        let records::Record::Meeting(w) = &rows[0] else {
+            panic!()
+        };
+        assert!(w.dek.as_ref().unwrap().0.is_empty(), "wiped and emptied");
+        let mut v = Value::Array(vec![Value::Bytes(vec![9; 8]), Value::Text("x".into())]);
+        wipe_value(&mut v);
+        assert_eq!(
+            v,
+            Value::Array(vec![Value::Bytes(vec![]), Value::Text("x".into())])
+        );
     }
 
     #[test]
