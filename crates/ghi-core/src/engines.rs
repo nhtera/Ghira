@@ -396,6 +396,13 @@ pub struct Talk {
     pub start: f64,
     pub step: f64,
     pub pauses: Vec<usize>,
+    /// Speaker turns (meeting seconds); none: one speaker throughout.
+    pub turns: Vec<SpeakerSegment>,
+    /// A word shows in the partial this long after it ends (a real streaming
+    /// recognizer decodes a chunk behind).
+    pub show_lag: f64,
+    /// The diarizer reports turns this far behind the audio.
+    pub diar_lag: f64,
 }
 
 impl Talk {
@@ -477,7 +484,7 @@ impl TalkAsr {
             t.begun(now)
         } else {
             (0..t.words.len())
-                .take_while(|&i| t.word_end(i) <= now)
+                .take_while(|&i| t.word_end(i) + t.show_lag <= now)
                 .count()
         };
         self.next = self.next.max(t.begun(self.origin));
@@ -519,8 +526,11 @@ impl AsrStream for TalkAsr {
     }
 }
 
-/// One speaker throughout; it moves the meeting clock.
+/// The talk's turns as heard so far (one speaker without turns); it moves
+/// the meeting clock.
 struct TalkDiar {
+    turns: Vec<SpeakerSegment>,
+    lag: f64,
     clock: Arc<std::sync::Mutex<(f64, u32)>>,
 }
 
@@ -534,12 +544,23 @@ impl DiarStream for TalkDiar {
         Ok(())
     }
     fn segments(&self) -> Result<Vec<SpeakerSegment>> {
-        let now = self.clock.lock().unwrap_or_else(|e| e.into_inner()).0;
-        Ok(vec![SpeakerSegment {
-            start: 0.0,
-            end: now,
-            speaker: 1,
-        }])
+        let now = self.clock.lock().unwrap_or_else(|e| e.into_inner()).0 - self.lag;
+        if self.turns.is_empty() {
+            return Ok(vec![SpeakerSegment {
+                start: 0.0,
+                end: now,
+                speaker: 1,
+            }]);
+        }
+        Ok(self
+            .turns
+            .iter()
+            .filter(|t| t.start < now)
+            .map(|t| SpeakerSegment {
+                end: t.end.min(now),
+                ..*t
+            })
+            .collect())
     }
 }
 
@@ -560,6 +581,8 @@ impl SpeechEngines for TalkEngines {
 
     fn diar(&self) -> Result<BoxDiar> {
         Ok(Box::new(TalkDiar {
+            turns: self.talk.turns.clone(),
+            lag: self.talk.diar_lag,
             clock: self.clock.clone(),
         }))
     }

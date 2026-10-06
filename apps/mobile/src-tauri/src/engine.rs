@@ -24,7 +24,7 @@ use ghi_core::engines::SpeechEngines;
 use ghi_core::events::{Event, EventTx, LineInfo, SpeakerInfo, WordInfo};
 use ghi_core::live::{LineOut, PersistMsg, SpeakerOut, line_language};
 use ghi_core::speakers::{Change, Source, SpeakerId, SpeakerTracker};
-use ghi_speech::{SpeakerSegment, Word};
+use ghi_speech::{AsrResult, SpeakerSegment, Word};
 
 use crate::backlog::BacklogReader;
 use crate::session::Shared;
@@ -148,6 +148,9 @@ pub enum Update {
         words: Vec<Word>,
         /// The diarizer's segments when the line was produced.
         segs: Vec<SpeakerSegment>,
+        /// Shown at a speaker turn before its utterance ended: the utterance
+        /// is still open (a reset redoes it; the words shown are not redone).
+        early: bool,
     },
 }
 
@@ -659,6 +662,9 @@ fn live_loop(ctx: &mut EngineCtx) -> Result<(), String> {
     let shared = ctx.shared.clone();
     let gate = &shared.gate;
     let mut engines: Option<Arc<dyn SpeechEngines>> = None;
+    // The words of the open utterance shown at a speaker turn: they outlive a
+    // reset (the redone utterance's final drops them).
+    let prefix = std::cell::RefCell::new(ghi_core::live::Prefix::default());
     loop {
         // Loading uploads weights to the GPU: only while the app is active.
         wait_active(&shared, &mut engines);
@@ -686,7 +692,7 @@ fn live_loop(ctx: &mut EngineCtx) -> Result<(), String> {
             continue;
         }
         let e = engines.as_ref().expect("loaded").clone();
-        match live(ctx, &e)? {
+        match live(ctx, &e, &prefix)? {
             Flow::Finished => return Ok(()),
             flow @ (Flow::Reset | Flow::Unload) => {
                 if flow == Flow::Unload {
@@ -731,7 +737,11 @@ pub enum Flow {
     Unload,
 }
 
-fn live(ctx: &mut EngineCtx, engines: &Arc<dyn SpeechEngines>) -> Result<Flow, String> {
+fn live(
+    ctx: &mut EngineCtx,
+    engines: &Arc<dyn SpeechEngines>,
+    prefix: &std::cell::RefCell<ghi_core::live::Prefix>,
+) -> Result<Flow, String> {
     use std::cell::{Cell, RefCell};
     let shared = ctx.shared.clone();
     let err = |e: ghi_speech::SpeechError| e.to_string();
@@ -755,18 +765,86 @@ fn live(ctx: &mut EngineCtx, engines: &Arc<dyn SpeechEngines>) -> Result<Flow, S
     let stats = ctx.applier.stats();
     // Stream seconds pushed (the diarizer's clock); where the ASR stream in
     // use opened on it; when the utterance in progress showed its first words
-    // (and those words); whether the last line asks for a fresh stream.
+    // (and those words, some maybe shown as a turn's line); where to look for
+    // the next speaker turn; whether the last line asks for a fresh stream.
     let pushed = Cell::new(0.0f64);
     let asr_base = Cell::new(0.0f64);
     let partial_from = Cell::new(None::<f64>);
     let partial = RefCell::new(String::new());
+    // New streams hear the open utterance again from its start.
+    prefix.borrow_mut().restart();
+    let turn_checked = Cell::new(0.0f64);
+    let turn_from = Cell::new(None::<f64>);
     let reset = Cell::new(false);
     let language = ctx.language.clone();
+    // A word shows about a chunk after it ends.
+    let lag = f64::from(engines.chunk_ms()) / 1000.0 + 0.1;
     // A long utterance (no pause) is cut, and a line the engine asks for starts
     // a fresh stream (as ghi-core live does): checked every step.
     let cut_due = || match partial_from.get() {
         Some(from) => ghi_core::live::cut_due(&partial.borrow(), pushed.get() - from),
         None => reset.get(),
+    };
+    // A final on the diarizer's clock.
+    let line = |r: AsrResult, early: bool| -> Result<Update, String> {
+        let base = asr_base.get();
+        let words: Vec<Word> = r
+            .words
+            .into_iter()
+            .map(|w| Word {
+                start: w.start + base,
+                end: w.end + base,
+                ..w
+            })
+            .collect();
+        let (start, end) = match (words.first(), words.last()) {
+            (Some(a), Some(b)) => (a.start, b.end),
+            _ => (r.audio_processed + base, r.audio_processed + base),
+        };
+        Ok(Update::Final {
+            start,
+            end,
+            text: r.text.trim().to_string(),
+            words,
+            segs: diar.borrow().segments().map_err(err)?,
+            early,
+        })
+    };
+    // Another speaker took over the utterance: the first speaker's words show
+    // as their own line now; the stream goes on (as ghi-core live does).
+    let show_turn = || -> Result<Option<Update>, String> {
+        let (Some(from), now) = (partial_from.get(), pushed.get()) else {
+            return Ok(None);
+        };
+        if now - from < 2.0 * ghi_core::live::TURN_CUT_S
+            || now - turn_checked.get() < ghi_core::live::TURN_CHECK_S
+        {
+            return Ok(None);
+        }
+        turn_checked.set(now);
+        let segs = diar.borrow().segments().map_err(err)?;
+        let from = turn_from.get().unwrap_or(from);
+        let Some(turn) = ghi_core::live::turn_change(&segs, from) else {
+            return Ok(None);
+        };
+        // The same turn again (the first speaker's segment still runs past it).
+        if turn_from.get().is_some_and(|f| turn <= f + 0.01) {
+            return Ok(None);
+        }
+        let turn_s = turn - asr_base.get();
+        // The utterance (or the part after the last turn shown) began about a
+        // chunk before its first words showed.
+        let start = turn_from.get().unwrap_or(from - lag) - asr_base.get();
+        let shown = prefix
+            .borrow_mut()
+            .take(turn_s + ghi_core::live::TURN_SHOW_S, start, turn_s);
+        match shown {
+            Some(r) => {
+                turn_from.set(Some(turn));
+                line(r, true).map(Some)
+            }
+            None => Ok(None),
+        }
     };
     // `cut`: false once the session stopped (the stream is already finished;
     // finishing it again would repeat its last final).
@@ -781,53 +859,46 @@ fn live(ctx: &mut EngineCtx, engines: &Arc<dyn SpeechEngines>) -> Result<Flow, S
                     *asr = engines.asr(language.as_deref()).map_err(err)?;
                     asr_base.set(pushed.get());
                     reset.set(false);
+                    *prefix.borrow_mut() = ghi_core::live::Prefix::default();
+                    turn_from.set(None);
                 } else if cut && cut_due() {
                     asr.finish().map_err(err)?;
                     flushed = true;
                     partial_from.set(None);
                     continue;
+                } else if cut && let Some(early) = show_turn()? {
+                    out.push(early);
+                    // The screen dropped the words in progress with that line.
+                    let rest = prefix.borrow().rest(&partial.borrow()).to_string();
+                    if !rest.is_empty() {
+                        out.push(Update::Partial(rest));
+                    }
                 }
                 break;
             };
-            // Stream times on the diarizer's clock.
-            let base = asr_base.get();
-            stats.asr_result(r.audio_processed + base);
+            stats.asr_result(r.audio_processed + asr_base.get());
             if !r.is_final {
                 if partial_from.get().is_none() {
                     partial_from.set(Some(pushed.get()));
                 }
-                partial.replace(r.text.clone());
-                out.push(Update::Partial(r.text));
+                let mut p = prefix.borrow_mut();
+                p.partial(&r.text, pushed.get() - asr_base.get());
+                out.push(Update::Partial(p.rest(&r.text).to_string()));
+                partial.replace(r.text);
                 continue;
             }
             partial_from.set(None);
             partial.borrow_mut().clear();
-            let text = r.text.trim().to_string();
-            if text.is_empty() {
+            turn_from.set(None);
+            if !r.text.trim().is_empty() {
+                reset.set(engines.reset_after(r.text.trim()));
+            }
+            // Without the words a speaker turn already showed.
+            let r = prefix.borrow_mut().strip(r);
+            if r.text.trim().is_empty() {
                 continue;
             }
-            reset.set(engines.reset_after(&text));
-            let words: Vec<Word> = r
-                .words
-                .into_iter()
-                .map(|w| Word {
-                    start: w.start + base,
-                    end: w.end + base,
-                    ..w
-                })
-                .collect();
-            let (start, end) = match (words.first(), words.last()) {
-                (Some(a), Some(b)) => (a.start, b.end),
-                _ => (r.audio_processed + base, r.audio_processed + base),
-            };
-            let segs = diar.borrow().segments().map_err(err)?;
-            out.push(Update::Final {
-                start,
-                end,
-                text,
-                words,
-                segs,
-            });
+            out.push(line(r, false)?);
         }
         Ok(out)
     };
@@ -1096,6 +1167,7 @@ mod tests {
             text: text.into(),
             words: Vec::new(),
             segs: Vec::new(),
+            early: false,
         }
     }
 
@@ -1235,6 +1307,7 @@ mod tests {
             text: t.into(),
             words: vec![word(t, a, b)],
             segs: vec![seg(1, 0.0, 1.0)],
+            early: false,
         };
         let mut steps = 0;
         let flow = pump(
@@ -1506,6 +1579,7 @@ mod tests {
                 text: "hi".into(),
                 words: vec![word],
                 segs: vec![seg(1, 0.0, 1.0)],
+                early: false,
             }],
             0,
             0,
@@ -1528,6 +1602,19 @@ mod tests {
         talk: ghi_core::engines::Talk,
         seconds: usize,
     ) -> (Vec<(String, i64)>, u32) {
+        let (events, opened) = talk_events(name, talk, seconds);
+        let lines = events
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::TranscriptFinal { line, .. } => Some((line.text, line.t0_ms)),
+                _ => None,
+            })
+            .collect();
+        (lines, opened)
+    }
+
+    /// Runs `talk` through the engine; its events and the ASR streams opened.
+    fn talk_events(name: &str, talk: ghi_core::engines::Talk, seconds: usize) -> (Vec<Event>, u32) {
         let (shared, backlog, dir) = setup(name, seconds);
         let engines = ghi_core::engines::TalkEngines::new(talk);
         let provider: EnginesProvider = {
@@ -1545,14 +1632,60 @@ mod tests {
             runner_idle: None,
         });
         std::fs::remove_dir_all(dir).unwrap();
-        let lines = rx
-            .try_iter()
-            .filter_map(|e| match e.event {
-                Event::TranscriptFinal { line, .. } => Some((line.text, line.t0_ms)),
+        (rx.try_iter().map(|e| e.event).collect(), engines.opened())
+    }
+
+    /// Another speaker taking over shows the first speaker's words while the
+    /// utterance goes on (the stream is not reopened); every word once.
+    #[test]
+    fn another_speakers_turn_shows_the_first_speakers_words_early() {
+        let talk = ghi_core::engines::Talk {
+            words: words(20, "w"),
+            start: 0.5,
+            step: 0.5,
+            pauses: Vec::new(),
+            turns: vec![seg(1, 0.0, 5.0), seg(2, 5.0, 11.0)],
+            show_lag: 0.5,
+            diar_lag: 1.0,
+        };
+        let (events, opened) = talk_events("turn", talk.clone(), 12);
+        assert_eq!(opened, 1);
+        let lines: Vec<&LineInfo> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::TranscriptFinal { line, .. } => Some(line),
                 _ => None,
             })
             .collect();
-        (lines, engines.opened())
+        assert!(
+            lines[0].t1_ms <= 5_000 && lines[0].text.starts_with("w1 w2"),
+            "{lines:?}"
+        );
+        // Every word with its own speaker: w1..w9 the first's, w10.. the second's.
+        for l in &lines {
+            for w in l.text.split_whitespace() {
+                let n: usize = w[1..].parse().unwrap();
+                assert_eq!(l.speaker == lines[0].speaker, n <= 9, "{w} in {lines:?}");
+            }
+        }
+        let heard: Vec<&str> = lines
+            .iter()
+            .flat_map(|l| l.text.split_whitespace())
+            .collect();
+        assert_eq!(heard, talk.words);
+        let at = events
+            .iter()
+            .position(|e| matches!(e, Event::TranscriptFinal { .. }))
+            .unwrap();
+        let later: Vec<&str> = events[at..]
+            .iter()
+            .filter_map(|e| match e {
+                Event::TranscriptPartial { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(!later.is_empty(), "shown before the utterance ended");
+        assert!(later.iter().all(|t| !t.starts_with("w1 ")), "{later:?}");
     }
 
     fn words(n: usize, w: &str) -> Vec<String> {
@@ -1568,6 +1701,9 @@ mod tests {
             start: 0.5,
             step: 0.5,
             pauses: Vec::new(),
+            turns: Vec::new(),
+            show_lag: 0.0,
+            diar_lag: 0.0,
         };
         let (lines, opened) = talk_lines("longcut", talk.clone(), 32);
         assert!(lines.len() >= 2 && opened >= 2, "cut: {lines:?}");
@@ -1585,6 +1721,9 @@ mod tests {
             step: 0.5,
             // The last line comes out of the stop itself (no pause before it).
             pauses: vec![4, 8],
+            turns: Vec::new(),
+            show_lag: 0.0,
+            diar_lag: 0.0,
         };
         let (lines, opened) = talk_lines("vireset", talk.clone(), 10);
         assert_eq!(lines.len(), 3, "{lines:?}");
@@ -1623,6 +1762,7 @@ mod tests {
                 text: "hi".into(),
                 words: vec![word],
                 segs: vec![seg(1, 0.0, 1.0)],
+                early: false,
             }],
             0,
             0,
@@ -1685,6 +1825,7 @@ mod tests {
                 text: "hi".into(),
                 words: vec![word],
                 segs: vec![seg(1, 0.0, 1.0)],
+                early: false,
             }],
             0,
             0,

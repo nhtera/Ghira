@@ -250,6 +250,8 @@ impl Shared {
         for u in updates {
             match u {
                 Update::Partial(_) => s.partial_open = true,
+                // A line shown at a speaker turn: its utterance is still open.
+                Update::Final { early: true, .. } => {}
                 Update::Final { end, .. } => {
                     s.partial_open = false;
                     let end_samples = offset + (end.max(0.0) * RATE) as u64;

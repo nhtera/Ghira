@@ -823,6 +823,7 @@ fn live_commits_keep_a_margin_for_undecoded_audio() {
         text: "x".into(),
         words: Vec::new(),
         segs: Vec::new(),
+        early: false,
     };
     shared.commit(&[], 2 * sec, false);
     assert_eq!(shared.committed_position(), 0, "within the margin");
@@ -834,6 +835,18 @@ fn live_commits_keep_a_margin_for_undecoded_audio() {
         7 * sec,
         "an utterance is in progress"
     );
+    // A line shown at a speaker turn leaves its utterance open: a reset redoes
+    // the utterance from where it began.
+    let early = Update::Final {
+        start: 0.0,
+        end: 9.0,
+        text: "x".into(),
+        words: Vec::new(),
+        segs: Vec::new(),
+        early: true,
+    };
+    shared.commit(&[early], 12 * sec + sec / 2, false);
+    assert_eq!(shared.committed_position(), 7 * sec, "still in progress");
     shared.commit(&[fin(11.5)], 13 * sec, false);
     assert_eq!(
         shared.committed_position(),

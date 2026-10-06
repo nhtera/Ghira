@@ -12,6 +12,10 @@
 //! - Room mode: the mic track is transcribed and diarized.
 //! - A long partial is cut: at its next sentence end after [`SOFT_CUT_S`], or
 //!   wherever it is at [`FORCE_FINAL_S`] (the stream is flushed and reopened).
+//! - Another speaker taking over inside an utterance ([`turn_change`]) shows
+//!   the first speaker's words as their own line at once ([`Prefix`]); the
+//!   stream goes on untouched (a reopen there costs accuracy), and its final
+//!   drops the words already shown.
 //! - After a line the engine asks for ([`SpeechEngines::reset_after`]: NeMo,
 //!   a Vietnamese one) the stream is reopened too.
 //! - A gap in the frames (ASR fell behind and skipped) reopens the streams at
@@ -40,6 +44,11 @@ const BLOCK_FRAMES: usize = 10;
 pub const SOFT_CUT_S: f64 = 8.0;
 /// A partial this long (seconds of audio) without a final is forced out.
 pub const FORCE_FINAL_S: f64 = 12.0;
+/// Another speaker talking this long (seconds) inside one utterance shows the
+/// first speaker's words as a line.
+pub const TURN_CUT_S: f64 = 1.0;
+/// How often (seconds of audio) a running utterance checks for a new speaker.
+pub const TURN_CHECK_S: f64 = 0.5;
 const HEALTH_EVERY: Duration = Duration::from_secs(1);
 /// Skipped audio up to this long (samples) is replaced by silence for the
 /// diarizer instead of restarting it.
@@ -203,8 +212,191 @@ pub fn line_language(text: &str, fixed: Option<&str>) -> Option<String> {
 /// at a sentence end once it is long, anywhere once it is too long (continuous
 /// speech without the pause that ends an utterance).
 pub fn cut_due(partial: &str, running_s: f64) -> bool {
-    running_s >= FORCE_FINAL_S
-        || (running_s >= SOFT_CUT_S && partial.trim_end().ends_with(['.', '?', '!', '…']))
+    running_s >= FORCE_FINAL_S || (running_s >= SOFT_CUT_S && ends_sentence(partial))
+}
+
+fn ends_sentence(text: &str) -> bool {
+    text.trim_end().ends_with(['.', '?', '!', '…'])
+}
+
+/// Where another speaker took over inside the utterance whose words began
+/// showing at `from` (seconds, the diarizer's clock): the start of the first
+/// turn of at least [`TURN_CUT_S`] after `from` by a speaker other than the
+/// first such turn's. Shorter turns (a word of agreement, the previous
+/// speaker's tail) don't count.
+pub fn turn_change(segs: &[SpeakerSegment], from: f64) -> Option<f64> {
+    let mut turns: Vec<&SpeakerSegment> = segs
+        .iter()
+        .filter(|s| s.end - s.start.max(from) >= TURN_CUT_S)
+        .collect();
+    turns.sort_by(|a, b| a.start.total_cmp(&b.start));
+    let first = turns.first()?.speaker;
+    turns
+        .iter()
+        .find(|t| t.speaker != first)
+        .map(|t| t.start.max(from))
+}
+
+/// A word as matched between a partial and the final: letters and digits
+/// only, lowercase (the final's punctuation spacing is cleaned, the partial's
+/// raw: "is , fine" vs "is, fine"). Empty for punctuation alone.
+fn bare(word: &str) -> String {
+    word.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// How far a turn may be past the words it shows (seconds): a word shows a
+/// little after it ends, so only words that showed by the turn plus this are
+/// the first speaker's for sure; later ones wait for the final.
+pub const TURN_SHOW_S: f64 = 0.15;
+
+/// The words of the utterance in progress, from its partials, so a part of it
+/// can show as a line before its final (a speaker turn inside it). A greedy
+/// streaming recognizer only appends to a partial, so the final starts with
+/// the words shown, and [`Prefix::strip`] drops them from it.
+#[derive(Debug, Default, Clone)]
+pub struct Prefix {
+    /// Each word of the partial with the stream time (seconds) it showed.
+    seen: Vec<(String, f64)>,
+    /// Words already shown as a line.
+    shown: usize,
+}
+
+impl Prefix {
+    /// A partial arrived at stream time `at`.
+    pub fn partial(&mut self, text: &str, at: f64) {
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let same = self
+            .seen
+            .iter()
+            .zip(&words)
+            .take_while(|(a, b)| a.0 == **b)
+            .count();
+        self.seen.truncate(same.max(self.shown));
+        for w in words.iter().skip(self.seen.len()) {
+            self.seen.push(((*w).to_string(), at));
+        }
+    }
+
+    /// The partial without the words already shown.
+    pub fn rest<'a>(&self, text: &'a str) -> &'a str {
+        let mut rest = text.trim_start();
+        for _ in 0..self.shown {
+            rest = rest
+                .split_once(char::is_whitespace)
+                .map_or("", |(_, r)| r.trim_start());
+        }
+        rest
+    }
+
+    /// Whether some words were shown as a line.
+    pub fn any_shown(&self) -> bool {
+        self.shown > 0
+    }
+
+    /// A new stream hears the utterance again (the iPhone redoes audio after a
+    /// suspect step): keep only the words shown, so its final drops them too.
+    pub fn restart(&mut self) {
+        self.seen.truncate(self.shown);
+    }
+
+    /// The words not shown yet that showed by `until` (stream seconds), but
+    /// never the partial's last word (it may still grow), as a final. Their
+    /// times are estimated: spread over `from` (where the utterance, or the
+    /// last shown part, began) to `cap` (the turn), so the line starts before
+    /// any word the final keeps back and ends no earlier than its words did.
+    pub fn take(&mut self, until: f64, from: f64, cap: f64) -> Option<AsrResult> {
+        let last = self.seen.len().saturating_sub(1);
+        let end = self.shown
+            + self.seen[self.shown.min(last)..last]
+                .iter()
+                .take_while(|w| w.1 <= until)
+                .count();
+        if end <= self.shown {
+            return None;
+        }
+        let n = end - self.shown;
+        let from = from.clamp(0.0, cap.max(0.0));
+        let step = (cap.max(from) - from) / n as f64;
+        let words: Vec<Word> = self.seen[self.shown..end]
+            .iter()
+            .enumerate()
+            .map(|(k, (text, _))| Word {
+                text: text.clone(),
+                start: from + k as f64 * step,
+                end: from + (k + 1) as f64 * step,
+                confidence: 1.0,
+                speaker: None,
+            })
+            .collect();
+        self.shown = end;
+        Some(AsrResult {
+            is_final: true,
+            text: words
+                .iter()
+                .map(|w| w.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+            words,
+            languages: Vec::new(),
+            audio_processed: until,
+        })
+    }
+
+    /// A final of the utterance: without the words already shown (matched
+    /// without punctuation and case), and the prefix starts over. A final that
+    /// does not start with them is kept whole.
+    pub fn strip(&mut self, mut r: AsrResult) -> AsrResult {
+        let shown = std::mem::take(&mut self.shown);
+        let seen = std::mem::take(&mut self.seen);
+        let want: Vec<String> = seen[..shown]
+            .iter()
+            .map(|w| bare(&w.0))
+            .filter(|w| !w.is_empty())
+            .collect();
+        if want.is_empty() {
+            return r;
+        }
+        // How many of `items` cover the shown words (punctuation-only items
+        // right after them included); None when they don't start with them.
+        let cover = |items: &[&str]| -> Option<usize> {
+            let mut matched = 0;
+            let mut n = 0;
+            for item in items {
+                let b = bare(item);
+                if matched == want.len() {
+                    if !b.is_empty() {
+                        break;
+                    }
+                } else if !b.is_empty() {
+                    if b != want[matched] {
+                        return None;
+                    }
+                    matched += 1;
+                }
+                n += 1;
+            }
+            (matched == want.len()).then_some(n)
+        };
+        let tokens: Vec<&str> = r.text.split_whitespace().collect();
+        let Some(n_text) = cover(&tokens) else {
+            return r;
+        };
+        let words: Vec<&str> = r.words.iter().map(|w| w.text.as_str()).collect();
+        match cover(&words) {
+            Some(n_words) => {
+                r.words.drain(..n_words);
+            }
+            // Word list and text disagree: drop as many words as text tokens.
+            None => {
+                r.words.drain(..n_text.min(r.words.len()));
+            }
+        }
+        r.text = tokens[n_text..].join(" ");
+        r
+    }
 }
 
 fn ms(s: f64) -> i64 {
@@ -221,6 +413,13 @@ struct AsrTrack {
     partial_since: Option<u64>,
     /// The engine asked for a fresh stream after the last final.
     reset: bool,
+    /// Position of the last check for a new speaker.
+    turn_checked: u64,
+    /// The words of the utterance in progress, some maybe shown as a line.
+    prefix: Prefix,
+    /// Meeting seconds from which to look for the next speaker turn (after
+    /// one was shown).
+    turn_from: Option<f64>,
 }
 
 struct Diar {
@@ -292,6 +491,9 @@ impl Engine {
                     partial: String::new(),
                     partial_since: None,
                     reset: false,
+                    turn_checked: 0,
+                    prefix: Prefix::default(),
+                    turn_from: None,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -452,17 +654,23 @@ impl Engine {
             if r.is_final {
                 self.asr[i].partial.clear();
                 self.asr[i].partial_since = None;
+                self.asr[i].turn_from = None;
                 self.asr[i].reset = self.engines.reset_after(&r.text);
+                // Without the words a speaker turn already showed.
+                let r = self.asr[i].prefix.strip(r);
                 self.final_result(i, r);
             } else if r.text != self.asr[i].partial {
                 if self.asr[i].partial_since.is_none() {
                     self.asr[i].partial_since = Some(self.now_pos);
                 }
-                self.asr[i].partial = r.text.clone();
+                let at = self.now_pos.saturating_sub(self.asr[i].offset) as f64 / RATE;
+                self.asr[i].prefix.partial(&r.text, at);
+                let text = self.asr[i].prefix.rest(&r.text).to_string();
+                self.asr[i].partial = r.text;
                 self.events.emit(Event::TranscriptPartial {
                     meeting: self.meeting(),
                     track: self.asr[i].track.index() as u8,
-                    text: r.text,
+                    text,
                 });
             }
         }
@@ -472,6 +680,7 @@ impl Engine {
         let due = match self.asr[i].partial_since {
             Some(since) => {
                 let running = self.now_pos.saturating_sub(since) as f64 / RATE;
+                self.show_turn(i, since, running);
                 cut_due(&self.asr[i].partial, running)
             }
             // Nothing in progress: the fresh stream the last line asked for.
@@ -491,6 +700,62 @@ impl Engine {
         self.reopen_asr(i, self.now_pos);
     }
 
+    /// A diarized track's utterance another speaker took over: the words
+    /// before the turn show as the first speaker's line now.
+    fn show_turn(&mut self, i: usize, since: u64, running: f64) {
+        let track = self.asr[i].track;
+        if track != self.diar_track || (self.cfg.mode == Mode::Call && track == Track::Mic) {
+            return;
+        }
+        let now = self.now_pos;
+        let checked = now.saturating_sub(self.asr[i].turn_checked) as f64 / RATE;
+        if running < 2.0 * TURN_CUT_S || checked < TURN_CHECK_S {
+            return;
+        }
+        self.asr[i].turn_checked = now;
+        let doff = self.diar.offset as f64 / RATE;
+        let from = self.asr[i].turn_from.unwrap_or(since as f64 / RATE) - doff;
+        let turn = match self.diar.stream.segments() {
+            Ok(segs) => turn_change(&segs, from),
+            Err(e) => {
+                self.error(format!("diarization: {e}"));
+                None
+            }
+        };
+        let Some(turn) = turn.map(|t| t + doff) else {
+            return;
+        };
+        // The same turn again (the first speaker's segment still runs past it).
+        if self.asr[i].turn_from.is_some_and(|f| turn <= f + 0.01) {
+            return;
+        }
+        let off = self.asr[i].offset as f64 / RATE;
+        let turn_s = turn - off;
+        // The utterance (or the part after the last turn shown) began about a
+        // chunk before its first words showed.
+        let lag = f64::from(self.engines.chunk_ms()) / 1000.0 + 0.1;
+        let from_s = match self.asr[i].turn_from {
+            Some(t) => t - off,
+            None => since as f64 / RATE - off - lag,
+        };
+        if let Some(r) = self.asr[i]
+            .prefix
+            .take(turn_s + TURN_SHOW_S, from_s, turn_s)
+        {
+            self.asr[i].turn_from = Some(turn);
+            self.final_result(i, r);
+            // The screen dropped the words in progress with that line.
+            let rest = self.asr[i].prefix.rest(&self.asr[i].partial).to_string();
+            if !rest.is_empty() {
+                self.events.emit(Event::TranscriptPartial {
+                    meeting: self.meeting(),
+                    track: track.index() as u8,
+                    text: rest,
+                });
+            }
+        }
+    }
+
     fn reopen_asr(&mut self, i: usize, pos: u64) {
         match self.engines.asr(self.cfg.language.as_deref()) {
             Ok(s) => {
@@ -501,6 +766,8 @@ impl Engine {
                 t.partial.clear();
                 t.partial_since = None;
                 t.reset = false;
+                t.prefix = Prefix::default();
+                t.turn_from = None;
             }
             Err(e) => self.error(format!("asr: {e}")),
         }
