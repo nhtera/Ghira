@@ -889,7 +889,9 @@ export type MeProfile = {
  *  The status chip on a meeting row (M3). The last three are phase 15 and
  *  only exist while a computer is paired.
  */
-export type MeetingChip = { kind: "recorded" } | { kind: "processingOnPhone"; percent: number } | { kind: "processedOnPhone" } | { kind: "waitingForModels" } | { kind: "failed" } | { kind: "synced" } | { kind: "waitingForWifi" } | { kind: "waitingForComputer" } | { kind: "finalOnDesktop"; percent: number };
+export type MeetingChip = { kind: "recorded" } | { kind: "processingOnPhone"; percent: number } | { kind: "processedOnPhone" } | { kind: "waitingForModels" } | { kind: "failed" } | { kind: "synced" } | { kind: "waitingForWifi" } | 
+/**  The computer had the pass and its lease ran out; offered again when it is back. */
+{ kind: "waitingForComputer" } | { kind: "finalOnDesktop"; percent: number };
 
 export type MeetingChipRow = {
 	gid: string,
@@ -1477,7 +1479,12 @@ export type SyncEvent = { type: "paired"; device: DeviceRow } |
  */
 { type: "needsConfirm"; device: string; count: number } | 
 /**  The wipe finished (here, or the peer confirmed it). */
-{ type: "wipeDone"; gid: string } | { type: "pairCodeSpent" } | { type: "error"; code: SyncErrorCode };
+{ type: "wipeDone"; gid: string } | 
+/**
+ *  Three pairing attempts failed: the shown code is dead. The pairing
+ *  sheet asks for a new one (`sync_pair_open`).
+ */
+{ type: "pairCodeSpent" } | { type: "error"; code: SyncErrorCode };
 
 export type SyncStatus = {
 	enabled: boolean,
