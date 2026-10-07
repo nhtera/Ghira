@@ -16,6 +16,16 @@ pub const MIN_RAM_GB: f64 = 6.0;
 /// First `iPhone<major>` generation (A16) that is live.
 pub const MIN_IPHONE_MAJOR: u32 = 15;
 
+/// RAM (GiB) a phone needs to write notes itself (Qwen3-4B, 2.5 GB, plus its
+/// cache next to the app): the 8 GB iPhones, which report about 7.5.
+pub const NOTES_MIN_RAM_GB: f64 = 7.0;
+
+/// The phone can write notes and action items itself (with the notes model
+/// downloaded): a live device with 8 GB.
+pub fn notes_capable(tier: TierClass, ram_gb: f64) -> bool {
+    tier == TierClass::Live && ram_gb >= NOTES_MIN_RAM_GB
+}
+
 /// The `15` of `iPhone15,4`; `None` for anything else.
 fn iphone_major(model_id: &str) -> Option<u32> {
     model_id
@@ -76,6 +86,7 @@ pub fn describe(
 ) -> DeviceTier {
     let tier = forced.unwrap_or_else(|| classify(&model_id, ram_gb));
     DeviceTier {
+        notes: notes_capable(tier, ram_gb),
         model_id,
         ram_gb,
         simulator,
@@ -108,6 +119,16 @@ mod tests {
         ] {
             assert_eq!(classify(model, ram), want, "{model} {ram} GB");
         }
+    }
+
+    #[test]
+    fn notes_need_a_live_phone_with_8_gb() {
+        // 8 GB phones report about 7.5 GiB; 6 GB ones about 5.6.
+        assert!(notes_capable(TierClass::Live, 7.5));
+        assert!(!notes_capable(TierClass::Live, 5.6));
+        assert!(!notes_capable(TierClass::RecordOnly, 7.5));
+        assert!(describe("iPhone16,2".into(), 7.5, false, None).notes);
+        assert!(!describe("iPhone15,4".into(), 5.6, false, None).notes);
     }
 
     #[test]

@@ -1099,19 +1099,24 @@ pub fn selftest(dir: &Path, file: String, pcm: &[f32]) -> SelfTest {
 }
 
 /// The job handlers the phone registers on its [`JobRunner`] (16-G calls this
-/// from the mobile core): the final pass without `notes_final` (the phone has
-/// no local notes; D5) and, because the voice step queues `voice_learn` when
-/// Me is enrolled, the job that learns the voice. Both wait while the models
-/// are missing or the device is below the live tier; the runner itself never
-/// claims while a session exists or the app is inactive.
+/// from the mobile core): the final pass, which queues `notes_final` only on a
+/// phone that can write notes (`notes`: 8 GB) once the notes model is
+/// installed, the notes job itself (the engine in process), and, because the
+/// voice step queues `voice_learn` when Me is enrolled, the job that learns
+/// the voice. They wait while their models are missing or the device is below
+/// the live tier; the runner itself never claims while a session exists or the
+/// app is inactive (so the notes model never runs in the background, where
+/// iOS forbids the GPU).
 ///
 /// [`JobRunner`]: ghi_core::jobs::JobRunner
 pub fn job_handlers(
     models: &Path,
     store: &Arc<ghi_store::store::Store>,
     tier_class: crate::cmd::lifecycle::TierClass,
+    notes: bool,
 ) -> Vec<Arc<dyn ghi_core::jobs::JobHandler>> {
-    use ghi_core::final_pass::{FinalPassJob, FinalPassNoNotes};
+    use ghi_core::final_pass::{FinalPassJob, FinalPassNotesIf};
+    use ghi_core::notes_job::{NOTES_FINAL_JOB, NotesJob};
     use ghi_core::voice_job::VoiceLearnJob;
     use ghi_core::voice_step::VoiceStep;
     let tier_ok = tier_class == crate::cmd::lifecycle::TierClass::Live;
@@ -1127,18 +1132,33 @@ pub fn job_handlers(
     };
     let provider = provider(models);
     let m = models.to_path_buf();
+    let notes_ready: ghi_core::jobs::Ready = {
+        let m = models.to_path_buf();
+        Arc::new(move || notes && ghi_app::core::llm_ready(&m))
+    };
+    let template = ghi_llm::template::builtin("general").expect("the built-in template parses");
     vec![
-        Arc::new(FinalPassNoNotes(FinalPassJob {
-            engines: Arc::new(move || provider()),
-            ready: Arc::new(move || tier_ok && engines_available(&m)),
-            // Shorter than the desktop's 10 minutes: a lower peak on the phone.
-            chunk_s: 300.0,
-            voice: Some(VoiceStep {
-                embedder: ghi_app::core::voice_factory(models),
-                ready: voice_ready.clone(),
-                third_party: Arc::new(third_party.clone()),
-            }),
-        })),
+        Arc::new(FinalPassNotesIf {
+            notes: notes_ready.clone(),
+            job: FinalPassJob {
+                engines: Arc::new(move || provider()),
+                ready: Arc::new(move || tier_ok && engines_available(&m)),
+                // Shorter than the desktop's 10 minutes: a lower peak on the phone.
+                chunk_s: 300.0,
+                voice: Some(VoiceStep {
+                    embedder: ghi_app::core::voice_factory(models),
+                    ready: voice_ready.clone(),
+                    third_party: Arc::new(third_party.clone()),
+                }),
+            },
+        }),
+        Arc::new(NotesJob {
+            kind: NOTES_FINAL_JOB,
+            version: 2,
+            template,
+            llm: ghi_app::core::llm_factory(models),
+            ready: notes_ready,
+        }),
         Arc::new(VoiceLearnJob {
             embedder: ghi_app::core::voice_factory(models),
             ready: voice_ready,

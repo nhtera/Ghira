@@ -464,6 +464,36 @@ impl JobHandler for FinalPassNoNotes {
     }
 }
 
+/// [`FinalPassJob`] for a phone that may write notes itself: `notes_final` is
+/// queued when `notes` says so at the end of the pass (an 8 GB iPhone with the
+/// notes model installed), else it settles like [`FinalPassNoNotes`].
+pub struct FinalPassNotesIf {
+    pub job: FinalPassJob,
+    pub notes: crate::jobs::Ready,
+}
+
+impl JobHandler for FinalPassNotesIf {
+    fn kind(&self) -> &'static str {
+        self.job.kind()
+    }
+
+    fn ready(&self) -> bool {
+        self.job.ready()
+    }
+
+    fn failed(&self, ctx: &JobCtx) {
+        self.job.failed(ctx);
+        // No notes job follows a failed pass.
+        if let Ok(m) = ctx.meeting() {
+            announce_ready(ctx, m);
+        }
+    }
+
+    fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
+        self.job.run_with(ctx, (self.notes)())
+    }
+}
+
 impl FinalPassJob {
     /// The pass; `notes` queues `notes_final` once the transcript is stored.
     fn run_with(&self, ctx: &JobCtx, notes: bool) -> Result<Outcome, String> {

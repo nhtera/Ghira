@@ -324,6 +324,37 @@ fn voice_step(models: &Path, store: &Arc<Store>) -> ghi_core::voice_step::VoiceS
     }
 }
 
+/// Opens the notes model (from `models`, the app data dir) sized for a
+/// transcript of `bytes`: the worker process on a computer, the engine in
+/// process on a phone (`ghi-llm` feature `inproc`).
+pub fn llm_factory(models: &Path) -> ghi_core::notes_job::LlmFactory {
+    let llm_dir = models.to_path_buf();
+    Arc::new(move |bytes| {
+        let n_ctx = ((bytes / 3) as u32 * 6 / 5 + 6_144).clamp(8_192, LLM_MAX_CTX);
+        #[cfg(feature = "local-llm")]
+        {
+            // Marks a damaged file for the UI (the worker checks it too).
+            checked_model(&llm_dir, preset().llm_id)?;
+            ghi_llm::local::LocalLlm::open_registry_in(&llm_dir, preset().llm_id, n_ctx)
+                .map(|l| Box::new(l) as Box<dyn ghi_llm::Llm + Send>)
+                .map_err(|e| e.to_string())
+        }
+        #[cfg(not(feature = "local-llm"))]
+        {
+            let _ = (&llm_dir, n_ctx);
+            Err("this build has no local notes model".into())
+        }
+    })
+}
+
+/// The longest notes context. A phone keeps the KV cache small (12k tokens of
+/// Qwen3-4B with a q8 cache is about 0.9 GB next to the 2.5 GB model); longer
+/// meetings are written in parts, as on any machine.
+#[cfg(target_os = "ios")]
+pub const LLM_MAX_CTX: u32 = 12_288;
+#[cfg(not(target_os = "ios"))]
+pub const LLM_MAX_CTX: u32 = 32_768;
+
 /// The notes model for this machine's tier is installed (and this build runs
 /// it: without feature `local-llm` the notes jobs wait, as they do for any
 /// missing model).
@@ -947,28 +978,11 @@ impl Core {
         #[cfg(feature = "embeddings")]
         let embed_dir = models.clone();
         let template = ghi_llm::template::builtin("general").map_err(|e| e.to_string())?;
-        // The notes model lives with the speech models in the app data dir.
-        let llm_dir = models.clone();
         let notes_ready: ghi_core::jobs::Ready = {
             let dir = models.clone();
             Arc::new(move || llm_ready(&dir))
         };
-        let llm: ghi_core::notes_job::LlmFactory = Arc::new(move |bytes| {
-            let n_ctx = ((bytes / 3) as u32 * 6 / 5 + 6_144).clamp(8_192, 32_768);
-            #[cfg(feature = "local-llm")]
-            {
-                // Marks a damaged file for the UI (the worker checks it too).
-                checked_model(&llm_dir, preset().llm_id)?;
-                ghi_llm::local::LocalLlm::open_registry_in(&llm_dir, preset().llm_id, n_ctx)
-                    .map(|l| Box::new(l) as Box<dyn ghi_llm::Llm + Send>)
-                    .map_err(|e| e.to_string())
-            }
-            #[cfg(not(feature = "local-llm"))]
-            {
-                let _ = (&llm_dir, n_ctx);
-                Err("this build has no local notes model".into())
-            }
-        });
+        let llm = llm_factory(&models);
         *lock(&self.llm) = Some(llm.clone());
         #[allow(unused_mut)]
         let mut handlers: Vec<Arc<dyn ghi_core::jobs::JobHandler>> = vec![

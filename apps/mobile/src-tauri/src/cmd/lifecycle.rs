@@ -46,6 +46,9 @@ pub struct DeviceTier {
     pub ram_gb: f64,
     pub simulator: bool,
     pub tier: TierClass,
+    /// It can write notes and action items itself (an 8 GB live phone; the
+    /// notes model is an optional download).
+    pub notes: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]

@@ -32,7 +32,10 @@ serde_json = "1"
 specta = "=2.0.0-rc.25"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 specta-typescript = "=0.0.12"
-ghi-app = { path = "../../../crates/ghi-app", default-features = false, features = ["specta", "voice"] }
+# local-llm: notes and action items written on the phone (8 GB iPhones, model
+# downloaded on request); the engine runs in process (ghi-llm `inproc`).
+ghi-app = { path = "../../../crates/ghi-app", default-features = false, features = ["specta", "voice", "local-llm"] }
+ghi-llm = { path = "../../../crates/ghi-llm", features = ["inproc"] }
 ghi-core = { path = "../../../crates/ghi-core", features = ["specta", "voice"] }
 ghi-audio = { path = "../../../crates/ghi-audio" }
 ghi-models = { path = "../../../crates/ghi-models" }

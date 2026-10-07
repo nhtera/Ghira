@@ -90,20 +90,45 @@ final class ReviewScreensTests: XCTestCase {
         }
     }
 
-    func testTranscribeAgainOffersTheLanguage() throws {
+    /// The newest meeting's notes and action items, as screenshots (notes written on the phone).
+    func testNewestMeetingNotes() throws {
         let app = Ghira.app()
         app.launch()
         Ghira.completeOnboarding(app)
+        _ = try openFirstMeeting(app)
+        for (tab, name) in [("Notes", "notes"), ("Actions", "actions")] {
+            let button = app.buttons[tab]
+            XCTAssertTrue(button.waitForExistence(timeout: 10), app.debugDescription)
+            button.tap()
+            sleep(1)
+            shot("\(name)-top")
+            app.swipeUp()
+            shot("\(name)-more")
+            app.swipeDown(velocity: .fast)
+            app.swipeDown(velocity: .fast)
+        }
+    }
+
+    /// Opens the first meeting of the list: a webview button between the search field and the tab bar.
+    private func openFirstMeeting(_ app: XCUIApplication) throws -> String {
         Ghira.tapTab(app, "Meetings")
         sleep(2)
-        // The first meeting row: a webview button between the search field and the tab bar, not a swipe action.
         let tabBar = app.otherElements["Tabs, navigation"].frame.minY
         let meeting = app.buttons.allElementsBoundByIndex.first { b in
             b.isHittable && b.frame.minY > 200 && b.frame.maxY < tabBar && !b.label.hasPrefix("Delete")
                 && !b.label.hasPrefix("Search") && b.label.count > 3
         }
         let open = try XCTUnwrap(meeting, "no meeting in the list\n" + app.debugDescription)
+        let label = open.label
         open.tap()
+        return label
+    }
+
+    func testTranscribeAgainOffersTheLanguage() throws {
+        let app = Ghira.app()
+        app.launch()
+        Ghira.completeOnboarding(app)
+        _ = try openFirstMeeting(app)
         let tab = app.buttons["Transcript"]
         XCTAssertTrue(tab.waitForExistence(timeout: 10), app.debugDescription)
         tab.tap()

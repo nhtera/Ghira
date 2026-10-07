@@ -697,6 +697,11 @@ export type DeviceTier = {
 	ramGb: number | null,
 	simulator: boolean,
 	tier: TierClass,
+	/**
+	 *  It can write notes and action items itself (an 8 GB live phone; the
+	 *  notes model is an optional download).
+	 */
+	notes: boolean,
 };
 
 /**  What "discard the last N seconds" would remove, shown before confirming [RT-1]. */

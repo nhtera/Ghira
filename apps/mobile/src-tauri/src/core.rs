@@ -99,6 +99,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     }
     let tier = crate::tier::detect();
     let class = tier.tier;
+    let notes = tier.notes;
 
     // The lifecycle needs the job runner, the core needs the lifecycle (it
     // pauses a runner created in the background): meet in a cell.
@@ -114,7 +115,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     let hooks = CoreHooks {
         data_dir: Some(data.clone()),
         handlers: Some(Arc::new(move |store, models| {
-            crate::engine::job_handlers(models, store, class)
+            crate::engine::job_handlers(models, store, class, notes)
         })),
         recover_kinds: Some(recover_kinds(class)),
         before_spawn: Some(Arc::new(move |runner| lifecycle.sync_runner(runner))),

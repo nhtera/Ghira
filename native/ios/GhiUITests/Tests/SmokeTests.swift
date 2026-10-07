@@ -69,7 +69,10 @@ final class SmokeTests: XCTestCase {
     func testForegroundTranscriptKeepsMoving() throws {
         let fakeMic = ProcessInfo.processInfo.environment["GHI_FAKE_MIC_PATH"] ?? ""
         let seconds = Double(ProcessInfo.processInfo.environment["GHI_REC_SECONDS"] ?? "") ?? 100
-        let app = Ghira.app(env: ["GHI_KEYSTORE": "keychain", "GHI_IGNORE_THERMAL": "1"].merging(fakeMic.isEmpty ? [:] : ["GHI_FAKE_MIC": fakeMic]) { $1 })
+        // A phone's key store comes from Ghira.app (GHI_KEYSTORE on the host).
+        var env = ["GHI_IGNORE_THERMAL": "1"].merging(fakeMic.isEmpty ? [:] : ["GHI_FAKE_MIC": fakeMic]) { $1 }
+        if !Ghira.onDevice { env["GHI_KEYSTORE"] = "keychain" }
+        let app = Ghira.app(env: env)
         app.launch()
         Ghira.completeOnboarding(app)
         Ghira.openRecordTab(app)
@@ -109,7 +112,10 @@ final class SmokeTests: XCTestCase {
     func testTranscriptGoesOnAfterHome() throws {
         let fakeMic = ProcessInfo.processInfo.environment["GHI_FAKE_MIC_PATH"] ?? ""
         let away = Double(ProcessInfo.processInfo.environment["GHI_AWAY_SECONDS"] ?? "") ?? 8
-        let app = Ghira.app(env: ["GHI_KEYSTORE": "keychain", "GHI_IGNORE_THERMAL": "1"].merging(fakeMic.isEmpty ? [:] : ["GHI_FAKE_MIC": fakeMic]) { $1 })
+        // A phone's key store comes from Ghira.app (GHI_KEYSTORE on the host).
+        var env = ["GHI_IGNORE_THERMAL": "1"].merging(fakeMic.isEmpty ? [:] : ["GHI_FAKE_MIC": fakeMic]) { $1 }
+        if !Ghira.onDevice { env["GHI_KEYSTORE"] = "keychain" }
+        let app = Ghira.app(env: env)
         app.launch()
         Ghira.completeOnboarding(app)
         Ghira.openRecordTab(app)

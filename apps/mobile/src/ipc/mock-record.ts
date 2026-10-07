@@ -356,7 +356,7 @@ export const recordCommands: Partial<Commands> = {
     appSettings = { ...appSettings, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v != null)) } as AppSettings;
     return ok(appSettings);
   },
-  deviceTier: async () => ok({ modelId: "iPhone16,1", ramGb: 8, simulator: true, tier: hooks.tier }),
+  deviceTier: async () => ok({ modelId: "iPhone16,1", ramGb: 8, simulator: true, tier: hooks.tier, notes: hooks.tier === "live" }),
   modelsStatus: async () => {
     const items = models.map((m): MobileModelItem => {
       if (hooks.modelsReady) return { ...m, state: "ready" };

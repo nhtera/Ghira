@@ -2162,6 +2162,7 @@ dependencies = [
  "ghi-audio",
  "ghi-core",
  "ghi-diag",
+ "ghi-llm",
  "ghi-models",
  "ghi-net",
  "ghi-speech",
