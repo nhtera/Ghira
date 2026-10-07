@@ -29,6 +29,16 @@
         "stale": "Written from an earlier version of the transcript.",
         "title": "From the transcript"
       },
+      "retranscribe": {
+        "action": "Transcribe again",
+        "auto": "English + Vietnamese",
+        "body": "The recording is transcribed again. Speaker names and the lines you edited stay.",
+        "confirm": "Transcribe again",
+        "language": "Spoken language",
+        "onDevice": "The audio is on {{device}}. Transcribe it again there.",
+        "started": "Transcribing again…",
+        "waiting": "The recording will be transcribed again once the speech models are installed."
+      },
       "save": "Save",
       "saveFailed": "Couldn’t save this line. Try again.",
       "section": {

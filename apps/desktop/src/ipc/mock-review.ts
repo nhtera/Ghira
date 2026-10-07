@@ -388,6 +388,7 @@ type ReviewCommands = Pick<
   | "deleteActionItem"
   | "listTemplates"
   | "regenerateNotes"
+  | "retranscribe"
   | "searchMeetings"
   | "issueAudioPlay"
   | "waveformPeaks"
@@ -411,6 +412,8 @@ type ReviewCommands = Pick<
 
 /** The remembered export folder (its name only). */
 let exportFolder: string | null = "Documents";
+/** The spoken language a meeting was transcribed again in (`null`: English + Vietnamese). */
+const languages = new Map<string, string | null>();
 let obsidianVault: string | null = "Vault";
 
 export function reviewCommands(host: ReviewHost): ReviewCommands {
@@ -433,7 +436,7 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         durationMs: sample.durationSeconds * 1000,
         source: r.source,
         mode: r.mode,
-        language: "en",
+        language: languages.has(r.gid) ? (languages.get(r.gid) ?? null) : "en",
         template: r.template,
         status: r.status,
         cloudLocked: lockedMeetings.has(r.gid),
@@ -587,6 +590,14 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         actionItems: [...d.notes.actionItems.filter((a) => a.origin !== "ai" || a.done), ...fresh.notes.actionItems.filter((a) => a.origin === "ai")],
         sections: TEMPLATES.find((t) => t.id === template)?.sections ?? [],
       };
+      host.process(m);
+      return ok(false);
+    },
+    retranscribe: (m, language) => {
+      const r = row(m);
+      if (!r) return fail(`meeting not found: ${m}`);
+      if (sensitiveMeetings.has(m) || audioDeleted.has(m)) return fail("the meeting's audio is no longer kept");
+      languages.set(m, language === "auto" ? null : language);
       host.process(m);
       return ok(false);
     },

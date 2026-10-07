@@ -3,8 +3,9 @@
 // bar, the title below it (it collapses into the bar on scroll), a segmented
 // Notes / Actions / Transcript control, and the audio bar with its
 // speaker-coloured waveform. Privacy and the sync chip sit under the title.
+// The Transcript tab ends with Transcribe again (its sheet picks the language).
 import { formatDate } from "@ghi/i18n";
-import { Button, cn, Icon, NavBar, PrivacyIndicator, SyncChip, useLargeTitleCollapse } from "@ghi/ui";
+import { Button, cn, Icon, NavBar, PhoneButton, PrivacyIndicator, SyncChip, useLargeTitleCollapse } from "@ghi/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,6 +16,7 @@ import { AudioBar, AudioOnDevice } from "./audio-bar";
 import { NotesPanel } from "./notes-panel";
 import { speakerOf, transcriptSpeaker } from "./notes-model";
 import { QuoteSheet } from "./quote-sheet";
+import { RetranscribeSheet } from "./retranscribe-sheet";
 import { ShareSheet } from "./share-sheet";
 import { TranscriptPanel } from "./transcript-panel";
 import { useAudio } from "./use-audio";
@@ -55,6 +57,8 @@ export function MeetingView({
   const [visited, setVisited] = useState<ReadonlySet<string>>(new Set());
   const [sharing, setSharing] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [retranscribing, setRetranscribing] = useState(false);
+  const [retranscribed, setRetranscribed] = useState<"started" | "waiting" | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   // Locking hides the meeting: its sheets close with it.
   useWindowEvent(LOCKED_EVENT, () => {
@@ -62,6 +66,7 @@ export function MeetingView({
     setSharing(false);
     setAsking(false);
     setTaking(false);
+    setRetranscribing(false);
   });
 
   const back = () => void navigate({ to: "/meetings" });
@@ -281,6 +286,30 @@ export function MeetingView({
               }
             />
           )}
+          {tab === "transcript" && !detail.sensitive && (detail.audioAvailable || sync.audioOnDevice) && (
+            <div className="mx-4 mt-2 mb-4 flex flex-col gap-2">
+              <PhoneButton
+                variant="secondary"
+                icon="subtitles"
+                // Only with the audio here, and not while the meeting is still being processed.
+                disabled={!detail.audioAvailable || detail.job != null || detail.status === "processing" || detail.status === "recording" || sync.leaseOpen}
+                onClick={() => {
+                  setRetranscribed(null);
+                  setRetranscribing(true);
+                }}
+              >
+                {t("mobile.detail.retranscribe.action")}
+              </PhoneButton>
+              {!detail.audioAvailable && sync.device && (
+                <p className="text-ios-footnote m-0 text-muted">{t("mobile.detail.retranscribe.onDevice", { device: sync.device })}</p>
+              )}
+              {retranscribed && (
+                <p role="status" className="text-ios-footnote m-0 text-muted">
+                  {retranscribed === "waiting" ? t("mobile.detail.retranscribe.waiting") : t("mobile.detail.retranscribe.started")}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
       {detail.audioAvailable ? (
@@ -310,6 +339,17 @@ export function MeetingView({
         }}
         canPlay={detail.audioAvailable}
         onPlay={(ms) => void audio.playFrom(ms)}
+      />
+      <RetranscribeSheet
+        // A fresh sheet each time: it starts from the meeting's language.
+        key={String(retranscribing)}
+        open={retranscribing}
+        detail={detail}
+        onClose={() => setRetranscribing(false)}
+        onStarted={(waiting) => {
+          setRetranscribed(waiting ? "waiting" : "started");
+          m.reload();
+        }}
       />
       <SensitiveSheet
         open={asking}

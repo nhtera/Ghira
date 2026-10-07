@@ -69,3 +69,16 @@ for (const lang of ["en", "vi"] as const)
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${process.env.GHI_SHOTS}/notes-${lang}-${theme}-${info.project.name}.png` });
     });
+
+test("Transcribe again asks for the spoken language, then processes the meeting", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Transcribe again…" }).click();
+  const panel = page.getByRole("alertdialog", { name: /Transcribe the recording again/ });
+  await expect(panel.getByRole("radio", { name: "English", exact: true })).toHaveAttribute("aria-checked", "true");
+  await expect(panel.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await panel.getByRole("radio", { name: "Tiếng Việt" }).click();
+  await panel.getByRole("button", { name: "Transcribe again" }).click();
+  await expect(panel).toBeHidden();
+  await expect(page.getByText("Transcribing again…")).toBeVisible();
+});

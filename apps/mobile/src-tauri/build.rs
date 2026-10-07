@@ -75,6 +75,7 @@ fn main() {
             "set_action_owner",
             "delete_action_item",
             "search_meetings",
+            "retranscribe",
             "issue_audio_play",
             "waveform_peaks",
             "meeting_as_text",

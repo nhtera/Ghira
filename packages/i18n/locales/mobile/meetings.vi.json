@@ -29,6 +29,16 @@
         "stale": "Viết từ một phiên bản bản ghi cũ hơn.",
         "title": "Trích từ bản ghi"
       },
+      "retranscribe": {
+        "action": "Chép lời lại",
+        "auto": "Tiếng Anh + Tiếng Việt",
+        "body": "Bản ghi âm sẽ được chép lời lại. Tên người nói và những dòng bạn đã sửa được giữ lại.",
+        "confirm": "Chép lời lại",
+        "language": "Ngôn ngữ nói",
+        "onDevice": "Âm thanh nằm trên {{device}}. Hãy chép lời lại ở đó.",
+        "started": "Đang chép lời lại…",
+        "waiting": "Bản ghi âm sẽ được chép lời lại khi các mô hình giọng nói được cài đặt."
+      },
       "save": "Lưu",
       "saveFailed": "Không lưu được dòng này. Hãy thử lại.",
       "section": {

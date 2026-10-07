@@ -215,6 +215,15 @@ export const commands = {
 	 *  for the local model to be installed.
 	 */
 	regenerateNotes: (meeting: string, template: string | null, language: NotesLanguage) => typedError<boolean, string>(__TAURI_INVOKE("regenerate_notes", { meeting, template, language })),
+	/**
+	 *  Transcribes the meeting again from its stored audio, in `language`, with
+	 *  the engine chosen in Settings: the final pass runs again and replaces the
+	 *  transcript. Names, Me, edited lines and discarded spans carry over as after
+	 *  any final pass; on the computer the notes are then written again (what the
+	 *  user wrote, edited, pinned or ticked stays). Returns whether it waits for
+	 *  the speech models to be installed.
+	 */
+	retranscribe: (meeting: string, language: TranscriptLanguage) => typedError<boolean, string>(__TAURI_INVOKE("retranscribe", { meeting, language })),
 	/**  Accent-insensitive search over transcripts and notes (VN-folded). */
 	searchMeetings: (request: SearchRequest) => typedError<SearchResults, string>(__TAURI_INVOKE("search_meetings", { request })),
 	/**  Plays the whole meeting (the open one; any earlier play token stops working). */
@@ -1855,6 +1864,11 @@ export type TopicView = {
 	title: string,
 	tMs: number | null,
 };
+
+/**  The language a meeting is transcribed in. */
+export type TranscriptLanguage = 
+/**  English and Vietnamese, detected line by line. */
+"auto" | "en" | "vi";
 
 /**  The status changed (the About section and a banner follow it). */
 export type UpdateChanged = {

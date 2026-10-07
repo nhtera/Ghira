@@ -356,6 +356,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             detail::delete_action_item,
             detail::list_templates,
             detail::regenerate_notes,
+            detail::retranscribe,
             detail::search_meetings,
             audio_protocol::issue_audio_play,
             audio_protocol::waveform_peaks,

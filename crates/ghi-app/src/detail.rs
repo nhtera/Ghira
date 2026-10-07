@@ -803,6 +803,97 @@ pub async fn regenerate_notes(
     .await
 }
 
+/// The language a meeting is transcribed in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum TranscriptLanguage {
+    /// English and Vietnamese, detected line by line.
+    Auto,
+    En,
+    Vi,
+}
+
+/// Transcribes the meeting again from its stored audio, in `language`, with
+/// the engine chosen in Settings: the final pass runs again and replaces the
+/// transcript. Names, Me, edited lines and discarded spans carry over as after
+/// any final pass; on the computer the notes are then written again (what the
+/// user wrote, edited, pinned or ticked stays). Returns whether it waits for
+/// the speech models to be installed.
+#[tauri::command]
+#[specta::specta]
+pub async fn retranscribe(
+    core: CoreState<'_>,
+    meeting: String,
+    language: TranscriptLanguage,
+) -> Result<bool, String> {
+    blocking(&core, move |c| {
+        let store = c.store()?;
+        queue_retranscribe(&store, &meeting, language)?;
+        c.notify_jobs();
+        Ok(!crate::core::speech_ready(&c.models()))
+    })
+    .await
+}
+
+/// [`retranscribe`] without the app: checks, records the language and queues
+/// the final pass.
+pub fn queue_retranscribe(
+    store: &Store,
+    meeting: &str,
+    language: TranscriptLanguage,
+) -> Result<(), String> {
+    let m = store.get_meeting(meeting).map_err(err)?;
+    match m.status.as_str() {
+        "recording" => return Err("the meeting is still recording".into()),
+        ghi_core::import::IMPORTING => return Err("the file is still being imported".into()),
+        _ => {}
+    }
+    if m.sensitive {
+        return Err("a sensitive meeting keeps no audio to transcribe".into());
+    }
+    if !store.audio_available(meeting).map_err(err)? {
+        return Err(
+            if store.meeting_audio_origin(meeting).map_err(err)?.is_some() {
+                "the audio is on the device that recorded the meeting"
+            } else {
+                "the meeting's audio is no longer kept"
+            }
+            .into(),
+        );
+    }
+    if crate::sync_service::spoke::meeting_sync_view(store, meeting)
+        .lease_open()
+        .is_some()
+    {
+        return Err("the transcript is being improved on the computer".into());
+    }
+    let kinds = [
+        ghi_core::session::NOTES_LIVE_JOB,
+        ghi_core::session::FINAL_PASS_JOB,
+        ghi_core::notes_job::NOTES_FINAL_JOB,
+    ];
+    for k in kinds {
+        if store.active_job(meeting, k).map_err(err)?.is_some() {
+            return Err("the meeting is still being processed".into());
+        }
+    }
+    let lang = match language {
+        TranscriptLanguage::Auto => None,
+        TranscriptLanguage::En => Some("en"),
+        TranscriptLanguage::Vi => Some("vi"),
+    };
+    store.set_meeting_lang(meeting, lang).map_err(err)?;
+    store
+        .enqueue_job(
+            Some(meeting),
+            ghi_core::session::FINAL_PASS_JOB,
+            ghi_core::session::JOB_PAYLOAD_VERSION,
+            &serde_json::json!({}),
+        )
+        .map_err(err)?;
+    store.set_meeting_status(meeting, "processing").map_err(err)
+}
+
 // ---------------------------------------------------------------- search
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -997,6 +1088,70 @@ mod tests {
         // Full-text char offsets with the snippet starting at char 10.
         let r = utf16_ranges(snippet, 10, &[12..15, 16..19, 5..8]);
         assert_eq!(r, vec![[3, 6], [7, 10]]);
+    }
+
+    #[test]
+    fn retranscribe_sets_the_language_and_queues_the_final_pass_once() {
+        use ghi_core::session::FINAL_PASS_JOB;
+        use ghi_store::keys::{MemoryKeyStore, Protection};
+        use ghi_store::store::{NewMeeting, TrackKind};
+
+        let t = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            t.path(),
+            std::sync::Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        let meeting = |audio: bool| {
+            let m = store
+                .create_meeting(NewMeeting {
+                    title: "Họp tuần".into(),
+                    lang: Some("en".into()),
+                    ..Default::default()
+                })
+                .unwrap()
+                .gid;
+            if audio {
+                let mut w = store.open_track(&m, TrackKind::Mic).unwrap();
+                w.append(b"page").unwrap();
+                store.finish_track(&m, TrackKind::Mic, w).unwrap();
+            }
+            store.finish_meeting(&m, 1_000).unwrap();
+            store.set_meeting_status(&m, "ready").unwrap();
+            m
+        };
+
+        let m = meeting(true);
+        queue_retranscribe(&store, &m, TranscriptLanguage::Vi).unwrap();
+        let got = store.get_meeting(&m).unwrap();
+        assert_eq!(
+            (got.lang.as_deref(), got.status.as_str()),
+            (Some("vi"), "processing")
+        );
+        let jobs = store.jobs_for_meeting(&m).unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].kind, FINAL_PASS_JOB);
+        // A second request while the first is queued is refused.
+        assert!(queue_retranscribe(&store, &m, TranscriptLanguage::Auto).is_err());
+        assert_eq!(store.jobs_for_meeting(&m).unwrap().len(), 1);
+        assert_eq!(store.get_meeting(&m).unwrap().lang.as_deref(), Some("vi"));
+
+        // Auto clears the fixed language.
+        let m = meeting(true);
+        queue_retranscribe(&store, &m, TranscriptLanguage::Auto).unwrap();
+        assert_eq!(store.get_meeting(&m).unwrap().lang, None);
+
+        // Nothing to read: no audio kept, or a sensitive meeting.
+        let none = meeting(false);
+        assert!(queue_retranscribe(&store, &none, TranscriptLanguage::En).is_err());
+        let sensitive = meeting(true);
+        store.set_sensitive(&sensitive, true).unwrap();
+        assert!(queue_retranscribe(&store, &sensitive, TranscriptLanguage::En).is_err());
+        for m in [none, sensitive] {
+            assert!(store.jobs_for_meeting(&m).unwrap().is_empty());
+            assert_eq!(store.get_meeting(&m).unwrap().lang.as_deref(), Some("en"));
+        }
     }
 
     #[test]

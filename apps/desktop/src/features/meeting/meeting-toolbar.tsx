@@ -2,7 +2,8 @@
 // The detail's tab row (D6): the tabs, then My notes only, the notes language,
 // Improve with cloud and one Export menu that also holds Regenerate (after
 // asking: what you wrote, edited, pinned or ticked stays), the template, Ask,
-// the follow-up email and the never-cloud switch.
+// the follow-up email, Transcribe again (with the spoken language) and the
+// never-cloud switch.
 import {
   Icon,
   InlineConfirm,
@@ -23,6 +24,7 @@ import { SensitiveConfirm } from "../sensitive";
 import { useNotesLanguage, type PickedLanguage } from "./notes-language";
 import { DEFAULT_TEMPLATE, templateName } from "./template-names";
 import { inProgress } from "../library/meeting-status";
+import { RetranscribePanel } from "./retranscribe-panel";
 
 const LANGS = ["en", "vi"] as const;
 
@@ -65,6 +67,7 @@ export function MeetingToolbar({
   const [asking, setAsking] = useState(false);
   const [sensitiveAsk, setSensitiveAsk] = useState(false);
   const [emailing, setEmailing] = useState(false);
+  const [retranscribing, setRetranscribing] = useState(false);
   const [busy, setBusy] = useState(false);
   // Choosing a language or template only stages it: ask right away what Regenerate will do.
   const choose = (apply: () => void) => {
@@ -155,6 +158,17 @@ export function MeetingToolbar({
       onSelect: () => setAsking(true),
     },
     ...templateItems,
+    {
+      label: t("meeting.retranscribe"),
+      icon: "subtitles",
+      // Nothing to read without audio here (sensitive, removed, on the phone).
+      disabled: busyJob || asking || retranscribing || detail.sensitive || !detail.audioAvailable,
+      movesFocus: true,
+      onSelect: () => {
+        setAsking(false);
+        setRetranscribing(true);
+      },
+    },
     { kind: "separator" },
     {
       label: t("cloud.sheet.never"),
@@ -233,6 +247,11 @@ export function MeetingToolbar({
             onConfirm={() => void regenerate()}
             onCancel={() => setAsking(false)}
           />
+        </div>
+      )}
+      {retranscribing && (
+        <div className="pb-2">
+          <RetranscribePanel detail={detail} onClose={() => setRetranscribing(false)} />
         </div>
       )}
       {sensitiveAsk && (

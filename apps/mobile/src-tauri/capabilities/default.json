@@ -71,6 +71,7 @@
     "allow-set-action-owner",
     "allow-delete-action-item",
     "allow-search-meetings",
+    "allow-retranscribe",
     "allow-issue-audio-play",
     "allow-waveform-peaks",
     "allow-meeting-as-text",

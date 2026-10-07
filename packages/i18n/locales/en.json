@@ -1642,6 +1642,13 @@
       "meeting": "Meeting"
     },
     "regenerateQuestion": "Write the notes again? What you wrote, edited, pinned or ticked stays.",
+    "retranscribe": "Transcribe again…",
+    "retranscribeConfirm": "Transcribe again",
+    "retranscribeQuestion": "Transcribe the recording again? Speaker names and the lines you edited stay, and the notes are written again afterwards.",
+    "retranscribeLanguage": "Spoken language",
+    "retranscribeAuto": "English + Vietnamese",
+    "retranscribing": "Transcribing again…",
+    "retranscribeWaiting": "The recording will be transcribed again once the speech models are installed.",
     "regenerating": "Writing the notes again…",
     "regenWaiting": "Notes will be written once the notes model is installed.",
     "waitingModels": "Waiting for models",

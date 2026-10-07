@@ -829,6 +829,12 @@ impl Store {
         Ok(n > 0)
     }
 
+    /// The language the meeting is transcribed in (`en`, `vi`; `None`: English
+    /// and Vietnamese, detected). The final pass reads it.
+    pub fn set_meeting_lang(&self, gid: &str, lang: Option<&str>) -> Result<()> {
+        self.update_meeting(gid, "lang = ?1", lang)
+    }
+
     /// The notes template the meeting's notes are written with (`None`: default).
     pub fn set_meeting_template(&self, gid: &str, template: Option<&str>) -> Result<()> {
         self.update_meeting(gid, "template = ?1", template)

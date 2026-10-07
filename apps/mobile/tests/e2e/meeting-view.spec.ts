@@ -199,6 +199,22 @@ test.describe("meeting view", () => {
     );
   });
 
+  test("Transcribe again picks the spoken language and starts", async ({ page }) => {
+    await openMeetings(page, "/meetings/m-nonotes?tab=transcript");
+    await page.getByRole("button", { name: "Transcribe again" }).click();
+    const sheet = page.getByRole("dialog", { name: "Transcribe again" });
+    // A mixed meeting starts from English + Vietnamese.
+    await expect(sheet.getByRole("radio", { name: "English + Vietnamese" })).toHaveAttribute("aria-checked", "true");
+    await sheet.getByRole("radio", { name: "Tiếng Việt" }).click();
+    await expect(sheet.getByRole("radio", { name: "Tiếng Việt" })).toHaveAttribute("aria-checked", "true");
+    await expectAccessible(page);
+    await sheet.getByRole("button", { name: "Transcribe again" }).click();
+    await expect(sheet).toBeHidden();
+    await expect(page.getByRole("status").filter({ hasText: "Transcribing again…" })).toBeVisible();
+    // Processing again: no second request until it is done.
+    await expect(page.getByRole("button", { name: "Transcribe again" })).toBeDisabled();
+  });
+
   test("cancel leaves the line as it was", async ({ page }) => {
     await openMeetings(page, "/meetings/m-nonotes?tab=transcript");
     const line = page.locator('[data-segment="s1"]');

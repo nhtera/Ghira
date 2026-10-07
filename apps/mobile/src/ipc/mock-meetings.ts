@@ -529,6 +529,17 @@ export const meetingCommands: Partial<Commands> = {
       ];
     return ok(m.transcript);
   },
+  // Like ghi-app's retranscribe: audio kept here, nothing running; the mock
+  // records the language and the meeting is processing again.
+  retranscribe: async (id, language) => {
+    const m = find(id);
+    if (!m) return fail("not found");
+    if (m.detail.sensitive || !m.detail.audioAvailable) return fail("the meeting's audio is no longer kept");
+    if (m.detail.job || m.detail.status === "processing") return fail("the meeting is still being processed");
+    m.detail.language = language === "auto" ? null : language;
+    m.detail.status = "processing";
+    return ok(false);
+  },
   updateSegmentText: async (id, seg, text) => {
     if (failSaves) return fail("disk full");
     const s = find(id)?.transcript.segments.find((x) => x.gid === seg);

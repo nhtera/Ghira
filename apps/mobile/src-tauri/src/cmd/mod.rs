@@ -110,6 +110,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             ghi_app::detail::set_action_owner,
             ghi_app::detail::delete_action_item,
             ghi_app::detail::search_meetings,
+            ghi_app::detail::retranscribe,
             ghi_app::audio_protocol::issue_audio_play,
             ghi_app::audio_protocol::waveform_peaks,
             ghi_app::export_cmd::meeting_as_text,

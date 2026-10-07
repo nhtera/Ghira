@@ -1591,6 +1591,13 @@
       "meeting": "Cuộc họp"
     },
     "regenerateQuestion": "Viết lại ghi chú? Những gì bạn đã viết, sửa, ghim hoặc đánh dấu sẽ được giữ lại.",
+    "retranscribe": "Chép lời lại…",
+    "retranscribeConfirm": "Chép lời lại",
+    "retranscribeQuestion": "Chép lời lại từ bản ghi âm? Tên người nói và những dòng bạn đã sửa được giữ lại, sau đó ghi chú sẽ được viết lại.",
+    "retranscribeLanguage": "Ngôn ngữ nói",
+    "retranscribeAuto": "Tiếng Anh + Tiếng Việt",
+    "retranscribing": "Đang chép lời lại…",
+    "retranscribeWaiting": "Bản ghi âm sẽ được chép lời lại khi các mô hình giọng nói được cài đặt.",
     "regenerating": "Đang viết lại ghi chú…",
     "regenWaiting": "Ghi chú sẽ được viết khi mô hình ghi chú được cài xong.",
     "waitingModels": "Đang chờ mô hình",

@@ -161,6 +161,7 @@ fn main() {
             "issue_audio_play",
             "search_meetings",
             "regenerate_notes",
+            "retranscribe",
             "list_templates",
             "delete_action_item",
             "set_action_owner",

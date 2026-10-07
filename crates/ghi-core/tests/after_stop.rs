@@ -209,6 +209,30 @@ fn notes_then_final_pass_then_final_notes() {
         })
         .collect();
     assert_eq!(versions, [1, 2]);
+
+    // "Transcribe again" in Vietnamese (what `ghi_app::detail::retranscribe`
+    // queues): v3 replaces v2 and keeps Lan, the edited line and no extra
+    // speakers; the notes follow it.
+    store.set_meeting_lang(&meeting, Some("vi")).unwrap();
+    store
+        .enqueue_job(
+            Some(&meeting),
+            ghi_core::session::FINAL_PASS_JOB,
+            ghi_core::session::JOB_PAYLOAD_VERSION,
+            &serde_json::json!({}),
+        )
+        .unwrap();
+    assert_eq!(runner.run_pending(), 2, "final_pass, notes_final");
+    let m = store.get_meeting(&meeting).unwrap();
+    assert_eq!((m.status.as_str(), m.transcript_version), ("ready", 3));
+    let v3 = store.segments(&meeting).unwrap();
+    let texts: Vec<&str> = v3.iter().map(|s| s.text.as_str()).collect();
+    assert_eq!(texts[1], "Hôm nay chốt lịch beta.");
+    assert!(v3[1].edited);
+    assert!(v3.iter().all(|s| s.lang.as_deref() == Some("vi")));
+    assert_eq!(v3[0].speaker_gid.as_deref(), Some(lan.gid.as_str()));
+    assert_eq!(v3[2].speaker_gid.as_deref(), Some(lan.gid.as_str()));
+    assert_eq!(store.speakers(&meeting).unwrap().len(), 2);
 }
 
 /// Models missing: the session records audio only, its jobs wait in the

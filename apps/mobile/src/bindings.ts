@@ -259,6 +259,15 @@ export const commands = {
 	deleteActionItem: (meeting: string, item: string) => typedError<null, string>(__TAURI_INVOKE("delete_action_item", { meeting, item })),
 	/**  Accent-insensitive search over transcripts and notes (VN-folded). */
 	searchMeetings: (request: SearchRequest) => typedError<SearchResults, string>(__TAURI_INVOKE("search_meetings", { request })),
+	/**
+	 *  Transcribes the meeting again from its stored audio, in `language`, with
+	 *  the engine chosen in Settings: the final pass runs again and replaces the
+	 *  transcript. Names, Me, edited lines and discarded spans carry over as after
+	 *  any final pass; on the computer the notes are then written again (what the
+	 *  user wrote, edited, pinned or ticked stays). Returns whether it waits for
+	 *  the speech models to be installed.
+	 */
+	retranscribe: (meeting: string, language: TranscriptLanguage) => typedError<boolean, string>(__TAURI_INVOKE("retranscribe", { meeting, language })),
 	/**  Plays the whole meeting (the open one; any earlier play token stops working). */
 	issueAudioPlay: (meeting: string) => typedError<AudioPlay, string>(__TAURI_INVOKE("issue_audio_play", { meeting })),
 	/**
@@ -1525,6 +1534,11 @@ export type TopicView = {
 	title: string,
 	tMs: number | null,
 };
+
+/**  The language a meeting is transcribed in. */
+export type TranscriptLanguage = 
+/**  English and Vietnamese, detected line by line. */
+"auto" | "en" | "vi";
 
 export type Vocabulary = {
 	/**  The user's own terms (names, products, jargon), as written. */
