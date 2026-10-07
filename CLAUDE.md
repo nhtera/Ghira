@@ -116,7 +116,8 @@ suggestions and the notes template). Needs the Calendars entitlement + plist key
 Notes engine: `crates/ghi-llm` (templates in `templates/*.toml`, generated
 JSON schemas, map-reduce notes with citations, enhance, Ask, redaction, send
 preview, cloud providers) + `crates/ghi-llm-worker` (llama.cpp over stdio, a
-separate process); `ghi notes|ask|keys` and `ghi store notes`. Local model:
+separate process; the engine is `ghi_llm_worker::serve`, which the iOS app runs on a thread instead,
+`ghi-llm` feature `inproc`, `Sidecar::in_process`); `ghi notes|ask|keys` and `ghi store notes`. Local model:
 `tools/scripts/fetch-models.sh qwen3-4b`, then `cargo build -p ghi-llm-worker`
 (the golden tests skip without both). Cloud sends only go through `ghi-net`'s
 `CloudGrant`, bound to the exact previewed bytes.
@@ -192,6 +193,14 @@ scripted mock `ipc/mock*.ts` outside Tauri). `native/ios`: `GhiAudio` (Swift aud
 lifecycle, Live Activity, C ABI in `include/ghi_ios.h`), `GhiLiveActivity`,
 `GhiShareExtension` (inbox in the App Group), `GhiUITests` (XCUITest). Data is
 Application Support, encrypted store + bundles; no `UIFileSharingEnabled`.
+Notes on the phone (2026-10-08, reverses phase 16 D5): an 8 GB live iPhone (`tier::notes_capable`,
+`DeviceTier.notes`) writes notes with the same Qwen3-4B, in process, once the optional notes model is
+downloaded (Settings → Models, `models_download_notes`/`models_remove_notes`); the phone's final pass
+(`FinalPassNotesIf`) then queues `notes_final`, and the Notes tab offers "Write notes" (`regenerate_notes`).
+Context capped at 12k tokens on iOS (`LLM_MAX_CTX`); jobs never run in the background or while recording.
+Device check: `TEST_RUNNER_GHI_LONG_MEETING=1 GHI_REC_SECONDS=<s> GHI_FAKE_MIC_PATH=<wav> ... run.sh
+-only-testing:GhiUITests/ReviewScreensTests/testLongMeetingNotesOnThePhone` (GHI_KEYSTORE=file on a phone
+whose data a test-hooks build made).
 Calendar on iOS: `native/ios/GhiAudio/GhiCalendar.swift` (EventKit, JSON over the C ABI) and
 `src-tauri/src/cmd/calendar.rs` (setting `calendar_phone`, read on demand, 60 s memory
 cache, names a meeting at record start; the EventKit → event conversion is shared in

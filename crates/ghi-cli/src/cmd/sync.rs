@@ -530,9 +530,10 @@ impl EchoOff {
     }
 }
 
-#[cfg(unix)]
+// On every OS, so dropping it early reads the same (it restores nothing off Unix).
 impl Drop for EchoOff {
     fn drop(&mut self) {
+        #[cfg(unix)]
         if let Some(t) = &self.saved {
             // SAFETY: restores the attributes read in `new`.
             unsafe {

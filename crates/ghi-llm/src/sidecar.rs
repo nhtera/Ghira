@@ -353,8 +353,8 @@ impl Sidecar {
         }
     }
 
-    /// The worker process id (none for an in-process engine).
-    #[cfg(test)]
+    /// The worker process id (none for an in-process engine); the tests using it are Unix-only.
+    #[cfg(all(test, unix))]
     fn pid(&self) -> Option<u32> {
         match &self.proc {
             Proc::Child(child) => Some(child.id()),
