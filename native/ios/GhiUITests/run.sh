@@ -29,6 +29,8 @@ if [[ -n "${GHI_DEVICE_UDID:-}" ]]; then
   [[ -n "$team" ]] || { echo "run.sh: set APPLE_DEVELOPMENT_TEAM" >&2; exit 1; }
   sign=(-allowProvisioningUpdates DEVELOPMENT_TEAM="$team" CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Automatic)
   export TEST_RUNNER_GHI_ON_DEVICE=1
+  # The phone's key store: keychain (data a release build made) unless GHI_KEYSTORE=file (made by a test-hooks build).
+  export TEST_RUNNER_GHI_KEYSTORE="${GHI_KEYSTORE:-keychain}"
   mic="${GHI_FAKE_MIC_PATH:-}"
   if [[ "$action" != build-for-testing && -n "$mic" && -n "${GHI_DEVICE_CTL_ID:-}" ]]; then
     xcrun devicectl device copy to --device "$GHI_DEVICE_CTL_ID" --domain-type appDataContainer \
