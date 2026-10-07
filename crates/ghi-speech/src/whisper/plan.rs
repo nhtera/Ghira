@@ -367,6 +367,33 @@ fn longest_loop(tokens: &[String]) -> (f64, usize) {
     (best as f64 / tokens.len() as f64, best_reps)
 }
 
+/// Padding (seconds) around a dropped span before another recognizer reads it,
+/// so a word cut at the span's edge is heard whole.
+pub const GAP_PAD_S: f64 = 0.3;
+
+/// The source spans whose Whisper text the guard dropped, padded by
+/// [`GAP_PAD_S`], kept inside `0..len` and merged where they touch, in time
+/// order: what the fallback recognizer reads.
+pub fn gap_spans(mut spans: Vec<Region>, len: f64) -> Vec<Region> {
+    spans.retain(|s| s.end > s.start);
+    spans.sort_by(|a, b| a.start.total_cmp(&b.start));
+    let mut out: Vec<Region> = Vec::new();
+    for s in spans {
+        let s = Region {
+            start: (s.start - GAP_PAD_S).max(0.0),
+            end: (s.end + GAP_PAD_S).min(len),
+        };
+        if s.end <= s.start {
+            continue;
+        }
+        match out.last_mut() {
+            Some(last) if s.start <= last.end => last.end = last.end.max(s.end),
+            _ => out.push(s),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -616,6 +643,27 @@ mod tests {
             0.9,
             &all
         ));
+    }
+
+    #[test]
+    fn gap_spans_pad_clamp_and_merge() {
+        let spans = vec![
+            r(5.0, 6.0),
+            r(0.1, 1.0),
+            r(6.4, 7.0),
+            r(3.0, 3.0),
+            r(9.9, 12.0),
+        ];
+        let got = gap_spans(spans, 10.0);
+        let want = [r(0.0, 1.3), r(4.7, 7.3), r(9.6, 10.0)];
+        assert_eq!(got.len(), want.len(), "{got:?}");
+        for (g, w) in got.iter().zip(want) {
+            assert!(
+                (g.start - w.start).abs() < 1e-9 && (g.end - w.end).abs() < 1e-9,
+                "{got:?}"
+            );
+        }
+        assert!(gap_spans(Vec::new(), 10.0).is_empty());
     }
 
     #[test]

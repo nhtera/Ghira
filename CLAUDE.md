@@ -228,7 +228,7 @@ large-v3-turbo q5 + Silero VAD over a pinned `third_party/whisper.cpp` built STA
 (`tools/scripts/build-whisper.sh`; never shared, NeMo ships its own patched dynamic ggml).
 `ghi-speech/src/whisper`: `shim.c` (flat C face; no hand-written whisper structs),
 `plan.rs` (VAD grouping <= 29 s, DTW words, hallucination guard; model-free tests),
-`WhisperFinalEngines` in `ghi-core` (Whisper reads, NeMo diarizes), picked in
+`WhisperFinalEngines` in `ghi-core` (Whisper reads, NeMo diarizes; what the guard drops is read by a lazily loaded Nemotron, `WhisperStream::with_fallback`), picked in
 `ghi-app` `final_engines()` when store setting `asr_final` = `whisper` (default `nemo`;
 `GHI_ASR_FINAL` overrides in debug builds; no settings UI yet) and both models are installed,
 else (or on any load failure) NeMo. Preemption aborts a decode mid-window (`AsrStream::finish_abortable`);

@@ -69,20 +69,74 @@ fn run_whisper(args: &Args, audio: &Audio) -> Result<(), ErrorDoc> {
     };
     let started = Instant::now();
     let (whisper, engine_info) = engine::load_whisper(args.engine)?;
-    let results = whisper
-        .recognize(
-            samples,
-            &WhisperOptions {
-                language: language_code(args.lang).map(str::to_owned),
-            },
-        )
-        .map_err(engine::speech_error)?;
+    let opts = WhisperOptions {
+        language: language_code(args.lang).map(str::to_owned),
+    };
+    // Like the app's final pass: what the guard drops as invented is read by
+    // Nemotron instead (when this build has it).
+    #[allow(unused_mut)]
+    let mut stream = std::sync::Arc::new(whisper).stream_owned(&opts);
+    #[cfg(feature = "nemo")]
+    {
+        stream = stream.with_fallback(nemo_gap_reader(args.engine, opts.language.clone()));
+    }
     let mut builder = TranscriptBuilder::default();
-    for r in &results {
-        builder.add(r);
+    {
+        use ghi_speech::AsrStream;
+        stream
+            .push(samples, ghi_speech::whisper::SAMPLE_RATE)
+            .map_err(engine::speech_error)?;
+        stream.finish().map_err(engine::speech_error)?;
+        while let Some(r) = stream.next_result().map_err(engine::speech_error)? {
+            builder.add(&r);
+        }
     }
     let doc = builder.finish(args, audio, engine_info, started.elapsed().as_secs_f64());
     crate::emit(&doc)
+}
+
+/// Reads Whisper's dropped stretches with Nemotron (final-pass config), loaded
+/// on the first gap. A failure leaves the gap empty, as in the app.
+#[cfg(all(feature = "whisper", feature = "nemo"))]
+fn nemo_gap_reader(args: &EngineArgs, language: Option<String>) -> ghi_speech::whisper::Fallback {
+    use ghi_speech::AsrStream;
+    use ghi_speech::nemo::{Asr, AsrOptions};
+
+    let args = args.clone();
+    let mut asr: Option<Asr> = None;
+    let mut read = move |pcm: &[f32]| -> Result<Vec<AsrResult>, String> {
+        if asr.is_none() {
+            asr = Some(
+                engine::load_asr(&args, Pass::Final)
+                    .map_err(|e| e.message)?
+                    .0,
+            );
+        }
+        let Some(asr) = &asr else {
+            return Ok(Vec::new());
+        };
+        let opts = AsrOptions {
+            language: language.clone(),
+        };
+        let mut stream = asr.stream(&opts).map_err(|e| e.to_string())?;
+        stream
+            .push(pcm, ghi_speech::whisper::SAMPLE_RATE)
+            .map_err(|e| e.to_string())?;
+        stream.finish().map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        while let Some(r) = stream.next_result().map_err(|e| e.to_string())? {
+            if r.is_final && !r.text.trim().is_empty() {
+                out.push(r);
+            }
+        }
+        Ok(out)
+    };
+    Box::new(move |pcm: &[f32]| {
+        Ok(read(pcm).unwrap_or_else(|e| {
+            eprintln!("whisper gap fill failed: {e}");
+            Vec::new()
+        }))
+    })
 }
 
 /// The file as 16 kHz mono (channels averaged), through `ghi-audio`'s decoder.
@@ -367,7 +421,11 @@ mod tests {
         }
         w.finalize().unwrap();
         let pcm = decode_16k(&path).unwrap();
-        assert!((pcm.len() as i64 - 32_000).abs() < 160, "{} samples", pcm.len());
+        assert!(
+            (pcm.len() as i64 - 32_000).abs() < 160,
+            "{} samples",
+            pcm.len()
+        );
         // Mono is the average of the channels: the tone at half level.
         let peak = pcm.iter().fold(0.0f32, |m, v| m.max(v.abs()));
         assert!((0.10..0.14).contains(&peak), "peak {peak}");

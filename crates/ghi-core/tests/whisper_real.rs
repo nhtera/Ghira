@@ -80,7 +80,7 @@ fn nemo_and_whisper_share_one_process() {
     assert!(!before.trim().is_empty(), "NeMo heard nothing");
 
     // Whisper loads while NeMo's models are still resident.
-    let whisper = WhisperFinalEngines::load(&wm, &vad, &diar, 1120, Device::Gpu).unwrap();
+    let whisper = WhisperFinalEngines::load(&wm, &vad, &diar, &asr, 1120, Device::Gpu).unwrap();
     let w = text_of(&whisper, &pcm);
     assert!(!w.trim().is_empty(), "Whisper heard nothing");
     println!("nemo:    {before}\nwhisper: {w}");
@@ -94,5 +94,41 @@ fn nemo_and_whisper_share_one_process() {
         }
         d.finish().unwrap();
         assert!(!d.segments().unwrap().is_empty(), "no speaker turns");
+    }
+}
+
+/// A VietMed clip (8 kHz phone audio) Whisper writes a video sign-off over at
+/// full confidence: the guard drops it and Nemotron reads that stretch, so the
+/// transcript is neither invented nor empty. Skips without the clip.
+#[test]
+#[ignore = "needs the real models and VietMed (tools/eval fetch_public_sets.py --sets vietmed)"]
+fn whisper_gaps_are_read_by_nemotron() {
+    let m = models();
+    let f = |n: &str| m.join(n);
+    let paths = [
+        f("ggml-large-v3-turbo-q5_0.bin"),
+        f("ggml-silero-v6.2.0.bin"),
+        f("Nemotron-3-Diarization.q8_0.gguf"),
+        f("nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),
+    ];
+    let clip = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tools/eval/data/vietmed/audio/utt_id_test_000001.wav");
+    if !paths.iter().all(|p| p.is_file()) || !clip.is_file() {
+        eprintln!("skipped: models or the VietMed clip missing");
+        return;
+    }
+    let mut d = ghi_audio::decode::Decoder::open(&clip).unwrap();
+    let mut pcm = Vec::new();
+    while let Some(b) = d.next_block().unwrap() {
+        let n = b.channels.len() as f32;
+        pcm.extend((0..b.frames()).map(|i| b.channels.iter().map(|c| c[i]).sum::<f32>() / n));
+    }
+    let [wm, vad, diar, asr] = &paths;
+    let whisper = WhisperFinalEngines::load(wm, vad, diar, asr, 1120, Device::Gpu).unwrap();
+    let text = text_of(&whisper, &pcm).to_lowercase();
+    println!("whisper + gaps: {text}");
+    assert!(!text.trim().is_empty(), "the dropped stretch stayed empty");
+    for invented in ["subscribe", "đăng ký kênh", "ghiền mì gõ"] {
+        assert!(!text.contains(invented), "invented text kept: {text}");
     }
 }

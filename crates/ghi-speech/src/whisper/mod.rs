@@ -202,9 +202,23 @@ impl Whisper {
         opts: &WhisperOptions,
         abort: &(dyn Fn() -> bool + Sync),
     ) -> Result<Option<Vec<AsrResult>>> {
+        Ok(self
+            .recognize_with_gaps(pcm, opts, abort)?
+            .map(|(results, _)| results))
+    }
+
+    /// [`Whisper::recognize_abortable`] that also returns the source spans
+    /// (seconds) of the text the guard dropped, unpadded and unmerged.
+    pub fn recognize_with_gaps(
+        &self,
+        pcm: &[f32],
+        opts: &WhisperOptions,
+        abort: &(dyn Fn() -> bool + Sync),
+    ) -> Result<Option<(Vec<AsrResult>, Vec<Region>)>> {
         let rate = f64::from(SAMPLE_RATE);
         let regions = self.speech_regions(pcm)?;
         let mut out = Vec::new();
+        let mut gaps = Vec::new();
         for window in plan::plan_windows(&regions) {
             if abort() {
                 return Ok(None);
@@ -219,6 +233,10 @@ impl Whisper {
                 // back to the recording afterwards.
                 let mut words = plan::words(&seg, 0.0, win_len);
                 if !plan::keep(&seg, &words, seg.t0, seg.t1.min(win_len), &window.speech) {
+                    gaps.push(Region {
+                        start: window.to_source(seg.t0.max(0.0), true),
+                        end: window.to_source(seg.t1.min(win_len), false),
+                    });
                     continue;
                 }
                 for w in &mut words {
@@ -235,7 +253,7 @@ impl Whisper {
                 });
             }
         }
-        Ok(Some(out))
+        Ok(Some((out, gaps)))
     }
 
     /// A stream that keeps the model alive.
@@ -246,9 +264,15 @@ impl Whisper {
             pcm: Vec::new(),
             out: VecDeque::new(),
             done: false,
+            fallback: None,
+            pending: None,
         }
     }
 }
+
+/// Reads one stretch of 16 kHz audio (times from its start) where Whisper's
+/// text was dropped as invented: another recognizer fills the gap.
+pub type Fallback = Box<dyn FnMut(&[f32]) -> Result<Vec<AsrResult>> + Send>;
 
 /// Buffers 16 kHz audio and transcribes it at `finish` (see the module docs).
 pub struct WhisperStream {
@@ -257,6 +281,38 @@ pub struct WhisperStream {
     pcm: Vec<f32>,
     out: VecDeque<AsrResult>,
     done: bool,
+    fallback: Option<Fallback>,
+    /// Whisper's results and the gaps still to fill: a fallback that is
+    /// aborted resumes here instead of decoding again.
+    pending: Option<(Vec<AsrResult>, VecDeque<Region>)>,
+}
+
+impl WhisperStream {
+    /// Fills what the guard drops with `fallback`'s reading of the same audio.
+    pub fn with_fallback(mut self, fallback: Fallback) -> Self {
+        self.fallback = Some(fallback);
+        self
+    }
+}
+
+/// `results` moved by `offset` seconds (a stretch read on its own).
+fn shifted(results: Vec<AsrResult>, offset: f64) -> impl Iterator<Item = AsrResult> {
+    results
+        .into_iter()
+        .filter(|r| r.is_final)
+        .map(move |mut r| {
+            for w in &mut r.words {
+                w.start += offset;
+                w.end += offset;
+            }
+            r.audio_processed += offset;
+            r
+        })
+}
+
+/// Where a result starts (its first word), for time order.
+fn result_start(r: &AsrResult) -> f64 {
+    r.words.first().map_or(r.audio_processed, |w| w.start)
 }
 
 impl AsrStream for WhisperStream {
@@ -276,21 +332,42 @@ impl AsrStream for WhisperStream {
     }
 
     fn finish_abortable(&mut self, abort: &(dyn Fn() -> bool + Sync)) -> Result<bool> {
-        if !self.done {
-            // The audio stays until the decode completes, so an aborted
-            // stream can finish again later.
-            match self
+        if self.done {
+            return Ok(true);
+        }
+        // The audio stays until the decode (and any gap filling) completes,
+        // so an aborted stream can finish again later.
+        if self.pending.is_none() {
+            let Some((results, gaps)) = self
                 .model
-                .recognize_abortable(&self.pcm, &self.opts, abort)?
-            {
-                Some(results) => {
-                    self.done = true;
-                    self.pcm = Vec::new();
-                    self.out.extend(results);
+                .recognize_with_gaps(&self.pcm, &self.opts, abort)?
+            else {
+                return Ok(false);
+            };
+            let len = self.pcm.len() as f64 / f64::from(SAMPLE_RATE);
+            let gaps = match self.fallback {
+                Some(_) => plan::gap_spans(gaps, len).into(),
+                None => VecDeque::new(),
+            };
+            self.pending = Some((results, gaps));
+        }
+        if let (Some(fallback), Some((results, gaps))) = (&mut self.fallback, &mut self.pending) {
+            let rate = f64::from(SAMPLE_RATE);
+            while let Some(gap) = gaps.front().copied() {
+                if abort() {
+                    return Ok(false);
                 }
-                None => return Ok(false),
+                let a = ((gap.start * rate) as usize).min(self.pcm.len());
+                let b = ((gap.end * rate) as usize).min(self.pcm.len()).max(a);
+                results.extend(shifted(fallback(&self.pcm[a..b])?, gap.start));
+                gaps.pop_front();
             }
         }
+        let (mut results, _) = self.pending.take().unwrap_or_default();
+        results.sort_by(|a, b| result_start(a).total_cmp(&result_start(b)));
+        self.done = true;
+        self.pcm = Vec::new();
+        self.out.extend(results);
         Ok(true)
     }
 

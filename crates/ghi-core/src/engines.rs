@@ -156,30 +156,80 @@ mod nemo {
 pub use whisper_final::WhisperFinalEngines;
 
 /// The final pass with Whisper reading and NeMo (Sortformer) still diarizing.
-/// Only the NeMo diarizer is loaded: with Whisper on, the Nemotron ASR stays
-/// out of memory. Not for live capture (Whisper does not stream).
+/// Where Whisper's guard drops text as invented (a video sign-off over real
+/// speech), Nemotron reads that stretch instead, so the transcript has no
+/// gaps; the Nemotron ASR is loaded only when the first gap needs it. Not for
+/// live capture (Whisper does not stream).
 #[cfg(all(feature = "nemo", feature = "whisper"))]
 mod whisper_final {
-    use std::path::Path;
-    use std::sync::Arc;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex};
 
-    use ghi_speech::nemo::{Device, DiarConfig, Diarizer};
-    use ghi_speech::whisper::{Whisper, WhisperConfig, WhisperOptions};
+    use ghi_speech::nemo::{Asr, AsrConfig, AsrOptions, Device, DiarConfig, Diarizer};
+    use ghi_speech::whisper::{Fallback, Whisper, WhisperConfig, WhisperOptions};
+    use ghi_speech::{AsrResult, AsrStream};
 
     use super::{BoxAsr, BoxDiar, Result, SpeechEngines};
 
     pub struct WhisperFinalEngines {
         asr: Arc<Whisper>,
         diar: Arc<Diarizer>,
+        gap_asr: Arc<GapAsr>,
         chunk_ms: u32,
         tag: String,
     }
 
+    /// The Nemotron ASR that fills Whisper's gaps, loaded on first use.
+    struct GapAsr {
+        model: PathBuf,
+        chunk_ms: u32,
+        device: Device,
+        loaded: Mutex<Option<Arc<Asr>>>,
+    }
+
+    impl GapAsr {
+        fn get(&self) -> Result<Arc<Asr>> {
+            let mut slot = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(asr) = &*slot {
+                return Ok(asr.clone());
+            }
+            log::info!("whisper gap fill loads asr=nemotron");
+            let asr = Arc::new(Asr::new(&AsrConfig {
+                model: self.model.clone(),
+                device: self.device,
+                chunk_ms: Some(self.chunk_ms),
+                endpointing: true,
+                eou_ms: None,
+            })?);
+            *slot = Some(asr.clone());
+            Ok(asr)
+        }
+
+        /// Reads one stretch on its own: its final lines, times from its start.
+        fn read(&self, pcm: &[f32], language: Option<&str>) -> Result<Vec<AsrResult>> {
+            let mut stream = self.get()?.stream_owned(&AsrOptions {
+                language: language.map(str::to_string),
+            })?;
+            stream.push(pcm, ghi_speech::whisper::SAMPLE_RATE)?;
+            stream.finish()?;
+            let mut out = Vec::new();
+            while let Some(r) = stream.next_result()? {
+                if r.is_final && !r.text.trim().is_empty() {
+                    out.push(r);
+                }
+            }
+            Ok(out)
+        }
+    }
+
     impl WhisperFinalEngines {
+        /// `gap_asr_model`: the Nemotron ASR that reads what Whisper's guard
+        /// drops (see the type docs).
         pub fn load(
             whisper_model: &Path,
             vad_model: &Path,
             diar_model: &Path,
+            gap_asr_model: &Path,
             chunk_ms: u32,
             device: Device,
         ) -> Result<Self> {
@@ -197,12 +247,19 @@ mod whisper_final {
             Ok(Self {
                 asr: Arc::new(asr),
                 diar: Arc::new(diar),
+                gap_asr: Arc::new(GapAsr {
+                    model: gap_asr_model.to_path_buf(),
+                    chunk_ms,
+                    device,
+                    loaded: Mutex::new(None),
+                }),
                 chunk_ms,
                 tag: format!(
-                    "whisper:{}:{}:{}",
+                    "whisper:{}:{}:{}:gaps:{}",
                     super::model_tag(whisper_model),
                     super::model_tag(vad_model),
-                    super::model_tag(diar_model)
+                    super::model_tag(diar_model),
+                    super::model_tag(gap_asr_model)
                 ),
             })
         }
@@ -213,7 +270,18 @@ mod whisper_final {
             let opts = WhisperOptions {
                 language: language.map(str::to_string),
             };
-            Ok(Box::new(self.asr.stream_owned(&opts)))
+            let gaps = self.gap_asr.clone();
+            let lang = opts.language.clone();
+            let fallback: Fallback = Box::new(move |pcm: &[f32]| {
+                // A gap left empty beats a failed pass.
+                Ok(gaps.read(pcm, lang.as_deref()).unwrap_or_else(|e| {
+                    log::warn!("whisper gap fill failed: {e}");
+                    Vec::new()
+                }))
+            });
+            Ok(Box::new(
+                self.asr.stream_owned(&opts).with_fallback(fallback),
+            ))
         }
 
         fn diar(&self) -> Result<BoxDiar> {

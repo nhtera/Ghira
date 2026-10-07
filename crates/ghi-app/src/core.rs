@@ -401,6 +401,7 @@ fn whisper_engines(models: &Path) -> Result<Arc<dyn ghi_core::engines::SpeechEng
         &optional_model(models, "whisper-large-v3-turbo")?,
         &optional_model(models, "silero-vad")?,
         &checked_model(models, &preset().speech_models[1])?,
+        &checked_model(models, &preset().speech_models[0])?,
         1120,
         ghi_speech::nemo::Device::Gpu,
     )
