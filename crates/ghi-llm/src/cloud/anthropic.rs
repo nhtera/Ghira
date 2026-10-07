@@ -8,10 +8,10 @@
 
 use serde_json::{Value, json};
 
-use super::{Prepared, excerpt};
+use super::{Prepared, REASONING_MAX_TOKENS, Traits, excerpt};
 use crate::{Completion, LlmError, Request, Result, Role};
 
-pub(super) fn prepare(base_url: &str, model: &str, req: &Request) -> Result<Prepared> {
+pub(super) fn prepare(base_url: &str, model: &str, req: &Request, t: Traits) -> Result<Prepared> {
     // System messages are a top-level field; the rest alternate user/assistant.
     let system: Vec<&str> = req
         .messages
@@ -30,12 +30,20 @@ pub(super) fn prepare(base_url: &str, model: &str, req: &Request) -> Result<Prep
             "a cloud request needs a user message".into(),
         ));
     }
+    let cap = if t.reasons {
+        req.max_tokens.max(REASONING_MAX_TOKENS)
+    } else {
+        req.max_tokens
+    };
     let mut body = json!({
         "model": model,
-        "max_tokens": req.max_tokens,
-        "temperature": req.temperature,
+        "max_tokens": cap,
         "messages": messages,
     });
+    // Claude 4.7 and later refuse a non-default temperature.
+    if t.temperature {
+        body["temperature"] = json!(req.temperature);
+    }
     if !system.is_empty() {
         body["system"] = json!(system.join("\n\n"));
     }
@@ -97,7 +105,16 @@ mod tests {
     use serde_json::Value;
 
     fn provider() -> CloudProvider {
-        CloudProvider::preset("anthropic", "claude-x").unwrap()
+        CloudProvider::preset("anthropic", "claude-haiku-4-5").unwrap()
+    }
+
+    #[test]
+    fn newer_claude_gets_no_temperature_and_room_to_think() {
+        let p = CloudProvider::preset("anthropic", "claude-sonnet-5-5").unwrap();
+        let v: Value = serde_json::from_slice(&p.prepare(&request()).unwrap().body).unwrap();
+        assert!(v.get("temperature").is_none(), "{v}");
+        assert_eq!(v["max_tokens"], 16_384);
+        assert_eq!(v["output_config"]["format"]["type"], "json_schema");
     }
 
     #[test]
@@ -105,8 +122,9 @@ mod tests {
         let prepared = provider().prepare(&request()).unwrap();
         assert_eq!(prepared.url, "https://api.anthropic.com/v1/messages");
         let v: Value = serde_json::from_slice(&prepared.body).unwrap();
-        assert_eq!(v["model"], "claude-x");
+        assert_eq!(v["model"], "claude-haiku-4-5");
         assert_eq!(v["max_tokens"], 2048);
+        assert!(v["temperature"].as_f64().is_some());
         assert_eq!(v["system"], "You write meeting notes.");
         assert_eq!(v["messages"].as_array().unwrap().len(), 1);
         assert_eq!(v["messages"][0]["role"], "user");

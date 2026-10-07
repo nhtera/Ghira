@@ -44,15 +44,27 @@ struct Price {
     output: f64,
 }
 
+/// A model id (or id prefix) the provider has shut down or deprecated.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+struct Retired {
+    provider: String,
+    model: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct PriceFile {
     #[serde(default)]
     model: Vec<Price>,
+    #[serde(default)]
+    retired: Vec<Retired>,
 }
 
-/// Per-1M-token prices by provider and model.
+/// Per-1M-token prices by provider and model, and the retired models.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Prices(Vec<Price>);
+pub struct Prices {
+    models: Vec<Price>,
+    retired: Vec<Retired>,
+}
 
 impl Prices {
     /// The table shipped in `prices.toml`.
@@ -76,12 +88,15 @@ impl Prices {
                 p.model
             )));
         }
-        Ok(Prices(file.model))
+        Ok(Prices {
+            models: file.model,
+            retired: file.retired,
+        })
     }
 
     /// Every listed `(provider, model)`, in file order (the model menus).
     pub fn models(&self) -> Vec<(String, String)> {
-        self.0
+        self.models
             .iter()
             .map(|p| (p.provider.clone(), p.model.clone()))
             .collect()
@@ -90,11 +105,28 @@ impl Prices {
     /// `(input, output)` USD per 1M tokens. The longest listed model id that
     /// is `model` or a prefix of it wins.
     pub fn lookup(&self, provider: &str, model: &str) -> Option<(f64, f64)> {
-        self.0
+        self.models
             .iter()
             .filter(|p| p.provider == provider && model.starts_with(&p.model))
             .max_by_key(|p| p.model.len())
             .map(|p| (p.input, p.output))
+    }
+}
+
+impl Prices {
+    /// `model`, or the provider's first listed model (its menu default) when
+    /// `model` is retired (`[[retired]]`, by prefix): a saved choice that the
+    /// provider no longer serves moves on instead of failing at send time.
+    pub fn current_model(&self, provider: &str, model: &str) -> String {
+        let retired = self
+            .retired
+            .iter()
+            .any(|r| r.provider == provider && model.trim().starts_with(&r.model));
+        let first = self.models.iter().find(|p| p.provider == provider);
+        match (retired, first) {
+            (true, Some(p)) => p.model.clone(),
+            _ => model.to_owned(),
+        }
     }
 }
 
@@ -250,9 +282,9 @@ mod tests {
 
     #[test]
     fn cost_is_input_plus_max_output_at_listed_prices() {
-        let (p, prep) = prepared("openai", "gpt-4o-mini", "hi");
+        let (p, prep) = prepared("openai", "gpt-4.1-mini", "hi");
         let pv = preview(&p, &prep, &Prices::builtin());
-        let want = (f64::from(pv.tokens_est) * 0.15 + 1000.0 * 0.60) / 1e6;
+        let want = (f64::from(pv.tokens_est) * 0.40 + 1000.0 * 1.60) / 1e6;
         assert!((pv.cost_est_usd.unwrap() - want).abs() < 1e-12);
         // A dated snapshot uses the listed prefix; the longest prefix wins.
         let (p, prep) = prepared("anthropic", "claude-haiku-4-5-20251001", "hi");
@@ -263,17 +295,53 @@ mod tests {
         );
         let prices = Prices::builtin();
         assert_eq!(
-            prices.lookup("openai", "gpt-4o-mini-2024-07-18"),
-            Some((0.15, 0.60))
+            prices.lookup("openai", "gpt-4.1-mini-2025-04-14"),
+            Some((0.40, 1.60))
         );
-        assert_eq!(
-            prices.lookup("openai", "gpt-4o-2024-08-06"),
-            Some((2.50, 10.00))
-        );
+        assert_eq!(prices.lookup("openai", "gpt-6.1-sol"), Some((2.00, 10.00)));
+        // A reasoning model's estimate counts its room to think.
+        let (p, prep) = prepared("anthropic", "claude-sonnet-5-5", "hi");
+        let pv = preview(&p, &prep, &prices);
+        let want = (f64::from(pv.tokens_est) * 2.0 + 16_384.0 * 10.0) / 1e6;
+        assert!((pv.cost_est_usd.unwrap() - want).abs() < 1e-12);
         // Unknown model or provider: no estimate.
         let (p, prep) = prepared("gemini", "gemini-9-ultra", "hi");
         assert_eq!(preview(&p, &prep, &Prices::builtin()).cost_est_usd, None);
-        assert_eq!(prices.lookup("anthropic", "gpt-4o"), None);
+        assert_eq!(prices.lookup("anthropic", "gpt-4.1-mini"), None);
+    }
+
+    #[test]
+    fn the_menus_list_current_models_and_retired_ones_move_on() {
+        let prices = Prices::builtin();
+        let first = |provider: &str| {
+            prices
+                .models()
+                .into_iter()
+                .find(|(p, _)| p == provider)
+                .map(|(_, m)| m)
+        };
+        assert_eq!(first("anthropic").as_deref(), Some("claude-sonnet-5-5"));
+        assert_eq!(first("openai").as_deref(), Some("gpt-6.1-sol"));
+        assert_eq!(first("gemini").as_deref(), Some("gemini-3.8-flash"));
+        for (provider, model) in prices.models() {
+            assert_eq!(prices.current_model(&provider, &model), model);
+            assert!(prices.lookup(&provider, &model).is_some());
+        }
+        assert_eq!(
+            prices.current_model("anthropic", "claude-sonnet-4-5-20250929"),
+            "claude-sonnet-5-5"
+        );
+        assert_eq!(
+            prices.current_model("gemini", "gemini-2.5-flash"),
+            "gemini-3.8-flash"
+        );
+        // Still served, only no longer in the menu: kept.
+        assert_eq!(prices.current_model("openai", "gpt-4o"), "gpt-4o");
+        assert_eq!(
+            prices.current_model("anthropic", "claude-haiku-4-5"),
+            "claude-haiku-4-5"
+        );
+        assert_eq!(prices.current_model("anthropic", ""), "");
     }
 
     #[test]

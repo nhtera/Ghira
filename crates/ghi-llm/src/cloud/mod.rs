@@ -147,10 +147,13 @@ impl CloudProvider {
 
     /// The request as exact bytes (same input, same bytes).
     pub fn prepare(&self, req: &Request) -> Result<Prepared> {
+        let t = traits(self.name(), &self.model);
         match &self.kind {
-            CloudKind::OpenAiCompat { base_url } => Ok(openai::prepare(base_url, &self.model, req)),
-            CloudKind::Gemini => Ok(openai::prepare(GEMINI_BASE, &self.model, req)),
-            CloudKind::Anthropic => anthropic::prepare(ANTHROPIC_BASE, &self.model, req),
+            CloudKind::OpenAiCompat { base_url } => {
+                Ok(openai::prepare(base_url, &self.model, req, t))
+            }
+            CloudKind::Gemini => Ok(openai::prepare(GEMINI_BASE, &self.model, req, t)),
+            CloudKind::Anthropic => anthropic::prepare(ANTHROPIC_BASE, &self.model, req, t),
         }
     }
 
@@ -280,6 +283,93 @@ fn one_line(s: &str, max_chars: usize) -> String {
     format!("{cut}...")
 }
 
+/// What a model accepts, read from its id. Newer models reject sampling
+/// settings and think before they answer; their thinking counts against the
+/// output cap. An id this doesn't know is treated as the newer kind on the
+/// big three (omitting `temperature` is always accepted) and as before on
+/// other OpenAI-compatible servers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Traits {
+    /// Takes `temperature`.
+    pub temperature: bool,
+    /// Thinks before answering: the cap is raised to [`REASONING_MAX_TOKENS`].
+    pub reasons: bool,
+    /// The reasoning effort to ask for (OpenAI-style `reasoning_effort`).
+    pub effort: Option<&'static str>,
+}
+
+/// Output room for a model that thinks first: notes in JSON plus its thinking.
+/// Unused room is not billed; the send preview's cost stays an upper bound.
+pub(crate) const REASONING_MAX_TOKENS: u32 = 16_384;
+
+const OLDER: Traits = Traits {
+    temperature: true,
+    reasons: false,
+    effort: None,
+};
+
+/// `(major, minor)` after `prefix` in ids like `claude-sonnet-4-5`,
+/// `gpt-4.1-mini` or `gemini-3.5-flash`; a dated suffix is not a minor.
+fn version(id: &str, prefix: &Regex) -> Option<(u32, u32)> {
+    let c = prefix.captures(id)?;
+    let major = c.get(1)?.as_str().parse().ok()?;
+    let minor = c.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+    Some((major, minor))
+}
+
+static CLAUDE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^claude-[a-z]+-(\d+)(?:-(\d{1,2}))?(?:$|-)").expect("valid regex")
+});
+static CLAUDE_OLD: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^claude-(\d+)(?:-(\d{1,2}))?-").expect("valid regex"));
+static GPT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^gpt-(\d+)(?:\.(\d+))?").expect("valid regex"));
+static O_SERIES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^o\d").expect("valid regex"));
+static GEMINI: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:models/)?gemini-(\d+)(?:\.(\d+))?").expect("valid regex"));
+
+/// [`Traits`] of `model` at provider `name` ([`CloudProvider::name`]).
+pub(crate) fn traits(name: &str, model: &str) -> Traits {
+    let id = model.trim().to_ascii_lowercase();
+    let newer = Traits {
+        temperature: false,
+        reasons: true,
+        effort: None,
+    };
+    match name {
+        // Claude 4.7 and later answer 400 to a non-default temperature, and
+        // their adaptive thinking spends the same cap.
+        "anthropic" => match version(&id, &CLAUDE).or_else(|| version(&id, &CLAUDE_OLD)) {
+            Some(v) if v < (4, 7) => OLDER,
+            _ => newer,
+        },
+        // GPT-5 and later, and the o-series, reason (default effort medium)
+        // and take no temperature; GPT-4.x is the older kind.
+        "openai" => match version(&id, &GPT) {
+            Some((major, _)) if major < 5 => OLDER,
+            Some(_) => Traits {
+                effort: Some("low"),
+                ..newer
+            },
+            None if O_SERIES.is_match(&id) => Traits {
+                effort: Some("low"),
+                ..newer
+            },
+            None => newer,
+        },
+        // Gemini 3 always thinks (`low` is its lightest effort through the
+        // OpenAI layer) and is tuned for its default temperature.
+        "gemini" => match version(&id, &GEMINI) {
+            Some((major, _)) if major < 3 => OLDER,
+            _ => Traits {
+                effort: Some("low"),
+                ..newer
+            },
+        },
+        _ => OLDER,
+    }
+}
+
 static KEY_LIKE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(sk-[A-Za-z0-9_*.\-]{6,}|AIza[0-9A-Za-z_\-]{16,}|Bearer\s+\S+)")
         .expect("valid regex")
@@ -329,6 +419,48 @@ mod tests {
     }
 
     const KEY: &str = "test-key-not-real";
+
+    #[test]
+    fn traits_follow_the_model_generation() {
+        let t = |p, m| {
+            let t = traits(p, m);
+            (t.temperature, t.reasons, t.effort)
+        };
+        let older = (true, false, None);
+        for m in [
+            "claude-haiku-4-5",
+            "claude-haiku-4-5-20251001",
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-1-20250805",
+            "claude-3-5-sonnet-20241022",
+        ] {
+            assert_eq!(t("anthropic", m), older, "{m}");
+        }
+        for m in [
+            "claude-sonnet-5-5",
+            "claude-opus-5-5",
+            "claude-fable-5-1",
+            "claude-opus-4-7",
+            "claude-next",
+        ] {
+            assert_eq!(t("anthropic", m), (false, true, None), "{m}");
+        }
+        for m in ["gpt-4.1-mini", "gpt-4o", "gpt-4.1"] {
+            assert_eq!(t("openai", m), older, "{m}");
+        }
+        for m in ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra", "gpt-5.4", "o3"] {
+            assert_eq!(t("openai", m), (false, true, Some("low")), "{m}");
+        }
+        assert_eq!(t("gemini", "gemini-2.5-flash"), older);
+        for m in [
+            "gemini-3.8-flash",
+            "gemini-3.1-flash-lite",
+            "models/gemini-3.5-flash-lite",
+        ] {
+            assert_eq!(t("gemini", m), (false, true, Some("low")), "{m}");
+        }
+        assert_eq!(t("openai-compat", "gpt-6.1-sol"), older);
+    }
 
     #[test]
     fn presets_and_names() {

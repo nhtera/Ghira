@@ -229,11 +229,15 @@ pub fn short(v: Option<String>, cur: String, max: usize) -> String {
 pub const THIRD_PARTY_APPROVED: bool = false;
 
 /// The voice flags are not the user's to set: Me follows the speaker model,
-/// third-party is the source constant AND what the user chose.
+/// third-party is the source constant AND what the user chose; a cloud model
+/// the provider retired gives way to its default.
 pub fn enforce(s: AppSettings, voice_model: bool) -> AppSettings {
     AppSettings {
         voice_profiles_me: voice_model,
         voice_profiles_third_party: THIRD_PARTY_APPROVED && s.voice_profiles_third_party,
+        // A model the provider retired moves to the provider's default.
+        cloud_model: ghi_llm::preview::Prices::builtin()
+            .current_model(&s.cloud_provider, &s.cloud_model),
         ..s
     }
 }

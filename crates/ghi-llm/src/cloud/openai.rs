@@ -4,14 +4,14 @@
 
 use serde_json::{Value, json};
 
-use super::{Prepared, excerpt};
+use super::{Prepared, REASONING_MAX_TOKENS, Traits, excerpt};
 use crate::{Completion, LlmError, Request, Result};
 
 /// Name of the structured-output schema.
 pub(super) const SCHEMA_NAME: &str = "ghira_output";
 const OPENAI_HOST: &str = "https://api.openai.com/";
 
-pub(super) fn prepare(base_url: &str, model: &str, req: &Request) -> Prepared {
+pub(super) fn prepare(base_url: &str, model: &str, req: &Request, t: Traits) -> Prepared {
     let messages: Vec<Value> = req
         .messages
         .iter()
@@ -20,15 +20,25 @@ pub(super) fn prepare(base_url: &str, model: &str, req: &Request) -> Prepared {
     let mut body = json!({
         "model": model,
         "messages": messages,
-        "temperature": req.temperature,
     });
+    if t.temperature {
+        body["temperature"] = json!(req.temperature);
+    }
+    if let Some(effort) = t.effort {
+        body["reasoning_effort"] = json!(effort);
+    }
     // OpenAI's newer models reject `max_tokens`; other servers expect it.
     let limit = if base_url.starts_with(OPENAI_HOST) {
         "max_completion_tokens"
     } else {
         "max_tokens"
     };
-    body[limit] = json!(req.max_tokens);
+    let cap = if t.reasons {
+        req.max_tokens.max(REASONING_MAX_TOKENS)
+    } else {
+        req.max_tokens
+    };
+    body[limit] = json!(cap);
     if let Some(schema) = &req.schema {
         body["response_format"] = json!({
             "type": "json_schema",
@@ -89,17 +99,22 @@ mod tests {
     use serde_json::Value;
 
     fn body(name: &str) -> Value {
-        let p = CloudProvider::preset(name, "gpt-x").unwrap();
+        let model = if name == "gemini" {
+            "gemini-2.0-flash"
+        } else {
+            "gpt-4.1-mini"
+        };
+        let p = CloudProvider::preset(name, model).unwrap();
         serde_json::from_slice(&p.prepare(&request()).unwrap().body).unwrap()
     }
 
     #[test]
     fn openai_request_shape() {
-        let p = CloudProvider::preset("openai", "gpt-x").unwrap();
+        let p = CloudProvider::preset("openai", "gpt-4.1-mini").unwrap();
         let prepared = p.prepare(&request()).unwrap();
         assert_eq!(prepared.url, "https://api.openai.com/v1/chat/completions");
         let v = body("openai");
-        assert_eq!(v["model"], "gpt-x");
+        assert_eq!(v["model"], "gpt-4.1-mini");
         assert_eq!(v["messages"][0]["role"], "system");
         assert_eq!(v["messages"][1]["role"], "user");
         assert_eq!(v["max_completion_tokens"], 2048);
@@ -112,6 +127,28 @@ mod tests {
             "tldr"
         );
         assert!(v["temperature"].as_f64().is_some());
+        assert!(v.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn reasoning_models_get_low_effort_room_and_no_temperature() {
+        for (name, model, limit) in [
+            ("openai", "gpt-6.1-sol", "max_completion_tokens"),
+            ("openai", "o4-mini", "max_completion_tokens"),
+            ("gemini", "gemini-3.8-flash", "max_tokens"),
+        ] {
+            let p = CloudProvider::preset(name, model).unwrap();
+            let v: Value = serde_json::from_slice(&p.prepare(&request()).unwrap().body).unwrap();
+            assert!(v.get("temperature").is_none(), "{model}: {v}");
+            assert_eq!(v["reasoning_effort"], "low", "{model}");
+            assert_eq!(v[limit], 16_384, "{model}");
+            assert_eq!(v["response_format"]["type"], "json_schema");
+        }
+        // Another OpenAI-compatible server keeps what it always got.
+        let c = CloudProvider::openai_compat("https://llm.example.com/v1", "gpt-6.1-sol").unwrap();
+        let v: Value = serde_json::from_slice(&c.prepare(&request()).unwrap().body).unwrap();
+        assert!(v["temperature"].as_f64().is_some());
+        assert_eq!(v["max_tokens"], 2048);
     }
 
     #[test]

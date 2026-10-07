@@ -20,12 +20,18 @@ export interface AiHost {
 }
 
 const PROVIDERS = ["openai", "anthropic", "gemini"];
+// The menus of crates/ghi-llm/prices.toml (each provider's first is its default).
 const MODELS = [
+  { provider: "openai", model: "gpt-6.1-sol" },
+  { provider: "openai", model: "gpt-6-luna" },
+  { provider: "openai", model: "gpt-6-astra" },
   { provider: "openai", model: "gpt-4.1-mini" },
-  { provider: "openai", model: "gpt-4.1" },
+  { provider: "anthropic", model: "claude-sonnet-5-5" },
   { provider: "anthropic", model: "claude-haiku-4-5" },
-  { provider: "anthropic", model: "claude-sonnet-4-5" },
-  { provider: "gemini", model: "gemini-2.5-flash" },
+  { provider: "anthropic", model: "claude-opus-5-5" },
+  { provider: "gemini", model: "gemini-3.8-flash" },
+  { provider: "gemini", model: "gemini-3.5-flash-lite" },
+  { provider: "gemini", model: "gemini-3.1-flash-lite" },
 ];
 const keys = new Set<string>();
 const log: CloudLogEntry[] = [];

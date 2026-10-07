@@ -170,7 +170,7 @@ test.describe("cloud notes", () => {
     await page.getByRole("button", { name: "Remove key" }).click();
     await expect(page.getByText("No key")).toBeVisible();
     // The default for redaction and the model round-trip.
-    await row(page, /^gpt-5|^claude-haiku/).first().click();
+    await row(page, /^gpt-6-luna|^claude-haiku/).first().click();
     const hide = page.getByRole("switch", { name: "Hide names and personal data by default" });
     await expect(hide).toBeChecked();
     await hide.click();

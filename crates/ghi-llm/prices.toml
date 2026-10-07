@@ -1,10 +1,34 @@
-# Cloud model prices, USD per 1M tokens, for the send preview's cost estimate.
-# A convenience only: providers change prices, so treat the estimate as
+# Cloud model prices, USD per 1M tokens, for the send preview's cost estimate,
+# and the model menus: each provider's models in file order, the first one its
+# default. A convenience only: providers change prices, so treat the estimate as
 # approximate and override with `ghi notes --prices <file>` (same format).
 # A model not listed here shows no cost estimate. `model` matches a model id
-# exactly or as a prefix (dated snapshots such as claude-haiku-4-5-20251001).
-# Last reviewed 2026-10-01.
+# exactly or as a prefix (dated snapshots such as claude-haiku-4-5-20251001;
+# the longest listed prefix wins). Reasoning models get room to think (see
+# `cloud::traits`): their estimate is an upper bound.
+# Last reviewed 2026-10-07: platform.claude.com/docs/en/models/overview,
+# developers.openai.com/api/docs/models + /pricing,
+# ai.google.dev/gemini-api/docs/models + /pricing.
 
+[[model]]
+provider = "openai"
+model = "gpt-6.1-sol"
+input = 2.00
+output = 10.00
+
+[[model]]
+provider = "openai"
+model = "gpt-6-luna"
+input = 0.10
+output = 0.50
+
+[[model]]
+provider = "openai"
+model = "gpt-6-astra"
+input = 10.00
+output = 50.00
+
+# No reasoning: the fastest answer, and it takes a temperature.
 [[model]]
 provider = "openai"
 model = "gpt-4.1-mini"
@@ -12,21 +36,9 @@ input = 0.40
 output = 1.60
 
 [[model]]
-provider = "openai"
-model = "gpt-4.1"
+provider = "anthropic"
+model = "claude-sonnet-5-5"
 input = 2.00
-output = 8.00
-
-[[model]]
-provider = "openai"
-model = "gpt-4o-mini"
-input = 0.15
-output = 0.60
-
-[[model]]
-provider = "openai"
-model = "gpt-4o"
-input = 2.50
 output = 10.00
 
 [[model]]
@@ -37,30 +49,43 @@ output = 5.00
 
 [[model]]
 provider = "anthropic"
-model = "claude-sonnet-4-5"
-input = 3.00
-output = 15.00
+model = "claude-opus-5-5"
+input = 4.00
+output = 20.00
 
+# 0.75 / 3.75 is an introductory price until 2026-12-31 (then 1.50 / 7.50).
 [[model]]
-provider = "anthropic"
-model = "claude-opus-4-5"
-input = 5.00
-output = 25.00
+provider = "gemini"
+model = "gemini-3.8-flash"
+input = 0.75
+output = 3.75
 
 [[model]]
 provider = "gemini"
-model = "gemini-2.5-flash-lite"
-input = 0.10
-output = 0.40
-
-[[model]]
-provider = "gemini"
-model = "gemini-2.5-flash"
+model = "gemini-3.5-flash-lite"
 input = 0.30
 output = 2.50
 
 [[model]]
 provider = "gemini"
-model = "gemini-2.5-pro"
-input = 1.25
-output = 10.00
+model = "gemini-3.1-flash-lite"
+input = 0.25
+output = 1.50
+
+# Shut down or deprecated by the provider: a saved choice with one of these
+# prefixes moves to the provider's default (`Prices::current_model`).
+[[retired]]
+provider = "anthropic"
+model = "claude-sonnet-4-5"
+
+[[retired]]
+provider = "anthropic"
+model = "claude-3"
+
+[[retired]]
+provider = "gemini"
+model = "gemini-2."
+
+[[retired]]
+provider = "gemini"
+model = "gemini-1."

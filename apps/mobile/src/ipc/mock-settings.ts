@@ -300,10 +300,18 @@ const scripted: Partial<Commands> = {
     return ok(null);
   },
 
+  // The menus of crates/ghi-llm/prices.toml (each provider's first is its default).
   cloudModels: async () => [
+    { provider: "openai", model: "gpt-6.1-sol" },
+    { provider: "openai", model: "gpt-6-luna" },
+    { provider: "openai", model: "gpt-6-astra" },
+    { provider: "openai", model: "gpt-4.1-mini" },
     { provider: "anthropic", model: "claude-sonnet-5-5" },
-    { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-    { provider: "openai", model: "gpt-5" },
+    { provider: "anthropic", model: "claude-haiku-4-5" },
+    { provider: "anthropic", model: "claude-opus-5-5" },
+    { provider: "gemini", model: "gemini-3.8-flash" },
+    { provider: "gemini", model: "gemini-3.5-flash-lite" },
+    { provider: "gemini", model: "gemini-3.1-flash-lite" },
   ],
   cloudKeys: async () => ok(["anthropic", "openai"].map((provider) => ({ provider, stored: Boolean(hooks.keys[provider]) }))),
   setCloudKey: async (provider, key) => {
