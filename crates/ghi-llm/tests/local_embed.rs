@@ -16,7 +16,7 @@ fn open() -> Option<LocalEmbedder> {
         eprintln!("skip: qwen3-embedding-0.6b model file not found");
         return None;
     }
-    if worker_path().is_err() {
+    if !cfg!(feature = "inproc") && worker_path().is_err() {
         eprintln!("skip: ghi-llm-worker binary not built (cargo build -p ghi-llm-worker)");
         return None;
     }

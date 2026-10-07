@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::provider::{Completion, EngineInfo, Llm, Request, Role};
-use crate::sidecar::{Body, Op, Sidecar, WireMessage, worker_path};
+use crate::sidecar::{Body, Op, Sidecar, WireMessage};
 use crate::{LlmError, Result};
 
 /// Fixed sampling seed: same input, same output.
@@ -50,7 +50,7 @@ impl LocalLlm {
         let path = model_path
             .to_str()
             .ok_or_else(|| LlmError::Invalid("model path is not valid UTF-8".into()))?;
-        let mut sidecar = Sidecar::spawn(&worker_path()?)?;
+        let mut sidecar = crate::sidecar::start()?;
         let reply = sidecar.request(
             Op::Load {
                 model_path: path.to_string(),

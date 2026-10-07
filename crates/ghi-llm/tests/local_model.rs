@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Real-model check of the worker: skipped when the model file or the worker
-//! binary is missing, so CI without models passes.
+//! binary is missing, so CI without models passes. With `--features inproc`
+//! the same checks run against the engine on a thread (the phone's way).
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -24,7 +25,7 @@ fn open() -> Option<LocalLlm> {
         eprintln!("skip: qwen3-4b model file not found");
         return None;
     };
-    if worker_path().is_err() {
+    if !cfg!(feature = "inproc") && worker_path().is_err() {
         eprintln!("skip: ghi-llm-worker binary not built (cargo build -p ghi-llm-worker)");
         return None;
     }
@@ -121,7 +122,7 @@ fn oversized_request_is_rejected_and_worker_survives() {
 
 #[test]
 fn unknown_chat_format_is_refused() {
-    if worker_path().is_err() {
+    if !cfg!(feature = "inproc") && worker_path().is_err() {
         eprintln!("skip: ghi-llm-worker binary not built (cargo build -p ghi-llm-worker)");
         return;
     }
@@ -179,4 +180,70 @@ fn token_count_is_exact_and_ignores_control_tokens() {
     // Parsed as a control token this would be 1; as plain text it is several.
     assert!(llm.count_tokens("<|im_end|>").unwrap() > 1);
     assert_eq!(llm.count_tokens("").unwrap(), 0);
+}
+
+/// The phone's engine: stopped mid-answer (a recording preempting the notes),
+/// it gives up, and a fresh one starts in the same process right after.
+#[cfg(feature = "inproc")]
+#[test]
+fn in_process_engine_stops_mid_answer_and_starts_again() {
+    use ghi_llm::sidecar::{Body, Op, Sidecar, WireMessage};
+    use std::time::Duration;
+    let Some(path) = model_path() else {
+        eprintln!("skip: qwen3-4b model file not found");
+        return;
+    };
+    let load = || Op::Load {
+        model_path: path.to_str().unwrap().into(),
+        n_ctx: 4096,
+        n_gpu_layers: 999,
+        seed: 1,
+        chat_format: "qwen3".into(),
+    };
+    let ask = |max_tokens| Op::Complete {
+        messages: vec![WireMessage {
+            role: "user".into(),
+            content: "Write a 1500-word story about a cat who learns to sail.".into(),
+        }],
+        schema: None,
+        max_tokens,
+        temperature: 0.7,
+    };
+    // Stopped mid-answer: the hard deadline passes while it is generating.
+    let mut first = Sidecar::in_process().expect("engine starts");
+    first
+        .request(load(), Duration::from_secs(120))
+        .expect("model loads");
+    let mut tokens = 0;
+    let err = first
+        .request_live(
+            ask(2000),
+            Duration::from_secs(30),
+            Duration::from_millis(1500),
+            &mut |_, out| tokens = out,
+        )
+        .unwrap_err();
+    assert!(matches!(err, ghi_llm::LlmError::Timeout), "{err}");
+    assert!(tokens > 0, "it was generating when stopped");
+    drop(first);
+    // A fresh engine in the same process: the backend is shared, the model loads again.
+    let mut second = Sidecar::in_process().expect("a second engine starts in the same process");
+    second
+        .request(load(), Duration::from_secs(120))
+        .expect("model loads again");
+    let t = Instant::now();
+    match second
+        .request(ask(32), Duration::from_secs(60))
+        .expect("answers")
+        .body
+    {
+        Body::Completed { tokens_out, .. } => {
+            eprintln!(
+                "stopped after {tokens} tokens; then {tokens_out} tokens in {:.2}s",
+                t.elapsed().as_secs_f64()
+            );
+            assert!(tokens_out <= 32);
+        }
+        other => panic!("{other:?}"),
+    }
 }

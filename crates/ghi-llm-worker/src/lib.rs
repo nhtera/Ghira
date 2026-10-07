@@ -9,6 +9,11 @@
 //! refuses a worker whose protocol number differs from its own.
 
 use serde::{Deserialize, Serialize};
+
+/// The engine itself (llama.cpp); the protocol types below are all `ghi-llm`
+/// needs to talk to it.
+#[cfg(feature = "engine")]
+pub mod serve;
 use serde_json::Value;
 
 /// Protocol revision; bump on any incompatible change to the lines below.

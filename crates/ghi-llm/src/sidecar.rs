@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The ghi-llm-worker process: spawn, stdio JSON lines, timeouts, kill = unload.
+//! With feature `inproc` (iOS: an app may not start a process) the same engine
+//! runs on a thread over in-memory pipes ([`Sidecar::in_process`]); a kill sets
+//! its stop flag, and it frees the model after the token it is on.
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -65,10 +68,21 @@ enum Line {
     Err(std::io::Error),
 }
 
-/// One running worker process. Requests are strictly one at a time.
+/// What runs the engine.
+enum Proc {
+    Child(Child),
+    /// The engine on a thread of this process; `stop` ends it.
+    #[cfg_attr(not(feature = "inproc"), allow(dead_code))]
+    Thread {
+        stop: Arc<std::sync::atomic::AtomicBool>,
+        engine: JoinHandle<()>,
+    },
+}
+
+/// One running worker. Requests are strictly one at a time.
 pub struct Sidecar {
-    child: Child,
-    stdin: Option<ChildStdin>,
+    proc: Proc,
+    stdin: Option<Box<dyn Write + Send>>,
     lines: Receiver<Line>,
     tail: Tail,
     threads: Vec<JoinHandle<()>>,
@@ -102,7 +116,10 @@ impl Sidecar {
             LlmError::Worker(format!("cannot start {}: {e}", cmd.get_program().display()))
         })?;
         live().push(child.id());
-        let stdin = child.stdin.take();
+        let stdin = child
+            .stdin
+            .take()
+            .map(|s| Box::new(s) as Box<dyn Write + Send>);
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
 
@@ -114,7 +131,7 @@ impl Sidecar {
             thread::spawn(move || drain_stderr(stderr, &tail))
         };
         let mut s = Sidecar {
-            child,
+            proc: Proc::Child(child),
             stdin,
             lines,
             tail,
@@ -123,6 +140,44 @@ impl Sidecar {
             hello: Hello::current(),
         };
         s.read_hello(hello_timeout)?;
+        Ok(s)
+    }
+
+    /// Run the engine on a thread of this process (no worker binary), and read
+    /// its hello.
+    #[cfg(feature = "inproc")]
+    pub fn in_process() -> Result<Sidecar> {
+        use std::sync::atomic::AtomicBool;
+        // (read end, write end): we write requests, the engine writes replies.
+        let (engine_in, requests) = std::io::pipe()?;
+        let (replies, engine_out) = std::io::pipe()?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let engine = {
+            let stop = Arc::clone(&stop);
+            thread::Builder::new()
+                .name("ghi-llm".into())
+                .spawn(move || {
+                    ghi_llm_worker::serve::serve(
+                        BufReader::new(engine_in),
+                        Box::new(engine_out),
+                        &stop,
+                    )
+                })
+                .map_err(|e| LlmError::Worker(format!("cannot start the engine thread: {e}")))?
+        };
+        let (tx, lines) = mpsc::channel();
+        let reader = thread::spawn(move || read_lines(replies, &tx));
+        log::info!("llm engine starting in process");
+        let mut s = Sidecar {
+            proc: Proc::Thread { stop, engine },
+            stdin: Some(Box::new(requests)),
+            lines,
+            tail: Arc::default(),
+            threads: vec![reader],
+            next_id: 1,
+            hello: Hello::current(),
+        };
+        s.read_hello(HELLO_TIMEOUT)?;
         Ok(s)
     }
 
@@ -227,10 +282,12 @@ impl Sidecar {
                 Err(LlmError::Timeout)
             }
             Err(RecvTimeoutError::Disconnected) => {
-                let status = self.child.wait().ok();
-                let why = match status {
-                    Some(s) => format!("worker exited ({s})"),
-                    None => "worker exited".to_string(),
+                let why = match &mut self.proc {
+                    Proc::Child(child) => match child.wait().ok() {
+                        Some(s) => format!("worker exited ({s})"),
+                        None => "worker exited".to_string(),
+                    },
+                    Proc::Thread { .. } => "the engine stopped".to_string(),
                 };
                 Err(self.died(&why))
             }
@@ -280,13 +337,37 @@ impl Sidecar {
             .join("\n")
     }
 
-    /// Kill the worker and reap it; frees the model memory.
+    /// Kill the worker and reap it; frees the model memory. An in-process
+    /// engine is told to stop and frees it after its current token (not
+    /// joined: a decode step must not block the caller).
     pub fn kill(&mut self) {
         self.stdin = None;
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let pid = self.child.id();
-        live().retain(|&p| p != pid);
+        match &mut self.proc {
+            Proc::Child(child) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let pid = child.id();
+                live().retain(|&p| p != pid);
+            }
+            Proc::Thread { stop, .. } => stop.store(true, std::sync::atomic::Ordering::Relaxed),
+        }
+    }
+
+    /// The worker process id (none for an in-process engine).
+    #[cfg(test)]
+    fn pid(&self) -> Option<u32> {
+        match &self.proc {
+            Proc::Child(child) => Some(child.id()),
+            Proc::Thread { .. } => None,
+        }
+    }
+
+    /// The worker has ended (process reaped, or engine thread returned).
+    fn exited(&mut self) -> bool {
+        match &mut self.proc {
+            Proc::Child(child) => !matches!(child.try_wait(), Ok(None)),
+            Proc::Thread { engine, .. } => engine.is_finished(),
+        }
     }
 }
 
@@ -301,12 +382,8 @@ impl Drop for Sidecar {
             let _ = writeln!(stdin, "{line}").and_then(|_| stdin.flush());
         }
         let deadline = Instant::now() + SHUTDOWN_GRACE;
-        while Instant::now() < deadline {
-            match self.child.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) => thread::sleep(Duration::from_millis(20)),
-                Err(_) => break,
-            }
+        while Instant::now() < deadline && !self.exited() {
+            thread::sleep(Duration::from_millis(20));
         }
         self.kill();
         // The pipe threads end at EOF on their own; not joined, since a
@@ -381,6 +458,15 @@ fn drain_stderr(stderr: impl Read, tail: &Tail) {
         }
         t.push_back(line);
     }
+}
+
+/// A worker for this build: the engine in process with feature `inproc`,
+/// else the worker binary ([`worker_path`]).
+pub fn start() -> Result<Sidecar> {
+    #[cfg(feature = "inproc")]
+    return Sidecar::in_process();
+    #[cfg(not(feature = "inproc"))]
+    Sidecar::spawn(&worker_path()?)
 }
 
 /// Where the worker binary is: `$GHI_LLM_WORKER`, else `ghi-llm-worker` next to
@@ -509,7 +595,7 @@ mod tests {
     #[test]
     fn live_workers_are_registered_and_can_be_killed_while_busy() {
         let mut s = fake("read l; sleep 30").unwrap();
-        let pid = s.child.id();
+        let pid = s.pid().expect("a worker process");
         assert!(live().contains(&pid));
         // Busy: the request is in flight and nothing answers.
         s.stdin
@@ -525,7 +611,7 @@ mod tests {
     #[test]
     fn timeout_kills_the_child() {
         let mut s = fake("read l; sleep 30").unwrap();
-        let pid = s.child.id();
+        let pid = s.pid().expect("a worker process");
         let err = s
             .request(Op::Health, Duration::from_millis(200))
             .unwrap_err();
@@ -585,7 +671,7 @@ mod tests {
     #[test]
     fn drop_reaps_a_worker_that_ignores_shutdown() {
         let s = fake("sleep 30").unwrap();
-        let pid = s.child.id();
+        let pid = s.pid().expect("a worker process");
         let t = Instant::now();
         drop(s);
         assert!(t.elapsed() < Duration::from_secs(5));

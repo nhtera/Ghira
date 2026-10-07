@@ -50,7 +50,8 @@ fn model() -> Option<LocalLlm> {
         eprintln!("skipped: {MODEL} not downloaded (tools/scripts/fetch-models.sh {MODEL})");
         return None;
     }
-    if std::env::var_os("GHI_LLM_WORKER").is_none() {
+    // With feature `inproc` the engine runs in this process (the phone's way).
+    if !cfg!(feature = "inproc") && std::env::var_os("GHI_LLM_WORKER").is_none() {
         let worker = root.join("target/debug/ghi-llm-worker");
         if !worker.is_file() {
             eprintln!("skipped: build the worker first (cargo build -p ghi-llm-worker)");
