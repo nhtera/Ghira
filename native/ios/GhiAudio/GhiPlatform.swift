@@ -255,13 +255,20 @@ public func ghiSwiftTextScale() -> Float {
     TextScaleCache.shared.current
 }
 
-/// The view controller on top of the key window's hierarchy (main thread).
-private func topViewController() -> UIViewController? {
-    let scene = UIApplication.shared.connectedScenes
-        .compactMap { $0 as? UIWindowScene }
-        .first { $0.activationState == .foregroundActive }
-    var top = scene?.windows.first(where: \.isKeyWindow)?.rootViewController
-    while let presented = top?.presentedViewController { top = presented }
+/// The view controller to present from (main thread): the top of the foreground
+/// scene's key window, else of its visible normal-level window. On an iPhone
+/// (iOS 27) the app's window was not reported as key, and the pairing scanner
+/// had nothing to present on. The privacy cover sits above normal level and is
+/// never picked.
+func topViewController() -> UIViewController? {
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    let scene = scenes.first { $0.activationState == .foregroundActive }
+        ?? scenes.first { $0.activationState == .foregroundInactive }
+    let windows = scene?.windows ?? []
+    let window = windows.first(where: \.isKeyWindow)
+        ?? windows.first { !$0.isHidden && $0.windowLevel == .normal && $0.rootViewController != nil }
+    var top = window?.rootViewController
+    while let presented = top?.presentedViewController, !presented.isBeingDismissed { top = presented }
     return top
 }
 

@@ -36,6 +36,27 @@ final class SyncPairTests: XCTestCase {
         XCTAssertTrue(Ghira.waitUntil(10) { !cancel.exists }, "the scanner stayed open\n" + app.debugDescription)
     }
 
+    /// The scanner stays up while the camera runs (on a phone it once closed by itself after ~10 s).
+    /// A screenshot every 2 s is attached, so a failure shows what took its place.
+    func testScannerStaysOpen() {
+        let app = Ghira.app()
+        app.launch()
+        Ghira.completeOnboarding(app)
+        let cancel = openScanner(app)
+        if Ghira.onDevice { Ghira.allowSystemAlert() }
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10), app.debugDescription)
+        for second in stride(from: 0, through: 20, by: 2) {
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.name = "scanner-\(second)s"
+            shot.lifetime = .keepAlways
+            add(shot)
+            XCTAssertTrue(cancel.exists, "the scanner closed by itself after \(second) s\n" + app.debugDescription)
+            sleep(2)
+        }
+        cancel.tap()
+        XCTAssertTrue(Ghira.waitUntil(10) { !cancel.exists }, "the scanner stayed open\n" + app.debugDescription)
+    }
+
     /// An injected scan closes the scanner and reaches Rust exactly once.
     func testInjectedScanDismissesTheScanner() throws {
         try XCTSkipIf(Ghira.groupDir == nil, "GHI_GROUP_DIR not set (run via run.sh)")

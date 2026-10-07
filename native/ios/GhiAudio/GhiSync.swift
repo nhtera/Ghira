@@ -114,15 +114,6 @@ private final class QrScanner: NSObject, AVCaptureMetadataOutputObjectsDelegate 
         else { return }
         finish(text)
     }
-
-    private func topViewController() -> UIViewController? {
-        let scene = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive }
-        var top = scene?.windows.first(where: \.isKeyWindow)?.rootViewController
-        while let presented = top?.presentedViewController { top = presented }
-        return top
-    }
 }
 
 private final class QrViewController: UIViewController {
