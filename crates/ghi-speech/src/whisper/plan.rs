@@ -261,8 +261,9 @@ pub fn words(seg: &RawSeg, offset: f64, win_len: f64) -> Vec<Word> {
 /// there is no speech and is unsure; it is mostly one phrase on repeat and
 /// either the model is unsure of it or the phrase repeats 8 or more times
 /// (people do say "vâng vâng vâng vâng vâng"); or it sits (mostly) outside the
-/// VAD's speech regions. `regions` and the segment's `start..end` are on the
-/// same timeline.
+/// VAD's speech regions; or it is a video-channel sign-off Whisper learned from
+/// YouTube captions ([`OUTRO`]). `regions` and the segment's `start..end` are
+/// on the same timeline.
 pub fn keep(seg: &RawSeg, words: &[Word], start: f64, end: f64, regions: &[Region]) -> bool {
     if seg.text.trim().is_empty() || words.is_empty() {
         return false;
@@ -278,6 +279,9 @@ pub fn keep(seg: &RawSeg, words: &[Word], start: f64, end: f64, regions: &[Regio
         return false;
     }
     let tokens: Vec<String> = words.iter().map(|w| normalize(&w.text)).collect();
+    if is_outro(&tokens) {
+        return false;
+    }
     let (fraction, reps) = longest_loop(&tokens);
     if fraction >= 0.5 && (reps >= 8 || avg_logprob < -0.8 || seg.no_speech > 0.4) {
         return false;
@@ -293,6 +297,31 @@ pub fn keep(seg: &RawSeg, words: &[Word], start: f64, end: f64, regions: &[Regio
         }
     }
     true
+}
+
+/// Sign-offs of video channels that Whisper writes over real speech it cannot
+/// place, with full confidence (no-speech 0, log-probability about -0.05), so
+/// the checks above miss them: on VietMed's 8 kHz clips the whole clip came out
+/// as "Hãy subscribe cho kênh Ghiền Mì Gõ…", with or without padding or beam
+/// search. Phrases are matched on normalized words, in order.
+const OUTRO: &[&[&str]] = &[
+    &["subscribe", "cho", "kênh"],
+    &["đăng", "ký", "kênh"],
+    &["ủng", "hộ", "cho", "kênh"],
+    &["ủng", "hộ", "kênh"],
+    &["ghiền", "mì", "gõ"],
+    &["không", "bỏ", "lỡ", "những", "video"],
+    &["thanks", "for", "watching"],
+    &["thank", "you", "for", "watching"],
+    &["like", "and", "subscribe"],
+];
+
+fn is_outro(tokens: &[String]) -> bool {
+    OUTRO.iter().any(|phrase| {
+        tokens
+            .windows(phrase.len())
+            .any(|w| w.iter().zip(*phrase).all(|(a, b)| a == b))
+    })
 }
 
 /// Lowercase, letters and digits only: "Vâng," and "vâng" are the same token.
@@ -548,6 +577,44 @@ mod tests {
             0.0,
             1.0,
             &[r(0.0, 1.0)]
+        ));
+    }
+
+    #[test]
+    fn guard_drops_channel_sign_offs() {
+        let all = [r(0.0, 10.0)];
+        // What Whisper wrote over VietMed clips, fully confident.
+        assert!(!keep_text(
+            "Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn",
+            0.0,
+            0.95,
+            &all
+        ));
+        assert!(!keep_text(
+            "Các bạn hãy đăng ký kênh để ủng hộ kênh của mình nhé.",
+            0.0,
+            0.95,
+            &all
+        ));
+        assert!(!keep_text("Thanks for watching!", 0.0, 0.95, &all));
+        // The words alone, or out of order, are ordinary speech.
+        assert!(keep_text(
+            "kênh bán hàng này cần đăng ký thêm",
+            0.0,
+            0.9,
+            &all
+        ));
+        assert!(keep_text(
+            "we should subscribe to that service",
+            0.0,
+            0.9,
+            &all
+        ));
+        assert!(keep_text(
+            "cảm ơn các bạn đã theo dõi buổi họp",
+            0.0,
+            0.9,
+            &all
         ));
     }
 
