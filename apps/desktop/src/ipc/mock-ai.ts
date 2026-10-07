@@ -3,7 +3,7 @@
 // returned), the cloud send preview / send with a request log, "Ask this
 // meeting", the custom vocabulary, export-everything and delete-all. `?cloudfail=1`
 // in the URL makes cloud sends fail (to see the local fallback).
-import type { AskAllAnswer, AskScope, AskAnswer, CloudLogEntry, CloudPreview, MeetingRow, MeetingRef, MeetingTranscript, RelatedHit, Vocabulary } from "../bindings";
+import type { AsrEngine, AskAllAnswer, AskScope, AskAnswer, CloudLogEntry, CloudPreview, MeetingRow, MeetingRef, MeetingTranscript, RelatedHit, Vocabulary } from "../bindings";
 import email from "@ghi/ui/mocks/email.json";
 import type { Commands } from "./ipc";
 
@@ -34,6 +34,7 @@ const MODELS = [
   { provider: "gemini", model: "gemini-3.1-flash-lite" },
 ];
 const keys = new Set<string>();
+let asrEngine: AsrEngine = "nemo";
 const log: CloudLogEntry[] = [];
 type Pending = { meeting: string; provider: string; model: string; ask: string | null; tokens: number };
 const pending = new Map<string, Pending>();
@@ -152,6 +153,8 @@ type AiCommands = Pick<
   | "relatedMeetings"
   | "vocabulary"
   | "setVocabulary"
+  | "transcriptionEngine"
+  | "setTranscriptionEngine"
   | "ignoreLearnedTerm"
   | "exportEverything"
   | "deleteAllData"
@@ -262,6 +265,12 @@ export function aiCommands(host: AiHost): AiCommands {
       return new Promise((resolve) => window.setTimeout(() => resolve({ status: "ok", data: answerAll(host, question, scope) }), 600));
     },
     relatedMeetings: (text, scope, limit) => ok(relatedTo(host, text, scope, limit)),
+    // A build with Whisper whose models are not downloaded yet.
+    transcriptionEngine: () => ok({ engine: asrEngine, whisperAvailable: true, whisperInstalled: false, whisperBytes: 574_926_293 }),
+    setTranscriptionEngine: (engine) => {
+      asrEngine = engine;
+      return ok({ engine, whisperAvailable: true, whisperInstalled: false, whisperBytes: 574_926_293 });
+    },
     vocabulary: () => ok(vocabulary(host)),
     setVocabulary: (next) => {
       const out: string[] = [];

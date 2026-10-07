@@ -73,7 +73,7 @@ jobs:
         run: tools/release/stage-bundle.sh
       - name: Build (no bundle, no secrets)
         working-directory: apps/desktop
-        run: pnpm tauri build --no-bundle --features nemo --config src-tauri/tauri.release.conf.json -- --locked
+        run: pnpm tauri build --no-bundle --features nemo,whisper --config src-tauri/tauri.release.conf.json -- --locked
       - name: Bundle, sign, notarize and staple the app (Developer ID)
         if: steps.creds.outputs.signed == 'true'
         working-directory: apps/desktop
@@ -87,19 +87,21 @@ jobs:
         run: |
           export APPLE_API_KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
           printf '%s' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY_PATH"
-          pnpm tauri bundle --bundles app --features nemo --config src-tauri/tauri.release.conf.json
+          pnpm tauri bundle --bundles app --features nemo,whisper --config src-tauri/tauri.release.conf.json
           rm -f "$APPLE_API_KEY_PATH"
       - name: Bundle the app (unsigned, no secrets configured)
         if: steps.creds.outputs.signed != 'true'
         working-directory: apps/desktop
         run: |
           printf '%s' '{ "bundle": { "macOS": { "signingIdentity": "-", "hardenedRuntime": false } } }' > "$RUNNER_TEMP/adhoc.json"
-          pnpm tauri bundle --bundles app --features nemo --config src-tauri/tauri.release.conf.json --config "$RUNNER_TEMP/adhoc.json"
+          pnpm tauri bundle --bundles app --features nemo,whisper --config src-tauri/tauri.release.conf.json --config "$RUNNER_TEMP/adhoc.json"
       - name: Check the bundle
         run: |
           app=target/release/bundle/macos/Ghira.app
           otool -l "$app/Contents/MacOS/ghi-desktop" | grep -A2 LC_RPATH | grep -q '@executable_path/../Frameworks'
           test -x "$app/Contents/MacOS/ghi-llm-worker"
+          # The static whisper.cpp ggml must stay private next to NeMo's dynamic one.
+          ./tools/scripts/check-no-ggml-export.sh "$app/Contents/MacOS/ghi-desktop"
           codesign --verify --deep --strict --verbose=2 "$app"
       - name: DMG
         run: |

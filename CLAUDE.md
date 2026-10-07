@@ -44,7 +44,7 @@ cargo test -p ghi-core --features nemo --release --test live_bench -- --ignored 
 # Whisper final pass (optional; needs tools/scripts/build-whisper.sh and fetch-models.sh whisper-large-v3-turbo silero-vad):
 cargo clippy -p ghi-speech -p ghi-core -p ghi-cli --all-targets --features ghi-cli/nemo,ghi-cli/whisper -- -D warnings
 cargo test -p ghi-speech --features whisper && cargo test -p ghi-core --features nemo,whisper --test whisper_real -- --ignored --nocapture  # NeMo + Whisper in one process
-ghi transcribe x.wav --asr whisper --lang vi --pass final   # CLI; the app: setting asr_final = "whisper" (debug builds: GHI_ASR_FINAL=whisper), build with ghi-desktop --features nemo,whisper; fetch-models.sh skips `optional` models: name them
+ghi transcribe x.wav --asr whisper --lang vi --pass final   # CLI; the app: Settings → Models → "Transcript after the meeting" (store setting asr_final; debug builds: GHI_ASR_FINAL=whisper), release builds use ghi-desktop --features nemo,whisper (stage-bundle.sh builds whisper.cpp); fetch-models.sh skips `optional` models: name them
 # speaker embedder (phase 14c; parity tests skip without fetch-models.sh campplus-zh-en):
 cargo clippy -p ghi-speech --features voice --all-targets -- -D warnings
 cargo test -p ghi-speech --features voice
@@ -230,7 +230,7 @@ large-v3-turbo q5 + Silero VAD over a pinned `third_party/whisper.cpp` built STA
 `plan.rs` (VAD grouping <= 29 s, DTW words, hallucination guard; model-free tests),
 `WhisperFinalEngines` in `ghi-core` (Whisper reads, NeMo diarizes; what the guard drops is read by a lazily loaded Nemotron, `WhisperStream::with_fallback`), picked in
 `ghi-app` `final_engines()` when store setting `asr_final` = `whisper` (default `nemo`;
-`GHI_ASR_FINAL` overrides in debug builds; no settings UI yet) and both models are installed,
+`GHI_ASR_FINAL` overrides in debug builds; Settings → Models chooses it, `settings_cmd::set_transcription_engine`, and then lists Whisper's models to download) and both models are installed,
 else (or on any load failure) NeMo. Preemption aborts a decode mid-window (`AsrStream::finish_abortable`);
 `./tools/scripts/check-no-ggml-export.sh <binary>` guards that ggml stays private.
 

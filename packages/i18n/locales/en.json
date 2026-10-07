@@ -575,7 +575,9 @@
         "diarization": "Who said what",
         "llm": "Meeting notes",
         "embed": "Search by meaning",
-        "voice": "Recognising voices"
+        "voice": "Recognising voices",
+        "asr_final": "Speech to text, high accuracy",
+        "asr_vad": "Finding speech"
       },
       "started": "Download started."
     },
@@ -835,6 +837,13 @@
       "mode": "AI mode"
     },
     "models": {
+      "engineTitle": "Transcript after the meeting",
+      "engineHint": "Applies to transcripts written from now on, and to Transcribe again.",
+      "engineNemo": "Standard",
+      "engineNemoHint": "Fast. Best on phone-quality audio and mixed English–Vietnamese speech. Recommended.",
+      "engineWhisper": "High accuracy (Whisper)",
+      "engineWhisperHint": "About 1.6× slower and a {{size}} download. Often more accurate on clear speech; where it can’t make out the words, Standard fills in.",
+      "engineWaiting": "Until Whisper is downloaded, transcripts use Standard.",
       "presetTitle": "Speed and quality",
       "presetHint_mac": "Recommended for this Mac: {{preset}} ({{ram}} memory).",
       "presetHint_win": "Recommended for this PC: {{preset}} ({{ram}} memory).",

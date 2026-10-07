@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Settings (D11) beyond the plain switches in `system`: the custom
-//! vocabulary.
+//! vocabulary and the final pass's transcription engine.
 
 use ghi_core::vocab::{self, IGNORED_SETTING, MAX_TERMS, TERMS_SETTING};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::{CoreState, blocking};
@@ -92,4 +92,123 @@ pub async fn ignore_learned_term(core: CoreState<'_>, term: String) -> Result<Vo
         vocabulary_of(&store)
     })
     .await
+}
+// ------------------------------------------------- transcription engine
+
+/// The recognizer of the transcript written after a meeting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum AsrEngine {
+    /// Nemotron, the default: fast, best on phone-quality and mixed speech.
+    Nemo,
+    /// Whisper large-v3-turbo: slower, an extra download; Nemotron reads
+    /// what it leaves out.
+    Whisper,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionEngine {
+    pub engine: AsrEngine,
+    /// This build can use Whisper (the computer; never the phone).
+    pub whisper_available: bool,
+    /// Whisper's models are downloaded (until then the transcript uses Nemotron).
+    pub whisper_installed: bool,
+    /// Bytes Whisper's models take.
+    pub whisper_bytes: f64,
+}
+
+fn engine_of(store: &ghi_store::store::Store, models: &std::path::Path) -> TranscriptionEngine {
+    use crate::core::{WHISPER_BUILT, WHISPER_MODELS};
+    TranscriptionEngine {
+        engine: if WHISPER_BUILT && crate::core::whisper_chosen(store) {
+            AsrEngine::Whisper
+        } else {
+            AsrEngine::Nemo
+        },
+        whisper_available: WHISPER_BUILT,
+        whisper_installed: ghi_models::installed(models, &WHISPER_MODELS),
+        whisper_bytes: WHISPER_MODELS
+            .iter()
+            .filter_map(|id| ghi_models::find(id))
+            .map(|m| m.size as f64)
+            .sum(),
+    }
+}
+
+/// Stores the engine choice. Whisper needs a build that has it.
+pub fn store_engine(
+    store: &ghi_store::store::Store,
+    models: &std::path::Path,
+    engine: AsrEngine,
+) -> Result<TranscriptionEngine, String> {
+    let value = match engine {
+        AsrEngine::Whisper if !crate::core::WHISPER_BUILT => {
+            return Err("this build has no Whisper".into());
+        }
+        AsrEngine::Whisper => "whisper",
+        AsrEngine::Nemo => "nemo",
+    };
+    store
+        .set_setting(crate::core::ASR_FINAL_KEY, &serde_json::json!(value))
+        .map_err(|e| e.to_string())?;
+    Ok(engine_of(store, models))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn transcription_engine(core: CoreState<'_>) -> Result<TranscriptionEngine, String> {
+    blocking(&core, move |c| Ok(engine_of(&*c.store()?, &c.models()))).await
+}
+
+/// Chooses the engine for transcripts written from now on (and for Transcribe
+/// again). Whisper's models are then listed with the others to download.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_transcription_engine(
+    core: CoreState<'_>,
+    engine: AsrEngine,
+) -> Result<TranscriptionEngine, String> {
+    blocking(&core, move |c| {
+        store_engine(&*c.store()?, &c.models(), engine)
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ghi_store::keys::{MemoryKeyStore, Protection};
+
+    #[test]
+    fn the_engine_choice_is_stored_and_needs_a_whisper_build() {
+        let t = tempfile::tempdir().unwrap();
+        let store = ghi_store::store::Store::open(
+            t.path(),
+            std::sync::Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        let models = t.path().join("models");
+        let e = engine_of(&store, &models);
+        assert_eq!(e.engine, AsrEngine::Nemo, "the default");
+        assert!(!e.whisper_installed);
+        assert!(e.whisper_bytes > 500e6);
+        assert!(crate::core::wanted_optional_models(&store).is_empty());
+
+        let chose = store_engine(&store, &models, AsrEngine::Whisper);
+        if crate::core::WHISPER_BUILT {
+            assert_eq!(chose.unwrap().engine, AsrEngine::Whisper);
+            assert_eq!(
+                crate::core::wanted_optional_models(&store),
+                crate::core::WHISPER_MODELS
+            );
+        } else {
+            assert!(chose.is_err());
+            assert_eq!(engine_of(&store, &models).engine, AsrEngine::Nemo);
+        }
+        let back = store_engine(&store, &models, AsrEngine::Nemo).unwrap();
+        assert_eq!(back.engine, AsrEngine::Nemo);
+        assert!(crate::core::wanted_optional_models(&store).is_empty());
+    }
 }

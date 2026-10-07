@@ -31,13 +31,27 @@ pub struct RequiredModel {
 /// `Preset::speech_models`: the final pass and `speech_ready` do not wait on
 /// it. Cheap: file sizes only.
 pub fn required_for_tier(dir: &Path, tier: Tier) -> Vec<RequiredModel> {
+    required_for_tier_with(dir, tier, &[])
+}
+
+/// [`required_for_tier`] followed by `extra` (optional models a setting
+/// needs, such as the Whisper final pass), each listed once.
+pub fn required_for_tier_with(dir: &Path, tier: Tier, extra: &[&str]) -> Vec<RequiredModel> {
     let p = preset(tier);
-    p.speech_models
+    let mut ids: Vec<&str> = p
+        .speech_models
         .iter()
         .map(String::as_str)
         .chain([p.llm_id])
         .chain(p.embed_id)
         .chain([p.voice_id])
+        .collect();
+    for id in extra {
+        if !ids.contains(id) {
+            ids.push(id);
+        }
+    }
+    ids.into_iter()
         .filter_map(find)
         .map(|m| {
             let dest = path_in(dir, &m);
@@ -61,8 +75,13 @@ pub fn required_for_tier(dir: &Path, tier: Tier) -> Vec<RequiredModel> {
 
 /// [`required_for_tier`] for this machine's tier.
 pub fn required_for_machine(dir: &Path) -> (Tier, Vec<RequiredModel>) {
+    required_for_machine_with(dir, &[])
+}
+
+/// [`required_for_tier_with`] for this machine's tier.
+pub fn required_for_machine_with(dir: &Path, extra: &[&str]) -> (Tier, Vec<RequiredModel>) {
     let tier = tier_for(&detect());
-    (tier, required_for_tier(dir, tier))
+    (tier, required_for_tier_with(dir, tier, extra))
 }
 
 #[cfg(test)]
@@ -87,6 +106,16 @@ mod tests {
         let light = required_for_tier(dir.path(), Tier::Light);
         assert!(light.iter().all(|r| r.role != "embed"));
         assert!(all.iter().all(|r| !r.installed && r.partial_bytes == 0));
+
+        // A setting's optional models follow, once.
+        let with = required_for_tier_with(
+            dir.path(),
+            Tier::Balanced,
+            &["whisper-large-v3-turbo", "silero-vad", "qwen3-4b"],
+        );
+        let ids: Vec<_> = with.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids[5..], ["whisper-large-v3-turbo", "silero-vad"]);
+        assert_eq!(with.len(), 7);
 
         let llm = find("qwen3-4b").unwrap();
         let part = part_path(&path_in(dir.path(), &llm));

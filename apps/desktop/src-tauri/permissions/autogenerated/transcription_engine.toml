@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-transcription-engine"
+description = "Enables the transcription_engine command without any pre-configured scope."
+commands.allow = ["transcription_engine"]
+
+[[permission]]
+identifier = "deny-transcription-engine"
+description = "Denies the transcription_engine command without any pre-configured scope."
+commands.deny = ["transcription_engine"]

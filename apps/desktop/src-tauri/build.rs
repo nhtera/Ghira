@@ -162,6 +162,8 @@ fn main() {
             "search_meetings",
             "regenerate_notes",
             "retranscribe",
+            "transcription_engine",
+            "set_transcription_engine",
             "list_templates",
             "delete_action_item",
             "set_action_owner",

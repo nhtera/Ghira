@@ -224,6 +224,12 @@ export const commands = {
 	 *  the speech models to be installed.
 	 */
 	retranscribe: (meeting: string, language: TranscriptLanguage) => typedError<boolean, string>(__TAURI_INVOKE("retranscribe", { meeting, language })),
+	transcriptionEngine: () => typedError<TranscriptionEngine, string>(__TAURI_INVOKE("transcription_engine")),
+	/**
+	 *  Chooses the engine for transcripts written from now on (and for Transcribe
+	 *  again). Whisper's models are then listed with the others to download.
+	 */
+	setTranscriptionEngine: (engine: AsrEngine) => typedError<TranscriptionEngine, string>(__TAURI_INVOKE("set_transcription_engine", { engine })),
 	/**  Accent-insensitive search over transcripts and notes (VN-folded). */
 	searchMeetings: (request: SearchRequest) => typedError<SearchResults, string>(__TAURI_INVOKE("search_meetings", { request })),
 	/**  Plays the whole meeting (the open one; any earlier play token stops working). */
@@ -770,6 +776,16 @@ export type AskScope = {
 	toMs: number | null,
 	persons: string[],
 };
+
+/**  The recognizer of the transcript written after a meeting. */
+export type AsrEngine = 
+/**  Nemotron, the default: fast, best on phone-quality and mixed speech. */
+"nemo" | 
+/**
+ *  Whisper large-v3-turbo: slower, an extra download; Nemotron reads
+ *  what it leaves out.
+ */
+"whisper";
 
 /**  The audio bar's source: a play token and how long the audio is. */
 export type AudioPlay = {
@@ -1869,6 +1885,16 @@ export type TopicView = {
 export type TranscriptLanguage = 
 /**  English and Vietnamese, detected line by line. */
 "auto" | "en" | "vi";
+
+export type TranscriptionEngine = {
+	engine: AsrEngine,
+	/**  This build can use Whisper (the computer; never the phone). */
+	whisperAvailable: boolean,
+	/**  Whisper's models are downloaded (until then the transcript uses Nemotron). */
+	whisperInstalled: boolean,
+	/**  Bytes Whisper's models take. */
+	whisperBytes: number | null,
+};
 
 /**  The status changed (the About section and a banner follow it). */
 export type UpdateChanged = {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// Settings → Models: what is installed, download / cancel with progress, a
-// damaged file is downloaded again. Reuses the onboarding download hook.
+// Settings → Models: the transcription engine, what is installed, download /
+// cancel with progress, a damaged file is downloaded again. Reuses the
+// onboarding download hook.
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Icon, ModelRow, ModelRowHeader, cn, usePlatform, type ModelStatus } from "@ghi/ui";
@@ -8,6 +9,7 @@ import { APP_NAME, formatBytes } from "@ghi/i18n";
 import { loadLicenses } from "../../generated/licenses";
 import { useModelDownload, type ModelProgress } from "../onboarding/use-model-download";
 import { useOnline } from "../onboarding/models-step";
+import { EngineCard } from "./engine-card";
 import { Card, Note, useSettings } from "./parts";
 
 const TIERS = [
@@ -70,6 +72,7 @@ export function ModelsSection() {
           </ul>
         </Card>
       )}
+      <EngineCard onChanged={dl.refresh} />
       <Card title={t("settings.models.title")}>
         {strict && <Note icon="cloud_off">{t("settings.models.strictOffline")}</Note>}
         {!strict && !online && <Note icon="wifi_off">{t("onboarding.models.offline", { app: APP_NAME })}</Note>}
@@ -111,7 +114,7 @@ export function ModelsSection() {
             return (
               <div key={m.model.id}>
                 <ModelRow
-                  purpose={t(`onboarding.models.roles.${m.model.role as "asr" | "diarization" | "llm" | "embed" | "voice"}`)}
+                  purpose={t(`onboarding.models.roles.${m.model.role as "asr" | "asr_final" | "asr_vad" | "diarization" | "llm" | "embed" | "voice"}`)}
                   name={lic?.name ?? m.model.id}
                   size={formatBytes(m.model.size, i18n.language)}
                   license={lic?.license}

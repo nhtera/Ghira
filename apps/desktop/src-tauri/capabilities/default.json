@@ -81,6 +81,8 @@
     "allow-list-templates",
     "allow-regenerate-notes",
     "allow-retranscribe",
+    "allow-transcription-engine",
+    "allow-set-transcription-engine",
     "allow-search-meetings",
     "allow-issue-audio-play",
     "allow-waveform-peaks",

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Speech and notes models for onboarding and Settings → Models: what this
-//! machine's tier needs, and an in-app download (pinned files from the
+//! machine's tier needs (plus the optional models a setting chose, such as
+//! the Whisper final pass), and an in-app download (pinned files from the
 //! registry through `ghi-net`; resumable, cancellable, with an idle timeout).
 //! Strict offline (a setting) refuses before any connection. When a model
 //! arrives, the job runner is woken: recordings made without models get their
@@ -71,8 +72,15 @@ pub enum DownloadPhase {
 #[derive(Default)]
 pub struct Downloads(Mutex<Option<Arc<AtomicBool>>>);
 
+/// Optional models the settings ask for (none while the store is closed).
+fn wanted(core: &Core) -> Vec<&'static str> {
+    core.store_even_locked()
+        .map(|s| ghi_app::core::wanted_optional_models(&s))
+        .unwrap_or_default()
+}
+
 fn status(core: &Core, downloads: &Downloads) -> ModelsStatus {
-    let (tier, models) = ghi_models::required_for_machine(&core.models());
+    let (tier, models) = ghi_models::required_for_machine_with(&core.models(), &wanted(core));
     let damaged = crate::core::damaged_models();
     ModelsStatus {
         tier: format!("{tier:?}").to_lowercase(),
@@ -172,7 +180,7 @@ fn run<R: Runtime>(app: &AppHandle<R>, core: &Core, cancel: &Arc<AtomicBool>) {
         cancel: Some(cancel.clone()),
         ..Control::default()
     };
-    let (_, required) = ghi_models::required_for_machine(&dir);
+    let (_, required) = ghi_models::required_for_machine_with(&dir, &wanted(core));
     let damaged = crate::core::damaged_models();
     for r in required
         .into_iter()

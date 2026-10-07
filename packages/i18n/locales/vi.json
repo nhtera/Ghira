@@ -557,7 +557,9 @@
         "diarization": "Nhận diện người nói",
         "llm": "Viết ghi chú họp",
         "embed": "Tìm theo ý nghĩa",
-        "voice": "Nhận ra giọng nói"
+        "voice": "Nhận ra giọng nói",
+        "asr_final": "Chuyển giọng nói thành văn bản, độ chính xác cao",
+        "asr_vad": "Tìm đoạn có giọng nói"
       },
       "started": "Đã bắt đầu tải."
     },
@@ -817,6 +819,13 @@
       "mode": "Chế độ AI"
     },
     "models": {
+      "engineTitle": "Bản chép lời sau cuộc họp",
+      "engineHint": "Áp dụng cho các bản chép lời từ bây giờ và cho Chép lời lại.",
+      "engineNemo": "Tiêu chuẩn",
+      "engineNemoHint": "Nhanh. Tốt nhất với âm thanh chất lượng điện thoại và lời nói xen tiếng Anh–tiếng Việt. Khuyên dùng.",
+      "engineWhisper": "Độ chính xác cao (Whisper)",
+      "engineWhisperHint": "Chậm hơn khoảng 1,6 lần và cần tải thêm {{size}}. Thường chính xác hơn với lời nói rõ; chỗ nào nó không nghe ra, Tiêu chuẩn sẽ điền vào.",
+      "engineWaiting": "Cho đến khi Whisper được tải xong, bản chép lời dùng Tiêu chuẩn.",
       "presetTitle": "Tốc độ và chất lượng",
       "presetHint_mac": "Khuyên dùng cho máy này: {{preset}} (RAM {{ram}}).",
       "presetHint_win": "Khuyên dùng cho máy này: {{preset}} (RAM {{ram}}).",

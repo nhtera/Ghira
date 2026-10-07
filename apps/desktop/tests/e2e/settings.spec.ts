@@ -83,3 +83,14 @@ test("the Obsidian vault folder shows by name and can be changed", async ({ page
   await row.getByRole("button", { name: /Change/ }).click();
   await expect(row).toContainText("Notes vault");
 });
+
+test("the transcript engine can be switched to Whisper and back", async ({ page }) => {
+  await open(page, "models");
+  const group = page.getByRole("radiogroup", { name: "Transcript after the meeting" });
+  await expect(group.getByRole("radio", { name: /^Standard/ })).toHaveAttribute("aria-checked", "true");
+  await group.getByRole("radio", { name: /High accuracy \(Whisper\)/ }).click();
+  await expect(group.getByRole("radio", { name: /High accuracy \(Whisper\)/ })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByText("Until Whisper is downloaded, transcripts use Standard.")).toBeVisible();
+  await group.getByRole("radio", { name: /^Standard/ }).click();
+  await expect(page.getByText("Until Whisper is downloaded, transcripts use Standard.")).toBeHidden();
+});

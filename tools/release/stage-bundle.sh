@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # Stages what the macOS app bundle ships next to the app binary, for
-# `tauri build --features nemo --config src-tauri/tauri.release.conf.json`:
+# `tauri build --features nemo,whisper --config src-tauri/tauri.release.conf.json`:
 #
 # - the notes model worker (`ghi-llm-worker`, a separate process) as a Tauri
 #   sidecar: src-tauri/binaries/ghi-llm-worker-<target triple>;
@@ -10,7 +10,9 @@
 #   src-tauri/frameworks/ (Tauri copies them to Contents/Frameworks; the app
 #   finds them through its `@executable_path/../Frameworks` rpath).
 #
-# Builds NeMo-Speech.cpp first if it isn't built. Release builds never reuse
+# Builds NeMo-Speech.cpp first if it isn't built, and whisper.cpp (linked
+# statically into the app for the optional Whisper final pass: nothing to
+# stage, but `--features whisper` needs it). Release builds never reuse
 # a cache in CI (RT-12); locally this reuses target/.
 set -euo pipefail
 
@@ -26,6 +28,9 @@ fi
 
 if [[ ! -f "$nemo_lib/libnemo_speech_asr_c.1.dylib" ]]; then
   "$root/tools/scripts/build-nemo.sh"
+fi
+if [[ ! -f "${WHISPER_BUILD_ROOT:-$root/target/whisper}/install/lib/libwhisper.a" ]]; then
+  "$root/tools/scripts/build-whisper.sh"
 fi
 
 echo "== ghi-llm-worker ($triple)"

@@ -42,8 +42,8 @@ elif [[ -z "${APPLE_SIGNING_IDENTITY:-}" ]]; then
   exit 1
 fi
 
-echo "== tauri build (nemo)"
-(cd "$desktop" && pnpm tauri build --features nemo "${configs[@]}" -- --locked)
+echo "== tauri build (nemo, whisper)"
+(cd "$desktop" && pnpm tauri build --features nemo,whisper "${configs[@]}" -- --locked)
 
 app="$root/target/release/bundle/macos/Ghira.app"
 [[ -d "$app" ]] || { echo "build-dmg: no $app" >&2; exit 1; }
@@ -57,6 +57,8 @@ if otool -l "$bin" | grep -A2 LC_RPATH | grep -q "$root"; then
   exit 1
 fi
 [[ -x "$app/Contents/MacOS/ghi-llm-worker" ]] || { echo "build-dmg: no worker in the bundle" >&2; exit 1; }
+# The static whisper.cpp ggml must stay private next to NeMo's dynamic one.
+"$root/tools/scripts/check-no-ggml-export.sh" "$bin"
 for lib in "$root"/apps/desktop/src-tauri/frameworks/*.dylib; do
   [[ -f "$app/Contents/Frameworks/$(basename "$lib")" ]] \
     || { echo "build-dmg: $(basename "$lib") missing from Frameworks" >&2; exit 1; }

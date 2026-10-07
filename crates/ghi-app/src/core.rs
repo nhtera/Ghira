@@ -363,8 +363,35 @@ fn engines(
 }
 
 /// Store setting choosing the final pass's recognizer: `"nemo"` (default) or
-/// `"whisper"`. `GHI_ASR_FINAL` overrides it in debug builds. No settings UI yet.
+/// `"whisper"` (Settings → Models on the computer, `settings_cmd`).
+/// `GHI_ASR_FINAL` overrides it in debug builds.
 pub const ASR_FINAL_KEY: &str = "asr_final";
+
+/// The optional models the Whisper final pass reads with.
+pub const WHISPER_MODELS: [&str; 2] = ["whisper-large-v3-turbo", "silero-vad"];
+
+/// This build can read the final pass with Whisper (desktop with `whisper`).
+pub const WHISPER_BUILT: bool = cfg!(all(feature = "nemo", feature = "whisper"));
+
+/// The stored choice is Whisper (the debug override aside).
+pub fn whisper_chosen(store: &Store) -> bool {
+    store
+        .get_setting(ASR_FINAL_KEY)
+        .ok()
+        .flatten()
+        .and_then(|v| v.as_str().map(|c| c.eq_ignore_ascii_case("whisper")))
+        .unwrap_or(false)
+}
+
+/// Optional models the user's choices need: Whisper's when chosen in a build
+/// that has it (Settings → Models lists and downloads them).
+pub fn wanted_optional_models(store: &Store) -> Vec<&'static str> {
+    if WHISPER_BUILT && whisper_chosen(store) {
+        WHISPER_MODELS.to_vec()
+    } else {
+        Vec::new()
+    }
+}
 
 /// Whether the final pass should read with Whisper: this build has it, the
 /// setting asks for it and both of its models are installed.
@@ -376,12 +403,11 @@ fn whisper_final_wanted(models: &Path, store: &Store) -> bool {
     } else {
         None
     };
-    let chosen = env.or_else(|| {
-        let v = store.get_setting(ASR_FINAL_KEY).ok().flatten()?;
-        v.as_str().map(str::to_string)
-    });
-    chosen.is_some_and(|c| c.eq_ignore_ascii_case("whisper"))
-        && ghi_models::installed(models, &["whisper-large-v3-turbo", "silero-vad"])
+    let chosen = match env {
+        Some(c) => c.eq_ignore_ascii_case("whisper"),
+        None => whisper_chosen(store),
+    };
+    chosen && ghi_models::installed(models, &WHISPER_MODELS)
 }
 
 /// An optional model's path, verified. Unlike [`checked_model`] a bad file is

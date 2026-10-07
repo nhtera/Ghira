@@ -12,7 +12,10 @@ pub mod tier;
 pub mod verify;
 
 pub use download::{DownloadError, download};
-pub use required::{RequiredModel, required_for_machine, required_for_tier};
+pub use required::{
+    RequiredModel, required_for_machine, required_for_machine_with, required_for_tier,
+    required_for_tier_with,
+};
 pub use tier::{
     Hw, Preset, Tier, detect, llm_allowed_while_recording, preset, tier_for,
     unload_speech_before_llm,
