@@ -21,6 +21,10 @@
       "locked": "Hãy mở khoá để xem cuộc họp này.",
       "notFound": "Cuộc họp này không còn trên điện thoại.",
       "notesEmpty": {
+        "after": {
+          "body": "Ghi chú sẽ được viết trên điện thoại này khi bản ghi xong.",
+          "title": "Chưa có ghi chú"
+        },
         "cloud": {
           "body": "Điện thoại ghi âm và chuyển thành văn bản. Để có ghi chú, bạn có thể gửi nội dung bản ghi (không bao giờ gửi âm thanh) đến mô hình đám mây do bạn chọn.",
           "title": "Chưa có ghi chú trên điện thoại này"

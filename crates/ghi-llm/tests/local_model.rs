@@ -21,6 +21,9 @@ fn model_path() -> Option<PathBuf> {
 }
 
 fn open() -> Option<LocalLlm> {
+    // The phone's way: the engine in this process (the default only on iOS).
+    #[cfg(feature = "inproc")]
+    ghi_llm::sidecar::use_in_process(true);
     let Some(path) = model_path() else {
         eprintln!("skip: qwen3-4b model file not found");
         return None;

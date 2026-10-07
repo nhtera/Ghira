@@ -4,10 +4,10 @@
 //! rest); everything that reads or edits stored meetings is the `ghi-app`
 //! command, registered here by path so the DTOs match the desktop's.
 //!
-//! `regenerate_notes` writes notes on an 8 GB phone with the notes model (the
-//! UI offers it only there: elsewhere the job would wait for a model the phone
-//! cannot run). Left out on purpose: `list_templates` (the phone writes with
-//! the meeting's template), `ask_*`, people,
+//! Notes are written on the phone through its own `write_notes` (an 8 GB phone
+//! with the notes model only). Left out on purpose: `regenerate_notes` (no
+//! capability check: on any other phone its job would wait forever),
+//! `list_templates` (the phone writes with the meeting's template), `ask_*`, people,
 //! folders, tags, the calendar's ICS file and ticker (EventKit only, see
 //! `calendar`) and the desktop import queue (the phone imports
 //! through the share inbox).
@@ -64,6 +64,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             models::notes_model_status,
             models::models_download_notes,
             models::models_remove_notes,
+            models::write_notes,
             privacy::privacy_export_all_share,
             privacy::privacy_delete_all,
             store::store_status,
@@ -115,7 +116,6 @@ pub fn builder() -> Builder<tauri::Wry> {
             ghi_app::detail::delete_action_item,
             ghi_app::detail::search_meetings,
             ghi_app::detail::retranscribe,
-            ghi_app::detail::regenerate_notes,
             ghi_app::audio_protocol::issue_audio_play,
             ghi_app::audio_protocol::waveform_peaks,
             ghi_app::export_cmd::meeting_as_text,

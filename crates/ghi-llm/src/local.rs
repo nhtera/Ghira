@@ -113,6 +113,10 @@ impl Llm for LocalLlm {
         self.n_ctx
     }
 
+    fn stopper(&self) -> Option<std::sync::Arc<dyn Fn() + Send + Sync>> {
+        self.sidecar.stopper()
+    }
+
     fn count_tokens(&mut self, text: &str) -> Result<u32> {
         let reply = self.sidecar.request(
             Op::Count {

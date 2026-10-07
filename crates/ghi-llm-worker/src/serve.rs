@@ -436,7 +436,9 @@ impl Engine {
             if stop.load(Ordering::Relaxed) {
                 return Err("stopped".into());
             }
-            let tok = sampler.pick(&ctx, batch.n_tokens() - 1);
+            let tok = sampler
+                .pick(&ctx, batch.n_tokens() - 1)
+                .ok_or("the sampler chose no token")?;
             if self.model.is_eog_token(tok) {
                 truncated = false;
                 break;
@@ -547,25 +549,27 @@ struct Sampling {
 impl Sampling {
     /// Choose the next token from the logits at batch index `idx`. Does not
     /// accept it; call [`Sampling::accept`] once the token is kept.
-    fn pick(&mut self, ctx: &LlamaContext, idx: i32) -> LlamaToken {
+    fn pick(&mut self, ctx: &LlamaContext, idx: i32) -> Option<LlamaToken> {
         let mut cand = ctx.token_data_array_ith(idx);
         cand.apply_sampler(&self.chain);
-        let tok = cand.selected_token().expect("dist selects a token");
+        // `dist` always selects; `None` (a broken model) fails the request
+        // instead of aborting an app that runs the engine in process.
+        let tok = cand.selected_token()?;
         let Some(grammar) = &self.grammar else {
-            return tok;
+            return Some(tok);
         };
         // Fast path: only this token's logit goes through the grammar.
         let logit = ctx.get_logits_ith(idx)[tok.0 as usize];
         let mut one = LlamaTokenDataArray::new(vec![LlamaTokenData::new(tok, logit, 0.0)], false);
         one.apply_sampler(grammar);
         if one.data[0].logit() != f32::NEG_INFINITY {
-            return tok;
+            return Some(tok);
         }
         // Rejected: grammar over all candidates, then the chain, then draw again.
         let mut full = ctx.token_data_array_ith(idx);
         full.apply_sampler(grammar);
         full.apply_sampler(&self.chain);
-        full.selected_token().expect("dist selects a token")
+        full.selected_token()
     }
 
     /// Accept the kept token, exactly once per sampler (grammar state advances).

@@ -150,6 +150,59 @@ final class ReviewScreensTests: XCTestCase {
         shot("notes-written")
     }
 
+    /// A long meeting end to end on the phone (opt-in: TEST_RUNNER_GHI_LONG_MEETING=1 with
+    /// GHI_FAKE_MIC_PATH and GHI_REC_SECONDS): record from the fake mic, then keep the app in
+    /// front (a touch every 20 s, so the phone never locks) until the transcript and the notes
+    /// written on the phone are there. Prints LONGRUN lines with the time of each stage.
+    func testLongMeetingNotesOnThePhone() throws {
+        let env = ProcessInfo.processInfo.environment
+        try XCTSkipIf((env["GHI_LONG_MEETING"] ?? "").isEmpty, "GHI_LONG_MEETING not set")
+        let seconds = Double(env["GHI_REC_SECONDS"] ?? "") ?? 600
+        let mic = env["GHI_FAKE_MIC_PATH"] ?? ""
+        try XCTSkipIf(mic.isEmpty, "GHI_FAKE_MIC_PATH not set")
+        let app = Ghira.app(env: ["GHI_FAKE_MIC": mic, "GHI_IGNORE_THERMAL": "1"])
+        app.launch()
+        Ghira.completeOnboarding(app)
+        Ghira.openRecordTab(app)
+        XCTAssertTrue(Ghira.recordButton(app).waitForExistence(timeout: 20), app.debugDescription)
+        Ghira.recordButton(app).tap()
+        let consent = app.buttons["Everyone knows, start recording"]
+        if consent.waitForExistence(timeout: 3) { consent.tap() }
+        XCTAssertTrue(Ghira.stopButton(app).waitForExistence(timeout: 20), "recording did not start\n" + app.debugDescription)
+        let t0 = Date()
+        // A touch on the title area every 20 s: the phone must not lock (the fake mic stops in the background).
+        while Date().timeIntervalSince(t0) < seconds {
+            sleep(20)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
+        }
+        shot("long-recording")
+        Ghira.stopButton(app).tap()
+        let stopped = Date()
+        print("LONGRUN recorded_s=\(Int(stopped.timeIntervalSince(t0)))")
+        _ = try openFirstMeeting(app)
+        app.buttons["Notes"].tap()
+        // Poll for the notes, touching the screen now and then so it stays awake.
+        var transcribed: Date?
+        let summary = app.staticTexts["SUMMARY"]
+        while !summary.exists && Date().timeIntervalSince(stopped) < 3600 {
+            sleep(20)
+            if transcribed == nil && app.staticTexts["Writing notes…"].exists {
+                transcribed = Date()
+                print("LONGRUN transcript_s=\(Int(transcribed!.timeIntervalSince(stopped)))")
+                shot("long-writing")
+            }
+            app.buttons["Notes"].tap()
+        }
+        XCTAssertTrue(summary.exists, "no notes an hour after the recording\n" + app.debugDescription)
+        print("LONGRUN notes_done_s=\(Int(Date().timeIntervalSince(stopped)))")
+        shot("long-notes")
+        app.swipeUp()
+        shot("long-notes-more")
+        app.buttons["Actions"].tap()
+        sleep(1)
+        shot("long-actions")
+    }
+
     /// Opens the first meeting of the list: a webview button between the search field and the tab bar.
     private func openFirstMeeting(_ app: XCUIApplication) throws -> String {
         Ghira.tapTab(app, "Meetings")

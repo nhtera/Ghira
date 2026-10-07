@@ -99,9 +99,17 @@ export const commands = {
 	modelsDownloadNotes: (wifiOnly: boolean) => typedError<null, string>(__TAURI_INVOKE("models_download_notes", { wifiOnly })),
 	/**
 	 *  Removes the notes model to free its 2.5 GB (notes then come from the
-	 *  cloud or the computer again). Refused while notes are being written.
+	 *  cloud or the computer again). Refused while notes are being written or a
+	 *  download runs; notes still waiting to be written are called off, and their
+	 *  meetings settle (they would wait for the model forever).
 	 */
 	modelsRemoveNotes: () => typedError<null, string>(__TAURI_INVOKE("models_remove_notes")),
+	/**
+	 *  Writes (or rewrites) a meeting's notes on this phone. Only a phone that
+	 *  can run the notes model and has it installed: anywhere else the job would
+	 *  wait for a model that never comes and leave the meeting "processing".
+	 */
+	writeNotes: (meeting: string) => typedError<null, string>(__TAURI_INVOKE("write_notes", { meeting })),
 	/**
 	 *  Exports everything as an encrypted archive and presents the system share
 	 *  sheet (the path never reaches the webview). Resolves once the sheet is
@@ -289,12 +297,6 @@ export const commands = {
 	 *  the speech models to be installed.
 	 */
 	retranscribe: (meeting: string, language: TranscriptLanguage) => typedError<boolean, string>(__TAURI_INVOKE("retranscribe", { meeting, language })),
-	/**
-	 *  Rewrites the AI notes (template and language as chosen); what the user
-	 *  wrote, edited, pinned or ticked off stays [RT-7]. Returns whether it waits
-	 *  for the local model to be installed.
-	 */
-	regenerateNotes: (meeting: string, template: string | null, language: NotesLanguage) => typedError<boolean, string>(__TAURI_INVOKE("regenerate_notes", { meeting, template, language })),
 	/**  Plays the whole meeting (the open one; any earlier play token stops working). */
 	issueAudioPlay: (meeting: string) => typedError<AudioPlay, string>(__TAURI_INVOKE("issue_audio_play", { meeting })),
 	/**

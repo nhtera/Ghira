@@ -139,6 +139,14 @@ impl JobCtx<'_> {
     /// so a clear of `preempt` racing a lifecycle change can't hide it.
     /// A leased job whose fence fails is asked to stop too (the runner then
     /// drops it instead of requeueing).
+    /// A recording or the app leaving the screen asks this job to stop: the
+    /// two flags alone, cheap to poll from a watcher thread while a model
+    /// runs (see [`JobCtx::preempted`] for the full check, lease included).
+    pub fn stop_signal(&self) -> impl Fn() -> bool + Send + Sync + '_ {
+        let (preempt, inactive) = (self.preempt, self.inactive);
+        move || preempt.load(Ordering::SeqCst) || inactive.load(Ordering::SeqCst)
+    }
+
     pub fn preempted(&self) -> bool {
         self.preempt.load(Ordering::SeqCst)
             || self.inactive.load(Ordering::SeqCst)

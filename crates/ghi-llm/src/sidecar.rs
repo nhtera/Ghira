@@ -75,7 +75,9 @@ enum Proc {
     #[cfg_attr(not(feature = "inproc"), allow(dead_code))]
     Thread {
         stop: Arc<std::sync::atomic::AtomicBool>,
-        engine: JoinHandle<()>,
+        /// Handed to [`ENGINE`] when this sidecar goes, so the next engine
+        /// waits for it.
+        engine: Option<JoinHandle<()>>,
     },
 }
 
@@ -148,9 +150,17 @@ impl Sidecar {
     #[cfg(feature = "inproc")]
     pub fn in_process() -> Result<Sidecar> {
         use std::sync::atomic::AtomicBool;
+        // One model at a time in this process: a stopped engine finishes its
+        // current step and frees its model before the next one loads.
+        wait_for_previous_engine()?;
         // (read end, write end): we write requests, the engine writes replies.
         let (engine_in, requests) = std::io::pipe()?;
         let (replies, engine_out) = std::io::pipe()?;
+        // A write after we stopped reading must fail with EPIPE, not raise
+        // SIGPIPE: the app's entry point (iOS) does not ignore that signal,
+        // and it would end the whole app.
+        no_sigpipe(&engine_out);
+        no_sigpipe(&requests);
         let stop = Arc::new(AtomicBool::new(false));
         let engine = {
             let stop = Arc::clone(&stop);
@@ -169,7 +179,10 @@ impl Sidecar {
         let reader = thread::spawn(move || read_lines(replies, &tx));
         log::info!("llm engine starting in process");
         let mut s = Sidecar {
-            proc: Proc::Thread { stop, engine },
+            proc: Proc::Thread {
+                stop,
+                engine: Some(engine),
+            },
             stdin: Some(Box::new(requests)),
             lines,
             tail: Arc::default(),
@@ -362,17 +375,43 @@ impl Sidecar {
         }
     }
 
+    /// Stops an in-process engine from another thread (it gives up after its
+    /// current step and the request in flight fails); `None` for a worker
+    /// process, which only its owner kills.
+    pub fn stopper(&self) -> Option<Arc<dyn Fn() + Send + Sync>> {
+        match &self.proc {
+            Proc::Child(_) => None,
+            Proc::Thread { stop, .. } => {
+                let stop = Arc::clone(stop);
+                Some(Arc::new(move || {
+                    stop.store(true, std::sync::atomic::Ordering::Relaxed)
+                }))
+            }
+        }
+    }
+
     /// The worker has ended (process reaped, or engine thread returned).
     fn exited(&mut self) -> bool {
         match &mut self.proc {
             Proc::Child(child) => !matches!(child.try_wait(), Ok(None)),
-            Proc::Thread { engine, .. } => engine.is_finished(),
+            Proc::Thread { engine, .. } => engine.as_ref().is_none_or(JoinHandle::is_finished),
         }
     }
 }
 
 impl Drop for Sidecar {
     fn drop(&mut self) {
+        if let Proc::Thread { stop, engine } = &mut self.proc {
+            // Stop now (a busy engine gives up after its current step), close
+            // its input, and leave the thread to the next engine's wait.
+            stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            self.stdin = None;
+            if let Some(handle) = engine.take() {
+                *previous_engine() = Some(handle);
+            }
+            self.threads.clear();
+            return;
+        }
         if let Some(mut stdin) = self.stdin.take() {
             let line = serde_json::to_string(&Request {
                 id: 0,
@@ -424,6 +463,9 @@ fn read_lines(stdout: impl Read, tx: &mpsc::Sender<Line>) {
         }
         let text = String::from_utf8_lossy(&buf).into_owned();
         if tx.send(Line::Text(text)).is_err() {
+            // Nobody listens any more: keep reading to EOF so the writer
+            // never blocks (or, in process, writes into a closed pipe).
+            let _ = std::io::copy(&mut r, &mut std::io::sink());
             return;
         }
     }
@@ -464,9 +506,80 @@ fn drain_stderr(stderr: impl Read, tail: &Tail) {
 /// else the worker binary ([`worker_path`]).
 pub fn start() -> Result<Sidecar> {
     #[cfg(feature = "inproc")]
-    return Sidecar::in_process();
-    #[cfg(not(feature = "inproc"))]
+    if in_process_default() {
+        return Sidecar::in_process();
+    }
     Sidecar::spawn(&worker_path()?)
+}
+
+/// Engines run in process on iOS (no child processes there). Elsewhere the
+/// worker process stays the default even when a workspace build turns
+/// `inproc` on for the phone; tests opt in with [`use_in_process`].
+#[cfg(feature = "inproc")]
+static IN_PROCESS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(cfg!(target_os = "ios"));
+
+#[cfg(feature = "inproc")]
+fn in_process_default() -> bool {
+    IN_PROCESS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Makes [`start`] run engines in this process (host tests of the phone's way).
+#[cfg(feature = "inproc")]
+pub fn use_in_process(on: bool) {
+    IN_PROCESS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The engine thread of the last in-process sidecar, until it has ended.
+fn previous_engine() -> std::sync::MutexGuard<'static, Option<JoinHandle<()>>> {
+    static ENGINE: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+    ENGINE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// How long a new engine waits for a stopped one to free its model.
+#[cfg(feature = "inproc")]
+const PREVIOUS_ENGINE_GRACE: Duration = Duration::from_secs(30);
+
+/// Waits for the previous in-process engine to end (it was told to stop);
+/// an engine still busy after the grace refuses the new one (the job tries
+/// again later) rather than holding two models at once.
+#[cfg(feature = "inproc")]
+fn wait_for_previous_engine() -> Result<()> {
+    let deadline = Instant::now() + PREVIOUS_ENGINE_GRACE;
+    loop {
+        let mut slot = previous_engine();
+        match slot.take() {
+            None => return Ok(()),
+            Some(h) if h.is_finished() => {
+                let _ = h.join();
+                return Ok(());
+            }
+            Some(h) => *slot = Some(h),
+        }
+        drop(slot);
+        if Instant::now() >= deadline {
+            return Err(LlmError::Worker(
+                "the previous notes engine is still stopping".into(),
+            ));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// `F_SETNOSIGPIPE` on Apple systems (elsewhere the Rust runtime already
+/// ignores SIGPIPE in this crate's users).
+#[cfg(feature = "inproc")]
+fn no_sigpipe(fd: &impl std::os::fd::AsRawFd) {
+    // <sys/fcntl.h> on macOS and iOS; not in the libc crate.
+    #[cfg(target_vendor = "apple")]
+    const F_SETNOSIGPIPE: libc::c_int = 73;
+    #[cfg(target_vendor = "apple")]
+    // SAFETY: a flag on a pipe end we own.
+    unsafe {
+        libc::fcntl(fd.as_raw_fd(), F_SETNOSIGPIPE, 1);
+    }
+    #[cfg(not(target_vendor = "apple"))]
+    let _ = fd;
 }
 
 /// Where the worker binary is: `$GHI_LLM_WORKER`, else `ghi-llm-worker` next to

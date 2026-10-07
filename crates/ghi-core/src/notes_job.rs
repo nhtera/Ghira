@@ -430,15 +430,49 @@ impl JobHandler for NotesJob {
             opts.pinned = kept_texts(ctx.store, meeting)?;
             let bytes: usize = segs.iter().map(|s| s.text.len()).sum();
             let mut llm = (self.llm)(bytes)?;
-            let run = notes::generate(llm.as_mut(), &t, &opts).map_err(|e| e.to_string())?;
-            // The final notes also expand the user's own lines; a failure
-            // there leaves them as typed (the notes still count).
-            let extra = if self.version >= 2 {
-                ctx.progress(Some(Stage::WritingNotes), 0.8);
-                enhance_user_notes(ctx.store, meeting, llm.as_mut(), &t, &segs, opts.lang)
-                    .or_else(|_| previous_enhanced(ctx.store, meeting))?
-            } else {
-                Vec::new()
+            // A model that can be stopped mid-answer (the phone's in-process
+            // engine) is stopped as soon as a recording starts or the app
+            // leaves the screen (iOS forbids the GPU in the background): the
+            // run then yields and starts over later, nothing half-written kept.
+            let stop = llm.stopper();
+            let stop_requested = ctx.stop_signal();
+            let finished = std::sync::atomic::AtomicBool::new(false);
+            let written = std::thread::scope(|scope| {
+                if let Some(stop) = &stop {
+                    scope.spawn(|| {
+                        while !finished.load(std::sync::atomic::Ordering::Relaxed) {
+                            if stop_requested() {
+                                stop();
+                                return;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        }
+                    });
+                }
+                let written = (|| -> Result<_, String> {
+                    let run =
+                        notes::generate(llm.as_mut(), &t, &opts).map_err(|e| e.to_string())?;
+                    // The final notes also expand the user's own lines; a failure
+                    // there leaves them as typed (the notes still count).
+                    let extra = if self.version >= 2 {
+                        ctx.progress(Some(Stage::WritingNotes), 0.8);
+                        enhance_user_notes(ctx.store, meeting, llm.as_mut(), &t, &segs, opts.lang)
+                            .or_else(|_| previous_enhanced(ctx.store, meeting))?
+                    } else {
+                        Vec::new()
+                    };
+                    Ok((run, extra))
+                })();
+                finished.store(true, std::sync::atomic::Ordering::Relaxed);
+                written
+            });
+            let (run, extra) = match written {
+                Ok(w) => w,
+                // Stopped (or failed) while asked to stop: try again later.
+                Err(_) if stop.is_some() && stop_requested() => {
+                    return Ok(Outcome::Yield(ctx.job.payload.clone()));
+                }
+                Err(e) => return Err(e),
             };
             let model = llm.engine().name;
             drop(llm); // frees the model before anything else loads

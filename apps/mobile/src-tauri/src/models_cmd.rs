@@ -44,6 +44,46 @@ pub fn notes_model() -> Option<(String, MobileModelRole)> {
     })
 }
 
+/// Deletes the notes model (and a partial download), calls off the notes jobs
+/// still waiting for it and settles their meetings; refused while one runs.
+pub fn remove_notes_model(store: &ghi_store::store::Store, models: &Path) -> Result<(), String> {
+    use ghi_store::jobs::JobState;
+    let err = |e: ghi_store::StoreError| e.to_string();
+    let notes: Vec<_> = store
+        .active_jobs()
+        .map_err(err)?
+        .into_iter()
+        .filter(|j| j.kind == ghi_core::notes_job::NOTES_FINAL_JOB)
+        .collect();
+    if notes.iter().any(|j| j.state == JobState::Running) {
+        return Err("notes are being written".into());
+    }
+    let m = ghi_models::find(ghi_app::core::preset().llm_id).ok_or("unknown model")?;
+    let path = ghi_models::path_in(models, &m);
+    for p in [part_path(&path), path] {
+        match std::fs::remove_file(&p) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    for j in notes {
+        store.cancel_job(j.id).map_err(err)?;
+        let Some(meeting) = j.meeting_gid else {
+            continue;
+        };
+        let busy = store
+            .jobs_for_meeting(&meeting)
+            .map_err(err)?
+            .iter()
+            .any(|o| matches!(o.state, JobState::Queued | JobState::Running));
+        if !busy {
+            store.set_meeting_status(&meeting, "ready").map_err(err)?;
+        }
+    }
+    Ok(())
+}
+
 /// What the download thread last said about a model.
 #[derive(Clone, Copy)]
 struct Live {
@@ -557,6 +597,42 @@ mod tests {
         );
         assert_eq!(ev.last(), Some(&MobileModelState::Failed));
         assert!(t.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn removing_the_notes_model_calls_off_waiting_notes() {
+        use ghi_store::jobs::JobState;
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ghi_store::store::Store::open(
+            &tmp.path().join("store"),
+            std::sync::Arc::new(ghi_store::keys::MemoryKeyStore::default()),
+            ghi_store::keys::Protection::default(),
+        )
+        .unwrap();
+        let models = tmp.path().join("models");
+        std::fs::create_dir_all(&models).unwrap();
+        let m = ghi_models::find("qwen3-4b").unwrap();
+        let file = ghi_models::path_in(&models, &m);
+        std::fs::write(&file, b"model").unwrap();
+        let meeting = store
+            .create_meeting(ghi_store::store::NewMeeting::default())
+            .unwrap()
+            .gid;
+        let job = store
+            .enqueue_job(
+                Some(&meeting),
+                ghi_core::notes_job::NOTES_FINAL_JOB,
+                ghi_core::session::JOB_PAYLOAD_VERSION,
+                &serde_json::json!({}),
+            )
+            .unwrap();
+        store.set_meeting_status(&meeting, "processing").unwrap();
+        remove_notes_model(&store, &models).unwrap();
+        assert!(!file.exists());
+        assert_eq!(store.job(job).unwrap().state, JobState::Cancelled);
+        assert_eq!(store.get_meeting(&meeting).unwrap().status, "ready");
+        // Gone already: removing again is fine.
+        remove_notes_model(&store, &models).unwrap();
     }
 
     #[test]

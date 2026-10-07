@@ -47,13 +47,24 @@ export function NotesPanel({
   const [failed, setFailed] = useState<string | null>(null);
   const groups = groupBlocks(notes.blocks);
   if (groups.length === 0) {
+    // Nothing until this phone's notes model is known (no cloud copy flashing by).
+    if (local.item === undefined && !local.error) return <div data-state="no-notes" className="min-h-40" />;
     const writing = job?.kind === "notes_final" || job?.kind === "notes_live";
-    // Which empty state: being written, can write here, can after a download, or cloud only.
-    const state = writing ? "writing" : local.ready ? "local" : local.item ? "download" : "cloud";
+    // Which empty state: being written, written after the transcript, can write
+    // here, can after a download, or cloud only.
+    const state = writing
+      ? "writing"
+      : job?.kind === "final_pass" && local.ready
+        ? "after"
+        : local.ready
+          ? "local"
+          : local.item
+            ? "download"
+            : "cloud";
     const write = async () => {
       setFailed(null);
       const r = await ipc.commands
-        .regenerateNotes(meeting, null, "meeting")
+        .writeNotes(meeting)
         .catch((e: unknown) => ({ status: "error" as const, error: String(e) }));
       if (r.status === "error") return setFailed(r.error);
       // The reloaded meeting carries the notes job: the "writing" state follows it.
@@ -85,7 +96,7 @@ export function NotesPanel({
             {t("mobile.detail.notesEmpty.local.action")}
           </Button>
         )}
-        {state === "download" && (
+        {(state === "download" || (state === "writing" && job?.waitingForModels && local.item && !local.ready)) && (
           <Button icon="download" className="min-h-ios-target px-5" onClick={() => go("/settings/models")}>
             {t("mobile.detail.notesEmpty.download.action")}
           </Button>

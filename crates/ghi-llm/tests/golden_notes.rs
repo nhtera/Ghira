@@ -43,6 +43,9 @@ fn golden(name: &str) -> Transcript {
 
 /// The model, or `None` (test skipped) when it or the worker is missing.
 fn model() -> Option<LocalLlm> {
+    // The phone's way: the engine in this process (the default only on iOS).
+    #[cfg(feature = "inproc")]
+    ghi_llm::sidecar::use_in_process(true);
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let m = ghi_models::find(MODEL).unwrap();
     let dir = std::env::var_os("GHI_MODELS_DIR").map_or(root.join("models"), PathBuf::from);

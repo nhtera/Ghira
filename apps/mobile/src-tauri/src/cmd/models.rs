@@ -153,6 +153,10 @@ pub async fn models_download_notes(
     tauri::async_runtime::spawn_blocking(move || {
         let model =
             crate::models_cmd::notes_model().ok_or("this phone cannot write notes itself")?;
+        // One download at a time (the speech models may be waiting for Wi-Fi).
+        if downloads.running() {
+            return Err("busy".into());
+        }
         let strict = core
             .store_even_locked()?
             .get_setting(ghi_app::system::SETTINGS_KEY)
@@ -175,32 +179,49 @@ pub async fn models_download_notes(
 }
 
 /// Removes the notes model to free its 2.5 GB (notes then come from the
-/// cloud or the computer again). Refused while notes are being written.
+/// cloud or the computer again). Refused while notes are being written or a
+/// download runs; notes still waiting to be written are called off, and their
+/// meetings settle (they would wait for the model forever).
 #[tauri::command]
 #[specta::specta]
-pub async fn models_remove_notes(core: ghi_app::CoreState<'_>) -> Result<(), String> {
+pub async fn models_remove_notes(
+    core: ghi_app::CoreState<'_>,
+    downloads: tauri::State<'_, std::sync::Arc<crate::models_cmd::Downloads>>,
+) -> Result<(), String> {
+    let downloads = downloads.inner().clone();
     ghi_app::blocking(&core, move |c| {
+        if downloads.running() {
+            return Err("busy".into());
+        }
         let store = c.store_even_locked()?;
-        if store
-            .active_jobs()
-            .map_err(|e| e.to_string())?
-            .iter()
-            .any(|j| {
-                j.kind == ghi_core::notes_job::NOTES_FINAL_JOB
-                    && j.state == ghi_store::jobs::JobState::Running
-            })
-        {
-            return Err("notes are being written".into());
+        crate::models_cmd::remove_notes_model(&store, &c.models())
+    })
+    .await
+}
+
+/// Writes (or rewrites) a meeting's notes on this phone. Only a phone that
+/// can run the notes model and has it installed: anywhere else the job would
+/// wait for a model that never comes and leave the meeting "processing".
+#[tauri::command]
+#[specta::specta]
+pub async fn write_notes(core: ghi_app::CoreState<'_>, meeting: String) -> Result<(), String> {
+    ghi_app::blocking(&core, move |c| {
+        if crate::models_cmd::notes_model().is_none() {
+            return Err("this phone cannot write notes itself".into());
         }
-        let m = ghi_models::find(ghi_app::core::preset().llm_id).ok_or("unknown model")?;
-        let path = ghi_models::path_in(&c.models(), &m);
-        for p in [ghi_net::fetch::part_path(&path), path] {
-            match std::fs::remove_file(&p) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e.to_string()),
-            }
+        if !ghi_app::core::llm_ready(&c.models()) {
+            return Err("noModel".into());
         }
+        let store = c.store()?;
+        let speech_waits = !ghi_app::core::speech_ready(&c.models());
+        ghi_app::detail::queue_notes_again(
+            &store,
+            &meeting,
+            None,
+            ghi_app::detail::NotesLanguage::Meeting,
+            speech_waits,
+        )?;
+        c.notify_jobs();
         Ok(())
     })
     .await

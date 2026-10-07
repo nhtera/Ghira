@@ -431,7 +431,7 @@ impl JobHandler for FinalPassJob {
     }
 
     fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
-        self.run_with(ctx, true)
+        self.run_with(ctx, &|| true)
     }
 }
 
@@ -460,7 +460,7 @@ impl JobHandler for FinalPassNoNotes {
     }
 
     fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
-        self.0.run_with(ctx, false)
+        self.0.run_with(ctx, &|| false)
     }
 }
 
@@ -490,13 +490,14 @@ impl JobHandler for FinalPassNotesIf {
     }
 
     fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
-        self.job.run_with(ctx, (self.notes)())
+        self.job.run_with(ctx, &*self.notes)
     }
 }
 
 impl FinalPassJob {
-    /// The pass; `notes` queues `notes_final` once the transcript is stored.
-    fn run_with(&self, ctx: &JobCtx, notes: bool) -> Result<Outcome, String> {
+    /// The pass; `notes()`, asked when the transcript is stored, says whether
+    /// `notes_final` follows (a phone's notes model may have gone meanwhile).
+    fn run_with(&self, ctx: &JobCtx, notes: &dyn Fn() -> bool) -> Result<Outcome, String> {
         // What the job has saved (from an earlier run's payload to begin
         // with); a yield hands it back so the runner can tell progress from
         // spinning.
@@ -509,7 +510,7 @@ impl FinalPassJob {
         // A sensitive meeting keeps no audio: there is nothing to re-read. It
         // settles like a meeting without audio, so it never stays "processing".
         if m.sensitive {
-            if notes {
+            if notes() {
                 queue_notes(store, &meeting, ctx.lease().as_ref())?;
             } else {
                 settle_ready(ctx, &meeting).map_err(err)?;
@@ -538,7 +539,7 @@ impl FinalPassJob {
             pcm.insert(track, audio);
         }
         if pcm.is_empty() {
-            if notes {
+            if notes() {
                 queue_notes(store, &meeting, ctx.lease().as_ref())?;
             } else {
                 settle_ready(ctx, &meeting).map_err(err)?;
@@ -998,7 +999,7 @@ impl FinalPassJob {
         if let Err(e) = store.clear_pass_checkpoints(&meeting) {
             log::warn!("final pass checkpoints not cleared: {e}");
         }
-        if notes {
+        if notes() {
             queue_notes(store, &meeting, ctx.lease().as_ref())?;
         } else {
             // No notes job follows to settle the meeting.

@@ -197,7 +197,12 @@ Notes on the phone (2026-10-08, reverses phase 16 D5): an 8 GB live iPhone (`tie
 `DeviceTier.notes`) writes notes with the same Qwen3-4B, in process, once the optional notes model is
 downloaded (Settings → Models, `models_download_notes`/`models_remove_notes`); the phone's final pass
 (`FinalPassNotesIf`) then queues `notes_final`, and the Notes tab offers "Write notes" (`regenerate_notes`).
-Context capped at 12k tokens on iOS (`LLM_MAX_CTX`); jobs never run in the background or while recording.
+Context capped at 12k tokens on iOS (`LLM_MAX_CTX`). A recording or the app leaving the screen stops the
+engine mid-answer (`Llm::stopper`, `JobCtx::stop_signal`; the job yields and starts over); one engine at a time
+(`sidecar` waits for a stopped one); its pipes never raise SIGPIPE. The phone writes notes through its own
+`write_notes` (capability-checked), not `regenerate_notes`. Elsewhere `start()` keeps the worker process
+even in `--workspace` builds (`use_in_process` for host tests); release `panic = "abort"`, so a llama.cpp
+abort in process ends the app (accepted).
 Device check: `TEST_RUNNER_GHI_LONG_MEETING=1 GHI_REC_SECONDS=<s> GHI_FAKE_MIC_PATH=<wav> ... run.sh
 -only-testing:GhiUITests/ReviewScreensTests/testLongMeetingNotesOnThePhone` (GHI_KEYSTORE=file on a phone
 whose data a test-hooks build made).

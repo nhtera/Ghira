@@ -21,6 +21,10 @@
       "locked": "Unlock to see this meeting.",
       "notFound": "This meeting isn’t on this phone any more.",
       "notesEmpty": {
+        "after": {
+          "body": "The notes are written on this phone once the transcript is done.",
+          "title": "No notes yet"
+        },
         "cloud": {
           "body": "This phone records and transcribes. For notes, you can send the transcript text (never the audio) to a cloud model you choose.",
           "title": "Notes: not generated on this phone"

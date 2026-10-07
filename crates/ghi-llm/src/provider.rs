@@ -82,4 +82,9 @@ pub trait Llm {
     fn count_tokens(&mut self, text: &str) -> Result<u32> {
         Ok(crate::run::estimate_tokens(text))
     }
+    /// Stops a request in flight from another thread (it then fails), when
+    /// the model can be stopped that way: the phone's in-process engine.
+    fn stopper(&self) -> Option<std::sync::Arc<dyn Fn() + Send + Sync>> {
+        None
+    }
 }

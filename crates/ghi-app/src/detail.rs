@@ -750,57 +750,82 @@ pub async fn regenerate_notes(
 ) -> Result<bool, String> {
     blocking(&core, move |c| {
         let store = c.store()?;
-        let m = store.get_meeting(&meeting).map_err(err)?;
-        match m.status.as_str() {
-            "recording" => return Err("the meeting is still recording".into()),
-            ghi_core::import::IMPORTING => return Err("the file is still being imported".into()),
-            _ => {}
-        }
-        if let Some(t) = &template {
-            ghi_llm::template::builtin(t).map_err(|e| e.to_string())?;
-        }
-        let kinds = [
-            ghi_core::session::NOTES_LIVE_JOB,
-            ghi_core::session::FINAL_PASS_JOB,
-            ghi_core::notes_job::NOTES_FINAL_JOB,
-        ];
-        for k in kinds {
-            if store.active_job(&meeting, k).map_err(err)?.is_some() {
-                return Err(if k == ghi_core::session::FINAL_PASS_JOB
-                    && !crate::core::speech_ready(&c.models())
-                {
-                    "the transcript waits for the speech models; the notes follow it"
-                } else {
-                    "the notes are already being written"
-                }
-                .into());
-            }
-        }
-        if template.is_some() {
-            store
-                .set_meeting_template(&meeting, template.as_deref())
-                .map_err(err)?;
-        }
-        let lang = match language {
-            NotesLanguage::Meeting => "meeting",
-            NotesLanguage::En => "en",
-            NotesLanguage::Vi => "vi",
-        };
-        store
-            .enqueue_job(
-                Some(&meeting),
-                ghi_core::notes_job::NOTES_FINAL_JOB,
-                ghi_core::session::JOB_PAYLOAD_VERSION,
-                &serde_json::json!({ "template": template, "lang": lang }),
-            )
-            .map_err(err)?;
-        store
-            .set_meeting_status(&meeting, "processing")
-            .map_err(err)?;
+        let speech_waits = !crate::core::speech_ready(&c.models());
+        queue_notes_again(
+            &store,
+            &meeting,
+            template.as_deref(),
+            language,
+            speech_waits,
+        )?;
         c.notify_jobs();
         Ok(!crate::core::llm_ready(&c.models()))
     })
     .await
+}
+
+/// Queues the notes to be written again (the checks and the job behind
+/// [`regenerate_notes`]; the phone's `write_notes` calls it once it knows the
+/// phone can run the notes model). `speech_waits`: the speech models are
+/// missing, which an active final pass is waiting for.
+pub fn queue_notes_again(
+    store: &Store,
+    meeting: &str,
+    template: Option<&str>,
+    language: NotesLanguage,
+    speech_waits: bool,
+) -> Result<(), String> {
+    let m = store.get_meeting(meeting).map_err(err)?;
+    match m.status.as_str() {
+        "recording" => return Err("the meeting is still recording".into()),
+        ghi_core::import::IMPORTING => return Err("the file is still being imported".into()),
+        _ => {}
+    }
+    if let Some(t) = template {
+        ghi_llm::template::builtin(t).map_err(|e| e.to_string())?;
+    }
+    // Notes written meanwhile on the computer would race these.
+    if crate::sync_service::spoke::meeting_sync_view(store, meeting)
+        .lease_open()
+        .is_some()
+    {
+        return Err("the meeting is being processed on the computer".into());
+    }
+    let kinds = [
+        ghi_core::session::NOTES_LIVE_JOB,
+        ghi_core::session::FINAL_PASS_JOB,
+        ghi_core::notes_job::NOTES_FINAL_JOB,
+    ];
+    for k in kinds {
+        if store.active_job(meeting, k).map_err(err)?.is_some() {
+            return Err(if k == ghi_core::session::FINAL_PASS_JOB && speech_waits {
+                "the transcript waits for the speech models; the notes follow it"
+            } else {
+                "the notes are already being written"
+            }
+            .into());
+        }
+    }
+    if template.is_some() {
+        store.set_meeting_template(meeting, template).map_err(err)?;
+    }
+    let lang = match language {
+        NotesLanguage::Meeting => "meeting",
+        NotesLanguage::En => "en",
+        NotesLanguage::Vi => "vi",
+    };
+    store
+        .enqueue_job(
+            Some(meeting),
+            ghi_core::notes_job::NOTES_FINAL_JOB,
+            ghi_core::session::JOB_PAYLOAD_VERSION,
+            &serde_json::json!({ "template": template, "lang": lang }),
+        )
+        .map_err(err)?;
+    store
+        .set_meeting_status(meeting, "processing")
+        .map_err(err)?;
+    Ok(())
 }
 
 /// The language a meeting is transcribed in.
