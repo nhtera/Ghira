@@ -502,6 +502,11 @@ if (typeof window !== "undefined")
     failSaves: (v: boolean) => (failSaves = v),
     failShare: (v: boolean) => (failShare = v),
     failAudio: (v: boolean) => (failAudio = v),
+    /** The meeting's processing ends (the core's state event follows separately). */
+    finishProcessing: (id: string) => {
+      const m = find(id);
+      if (m) m.detail.status = "ready";
+    },
   };
 
 export const meetingCommands: Partial<Commands> = {

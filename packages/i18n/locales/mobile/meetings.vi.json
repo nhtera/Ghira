@@ -31,12 +31,12 @@
       },
       "retranscribe": {
         "action": "Chép lời lại",
-        "auto": "Tiếng Anh + Tiếng Việt",
         "body": "Bản ghi âm sẽ được chép lời lại. Tên người nói và những dòng bạn đã sửa được giữ lại.",
         "confirm": "Chép lời lại",
+        "hint": "Chọn ngôn ngữ nói và chép lời lại bản ghi âm.",
         "language": "Ngôn ngữ nói",
         "onDevice": "Âm thanh nằm trên {{device}}. Hãy chép lời lại ở đó.",
-        "started": "Đang chép lời lại…",
+        "start": "Bắt đầu",
         "waiting": "Bản ghi âm sẽ được chép lời lại khi các mô hình giọng nói được cài đặt."
       },
       "save": "Lưu",

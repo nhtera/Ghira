@@ -5,7 +5,7 @@
 // speaker-coloured waveform. Privacy and the sync chip sit under the title.
 // The Transcript tab ends with Transcribe again (its sheet picks the language).
 import { formatDate } from "@ghi/i18n";
-import { Button, cn, Icon, NavBar, PhoneButton, PrivacyIndicator, SyncChip, useLargeTitleCollapse } from "@ghi/ui";
+import { Button, cn, Icon, NavBar, PrivacyIndicator, SyncChip, useLargeTitleCollapse } from "@ghi/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -58,7 +58,6 @@ export function MeetingView({
   const [sharing, setSharing] = useState(false);
   const [asking, setAsking] = useState(false);
   const [retranscribing, setRetranscribing] = useState(false);
-  const [retranscribed, setRetranscribed] = useState<"started" | "waiting" | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   // Locking hides the meeting: its sheets close with it.
   useWindowEvent(LOCKED_EVENT, () => {
@@ -287,27 +286,31 @@ export function MeetingView({
             />
           )}
           {tab === "transcript" && !detail.sensitive && (detail.audioAvailable || sync.audioOnDevice) && (
-            <div className="mx-4 mt-2 mb-4 flex flex-col gap-2">
-              <PhoneButton
-                variant="secondary"
+            // Styled like the Notes tab's cloud card: what it does on the left, a compact action on the right.
+            <div className="mx-4 mt-2 mb-4 flex items-center justify-between gap-3 rounded-(--ios-radius-group) bg-surface2 p-3">
+              <div className="min-w-0">
+                <p id="retranscribe-title" className="text-ios-subhead m-0">
+                  {t("mobile.detail.retranscribe.action")}
+                </p>
+                <p role="status" className="text-ios-footnote m-0 text-muted">
+                  {!detail.audioAvailable && sync.device
+                    ? t("mobile.detail.retranscribe.onDevice", { device: sync.device })
+                    : detail.job?.waitingForModels
+                      ? t("mobile.detail.retranscribe.waiting")
+                      : t("mobile.detail.retranscribe.hint")}
+                </p>
+              </div>
+              <Button
                 icon="subtitles"
+                id="retranscribe-start"
+                aria-labelledby="retranscribe-title retranscribe-start"
+                className="min-h-ios-target shrink-0 px-4"
                 // Only with the audio here, and not while the meeting is still being processed.
                 disabled={!detail.audioAvailable || detail.job != null || detail.status === "processing" || detail.status === "recording" || sync.leaseOpen}
-                onClick={() => {
-                  setRetranscribed(null);
-                  setRetranscribing(true);
-                }}
+                onClick={() => setRetranscribing(true)}
               >
-                {t("mobile.detail.retranscribe.action")}
-              </PhoneButton>
-              {!detail.audioAvailable && sync.device && (
-                <p className="text-ios-footnote m-0 text-muted">{t("mobile.detail.retranscribe.onDevice", { device: sync.device })}</p>
-              )}
-              {retranscribed && (
-                <p role="status" className="text-ios-footnote m-0 text-muted">
-                  {retranscribed === "waiting" ? t("mobile.detail.retranscribe.waiting") : t("mobile.detail.retranscribe.started")}
-                </p>
-              )}
+                {t("mobile.detail.retranscribe.start")}
+              </Button>
             </div>
           )}
         </div>
@@ -346,10 +349,8 @@ export function MeetingView({
         open={retranscribing}
         detail={detail}
         onClose={() => setRetranscribing(false)}
-        onStarted={(waiting) => {
-          setRetranscribed(waiting ? "waiting" : "started");
-          m.reload();
-        }}
+        // The status chip and the card's line follow the meeting's job from here.
+        onStarted={m.reload}
       />
       <SensitiveSheet
         open={asking}

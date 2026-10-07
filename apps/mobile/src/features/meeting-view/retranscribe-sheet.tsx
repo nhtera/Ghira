@@ -2,11 +2,15 @@
 // "Transcribe again" (Transcript tab): the final pass runs again on the audio
 // kept on this phone, in the spoken language chosen here (the paired computer
 // may take it, as after any recording). Names and edited lines stay.
-import { Icon, PhoneButton, Sheet, cn } from "@ghi/ui";
+// Laid out like the other confirm sheets (consent): icon, title, description,
+// the choice, then the action and Cancel in the footer. The language choice is
+// the import sheet's (Auto / EN / VI).
+import { PhoneButton, Sheet } from "@ghi/ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingDetail, TranscriptLanguage } from "../../bindings";
 import { ipc } from "../../ipc";
+import { ChoiceGroup } from "../import-inbox/choice-group";
 
 /** What the meeting was transcribed in, as the sheet's first choice. */
 export function initialLanguage(detail: Pick<MeetingDetail, "language">): TranscriptLanguage {
@@ -27,12 +31,6 @@ export function RetranscribeSheet({ open, detail, onClose, onStarted }: Retransc
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const options: { value: TranscriptLanguage; label: string }[] = [
-    { value: "auto", label: t("mobile.detail.retranscribe.auto") },
-    { value: "en", label: t("onboarding.languages.english") },
-    { value: "vi", label: t("onboarding.languages.vietnamese") },
-  ];
-
   const close = () => {
     setError(null);
     onClose();
@@ -51,34 +49,40 @@ export function RetranscribeSheet({ open, detail, onClose, onStarted }: Retransc
     <Sheet
       open={open}
       onOpenChange={(o) => !o && close()}
+      icon="subtitles"
       title={t("mobile.detail.retranscribe.action")}
+      description={t("mobile.detail.retranscribe.body")}
       closeLabel={t("mobile.sheet.close")}
       handleLabel={t("mobile.sheet.handle")}
+      footer={
+        <>
+          <PhoneButton disabled={busy} aria-busy={busy} onClick={() => void confirm()}>
+            {t("mobile.detail.retranscribe.confirm")}
+          </PhoneButton>
+          <PhoneButton variant="ghost" size="compact" onClick={close}>
+            {t("mobile.common.cancel")}
+          </PhoneButton>
+        </>
+      }
     >
-      <p className="text-ios-subhead m-0 mb-3 text-muted">{t("mobile.detail.retranscribe.body")}</p>
-      <div role="radiogroup" aria-label={t("mobile.detail.retranscribe.language")} className="mb-4 flex flex-col overflow-hidden rounded-(--ios-radius-group) bg-surface2">
-        {options.map((o, i) => (
-          <button
-            key={o.value}
-            type="button"
-            role="radio"
-            aria-checked={language === o.value}
-            onClick={() => setLanguage(o.value)}
-            className={cn("text-ios-body min-h-ios-target flex items-center justify-between px-4 text-left", i > 0 && "border-t border-line")}
-          >
-            {o.label}
-            {language === o.value && <Icon name="check" size={20} className="text-accent" />}
-          </button>
-        ))}
+      <div className="flex flex-col gap-2">
+        <span className="text-ios-footnote font-semibold text-muted">{t("mobile.detail.retranscribe.language")}</span>
+        <ChoiceGroup
+          label={t("mobile.detail.retranscribe.language")}
+          value={language}
+          onChange={setLanguage}
+          options={[
+            { value: "auto", label: t("mobile.import.lang.auto") },
+            { value: "en", label: t("mobile.import.lang.en") },
+            { value: "vi", label: t("mobile.import.lang.vi") },
+          ]}
+        />
+        {error && (
+          <p role="alert" className="text-ios-footnote m-0 text-warn">
+            {t("system.commandFailed", { message: error })}
+          </p>
+        )}
       </div>
-      {error && (
-        <p role="alert" className="text-ios-footnote m-0 mb-3 text-warn">
-          {t("system.commandFailed", { message: error })}
-        </p>
-      )}
-      <PhoneButton variant="primary" icon="subtitles" disabled={busy} onClick={() => void confirm()}>
-        {t("mobile.detail.retranscribe.confirm")}
-      </PhoneButton>
     </Sheet>
   );
 }
