@@ -128,6 +128,9 @@ pub struct Options {
     pub pinned: Vec<String>,
     pub max_output_tokens: u32,
     pub chunk_minutes: u32,
+    /// Compact notes ([`schema::compact`]): no quotes or topics, fewer items
+    /// per list (a phone, where every output token costs time and heat).
+    pub compact: bool,
 }
 
 impl Options {
@@ -138,6 +141,7 @@ impl Options {
             pinned: Vec::new(),
             max_output_tokens: 2048,
             chunk_minutes: 10,
+            compact: false,
         }
     }
 }
@@ -197,6 +201,16 @@ fn transcript_budget(llm: &dyn Llm, max_output: u32) -> u32 {
         .max(512)
 }
 
+/// The notes schema for `opts` (compact on request).
+fn notes_schema(opts: &Options, shape: &Shape) -> serde_json::Value {
+    let full = schema::notes(&opts.template, shape);
+    if opts.compact {
+        schema::compact(full, shape.dialect)
+    } else {
+        full
+    }
+}
+
 /// The single-call notes request over `segments` (also what a cloud provider
 /// is sent). Returns the request and the ids it may cite.
 pub fn request(
@@ -222,7 +236,7 @@ pub fn request(
             Message::system(prompt::notes_system(opts.lang)),
             Message::user(user),
         ],
-        schema: Some(schema::notes(&opts.template, &shape)),
+        schema: Some(notes_schema(opts, &shape)),
         max_tokens: opts.max_output_tokens,
         temperature: 0.3,
     };
@@ -603,7 +617,7 @@ fn map_reduce(
             Message::system(prompt::notes_system(opts.lang)),
             Message::user(user),
         ],
-        schema: Some(schema::notes(&opts.template, &shape)),
+        schema: Some(notes_schema(opts, &shape)),
         max_tokens: opts.max_output_tokens,
         temperature: 0.3,
     };

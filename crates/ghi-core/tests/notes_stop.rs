@@ -8,8 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use ghi_core::events::bus;
+use ghi_core::jobs::JobHandler;
 use ghi_core::jobs::{JobRunner, Outcome, always_ready};
-use ghi_core::notes_job::{NOTES_FINAL_JOB, NotesJob};
+use ghi_core::notes_job::{NOTES_FINAL_JOB, NotesJob, PhoneNotesJob};
 use ghi_core::session::{JOB_PAYLOAD_VERSION, RecordingHooks};
 use ghi_llm::{Completion, EngineInfo, Llm, LlmError, Request};
 use ghi_store::jobs::JobState;
@@ -47,14 +48,21 @@ impl Llm for Stoppable {
     }
 }
 
-fn setup() -> (
+type Setup = (
     Arc<Store>,
     Arc<JobRunner>,
     i64,
     Arc<AtomicBool>,
     Arc<AtomicBool>,
     tempfile::TempDir,
-) {
+);
+
+fn setup() -> Setup {
+    setup_with(None)
+}
+
+/// With `hot`, the phone's job (compact notes, paused while hot).
+fn setup_with(hot: Option<Arc<AtomicBool>>) -> Setup {
     let tmp = tempfile::tempdir().unwrap();
     let store = Arc::new(
         Store::open(
@@ -92,24 +100,37 @@ fn setup() -> (
     let runner = JobRunner::new(
         store.clone(),
         tx,
-        vec![Arc::new(NotesJob {
-            kind: NOTES_FINAL_JOB,
-            version: 2,
-            template: ghi_llm::template::builtin("general").unwrap(),
-            llm: Arc::new(move |_| {
-                Ok(Box::new(Stoppable {
-                    stop: s.clone(),
-                    asked: a.clone(),
-                }) as Box<dyn Llm + Send>)
-            }),
-            ready: always_ready(),
-        })],
+        vec![{
+            let job = NotesJob {
+                kind: NOTES_FINAL_JOB,
+                version: 2,
+                template: ghi_llm::template::builtin("general").unwrap(),
+                llm: Arc::new(move |_| {
+                    Ok(Box::new(Stoppable {
+                        stop: s.clone(),
+                        asked: a.clone(),
+                    }) as Box<dyn Llm + Send>)
+                }),
+                ready: always_ready(),
+            };
+            match hot {
+                Some(hot) => Arc::new(PhoneNotesJob {
+                    job,
+                    hot: Arc::new(move || hot.load(Ordering::SeqCst)),
+                }) as Arc<dyn JobHandler>,
+                None => Arc::new(job),
+            }
+        }],
     );
     (store, runner, id, stop, asked, tmp)
 }
 
 fn stopped_by(interrupt: impl Fn(&JobRunner)) {
-    let (store, runner, id, stop, asked, _tmp) = setup();
+    stopped_in(setup(), interrupt);
+}
+
+fn stopped_in(setup: Setup, interrupt: impl Fn(&JobRunner)) {
+    let (store, runner, id, stop, asked, _tmp) = setup;
     let worker = {
         let runner = runner.clone();
         std::thread::spawn(move || runner.run_one())
@@ -146,4 +167,68 @@ fn a_recording_stops_the_notes_engine_and_the_job_waits() {
 #[test]
 fn leaving_the_screen_stops_the_notes_engine_and_the_job_waits() {
     stopped_by(|r| r.app_inactive());
+}
+
+#[test]
+fn a_hot_phone_pauses_its_notes_and_writes_them_once_cool() {
+    let hot = Arc::new(AtomicBool::new(false));
+    // Heats up mid-answer: stopped, queued again.
+    stopped_in(setup_with(Some(hot.clone())), |_| {
+        hot.store(true, Ordering::SeqCst)
+    });
+    // While hot nothing starts.
+    let (_store, runner, _id, stop, _asked, _tmp) = setup_with(Some(hot.clone()));
+    assert!(runner.run_one().is_none(), "a hot phone starts no notes");
+    hot.store(false, Ordering::SeqCst);
+    stop.store(true, Ordering::SeqCst); // the scripted model answers at once
+
+    assert!(runner.run_one().is_some(), "cool again: the notes run");
+}
+
+/// The phone asks for compact notes: no quotes or topics in its schema.
+#[test]
+fn the_phone_writes_compact_notes() {
+    struct Schema(Arc<std::sync::Mutex<Option<serde_json::Value>>>);
+    impl Llm for Schema {
+        fn engine(&self) -> EngineInfo {
+            EngineInfo {
+                name: "schema".into(),
+                version: "1".into(),
+            }
+        }
+        fn context_tokens(&self) -> u32 {
+            16_384
+        }
+        fn complete(&mut self, req: &Request) -> ghi_llm::Result<Completion> {
+            *self.0.lock().unwrap() = req.schema.clone();
+            Ok(Completion {
+                text: r#"{"tldr":[{"text":"Chốt lịch beta","cite":[0]}],"decisions":[],"action_items":[],"open_questions":[],"key_quotes":[],"topics":[]}"#.into(),
+                tokens_in: 10,
+                tokens_out: 5,
+                truncated: false,
+            })
+        }
+    }
+    let (store, _runner, _id, _stop, _asked, _tmp) = setup();
+    let seen = Arc::new(std::sync::Mutex::new(None));
+    let s = seen.clone();
+    let (tx, _rx) = bus();
+    let runner = JobRunner::new(
+        store.clone(),
+        tx,
+        vec![Arc::new(PhoneNotesJob {
+            job: NotesJob {
+                kind: NOTES_FINAL_JOB,
+                version: 2,
+                template: ghi_llm::template::builtin("general").unwrap(),
+                llm: Arc::new(move |_| Ok(Box::new(Schema(s.clone())) as Box<dyn Llm + Send>)),
+                ready: always_ready(),
+            },
+            hot: Arc::new(|| false),
+        })],
+    );
+    assert_eq!(runner.run_pending(), 1);
+    let schema = seen.lock().unwrap().clone().expect("asked with a schema");
+    assert_eq!(schema["properties"]["key_quotes"]["maxItems"], 0);
+    assert_eq!(schema["properties"]["topics"]["maxItems"], 0);
 }

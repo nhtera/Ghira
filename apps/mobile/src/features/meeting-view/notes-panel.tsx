@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import type { Citation, MeetingJob, MeetingNotes } from "../../bindings";
 import { ipc } from "../../ipc";
 import { useNotesModel } from "../models/use-notes-model";
+import { usePhoneHeat } from "../models/use-phone-heat";
 import { useGo } from "../settings/go";
 import { openCloudSheet } from "./handoff";
 import { useCloudOffered } from "../settings/use-cloud-offered";
@@ -44,6 +45,8 @@ export function NotesPanel({
   // The cloud entry only exists once the user offered cloud notes in Settings.
   const cloudOffered = useCloudOffered();
   const local = useNotesModel();
+  // Notes written here pause while the phone is hot (thermal serious or worse).
+  const hot = usePhoneHeat() >= 2;
   const [failed, setFailed] = useState<string | null>(null);
   const groups = groupBlocks(notes.blocks);
   if (groups.length === 0) {
@@ -83,7 +86,9 @@ export function NotesPanel({
         <p role={state === "writing" ? "status" : undefined} className="text-ios-subhead m-0 max-w-sm text-muted">
           {state === "writing" && job?.waitingForModels
             ? t("mobile.detail.notesEmpty.writing.waiting")
-            : t(`mobile.detail.notesEmpty.${state}.body`)}
+            : state === "writing" && hot
+              ? t("mobile.detail.notesEmpty.writing.cooling")
+              : t(`mobile.detail.notesEmpty.${state}.body`)}
         </p>
         {state === "local" && (
           <Button

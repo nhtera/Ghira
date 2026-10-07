@@ -214,6 +214,11 @@ test.describe("meeting view", () => {
     await expectAccessible(page);
     await page.getByRole("button", { name: "Write notes" }).click();
     await expect(page.locator('[data-notes-state="writing"]').getByRole("status")).toHaveText(/being written on this phone/);
+    // The phone gets hot: the notes pause and say so.
+    await page.evaluate(() => window.__ghiMock!.simulateMobileEvent({ type: "thermal", level: 2 }));
+    await expect(page.locator('[data-notes-state="writing"]').getByRole("status")).toHaveText(
+      "Paused while the phone cools down. The notes continue on their own.",
+    );
   });
 
   test("without the notes model the empty notes point to its download", async ({ page }) => {

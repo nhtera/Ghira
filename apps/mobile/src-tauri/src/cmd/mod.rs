@@ -57,6 +57,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             lifecycle::app_version,
             lifecycle::lifecycle_state,
             lifecycle::device_tier,
+            lifecycle::thermal_level,
             lifecycle::open_app_settings,
             models::models_status,
             models::models_download,

@@ -43,6 +43,8 @@ export interface GhiRecordMock {
   onCellular: boolean;
   /** The notes model: `none` on a phone that cannot write notes (the default), else its state. */
   notesModel: "none" | "missing" | "ready";
+  /** The phone's thermal state (0 nominal .. 3 critical). */
+  heat: number;
   /** `recordStart` fails with this message. */
   failStart: string | null;
   /** The snapshot gives `reason` whatever the session is doing (events alone drive the phase in tests). */
@@ -106,6 +108,7 @@ const ORDER: OnboardingStep[] = ["languages", "micPriming", "consent", "pair", "
 
 const defaults: GhiRecordMock = {
   notesModel: "none",
+  heat: 0,
   mic: "notDetermined",
   failStart: null,
   reason: "deviceTier",
@@ -396,6 +399,7 @@ export const recordCommands: Partial<Commands> = {
   },
   modelsCancel: async () => ok(null),
   notesModelStatus: async () => ok(notesModelItem()),
+  thermalLevel: async () => hooks.heat,
   modelsDownloadNotes: async (wifiOnly) => {
     hooks.log.push(`modelsDownloadNotes:${wifiOnly}`);
     if (hooks.notesModel === "none") return fail("this phone cannot write notes itself");

@@ -41,6 +41,7 @@
         },
         "writing": {
           "body": "Ghi chú và việc cần làm đang được viết trên điện thoại này. Hãy giữ {{app}} mở; việc này mất vài phút.",
+          "cooling": "Tạm dừng để điện thoại nguội bớt. Ghi chú sẽ tự tiếp tục.",
           "title": "Đang viết ghi chú…",
           "waiting": "Ghi chú sẽ được viết khi mô hình ghi chú được tải về."
         }

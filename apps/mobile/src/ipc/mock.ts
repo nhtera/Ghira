@@ -32,7 +32,7 @@ const scripted: Partial<Commands> = {
  * unscripted, they throw like a failed invoke instead of answering a result.
  * mock.test.ts checks this list against bindings.ts.
  */
-export const RAW_COMMANDS = new Set(["appVersion", "cloudModels", "micPermission", "openAppSettings", "requestMicPermission"]);
+export const RAW_COMMANDS = new Set(["appVersion", "cloudModels", "micPermission", "openAppSettings", "requestMicPermission", "thermalLevel"]);
 
 /** Answers scripted commands; the rest fail like the real "not yet" stubs. */
 export function scriptedCommands(script: Partial<Commands>): Commands {

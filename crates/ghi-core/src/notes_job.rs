@@ -375,7 +375,48 @@ impl JobHandler for NotesJob {
     }
 
     fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
-        if ctx.preempted() {
+        self.run_with(ctx, false, &|| false)
+    }
+}
+
+/// [`NotesJob`] on a phone: compact notes (no quotes or topics, fewer items:
+/// about half the output, so half the time and heat), and it waits while the
+/// phone is hot (`hot`: iOS thermal state serious or worse). A run that heats
+/// the phone up stops mid-answer and yields; it starts over once cooled (the
+/// phone wakes the runner on a thermal change).
+pub struct PhoneNotesJob {
+    pub job: NotesJob,
+    pub hot: crate::jobs::Ready,
+}
+
+impl JobHandler for PhoneNotesJob {
+    fn kind(&self) -> &'static str {
+        self.job.kind()
+    }
+
+    fn ready(&self) -> bool {
+        self.job.ready() && !(self.hot)()
+    }
+
+    fn failed(&self, ctx: &JobCtx) {
+        self.job.failed(ctx);
+    }
+
+    fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
+        self.job.run_with(ctx, true, &*self.hot)
+    }
+}
+
+impl NotesJob {
+    /// The run; `compact` writes compact notes, and `pause()` true stops a
+    /// model that can be stopped and yields, like a recording does.
+    fn run_with(
+        &self,
+        ctx: &JobCtx,
+        compact: bool,
+        pause: &(dyn Fn() -> bool + Sync),
+    ) -> Result<Outcome, String> {
+        if ctx.preempted() || pause() {
             return Ok(Outcome::Yield(ctx.job.payload.clone()));
         }
         let meeting = ctx.meeting()?;
@@ -428,6 +469,7 @@ impl JobHandler for NotesJob {
                     .unwrap_or(OutLang::En),
             );
             opts.pinned = kept_texts(ctx.store, meeting)?;
+            opts.compact = compact;
             let bytes: usize = segs.iter().map(|s| s.text.len()).sum();
             let mut llm = (self.llm)(bytes)?;
             // A model that can be stopped mid-answer (the phone's in-process
@@ -435,8 +477,17 @@ impl JobHandler for NotesJob {
             // leaves the screen (iOS forbids the GPU in the background): the
             // run then yields and starts over later, nothing half-written kept.
             let stop = llm.stopper();
-            let stop_requested = ctx.stop_signal();
+            let preempted = ctx.stop_signal();
+            let stop_requested = || preempted() || pause();
             let finished = std::sync::atomic::AtomicBool::new(false);
+            // Ends the watcher however the run ends (a panic included), so the
+            // scope below never waits on it forever.
+            struct Finished<'a>(&'a std::sync::atomic::AtomicBool);
+            impl Drop for Finished<'_> {
+                fn drop(&mut self) {
+                    self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
             let written = std::thread::scope(|scope| {
                 if let Some(stop) = &stop {
                     scope.spawn(|| {
@@ -449,7 +500,8 @@ impl JobHandler for NotesJob {
                         }
                     });
                 }
-                let written = (|| -> Result<_, String> {
+                let _finished = Finished(&finished);
+                (|| -> Result<_, String> {
                     let run =
                         notes::generate(llm.as_mut(), &t, &opts).map_err(|e| e.to_string())?;
                     // The final notes also expand the user's own lines; a failure
@@ -462,9 +514,7 @@ impl JobHandler for NotesJob {
                         Vec::new()
                     };
                     Ok((run, extra))
-                })();
-                finished.store(true, std::sync::atomic::Ordering::Relaxed);
-                written
+                })()
             });
             let (run, extra) = match written {
                 Ok(w) => w,

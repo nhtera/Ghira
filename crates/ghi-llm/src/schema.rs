@@ -141,6 +141,42 @@ pub fn notes(template: &Template, s: &Shape) -> Value {
     object(&props)
 }
 
+/// Item caps of a compact notes schema (a phone writes these instead of the
+/// full notes: about half the output, so half the time and heat). Quotes and
+/// topics are left empty; the template's own sections keep a few items.
+pub const COMPACT_CAPS: &[(&str, usize)] = &[
+    ("tldr", 4),
+    ("decisions", 6),
+    ("action_items", 8),
+    ("open_questions", 4),
+    ("key_quotes", 0),
+    ("topics", 0),
+];
+/// Items per template section in a compact schema.
+pub const COMPACT_SECTION_CAP: usize = 4;
+
+/// The compact form of a local [`notes`] schema (`maxItems` lowered; cloud
+/// schemas carry no bounds and are returned as they are).
+pub fn compact(mut schema: Value, d: Dialect) -> Value {
+    if d != Dialect::Local {
+        return schema;
+    }
+    if let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
+        for (key, prop) in props.iter_mut() {
+            let cap = COMPACT_CAPS
+                .iter()
+                .find(|(k, _)| k == key)
+                .map_or(COMPACT_SECTION_CAP, |(_, cap)| *cap);
+            let lower = prop
+                .get("maxItems")
+                .and_then(Value::as_u64)
+                .map_or(cap, |m| (m as usize).min(cap));
+            prop["maxItems"] = json!(lower);
+        }
+    }
+    schema
+}
+
 /// Kinds of facts the map step extracts from one chunk.
 pub const FACT_KINDS: &[&str] = &["decision", "action", "question", "quote", "point"];
 
@@ -220,6 +256,34 @@ mod tests {
                 });
             }
         }
+    }
+
+    #[test]
+    fn compact_notes_leave_quotes_and_topics_empty_and_cap_the_rest() {
+        let t = template::builtin("general").unwrap();
+        let sp = speakers(&["S1"]);
+        let sh = Shape {
+            dialect: Dialect::Local,
+            ids: &[0, 1],
+            speakers: &sp,
+        };
+        let c = compact(notes(&t, &sh), Dialect::Local);
+        let max = |k: &str| c["properties"][k]["maxItems"].as_u64();
+        assert_eq!(max("key_quotes"), Some(0));
+        assert_eq!(max("topics"), Some(0));
+        assert_eq!(max("tldr"), Some(4));
+        assert_eq!(max("action_items"), Some(8));
+        // Still every key, still required: the parser is unchanged.
+        assert_eq!(c["required"], notes(&t, &sh)["required"]);
+        // Cloud schemas carry no bounds.
+        let cloud = Shape {
+            dialect: Dialect::Cloud,
+            ..sh
+        };
+        assert_eq!(
+            compact(notes(&t, &cloud), Dialect::Cloud),
+            notes(&t, &cloud)
+        );
     }
 
     #[test]

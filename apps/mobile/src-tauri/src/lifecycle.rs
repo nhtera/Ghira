@@ -162,6 +162,10 @@ impl Lifecycle {
     /// `ProcessInfo.thermalState` changed (0 nominal .. 3 critical).
     pub fn thermal_changed(&self, state: i32) {
         log::info!("thermal state={state}");
+        // Notes wait while the phone is hot: a change may let them start.
+        if let Some(runner) = (self.runner)() {
+            runner.notify();
+        }
         match session::current() {
             Some(s) => {
                 s.shared.set_thermal(state);

@@ -71,6 +71,12 @@ export const commands = {
 	appVersion: () => __TAURI_INVOKE<MobileAppVersion>("app_version"),
 	lifecycleState: () => typedError<LifecycleState, string>(__TAURI_INVOKE("lifecycle_state")),
 	deviceTier: () => typedError<DeviceTier, string>(__TAURI_INVOKE("device_tier")),
+	/**
+	 *  The phone's thermal state now (0 nominal, 1 fair, 2 serious, 3 critical);
+	 *  notes written on the phone wait at 2 or more. Changes arrive as
+	 *  `MobileEvent::Thermal`.
+	 */
+	thermalLevel: () => __TAURI_INVOKE<number>("thermal_level"),
 	/**  Opens this app's page in the Settings app (microphone denied). */
 	openAppSettings: () => __TAURI_INVOKE<void>("open_app_settings"),
 	modelsStatus: () => typedError<MobileModelsStatus, string>(__TAURI_INVOKE("models_status")),

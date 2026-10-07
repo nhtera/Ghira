@@ -1178,7 +1178,7 @@ pub fn job_handlers(
     notes: bool,
 ) -> Vec<Arc<dyn ghi_core::jobs::JobHandler>> {
     use ghi_core::final_pass::{FinalPassJob, FinalPassNotesIf};
-    use ghi_core::notes_job::{NOTES_FINAL_JOB, NotesJob};
+    use ghi_core::notes_job::{NOTES_FINAL_JOB, NotesJob, PhoneNotesJob};
     use ghi_core::voice_job::VoiceLearnJob;
     use ghi_core::voice_step::VoiceStep;
     let tier_ok = tier_class == crate::cmd::lifecycle::TierClass::Live;
@@ -1214,12 +1214,20 @@ pub fn job_handlers(
                 }),
             },
         }),
-        Arc::new(NotesJob {
-            kind: NOTES_FINAL_JOB,
-            version: 2,
-            template,
-            llm: watched(ghi_app::core::llm_factory(models)),
-            ready: notes_ready,
+        Arc::new(PhoneNotesJob {
+            job: NotesJob {
+                kind: NOTES_FINAL_JOB,
+                version: 2,
+                template,
+                llm: watched(ghi_app::core::llm_factory(models)),
+                ready: notes_ready,
+            },
+            // iOS thermal state serious (2) or critical (3): wait, or pause a run.
+            hot: Arc::new(|| {
+                crate::platform::device_stats()
+                    .thermal
+                    .is_some_and(|t| t >= 2)
+            }),
         }),
         Arc::new(VoiceLearnJob {
             embedder: ghi_app::core::voice_factory(models),

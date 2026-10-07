@@ -83,6 +83,17 @@ pub async fn device_tier() -> Result<DeviceTier, String> {
     Ok(crate::tier::detect())
 }
 
+/// The phone's thermal state now (0 nominal, 1 fair, 2 serious, 3 critical);
+/// notes written on the phone wait at 2 or more. Changes arrive as
+/// `MobileEvent::Thermal`.
+#[tauri::command]
+#[specta::specta]
+pub fn thermal_level() -> u8 {
+    platform::device_stats()
+        .thermal
+        .map_or(0, |t| t.clamp(0, 3) as u8)
+}
+
 /// Opens this app's page in the Settings app (microphone denied).
 #[tauri::command]
 #[specta::specta]

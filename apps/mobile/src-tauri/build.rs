@@ -23,6 +23,7 @@ fn main() {
             "app_version",
             "lifecycle_state",
             "device_tier",
+            "thermal_level",
             "open_app_settings",
             "models_status",
             "models_download",
