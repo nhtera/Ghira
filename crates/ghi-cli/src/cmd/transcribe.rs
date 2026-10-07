@@ -58,20 +58,20 @@ fn run_whisper(args: &Args, audio: &Audio) -> Result<(), ErrorDoc> {
             "transcribe: --stream is not available with --asr whisper".to_owned(),
         ));
     }
-    if audio.sample_rate != ghi_speech::whisper::SAMPLE_RATE {
-        return Err(ErrorDoc::new(
-            ErrorCode::Internal,
-            format!(
-                "transcribe: --asr whisper needs 16 kHz audio, got {} Hz",
-                audio.sample_rate
-            ),
-        ));
-    }
+    // Whisper does not resample (NeMo does): any other rate goes through the
+    // import decoder, which gives 16 kHz mono like the app's final pass.
+    let resampled;
+    let samples = if audio.sample_rate == ghi_speech::whisper::SAMPLE_RATE {
+        &audio.samples
+    } else {
+        resampled = decode_16k(args.audio)?;
+        &resampled
+    };
     let started = Instant::now();
     let (whisper, engine_info) = engine::load_whisper(args.engine)?;
     let results = whisper
         .recognize(
-            &audio.samples,
+            samples,
             &WhisperOptions {
                 language: language_code(args.lang).map(str::to_owned),
             },
@@ -83,6 +83,24 @@ fn run_whisper(args: &Args, audio: &Audio) -> Result<(), ErrorDoc> {
     }
     let doc = builder.finish(args, audio, engine_info, started.elapsed().as_secs_f64());
     crate::emit(&doc)
+}
+
+/// The file as 16 kHz mono (channels averaged), through `ghi-audio`'s decoder.
+#[cfg(feature = "whisper")]
+fn decode_16k(path: &Path) -> Result<Vec<f32>, ErrorDoc> {
+    let bad = |e: ghi_audio::decode::DecodeError| {
+        ErrorDoc::new(
+            crate::contract::ErrorCode::BadInput,
+            format!("cannot decode {}: {e}", path.display()),
+        )
+    };
+    let mut d = ghi_audio::decode::Decoder::open(path).map_err(bad)?;
+    let mut pcm = Vec::new();
+    while let Some(b) = d.next_block().map_err(bad)? {
+        let n = b.channels.len() as f32;
+        pcm.extend((0..b.frames()).map(|i| b.channels.iter().map(|c| c[i]).sum::<f32>() / n));
+    }
+    Ok(pcm)
 }
 
 #[cfg(not(feature = "nemo"))]
@@ -328,6 +346,32 @@ fn token(t: &str) -> String {
 mod tests {
     use super::*;
     use crate::cmd::fake::{result, word};
+
+    /// A 44.1 kHz stereo file reaches Whisper as 16 kHz mono of the same length.
+    #[cfg(feature = "whisper")]
+    #[test]
+    fn whisper_input_is_decoded_to_16k_mono() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.wav");
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 44_100,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&path, spec).unwrap();
+        for i in 0..44_100 * 2 {
+            let v = (f64::from(i) * 440.0 * std::f64::consts::TAU / 44_100.0).sin();
+            w.write_sample((v * 8000.0) as i16).unwrap();
+            w.write_sample(0i16).unwrap();
+        }
+        w.finalize().unwrap();
+        let pcm = decode_16k(&path).unwrap();
+        assert!((pcm.len() as i64 - 32_000).abs() < 160, "{} samples", pcm.len());
+        // Mono is the average of the channels: the tone at half level.
+        let peak = pcm.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!((0.10..0.14).contains(&peak), "peak {peak}");
+    }
 
     #[test]
     fn finals_become_segments_with_words_and_language() {
