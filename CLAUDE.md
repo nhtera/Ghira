@@ -197,7 +197,10 @@ Notes on the phone (2026-10-08, reverses phase 16 D5): an 8 GB live iPhone (`tie
 `DeviceTier.notes`) writes notes with the same Qwen3-4B, in process, once the optional notes model is
 downloaded (Settings → Models, `models_download_notes`/`models_remove_notes`); the phone's final pass
 (`FinalPassNotesIf`) then queues `notes_final`, and the Notes tab offers "Write notes" (`regenerate_notes`).
-Context capped at 12k tokens on iOS (`LLM_MAX_CTX`). A recording or the app leaving the screen stops the
+Context capped at 12k tokens on iOS (`LLM_MAX_CTX`). The phone's job is `PhoneNotesJob`: compact notes
+(`Options.compact`, `schema::compact`: no quotes/topics, capped lists) and it waits / pauses while iOS thermal
+is serious or worse (measured: 162 → 108 tok/s prompt, 11 → 6.6 tok/s out within a minute of LLM work;
+speed check `GHI_SELFTEST=llm:<text>` with `GHI_DEVICE_TIER=record-only`, see `llm_bench.rs`). A recording or the app leaving the screen stops the
 engine mid-answer (`Llm::stopper`, `JobCtx::stop_signal`; the job yields and starts over); one engine at a time
 (`sidecar` waits for a stopped one); its pipes never raise SIGPIPE. The phone writes notes through its own
 `write_notes` (capability-checked), not `regenerate_notes`. Elsewhere `start()` keeps the worker process
