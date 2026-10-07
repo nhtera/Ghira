@@ -62,11 +62,18 @@ impl LocalLlm {
             LOAD_TIMEOUT,
         )?;
         match reply.body {
-            Body::Loaded { n_ctx, .. } => Ok(LocalLlm {
-                sidecar,
-                engine,
+            Body::Loaded {
                 n_ctx,
-            }),
+                load_s,
+                devices,
+            } => {
+                log::info!("llm loaded load_s={load_s:.1} n_ctx={n_ctx} devices={devices:?}");
+                Ok(LocalLlm {
+                    sidecar,
+                    engine,
+                    n_ctx,
+                })
+            }
             Body::Error { message } => Err(LlmError::Worker(message)),
             _ => Err(LlmError::Worker("unexpected reply to load".into())),
         }
@@ -162,13 +169,24 @@ impl Llm for LocalLlm {
                 tokens_in,
                 tokens_out,
                 truncated,
-                ..
-            } => Ok(Completion {
-                text,
-                tokens_in,
-                tokens_out,
-                truncated,
-            }),
+                wall_s,
+                prompt_s,
+            } => {
+                // Sizes and times only (no content): how fast the model runs here.
+                let prompt_s = prompt_s.unwrap_or(0.0);
+                let gen_s = (wall_s - prompt_s).max(0.001);
+                log::info!(
+                    "llm completion tokens_in={tokens_in} prompt_s={prompt_s:.1} prompt_tok_s={:.0} tokens_out={tokens_out} gen_s={gen_s:.1} out_tok_s={:.1} truncated={truncated}",
+                    f64::from(tokens_in) / prompt_s.max(0.001),
+                    f64::from(tokens_out) / gen_s
+                );
+                Ok(Completion {
+                    text,
+                    tokens_in,
+                    tokens_out,
+                    truncated,
+                })
+            }
             Body::Error { message } => Err(LlmError::Worker(message)),
             _ => Err(LlmError::Worker("unexpected reply to complete".into())),
         }

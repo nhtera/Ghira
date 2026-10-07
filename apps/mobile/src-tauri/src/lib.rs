@@ -19,6 +19,8 @@ pub mod engine;
 mod gate;
 mod inbox;
 pub mod lifecycle;
+#[cfg(feature = "test-hooks")]
+mod llm_bench;
 mod metrics;
 mod models_cmd;
 mod platform;
@@ -59,10 +61,14 @@ pub fn export_bindings(path: &str) {
 fn configure_ggml() {
     // SAFETY: runs first thing in `run`, before any thread of ours exists and
     // before anything reads the environment.
+    // A test-hooks build may keep residency sets on (`GHI_METAL_RESIDENCY=1`,
+    // the notes-model speed check).
     #[cfg(target_os = "ios")]
-    unsafe {
-        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1")
-    };
+    if !(cfg!(feature = "test-hooks")
+        && std::env::var_os("GHI_METAL_RESIDENCY").is_some_and(|v| v == "1"))
+    {
+        unsafe { std::env::set_var("GGML_METAL_NO_RESIDENCY", "1") };
+    }
 }
 
 /// iOS (spike): stderr goes to `Documents/logs/<unix time>.log`, so ggml's
@@ -106,6 +112,18 @@ fn selftest_on_launch(data: &std::path::Path, models: &std::path::Path) {
         let secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
+        // `llm:<text file>`: the notes model's speed check.
+        if let Some(text) = file.strip_prefix("llm:") {
+            let result = match std::fs::read_to_string(data.join(text)) {
+                Ok(t) => llm_bench::run(&models, &t),
+                Err(e) => serde_json::json!({"file": text, "error": e.to_string()}),
+            };
+            let _ = std::fs::write(
+                data.join(format!("selftest-{secs}.json")),
+                result.to_string(),
+            );
+            return;
+        }
         let result = match std::fs::read(data.join(&file)) {
             Err(e) => serde_json::json!({"file": file, "error": e.to_string()}),
             Ok(bytes) => match engine::read_wav_16k(&bytes) {

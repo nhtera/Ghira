@@ -1098,6 +1098,68 @@ pub fn selftest(dir: &Path, file: String, pcm: &[f32]) -> SelfTest {
     out
 }
 
+/// The notes model with a watcher: every 30 s while it is loaded, the log gets
+/// the phone's thermal state, the app's memory footprint and the battery
+/// (numbers only), so a slow or killed notes run can be explained.
+fn watched(open: ghi_core::notes_job::LlmFactory) -> ghi_core::notes_job::LlmFactory {
+    struct Watched {
+        llm: Box<dyn ghi_llm::Llm + Send>,
+        done: Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl ghi_llm::Llm for Watched {
+        fn engine(&self) -> ghi_llm::EngineInfo {
+            self.llm.engine()
+        }
+        fn context_tokens(&self) -> u32 {
+            self.llm.context_tokens()
+        }
+        fn complete(&mut self, req: &ghi_llm::Request) -> ghi_llm::Result<ghi_llm::Completion> {
+            self.llm.complete(req)
+        }
+        fn count_tokens(&mut self, text: &str) -> ghi_llm::Result<u32> {
+            self.llm.count_tokens(text)
+        }
+        fn stopper(&self) -> Option<Arc<dyn Fn() + Send + Sync>> {
+            self.llm.stopper()
+        }
+    }
+    impl Drop for Watched {
+        fn drop(&mut self) {
+            self.done.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    fn log_stats(when: &str) {
+        let s = crate::platform::device_stats();
+        log::info!(
+            "llm device {when} thermal={:?} memory_mb={:.0} battery={:?}",
+            s.thermal,
+            s.memory_mb.unwrap_or(0.0),
+            s.battery
+        );
+    }
+    Arc::new(move |bytes| {
+        log_stats("before");
+        let llm = open(bytes)?;
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let watching = done.clone();
+        let _ = std::thread::Builder::new()
+            .name("ghi-llm-watch".into())
+            .spawn(move || {
+                let mut ticks = 0u32;
+                while !watching.load(std::sync::atomic::Ordering::Relaxed) {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    ticks += 1;
+                    if ticks.is_multiple_of(30) {
+                        log_stats("running");
+                    }
+                }
+                log_stats("after");
+            });
+        log_stats("loaded");
+        Ok(Box::new(Watched { llm, done }) as Box<dyn ghi_llm::Llm + Send>)
+    })
+}
+
 /// The job handlers the phone registers on its [`JobRunner`] (16-G calls this
 /// from the mobile core): the final pass, which queues `notes_final` only on a
 /// phone that can write notes (`notes`: 8 GB) once the notes model is
@@ -1156,7 +1218,7 @@ pub fn job_handlers(
             kind: NOTES_FINAL_JOB,
             version: 2,
             template,
-            llm: ghi_app::core::llm_factory(models),
+            llm: watched(ghi_app::core::llm_factory(models)),
             ready: notes_ready,
         }),
         Arc::new(VoiceLearnJob {

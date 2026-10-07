@@ -83,6 +83,12 @@ struct Worker<'a> {
     stop: &'a AtomicBool,
 }
 
+/// A diagnostic switch from the environment (`1` = on); the defaults are the
+/// shipped behaviour.
+fn knob(name: &str) -> bool {
+    std::env::var_os(name).is_some_and(|v| v == "1")
+}
+
 /// llama.cpp's backend, initialized once per process (a second init fails, and
 /// an in-process engine may be started many times).
 fn backend() -> Result<&'static LlamaBackend, String> {
@@ -269,7 +275,14 @@ impl Worker<'_> {
         // Free a previous model before loading the next one.
         self.engine = None;
         self.embedder = None;
-        let params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
+        let free_before: std::collections::HashMap<String, usize> =
+            llama_cpp_2::list_llama_ggml_backend_devices()
+                .into_iter()
+                .map(|d| (d.name, d.memory_free))
+                .collect();
+        let params = LlamaModelParams::default()
+            .with_n_gpu_layers(n_gpu_layers)
+            .with_use_mmap(!knob("GHI_LLM_NO_MMAP"));
         let model = LlamaModel::load_from_file(self.backend, path, &params)
             .map_err(|e| format!("model load failed: {e}"))?;
         self.engine = Some(Engine {
@@ -278,9 +291,27 @@ impl Worker<'_> {
             seed,
             format,
         });
+        // Free memory per device before and after: a model on the GPU takes
+        // its size out of the GPU's working set.
+        let devices: Vec<String> = llama_cpp_2::list_llama_ggml_backend_devices()
+            .into_iter()
+            .map(|d| {
+                let before = free_before.get(&d.name).copied().unwrap_or(0);
+                format!(
+                    "{} {} {:?} free_before={}MB free_after={}MB total={}MB",
+                    d.name,
+                    d.description,
+                    d.device_type,
+                    before / (1 << 20),
+                    d.memory_free / (1 << 20),
+                    d.memory_total / (1 << 20)
+                )
+            })
+            .collect();
         Ok(Body::Loaded {
             n_ctx,
             load_s: t.elapsed().as_secs_f64(),
+            devices,
         })
     }
 
@@ -395,12 +426,20 @@ impl Engine {
         let mut sampler = self.sampler(schema, temperature)?;
         // A fresh context per request: no KV state carries over between notes.
         // q8_0 K/V halves the cache; a quantized V cache needs flash attention.
+        // Diagnostic knobs (speed checks on a phone): an f16 cache, or no flash
+        // attention (which needs the f16 cache).
+        let no_fa = knob("GHI_LLM_NO_FA");
+        let kv = if no_fa || knob("GHI_LLM_KV_F16") {
+            KvCacheType::F16
+        } else {
+            KvCacheType::Q8_0
+        };
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(self.n_ctx))
             .with_n_batch(N_BATCH as u32)
-            .with_type_k(KvCacheType::Q8_0)
-            .with_type_v(KvCacheType::Q8_0)
-            .with_flash_attention_policy(FLASH_ATTN_ENABLED);
+            .with_type_k(kv)
+            .with_type_v(kv)
+            .with_flash_attention_policy(if no_fa { 0 } else { FLASH_ATTN_ENABLED });
         let mut ctx = self
             .model
             .new_context(backend, ctx_params)
@@ -427,6 +466,7 @@ impl Engine {
             progress(pos as u32, 0);
         }
 
+        let prompt_s = t.elapsed().as_secs_f64();
         // Token pieces are raw bytes and a character may span tokens, so the
         // bytes are joined and decoded once at the end.
         let mut bytes: Vec<u8> = Vec::new();
@@ -469,6 +509,7 @@ impl Engine {
             tokens_out,
             truncated,
             wall_s: t.elapsed().as_secs_f64(),
+            prompt_s: Some(prompt_s),
         })
     }
 

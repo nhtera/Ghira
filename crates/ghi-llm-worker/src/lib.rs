@@ -108,6 +108,10 @@ pub enum Body {
     Loaded {
         n_ctx: u32,
         load_s: f64,
+        /// The compute devices llama.cpp found (`MTL0 Apple A17 Pro GPU …`),
+        /// for the log: a phone without its GPU is several times slower.
+        #[serde(default)]
+        devices: Vec<String>,
     },
     Completed {
         text: String,
@@ -117,6 +121,9 @@ pub enum Body {
         #[serde(default)]
         truncated: bool,
         wall_s: f64,
+        /// Of `wall_s`, the time reading the prompt (older workers: absent).
+        #[serde(default)]
+        prompt_s: Option<f64>,
     },
     Counted {
         tokens: u32,
@@ -244,6 +251,7 @@ mod tests {
             Body::Loaded {
                 n_ctx: 8192,
                 load_s: 1.5,
+                devices: vec!["MTL0".into()],
             },
             Body::Completed {
                 text: "Đã xong".into(),
@@ -251,6 +259,7 @@ mod tests {
                 tokens_out: 3,
                 truncated: false,
                 wall_s: 0.25,
+                prompt_s: None,
             },
             Body::Counted { tokens: 12 },
             Body::EmbedLoaded {
