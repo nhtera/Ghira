@@ -19,7 +19,8 @@ use crate::cmd::events::{MobileEvent, emit};
 use crate::cmd::models::{MobileModelItem, MobileModelRole, MobileModelState, MobileModelsStatus};
 
 /// The models a phone needs: the live and final engines, then the voice model
-/// (Me). The notes LLM and the embedding model never come to the phone.
+/// (Me). The notes model is optional ([`notes_model`]); the embedding model
+/// never comes to the phone.
 pub fn needed() -> Vec<(String, MobileModelRole)> {
     let voice = ghi_models::preset(ghi_models::Tier::Light).voice_id;
     [
@@ -30,6 +31,17 @@ pub fn needed() -> Vec<(String, MobileModelRole)> {
     .into_iter()
     .map(|(id, role)| (id.to_owned(), role))
     .collect()
+}
+
+/// The notes model, on a phone that can write notes itself (8 GB; see
+/// `tier::notes_capable`): downloaded only when asked for (2.5 GB).
+pub fn notes_model() -> Option<(String, MobileModelRole)> {
+    crate::tier::detect().notes.then(|| {
+        (
+            ghi_app::core::preset().llm_id.to_owned(),
+            MobileModelRole::Notes,
+        )
+    })
 }
 
 /// What the download thread last said about a model.
@@ -84,38 +96,13 @@ pub fn status(
     downloads: &Downloads,
     damaged: &std::collections::BTreeSet<String>,
 ) -> MobileModelsStatus {
-    let live = downloads.inner().live.clone();
-    let running = downloads.running();
     let mut missing = 0u64;
     let items: Vec<MobileModelItem> = needed()
         .into_iter()
         .filter_map(|(id, role)| {
-            let m = ghi_models::find(&id)?;
-            let dest = ghi_models::path_in(dir, &m);
-            let installed = file_len(&dest) == m.size && !damaged.contains(&id);
-            let part = file_len(&part_path(&dest)).min(m.size);
-            let (state, received) = if installed {
-                (MobileModelState::Ready, m.size)
-            } else {
-                missing += m.size.saturating_sub(part);
-                match live.get(&id) {
-                    // A finished or stale entry says nothing once the file is gone.
-                    Some(l) if l.state == MobileModelState::Downloading && !running => {
-                        (MobileModelState::Missing, part)
-                    }
-                    Some(l) if l.state != MobileModelState::Ready => {
-                        (l.state, l.received.max(part))
-                    }
-                    _ => (MobileModelState::Missing, part),
-                }
-            };
-            Some(MobileModelItem {
-                id,
-                role,
-                size_bytes: m.size as f64,
-                received_bytes: received as f64,
-                state,
-            })
+            let (item, left) = row(dir, id, role, downloads, damaged)?;
+            missing += left;
+            Some(item)
         })
         .collect();
     MobileModelsStatus {
@@ -123,6 +110,46 @@ pub fn status(
         missing_bytes: missing as f64,
         wifi_only,
     }
+}
+
+/// One model's row (installed, downloading, waiting, …) and the bytes it still needs.
+pub fn row(
+    dir: &Path,
+    id: String,
+    role: MobileModelRole,
+    downloads: &Downloads,
+    damaged: &std::collections::BTreeSet<String>,
+) -> Option<(MobileModelItem, u64)> {
+    let live = downloads.inner().live.get(&id).copied();
+    let running = downloads.running();
+    let m = ghi_models::find(&id)?;
+    let dest = ghi_models::path_in(dir, &m);
+    let installed = file_len(&dest) == m.size && !damaged.contains(&id);
+    let part = file_len(&part_path(&dest)).min(m.size);
+    let mut missing = 0;
+    let (state, received) = if installed {
+        (MobileModelState::Ready, m.size)
+    } else {
+        missing = m.size.saturating_sub(part);
+        match live {
+            // A finished or stale entry says nothing once the file is gone.
+            Some(l) if l.state == MobileModelState::Downloading && !running => {
+                (MobileModelState::Missing, part)
+            }
+            Some(l) if l.state != MobileModelState::Ready => (l.state, l.received.max(part)),
+            _ => (MobileModelState::Missing, part),
+        }
+    };
+    Some((
+        MobileModelItem {
+            id,
+            role,
+            size_bytes: m.size as f64,
+            received_bytes: received as f64,
+            state,
+        },
+        missing,
+    ))
 }
 
 /// The phone is on a metered path: Swift's `NWPath.isExpensive` /
@@ -279,6 +306,7 @@ pub fn start(
     downloads: Arc<Downloads>,
     wifi_only: bool,
     policy: NetPolicy,
+    which: Vec<(String, MobileModelRole)>,
 ) -> Result<(), String> {
     let cancel = {
         let mut inner = downloads.inner();
@@ -304,7 +332,7 @@ pub fn start(
             let _clear = Clear(downloads.clone());
             // A little extra time when the app goes to the background.
             let bg = crate::platform::begin_bg_task("models");
-            let models: Vec<_> = needed()
+            let models: Vec<_> = which
                 .into_iter()
                 .filter_map(|(id, role)| Some((id.clone(), role, ghi_models::find(&id)?)))
                 .collect();

@@ -218,6 +218,8 @@ export function MeetingView({
                 notes={m.notes}
                 visited={visited}
                 onCite={cite}
+                job={detail.job}
+                hasTranscript={m.transcript.segments.length > 0}
               />
               <div className="mx-4 mt-2 mb-4 flex flex-col gap-3 rounded-(--ios-radius-group) bg-surface2 p-3">
                 <div className="flex items-center justify-between gap-3">

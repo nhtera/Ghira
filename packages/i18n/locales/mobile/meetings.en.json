@@ -21,8 +21,25 @@
       "locked": "Unlock to see this meeting.",
       "notFound": "This meeting isn’t on this phone any more.",
       "notesEmpty": {
-        "body": "This phone records and transcribes. For notes, you can send the transcript text (never the audio) to a cloud model you choose.",
-        "title": "Notes: not generated on this phone"
+        "cloud": {
+          "body": "This phone records and transcribes. For notes, you can send the transcript text (never the audio) to a cloud model you choose.",
+          "title": "Notes: not generated on this phone"
+        },
+        "download": {
+          "action": "Get the notes model",
+          "body": "This phone can write notes itself after a one-time download of the notes model.",
+          "title": "No notes yet"
+        },
+        "local": {
+          "action": "Write notes",
+          "body": "{{app}} can write the notes and action items on this phone. Nothing leaves it.",
+          "title": "No notes yet"
+        },
+        "writing": {
+          "body": "Notes and action items are being written on this phone. Keep {{app}} open; it takes a few minutes.",
+          "title": "Writing notes…",
+          "waiting": "The notes will be written once the notes model is downloaded."
+        }
       },
       "quote": {
         "missing": "No matching words were found at that moment.",

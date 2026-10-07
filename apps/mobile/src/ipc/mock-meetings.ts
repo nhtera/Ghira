@@ -505,7 +505,10 @@ if (typeof window !== "undefined")
     /** The meeting's processing ends (the core's state event follows separately). */
     finishProcessing: (id: string) => {
       const m = find(id);
-      if (m) m.detail.status = "ready";
+      if (m) {
+        m.detail.status = "ready";
+        m.detail.job = null;
+      }
     },
   };
 
@@ -533,6 +536,17 @@ export const meetingCommands: Partial<Commands> = {
         segment(`${id}-1`, null, 1_000, 6_000, "Nội dung cuộc họp ở đây."),
       ];
     return ok(m.transcript);
+  },
+  // Like ghi-app's regenerate_notes: refused while recording or another job
+  // runs; the meeting gets a waiting notes job and is processing.
+  regenerateNotes: async (id) => {
+    const m = find(id);
+    if (!m) return fail("not found");
+    if (m.detail.status === "recording") return fail("the meeting is still recording");
+    if (m.detail.job) return fail("the notes are already being written");
+    m.detail.job = { kind: "notes_final", progress: 0, waitingForModels: false };
+    m.detail.status = "processing";
+    return ok(false);
   },
   // Like ghi-app's retranscribe: audio kept here, nothing running; the mock
   // records the language and the meeting is processing again.

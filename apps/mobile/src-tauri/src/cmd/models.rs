@@ -12,6 +12,8 @@ pub enum MobileModelRole {
     Asr,
     Diarization,
     Voice,
+    /// The notes model (optional, 8 GB phones).
+    Notes,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -92,7 +94,13 @@ pub async fn models_download(
         }
         // Cellular is allowed when either the setting or this call says so.
         let wifi_only = wifi_only && wifi_only_setting(&core);
-        crate::models_cmd::start(core, downloads, wifi_only, ghi_net::NetPolicy::Default)
+        crate::models_cmd::start(
+            core,
+            downloads,
+            wifi_only,
+            ghi_net::NetPolicy::Default,
+            crate::models_cmd::needed(),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -105,4 +113,95 @@ pub async fn models_cancel(
 ) -> Result<(), String> {
     downloads.cancel();
     Ok(())
+}
+
+/// The notes model on this phone: `None` when the phone cannot write notes
+/// itself (below 8 GB), else its row (missing, downloading, ready, …).
+#[tauri::command]
+#[specta::specta]
+pub async fn notes_model_status(
+    core: ghi_app::CoreState<'_>,
+    downloads: tauri::State<'_, std::sync::Arc<crate::models_cmd::Downloads>>,
+) -> Result<Option<MobileModelItem>, String> {
+    let downloads = downloads.inner().clone();
+    ghi_app::blocking(&core, move |c| {
+        Ok(crate::models_cmd::notes_model().and_then(|(id, role)| {
+            crate::models_cmd::row(
+                &c.models(),
+                id,
+                role,
+                &downloads,
+                &ghi_app::core::damaged_models(),
+            )
+            .map(|(item, _)| item)
+        }))
+    })
+    .await
+}
+
+/// Downloads the notes model (2.5 GB), Wi-Fi only unless the user allows
+/// cellular this time; refused on a phone that cannot write notes.
+#[tauri::command]
+#[specta::specta]
+pub async fn models_download_notes(
+    core: ghi_app::CoreState<'_>,
+    downloads: tauri::State<'_, std::sync::Arc<crate::models_cmd::Downloads>>,
+    wifi_only: bool,
+) -> Result<(), String> {
+    let downloads = downloads.inner().clone();
+    let core = core.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let model =
+            crate::models_cmd::notes_model().ok_or("this phone cannot write notes itself")?;
+        let strict = core
+            .store_even_locked()?
+            .get_setting(ghi_app::system::SETTINGS_KEY)
+            .map_err(|e| e.to_string())
+            .map(|v| ghi_app::system::from_stored(v).strict_offline)?;
+        if strict {
+            return Err("offline".into());
+        }
+        let wifi_only = wifi_only && wifi_only_setting(&core);
+        crate::models_cmd::start(
+            core,
+            downloads,
+            wifi_only,
+            ghi_net::NetPolicy::Default,
+            vec![model],
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Removes the notes model to free its 2.5 GB (notes then come from the
+/// cloud or the computer again). Refused while notes are being written.
+#[tauri::command]
+#[specta::specta]
+pub async fn models_remove_notes(core: ghi_app::CoreState<'_>) -> Result<(), String> {
+    ghi_app::blocking(&core, move |c| {
+        let store = c.store_even_locked()?;
+        if store
+            .active_jobs()
+            .map_err(|e| e.to_string())?
+            .iter()
+            .any(|j| {
+                j.kind == ghi_core::notes_job::NOTES_FINAL_JOB
+                    && j.state == ghi_store::jobs::JobState::Running
+            })
+        {
+            return Err("notes are being written".into());
+        }
+        let m = ghi_models::find(ghi_app::core::preset().llm_id).ok_or("unknown model")?;
+        let path = ghi_models::path_in(&c.models(), &m);
+        for p in [ghi_net::fetch::part_path(&path), path] {
+            match std::fs::remove_file(&p) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+        Ok(())
+    })
+    .await
 }

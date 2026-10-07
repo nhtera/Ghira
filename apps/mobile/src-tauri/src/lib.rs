@@ -268,9 +268,11 @@ mod tests {
             .collect();
         let mut bound: Vec<String> = read("../src/bindings.ts")
             .lines()
+            // A call is `__TAURI_INVOKE("name"` or `__TAURI_INVOKE<T>("name"`, also at the
+            // end of a multi-line type; the import line has no `("`.
             .filter_map(|l| {
-                let rest = l.strip_prefix('\t')?.split("__TAURI_INVOKE").nth(1)?;
-                Some(rest.split('"').nth(1)?.to_owned())
+                let rest = l.split("__TAURI_INVOKE").nth(1)?;
+                Some(rest.split("(\"").nth(1)?.split('"').next()?.to_owned())
             })
             .collect();
         for v in [&mut built, &mut granted, &mut bound] {

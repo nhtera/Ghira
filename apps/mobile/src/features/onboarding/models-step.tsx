@@ -15,6 +15,8 @@ const ROLE = {
   asr: "mobile.onboarding.models.role.asr",
   diarization: "mobile.onboarding.models.role.diarization",
   voice: "mobile.onboarding.models.role.voice",
+  // Never listed here (optional, Settings → Models), but every role needs a name.
+  notes: "mobile.settings.models.role.notes",
 } as const;
 
 function ModelLine({ item }: { item: MobileModelItem }) {

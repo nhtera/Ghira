@@ -109,6 +109,47 @@ final class ReviewScreensTests: XCTestCase {
         }
     }
 
+    /// Settings → Models on an 8 GB phone: the notes model's own section.
+    func testNotesModelSection() {
+        let app = Ghira.app()
+        app.launch()
+        Ghira.completeOnboarding(app)
+        Ghira.tapTab(app, "Settings")
+        let row = button(app, startingWith: "Models")
+        XCTAssertTrue(row.waitForExistence(timeout: 10), app.debugDescription)
+        row.tap()
+        let header = app.staticTexts["Notes on this phone"]
+        for _ in 0..<4 where !(header.exists && header.isHittable) { app.swipeUp() }
+        XCTAssertTrue(header.exists, "no notes model section\n" + app.debugDescription)
+        shot("models-notes")
+    }
+
+    /// TEST_RUNNER_GHI_WRITE_NOTES_IN=<text in a meeting row> (a throwaway meeting without notes):
+    /// "Write notes" in its Notes tab, then the notes written on the phone.
+    func testWriteNotesOnThePhone() throws {
+        let match = ProcessInfo.processInfo.environment["GHI_WRITE_NOTES_IN"] ?? ""
+        try XCTSkipIf(match.isEmpty, "GHI_WRITE_NOTES_IN not set")
+        let app = Ghira.app()
+        app.launch()
+        Ghira.completeOnboarding(app)
+        Ghira.tapTab(app, "Meetings")
+        let meeting = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", match)).firstMatch
+        for _ in 0..<6 where !(meeting.exists && meeting.isHittable) { app.swipeUp() }
+        XCTAssertTrue(meeting.exists, "no meeting with \(match)\n" + app.debugDescription)
+        meeting.tap()
+        app.buttons["Notes"].tap()
+        let write = app.buttons["Write notes"]
+        XCTAssertTrue(write.waitForExistence(timeout: 10), app.debugDescription)
+        shot("notes-empty")
+        write.tap()
+        XCTAssertTrue(app.staticTexts["Writing notes…"].waitForExistence(timeout: 10), app.debugDescription)
+        shot("notes-writing")
+        XCTAssertTrue(app.staticTexts["SUMMARY"].waitForExistence(timeout: 300) || app.staticTexts["Summary"].exists,
+                      "no notes after 5 min\n" + app.debugDescription)
+        sleep(1)
+        shot("notes-written")
+    }
+
     /// Opens the first meeting of the list: a webview button between the search field and the tab bar.
     private func openFirstMeeting(_ app: XCUIApplication) throws -> String {
         Ghira.tapTab(app, "Meetings")

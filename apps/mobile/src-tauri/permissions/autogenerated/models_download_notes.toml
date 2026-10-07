@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-models-download-notes"
+description = "Enables the models_download_notes command without any pre-configured scope."
+commands.allow = ["models_download_notes"]
+
+[[permission]]
+identifier = "deny-models-download-notes"
+description = "Denies the models_download_notes command without any pre-configured scope."
+commands.deny = ["models_download_notes"]

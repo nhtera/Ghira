@@ -68,7 +68,8 @@
         "role": {
           "asr": "Speech recognition",
           "diarization": "Speaker separation",
-          "voice": "Voice matching"
+          "voice": "Voice matching",
+          "notes": "Notes and action items"
         },
         "state": {
           "ready": "Ready",
@@ -77,7 +78,12 @@
           "waitingForWifi": "Waiting for Wi-Fi",
           "failed": "Download failed"
         },
-        "progress": "Download progress: {{name}}"
+        "progress": "Download progress: {{name}}",
+        "notes": {
+          "header": "Notes on this phone",
+          "footer": "Optional. Writes notes and action items here, with no cloud or computer. It works while {{app}} is open.",
+          "remove": "Remove ({{size}})"
+        }
       },
       "voice": {
         "title": "Voice profile",

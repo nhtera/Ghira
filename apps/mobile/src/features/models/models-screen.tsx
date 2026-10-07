@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Settings → Models: one row per model with its state, one download button for
-// what is missing (Wi-Fi only unless the user says otherwise this time).
+// what is missing (Wi-Fi only unless the user says otherwise this time). On an
+// 8 GB phone a second section offers the notes model (optional, 2.5 GB):
+// download or remove it on its own.
 import { ListRow, ListSection } from "@ghi/ui";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,12 +13,14 @@ import { Btn, ErrorLine, Switch } from "../settings/controls";
 import { Page } from "../settings/page";
 import { useMobileSettings } from "../settings/use-settings";
 import { formatBytes } from "./format-bytes";
+import { useNotesModel } from "./use-notes-model";
 
 const loadStatus = async () => unwrap(await ipc.commands.modelsStatus());
 
 export function ModelsScreen() {
   const { t, i18n } = useTranslation();
   const status = useResource(loadStatus);
+  const notes = useNotesModel();
   const mobile = useMobileSettings();
   const action = useAction();
   // Download progress arrives as events; the last event per model wins over the loaded status.
@@ -38,7 +42,8 @@ export function ModelsScreen() {
   }, []);
 
   const items = status.data?.items.map((i) => live[i.id] ?? i) ?? [];
-  const downloading = items.some((i) => i.state === "downloading");
+  const notesItem = notes.item ?? null;
+  const downloading = [...items, ...(notesItem ? [notesItem] : [])].some((i) => i.state === "downloading");
   const missing = items.filter((i) => i.state !== "ready");
   const missingBytes = missing.reduce(
     (n, i) => n + Math.max((i.sizeBytes ?? 0) - (i.receivedBytes ?? 0), 0),
@@ -52,6 +57,52 @@ export function ModelsScreen() {
     );
   const cancel = () =>
     void action.run(async () => unwrap(await ipc.commands.modelsCancel()));
+  const downloadNotes = (wifi: boolean) =>
+    void action.run(async () => unwrap(await ipc.commands.modelsDownloadNotes(wifi)));
+  const removeNotes = () =>
+    void action.run(async () => {
+      unwrap(await ipc.commands.modelsRemoveNotes());
+      notes.reload();
+    });
+  const row = (m: MobileModelItem) => {
+    const percent = m.sizeBytes
+      ? Math.round(((m.receivedBytes ?? 0) / m.sizeBytes) * 100)
+      : 0;
+    const name = t(`mobile.settings.models.role.${m.role}`);
+    return (
+      <ListRow
+        key={m.id}
+        title={name}
+        value={formatBytes(m.sizeBytes, i18n.language)}
+        subtitle={
+          <>
+            <span data-model-state={m.state}>
+              {t(`mobile.settings.models.state.${m.state}`, {
+                percent,
+              })}
+            </span>
+            {m.state === "downloading" && (
+              <span
+                role="progressbar"
+                aria-label={t("mobile.settings.models.progress", {
+                  name,
+                })}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={percent}
+                className="mt-1 block h-1.5 overflow-hidden rounded-[3px] bg-sunk"
+              >
+                <i
+                  className="block h-full bg-accent"
+                  style={{ width: `${percent}%` }}
+                />
+              </span>
+            )}
+          </>
+        }
+      />
+    );
+  };
 
   return (
     <Page
@@ -70,45 +121,7 @@ export function ModelsScreen() {
             header={t("mobile.settings.models.header")}
             footer={t("mobile.settings.models.footer")}
           >
-            {items.map((m) => {
-              const percent = m.sizeBytes
-                ? Math.round(((m.receivedBytes ?? 0) / m.sizeBytes) * 100)
-                : 0;
-              const name = t(`mobile.settings.models.role.${m.role}`);
-              return (
-                <ListRow
-                  key={m.id}
-                  title={name}
-                  value={formatBytes(m.sizeBytes, i18n.language)}
-                  subtitle={
-                    <>
-                      <span data-model-state={m.state}>
-                        {t(`mobile.settings.models.state.${m.state}`, {
-                          percent,
-                        })}
-                      </span>
-                      {m.state === "downloading" && (
-                        <span
-                          role="progressbar"
-                          aria-label={t("mobile.settings.models.progress", {
-                            name,
-                          })}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={percent}
-                          className="mt-1 block h-1.5 overflow-hidden rounded-[3px] bg-sunk"
-                        >
-                          <i
-                            className="block h-full bg-accent"
-                            style={{ width: `${percent}%` }}
-                          />
-                        </span>
-                      )}
-                    </>
-                  }
-                />
-              );
-            })}
+            {items.map(row)}
           </ListSection>
           <ListSection>
             <ListRow
@@ -156,6 +169,46 @@ export function ModelsScreen() {
               </p>
             )}
           </div>
+          {notesItem && (
+            <>
+              <ListSection
+                className="mt-6"
+                header={t("mobile.settings.models.notes.header")}
+                footer={t("mobile.settings.models.notes.footer")}
+              >
+                {row(notesItem)}
+              </ListSection>
+              <div className="mx-4 flex flex-col gap-2">
+                {notesItem.state === "ready" ? (
+                  <Btn tone="danger" onClick={removeNotes} disabled={action.busy}>
+                    {t("mobile.settings.models.notes.remove", {
+                      size: formatBytes(notesItem.sizeBytes, i18n.language),
+                    })}
+                  </Btn>
+                ) : notesItem.state === "downloading" ? null : (
+                  <>
+                    <Btn
+                      tone="primary"
+                      onClick={() => downloadNotes(wifiOnly)}
+                      disabled={action.busy || downloading}
+                    >
+                      {t("mobile.settings.models.download", {
+                        size: formatBytes(
+                          Math.max((notesItem.sizeBytes ?? 0) - (notesItem.receivedBytes ?? 0), 0),
+                          i18n.language,
+                        ),
+                      })}
+                    </Btn>
+                    {notesItem.state === "waitingForWifi" && (
+                      <Btn onClick={() => downloadNotes(false)}>
+                        {t("mobile.settings.models.cellular")}
+                      </Btn>
+                    )}
+                  </>
+                )}
+              </div>
+            </>
+          )}
         </>
       )}
     </Page>

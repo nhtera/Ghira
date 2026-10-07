@@ -82,6 +82,27 @@ export const commands = {
 	modelsDownload: (wifiOnly: boolean) => typedError<null, string>(__TAURI_INVOKE("models_download", { wifiOnly })),
 	modelsCancel: () => typedError<null, string>(__TAURI_INVOKE("models_cancel")),
 	/**
+	 *  The notes model on this phone: `None` when the phone cannot write notes
+	 *  itself (below 8 GB), else its row (missing, downloading, ready, …).
+	 */
+	notesModelStatus: () => typedError<{
+	id: string,
+	role: MobileModelRole,
+	sizeBytes: number | null,
+	receivedBytes: number | null,
+	state: MobileModelState,
+} | null, string>(__TAURI_INVOKE("notes_model_status")),
+	/**
+	 *  Downloads the notes model (2.5 GB), Wi-Fi only unless the user allows
+	 *  cellular this time; refused on a phone that cannot write notes.
+	 */
+	modelsDownloadNotes: (wifiOnly: boolean) => typedError<null, string>(__TAURI_INVOKE("models_download_notes", { wifiOnly })),
+	/**
+	 *  Removes the notes model to free its 2.5 GB (notes then come from the
+	 *  cloud or the computer again). Refused while notes are being written.
+	 */
+	modelsRemoveNotes: () => typedError<null, string>(__TAURI_INVOKE("models_remove_notes")),
+	/**
 	 *  Exports everything as an encrypted archive and presents the system share
 	 *  sheet (the path never reaches the webview). Resolves once the sheet is
 	 *  presented; Swift deletes the archive when the sheet closes.
@@ -268,6 +289,12 @@ export const commands = {
 	 *  the speech models to be installed.
 	 */
 	retranscribe: (meeting: string, language: TranscriptLanguage) => typedError<boolean, string>(__TAURI_INVOKE("retranscribe", { meeting, language })),
+	/**
+	 *  Rewrites the AI notes (template and language as chosen); what the user
+	 *  wrote, edited, pinned or ticked off stays [RT-7]. Returns whether it waits
+	 *  for the local model to be installed.
+	 */
+	regenerateNotes: (meeting: string, template: string | null, language: NotesLanguage) => typedError<boolean, string>(__TAURI_INVOKE("regenerate_notes", { meeting, template, language })),
 	/**  Plays the whole meeting (the open one; any earlier play token stops working). */
 	issueAudioPlay: (meeting: string) => typedError<AudioPlay, string>(__TAURI_INVOKE("issue_audio_play", { meeting })),
 	/**
@@ -1097,7 +1124,9 @@ export type MobileModelItem = {
 	state: MobileModelState,
 };
 
-export type MobileModelRole = "asr" | "diarization" | "voice";
+export type MobileModelRole = "asr" | "diarization" | "voice" | 
+/**  The notes model (optional, 8 GB phones). */
+"notes";
 
 export type MobileModelState = "missing" | "downloading" | "ready" | 
 /**  Waiting for Wi-Fi (the default is Wi-Fi only). */
