@@ -131,6 +131,7 @@ impl Lifecycle {
     /// step overlapped the transition; the engine drops its results, reloads
     /// the models and redoes that audio.
     pub fn entered_background(&self) -> bool {
+        log::info!("app entered the background");
         self.notify(Transition::Background);
         self.active.store(false, Ordering::SeqCst);
         if let Some(r) = (self.runner)() {
@@ -148,6 +149,7 @@ impl Lifecycle {
 
     /// `didBecomeActive`.
     pub fn become_active(&self) {
+        log::info!("app active");
         self.notify(Transition::Active);
         self.active.store(true, Ordering::SeqCst);
         if let Some(s) = session::current() {
