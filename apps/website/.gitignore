@@ -10,3 +10,4 @@
 /.screens/
 *.tsbuildinfo
 /src/routeTree.gen.ts
+/content.*/

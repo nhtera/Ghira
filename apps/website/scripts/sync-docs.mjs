@@ -20,7 +20,7 @@
 //   node scripts/sync-docs.mjs   (GHIRA_SITE_NO_DATES=1 omits dates)
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stringify } from "yaml";
@@ -151,8 +151,11 @@ export function sync({ repo = REPO, out = join(SITE, "content"), dates = !proces
   const quickstart = parseQuickstart(readFileSync(join(repo, "README.md"), "utf8"));
   if (dates) checkNotShallow(repo);
 
-  const docsOut = join(out, "docs");
-  rmSync(out, { recursive: true, force: true });
+  // Written into a staging folder, then swapped in with renames, so a build
+  // or test running at the same time never reads a half-written content/.
+  const stage = `${out}.tmp-${process.pid}`;
+  const docsOut = join(stage, "docs");
+  rmSync(stage, { recursive: true, force: true });
   mkdirSync(docsOut, { recursive: true });
 
   const navOut = [];
@@ -193,7 +196,7 @@ export function sync({ repo = REPO, out = join(SITE, "content"), dates = !proces
   writeFileSync(join(docsOut, "meta.json"), `${JSON.stringify({ title: "Docs", root: true, pages: rootPages }, null, 2)}\n`);
 
   // Generated data for the site.
-  const gen = join(out, "generated");
+  const gen = join(stage, "generated");
   mkdirSync(gen, { recursive: true });
   writeFileSync(join(gen, "nav.json"), `${JSON.stringify({ index: INDEX, sections: navOut }, null, 2)}\n`);
   writeFileSync(join(gen, "quickstart.json"), `${JSON.stringify(quickstart, null, 2)}\n`);
@@ -201,7 +204,11 @@ export function sync({ repo = REPO, out = join(SITE, "content"), dates = !proces
   const unpublished = listDocs(join(repo, "docs")).filter((source) => source !== "docs/README.md" && !published.has(source));
   if (unpublished.length) log(`unpublished docs: ${unpublished.join(", ")}`);
   writeFileSync(join(gen, "inputs.json"), `${JSON.stringify([...inputs].sort(), null, 2)}\n`);
-  log(`synced ${published.size - 1} docs into ${relative(SITE, docsOut)}`);
+  const old = `${out}.old-${process.pid}`;
+  if (existsSync(out)) renameSync(out, old);
+  renameSync(stage, out);
+  rmSync(old, { recursive: true, force: true });
+  log(`synced ${published.size - 1} docs into ${relative(SITE, join(out, "docs"))}`);
   return { published, unpublished, inputs, nav: navOut };
 }
 

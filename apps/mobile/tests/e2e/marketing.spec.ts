@@ -19,7 +19,9 @@ type Theme = (typeof THEMES)[number];
 
 /** A fresh context and page: iPhone size, theme, seeded randomness, a fake clock, console errors collected. */
 async function shot(browser: Browser, baseURL: string, theme: Theme) {
-  const { defaultBrowserType: _browser, ...phone } = devices["iPhone 15 Pro"]; // 393x852 @3x, touch
+  // 393x852 @3x, touch. defaultBrowserType is a project option, not a context one.
+  const phone: Partial<(typeof devices)[string]> = { ...devices["iPhone 15 Pro"] };
+  delete phone.defaultBrowserType;
   const context = await browser.newContext({ ...phone, viewport: { width: 393, height: 852 }, baseURL, colorScheme: theme, reducedMotion: "reduce", locale: "en-US" });
   const page = await context.newPage();
   const errors: string[] = [];

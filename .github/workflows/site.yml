@@ -39,7 +39,9 @@ env:
     SECURITY.md
     CONTRIBUTING.md
     TRADEMARKS.md
+    CODE_OF_CONDUCT.md
     NOTICE
+    tools/eval/docs/formats.md
     packages/ui/src/tokens/**
     packages/ui/scripts/build-tokens-css.mjs
     packages/ui/src/fonts.css
