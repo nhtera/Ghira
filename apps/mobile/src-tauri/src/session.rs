@@ -198,6 +198,9 @@ pub struct Shared {
     pub gate: Gate,
     inner: Mutex<Inner>,
     capture_done: AtomicBool,
+    /// Stopped with a final pass to follow: the live engine drops what it has
+    /// not read yet instead of catching up (the pass re-reads all the audio).
+    skip_catch_up: AtomicBool,
     /// The recording timeline (16 kHz samples), written by the pump.
     position: AtomicU64,
     meeting: String,
@@ -212,6 +215,7 @@ impl Shared {
             gate: Gate::default(),
             inner: Mutex::new(Inner::default()),
             capture_done: AtomicBool::new(false),
+            skip_catch_up: AtomicBool::new(false),
             position: AtomicU64::new(0),
             meeting,
             events,
@@ -225,6 +229,15 @@ impl Shared {
 
     pub fn capture_done(&self) -> bool {
         self.capture_done.load(Ordering::Acquire)
+    }
+
+    /// The live engine may drop its unread backlog at the stop (see the field).
+    pub fn skip_catch_up(&self) -> bool {
+        self.skip_catch_up.load(Ordering::Acquire)
+    }
+
+    pub fn set_skip_catch_up(&self, on: bool) {
+        self.skip_catch_up.store(on, Ordering::Release);
     }
 
     /// Recorded time, ms.
@@ -1244,6 +1257,11 @@ impl Session {
             platform::audio_stop();
         }
         PRODUCER.lock().unwrap_or_else(|e| e.into_inner()).take();
+        // The final pass re-reads all the audio, so a live transcript that is
+        // behind (a locked or hot phone) is not caught up first: that waited
+        // for the app to be open and cool, and held every job meanwhile. A
+        // sensitive meeting keeps no audio: its live transcript is the transcript.
+        self.shared.set_skip_catch_up(!self.sensitive());
         self.shared.lock().stopped = true;
         let _ = self.cmd.send(Cmd::Stop);
         self.shared.gate.stop();
@@ -1280,6 +1298,18 @@ impl Session {
             .store
             .finish_meeting(&self.id, duration_ms)
             .map_err(|e| format!("closing the meeting: {e}"));
+        // Processing from the stop on when a final pass follows: if the app
+        // closes before `finish` queues it, the next launch's recovery finds a
+        // `processing` meeting with no job and queues the pass (a `done` one
+        // would stay a live transcript only).
+        if closed.is_ok()
+            && !self.sensitive()
+            && !self.desktop
+            && self.job_kinds.contains(&ghi_core::session::FINAL_PASS_JOB)
+            && let Err(e) = self.store.set_meeting_status(&self.id, "processing")
+        {
+            log::warn!("marking the stopped meeting for its final pass: {e}");
+        }
         self.shared.activity_update();
         let me = self.clone();
         thread::Builder::new()

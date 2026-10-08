@@ -711,6 +711,10 @@ fn live_loop(ctx: &mut EngineCtx) -> Result<(), String> {
     }
 }
 
+/// At the stop, more unread audio than this (10 s) is dropped rather than
+/// caught up, when a final pass follows ([`Shared::skip_catch_up`]).
+const SKIP_BEHIND: u64 = 10 * SAMPLE_RATE as u64;
+
 /// Reads and discards the backlog until the session ends.
 fn drain(shared: &Shared, backlog: &mut BacklogReader) -> Result<(), String> {
     while pump(
@@ -937,6 +941,20 @@ pub fn pump(
     let gate = &shared.gate;
     let mut pcm = Vec::new();
     loop {
+        // Stopped far behind with a final pass to follow: the rest is dropped
+        // now, with no GPU needed (the pass writes the transcript from the
+        // audio; what was live stays until then).
+        if gate.stopping()
+            && shared.capture_done()
+            && shared.skip_catch_up()
+            && backlog.available() > SKIP_BEHIND
+        {
+            log::info!(
+                "live engine stopped behind: {:.0} s not caught up (the final pass reads them)",
+                backlog.available() as f64 / f64::from(SAMPLE_RATE)
+            );
+            return Ok(Flow::Finished);
+        }
         if !gate.enter(POLL) {
             if gate.unload_due(UNLOAD_AFTER) {
                 return Ok(Flow::Unload);
@@ -1317,6 +1335,64 @@ mod tests {
             SAMPLE_RATE as u64,
             "nothing pending"
         );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Stopped ten minutes behind with a final pass to follow: done at once,
+    /// nothing stepped (no GPU, open or hot phone not needed); a sensitive
+    /// meeting (no skip) or a short tail is still read to the end.
+    #[test]
+    fn a_stop_far_behind_drops_the_backlog_when_a_final_pass_follows() {
+        let (shared, mut backlog, dir) = setup("skip", 60);
+        shared.set_skip_catch_up(true);
+        let mut steps = 0;
+        let flow = pump(
+            &shared,
+            &mut backlog,
+            |_| {
+                steps += 1;
+                Ok(Vec::new())
+            },
+            || Ok(Vec::new()),
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert_eq!(flow, Flow::Finished);
+        assert_eq!(steps, 0, "nothing caught up");
+        std::fs::remove_dir_all(dir).unwrap();
+
+        let (shared, mut backlog, dir) = setup("noskip", 60);
+        let mut steps = 0;
+        let flow = pump(
+            &shared,
+            &mut backlog,
+            |_| {
+                steps += 1;
+                Ok(Vec::new())
+            },
+            || Ok(Vec::new()),
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert_eq!(flow, Flow::Finished);
+        assert!(steps > 0, "a sensitive meeting is read to the end");
+        std::fs::remove_dir_all(dir).unwrap();
+
+        let (shared, mut backlog, dir) = setup("tail", 5);
+        shared.set_skip_catch_up(true);
+        let mut steps = 0;
+        pump(
+            &shared,
+            &mut backlog,
+            |_| {
+                steps += 1;
+                Ok(Vec::new())
+            },
+            || Ok(Vec::new()),
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(steps > 0, "a short tail is still read");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

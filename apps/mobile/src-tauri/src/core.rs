@@ -118,6 +118,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             crate::engine::job_handlers(models, store, class, notes)
         })),
         recover_kinds: Some(recover_kinds(class)),
+        requeue_unfinished_stops: class == TierClass::Live,
         before_spawn: Some(Arc::new(move |runner| lifecycle.sync_runner(runner))),
         mic: Some(enrollment_mic()),
         gate_launch: true,

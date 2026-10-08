@@ -105,6 +105,52 @@ pub fn recover(store: &Store) -> Result<Recovered, String> {
     recover_with_kinds(store, &[NOTES_LIVE_JOB, FINAL_PASS_JOB])
 }
 
+/// A stop that never finished (the app closed while the stopped session was
+/// still settling) leaves a recorded meeting `done`: audio, no final pass and
+/// no job. On a device that processes its own recordings (the live-tier
+/// phone), such a meeting gets its final pass now. Returns how many.
+pub fn requeue_unfinished_stops(store: &Store) -> Result<usize, String> {
+    let mut n = 0;
+    let mut offset = 0;
+    loop {
+        let page = store.list_meetings(200, offset).map_err(err)?;
+        if page.is_empty() {
+            break;
+        }
+        offset += page.len();
+        for m in page
+            .iter()
+            .filter(|m| m.status == "done" && !m.sensitive && m.transcript_version < 2)
+        {
+            if leased_elsewhere(store, &m.gid)? || store.tracks(&m.gid).map_err(err)?.is_empty() {
+                continue;
+            }
+            let busy = [NOTES_LIVE_JOB, FINAL_PASS_JOB, NOTES_FINAL_JOB]
+                .iter()
+                .try_fold(false, |busy, kind| {
+                    store.active_job(&m.gid, kind).map(|j| busy || j.is_some())
+                })
+                .map_err(err)?;
+            if busy {
+                continue;
+            }
+            store
+                .set_meeting_status(&m.gid, "processing")
+                .map_err(err)?;
+            store
+                .enqueue_job(
+                    Some(&m.gid),
+                    FINAL_PASS_JOB,
+                    JOB_PAYLOAD_VERSION,
+                    &serde_json::json!({}),
+                )
+                .map_err(err)?;
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
 /// Applies the audio side of discards whose text side was stored but whose
 /// bundle rotation never ran [RT-1]; `meeting` limits it to one meeting.
 /// Returns how many were completed. A recording that stops must call this
@@ -504,5 +550,46 @@ mod tests {
         recover_with_kinds(&store, &[]).unwrap();
         assert_eq!(store.get_meeting(&other).unwrap().status, "done");
         assert!(store.jobs_for_meeting(&other).unwrap().is_empty());
+    }
+    /// A stop that never finished left the meeting `done` with its audio: the
+    /// phone's launch queues its final pass; a sensitive one, one already
+    /// transcribed (v2) or one without audio is left alone, and it runs once.
+    #[test]
+    fn an_unfinished_stop_gets_its_final_pass() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        let with_audio = |sensitive: bool| {
+            let gid = store.create_meeting(NewMeeting::default()).unwrap().gid;
+            let mut w = store.open_track(&gid, TrackKind::Mic).unwrap();
+            w.append(&[1, 2, 3]).unwrap();
+            store.finish_track(&gid, TrackKind::Mic, w).unwrap();
+            store.finish_meeting(&gid, 600_000).unwrap();
+            if sensitive {
+                store.set_sensitive(&gid, true).unwrap();
+            }
+            gid
+        };
+        let stopped = with_audio(false);
+        let sensitive = with_audio(true);
+        let no_audio = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        store.finish_meeting(&no_audio, 1_000).unwrap();
+        assert_eq!(requeue_unfinished_stops(&store).unwrap(), 1);
+        assert_eq!(store.get_meeting(&stopped).unwrap().status, "processing");
+        assert!(
+            store
+                .active_job(&stopped, FINAL_PASS_JOB)
+                .unwrap()
+                .is_some()
+        );
+        for gid in [&sensitive, &no_audio] {
+            assert!(store.active_job(gid, FINAL_PASS_JOB).unwrap().is_none());
+        }
+        // Queued already: not twice.
+        assert_eq!(requeue_unfinished_stops(&store).unwrap(), 0);
     }
 }

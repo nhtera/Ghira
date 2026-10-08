@@ -111,6 +111,9 @@ pub struct CoreHooks {
     pub handlers: Option<HandlerFactory>,
     /// The job kinds crash recovery queues (default: live notes and final pass).
     pub recover_kinds: Option<Vec<&'static str>>,
+    /// Recovery also gives a final pass to recorded meetings whose stop never
+    /// finished (`recover::requeue_unfinished_stops`; the live-tier phone).
+    pub requeue_unfinished_stops: bool,
     /// Runs on the new job runner right before it is spawned (the phone
     /// pauses it when launched in the background).
     pub before_spawn: Option<RunnerHook>,
@@ -1194,6 +1197,13 @@ impl Core {
             Some(kinds) => ghi_core::recover::recover_with_kinds(&store, kinds)?,
             None => ghi_core::recover::recover(&store)?,
         };
+        if self.hooks.requeue_unfinished_stops {
+            match ghi_core::recover::requeue_unfinished_stops(&store) {
+                Ok(0) => {}
+                Ok(n) => log::info!("recovery: {n} stopped recording(s) queued for the final pass"),
+                Err(e) => log::warn!("recovery of unfinished stops: {e}"),
+            }
+        }
         *lock(&self.recovered) = recovered.meetings;
         // Names given before 14c get their person rows (idempotent).
         if let Err(e) = store.link_named_speakers() {
