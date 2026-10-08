@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// tokens.json → src/tokens/tokens.css: theme variables per theme, the Tailwind
+// tokens.json → src/tokens/tokens.css: theme variables per theme, the font and
+// radius variables as plain CSS (for CSS that is not Tailwind utilities, such
+// as the website's; same names and values as the theme entries), the Tailwind
 // v4 theme bound to them (`@theme inline`, so utilities follow data-theme),
 // and the type scale as utilities. The CSS is committed; a test checks it is
 // in sync. Run after editing tokens.json: pnpm --filter @ghi/ui gen:tokens
@@ -59,6 +61,11 @@ ${vars("light")}
 [data-theme="dark"] {
   color-scheme: dark;
 ${vars("dark")}
+}
+
+:root {
+${fonts}
+${radii}
 }
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));

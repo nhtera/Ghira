@@ -78,6 +78,18 @@
   --toast-fg: #0C110F;
 }
 
+:root {
+  --font-sans: 'Be Vietnam Pro', 'Segoe UI Variable', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4 Variable', 'Noto Serif', Georgia, serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --radius-seg: 6px;
+  --radius-ctl: 8px;
+  --radius-row: 10px;
+  --radius-panel: 12px;
+  --radius-dialog: 14px;
+  --radius-pill: 999px;
+}
+
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme inline {
