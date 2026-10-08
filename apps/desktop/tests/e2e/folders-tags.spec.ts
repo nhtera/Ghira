@@ -102,7 +102,7 @@ test("accents make a different folder; an unaccented look-alike of a lone folder
   await expect(side.getByRole("link", { name: /Họp/ })).toBeVisible();
   // "hop" would be the same folder as the lone "Họp": refused.
   await add("hop");
-  await expect(page.getByText("“hop” already exists.")).toBeVisible();
+  await expect(page.getByText(/^“hop” already exists\./)).toBeVisible();
   await page.keyboard.press("Escape");
   // "Hộp" has its own accents: a different folder.
   await add("Hộp");
@@ -115,7 +115,7 @@ test("a refusal from the core is a sentence", async ({ page }) => {
   await page.getByRole("button", { name: "Move to folder…" }).click();
   await page.getByRole("textbox", { name: "Folder name" }).fill("X");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("That didn’t work. Try again.")).toBeVisible();
+  await expect(page.getByText(/^That didn’t work\. Try again\./)).toBeVisible();
 });
 
 test("Settings → General: rename and delete with a confirm that says the meetings stay", async ({ page }) => {

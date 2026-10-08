@@ -53,6 +53,9 @@ test("editing a line shows Edited", async ({ page }) => {
 
 test("the waveform is a keyboard slider", async ({ page }) => {
   await openTranscript(page);
+  // A seek before the audio's metadata loads is ignored by the element (a slow
+  // machine gets the keys in first).
+  await page.waitForFunction(() => (document.querySelector("audio")?.readyState ?? 0) >= 1);
   const slider = page.getByRole("slider").first();
   await slider.focus();
   await page.keyboard.press("ArrowRight");

@@ -62,7 +62,7 @@ test("merging asks first, then merges into the target", async ({ page }) => {
   await page.getByRole("menuitem", { name: "Linh" }).click();
   await expect(page.getByRole("alertdialog")).toContainText("Merge Minh into Linh?");
   await page.getByRole("alertdialog").getByRole("button", { name: "Merge", exact: true }).click();
-  await expect(page.getByText("Merged Minh into Linh")).toBeVisible();
+  await expect(page.getByText(/^Merged Minh into Linh/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Linh", level: 2 })).toBeVisible();
   await expect(list(page).getByRole("button", { name: /Minh/ })).toHaveCount(0);
 });

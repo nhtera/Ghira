@@ -12,7 +12,6 @@ export async function openApp(page: Page, route = "/", opts: { lang?: "en" | "vi
   await page.waitForFunction(() => Boolean(window.__ghiMock));
 }
 
-/** No axe violations on the current screen. */
 /** Waits for every finite CSS animation and transition (a sheet sliding in, a
  * fade) to end, then for smooth scrolling (the live transcript following its
  * newest line) to stop, so axe and screenshots see the settled screen: a slow
@@ -40,6 +39,7 @@ export async function settle(page: Page) {
   });
 }
 
+/** No axe violations on the current screen. */
 export async function expectAccessible(page: Page) {
   await settle(page);
   const r = await new AxeBuilder({ page }).analyze();
