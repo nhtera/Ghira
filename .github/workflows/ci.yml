@@ -56,7 +56,9 @@ jobs:
       matrix:
         os: [macos-14, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # A cold Windows run (PRs restore no cache) spends ~36 min in the Tauri
+    # release build alone.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
