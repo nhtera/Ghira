@@ -74,11 +74,12 @@ cargo deny check licenses bans advisories sources
 | `crates/` | Rust core (`ghi-*`; "Ghi" is the codename): audio capture, speech, store, core pipeline, LLM client and worker, network policy, shared app layer, CLI |
 | `apps/desktop/` | Tauri 2 desktop app (React + TypeScript) |
 | `apps/mobile/` | Tauri 2 iOS app (React + TypeScript) |
+| `apps/website/` | The website and docs at [ghira.app](https://ghira.app): a standalone npm project, not part of the pnpm workspace; see its [README](apps/website/README.md) |
 | `native/macos/`, `native/ios/` | Swift audio and platform code (`native/android/` is empty) |
 | `packages/` | `@ghi/ui` components and `@ghi/i18n` translations (EN, VI) |
 | `third_party/NeMo-Speech.cpp` | NVIDIA speech runtime (git submodule) |
 | `tools/` | `eval/` (evaluation kit), `release/` (bundle, DMG, audits), `scripts/` (checks, model fetch, builds) |
-| `docs/` | Release notes, checklists and audits; see [docs/README.md](docs/README.md) |
+| `docs/` | User docs (published at ghira.app/docs; [docs/README.md](docs/README.md) is the nav), release notes, checklists and audits |
 
 ## Security
 

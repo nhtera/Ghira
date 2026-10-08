@@ -73,6 +73,10 @@ pnpm gen:licenses && pnpm gen:licenses:mobile   # About -> Licenses data; CI fai
 GHI_SYNC_LAN_IP=$(ipconfig getifaddr en0) cargo test -p ghi-sync --test listener_audit -- --nocapture   # needs `cargo build -p ghi-cli` for the process test
 (cd crates/ghi-sync && cargo +nightly fuzz run record fuzz/corpus/record fuzz/seeds/record -- -max_total_time=60)   # also frame, track_pages, and message/qr with their fuzz/seeds/<target>; standalone crate, CI only type-checks it
 cargo test -p ghi-store --release --test sync_trigger_cost -- --ignored --nocapture   # bench: cost of the sync_log triggers on segment inserts
+# website (apps/website; standalone npm project, NOT in the pnpm workspace; Node 22.18+):
+npm --prefix apps/website ci --ignore-scripts && npm --prefix apps/website run lint && npm --prefix apps/website run typecheck && npm --prefix apps/website test
+npm --prefix apps/website run build:site && npm --prefix apps/website run check-links && npm --prefix apps/website run test:browser   # needs npx playwright install chromium
+npm --prefix apps/website run check:install-scripts && npm --prefix apps/website run check:licenses && npm --prefix apps/website audit --audit-level=high
 # eval kit (phase 2), from tools/eval:
 uv sync --locked && uv run ruff check && uv run ruff format --check && uv run pytest -q
 ```
@@ -239,6 +243,18 @@ large-v3-turbo q5 + Silero VAD over a pinned `third_party/whisper.cpp` built STA
 `GHI_ASR_FINAL` overrides in debug builds; Settings → Models chooses it, `settings_cmd::set_transcription_engine`, and then lists Whisper's models to download) and both models are installed,
 else (or on any load failure) NeMo. Preemption aborts a decode mid-window (`AsrStream::finish_abortable`);
 `./tools/scripts/check-no-ggml-export.sh <binary>` guards that ggml stays private.
+
+Website (apps/website, https://ghira.app): landing page + docs, TanStack Start
+prerendered to static HTML, `fumadocs-core`/`fumadocs-mdx` (no fumadocs-ui),
+built with `cf build` and served by a Cloudflare Worker that only answers
+404s (`scripts/build-worker.mjs` swaps in `src/worker/production.ts` and fails
+if a render path or the prerender token reaches it). Own `package-lock.json`,
+`npm ci --ignore-scripts`; it imports `packages/ui` tokens.css by relative path
+(no `@ghi/*` packages). `docs/README.md` is the docs nav (`## Section` + table
+rows; default-deny; root allowlist PRIVACY/SECURITY/CONTRIBUTING/TRADEMARKS;
+`docs/release/**` never published). Site copy in `src/content/*.ts`; no
+cookies, no analytics, no third-party subresources (check-links + browser
+suites). CI: `.github/workflows/site.yml` (deploy on main, environment `site`).
 
 Eval kit: `tools/eval` (`ghi-eval`, Python 3.11 + uv). The data, `ghi` CLI and
 report contract is `tools/eval/docs/formats.md`. Recordings, transcripts and
