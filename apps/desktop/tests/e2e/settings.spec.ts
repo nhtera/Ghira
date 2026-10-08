@@ -22,7 +22,7 @@ test("adds a custom vocabulary term", async ({ page }) => {
   await expect(page.getByRole("list", { name: "Custom vocabulary" }).getByText("Ghira Beta")).toBeVisible();
   await page.getByRole("textbox", { name: "Add a term" }).fill("ghira beta");
   await page.getByRole("textbox", { name: "Add a term" }).press("Enter");
-  await expect(page.getByText("Already in the list.")).toBeVisible();
+  await expect(page.getByText(/^Already in the list\./)).toBeVisible();
 });
 
 test("a saved key is never shown again and nothing is logged", async ({ page }) => {

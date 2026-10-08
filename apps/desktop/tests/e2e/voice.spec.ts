@@ -13,7 +13,7 @@ test("onboarding: consent first, then read, then saved", async ({ page }) => {
   await start.click();
   await expect(page.getByText(/Reading… (1\d|2\d) s/)).toBeVisible();
   await page.getByRole("button", { name: "Stop and save" }).click();
-  await expect(page.getByText("Your voice is saved")).toBeVisible();
+  await expect(page.getByText(/^Your voice is saved/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
 });
 
@@ -62,7 +62,7 @@ test("Settings → Privacy shows the voice profile and deletes it after a confir
   await expect(card).toContainText(/Voice profile saved .* · 6 samples/);
   await card.getByRole("button", { name: "Delete my voice data…" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Delete voice data" }).click();
-  await expect(page.getByText("Your voice data is deleted.")).toBeVisible();
+  await expect(page.getByText(/^Your voice data is deleted\./)).toBeVisible();
   await expect(card).toContainText("No voice profile yet");
 });
 
@@ -73,7 +73,7 @@ test("a speaker 'Sounds like Me' can be accepted, and Not me undoes it", async (
   const chip = page.getByTestId("voice-suggestion");
   await expect(chip).toContainText("Sounds like Me");
   await chip.getByRole("button", { name: "Accept Me as this speaker" }).click();
-  await expect(page.getByText("Marked as Me")).toBeVisible();
+  await expect(page.getByText("Marked as Me", { exact: true })).toBeVisible();
   await expect(page.getByTestId("voice-suggestion")).toHaveCount(0);
   await expect(list.getByRole("button", { name: /^Me$|Me/ }).first()).toBeVisible();
 });

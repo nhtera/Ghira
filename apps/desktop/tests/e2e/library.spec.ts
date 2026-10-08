@@ -37,7 +37,7 @@ test("recording then stopping shows the stepper, the toast and Name your speaker
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("listitem").first()).toContainText("Reading the recording");
   await expect(panel).toContainText("You can leave this page");
-  await expect(page.getByText("Notes are ready")).toBeVisible({ timeout: 6000 });
+  await expect(page.getByText(/^Notes are ready/)).toBeVisible({ timeout: 6000 });
   await expect(panel).toHaveCount(0);
   const names = page.getByRole("region", { name: "Name your speakers" });
   await expect(names).toBeVisible();
