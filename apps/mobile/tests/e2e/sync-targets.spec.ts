@@ -49,6 +49,9 @@ test.describe("import inbox", () => {
     test(`${sync}: no computer choice, and it says where the file is processed`, async ({ page }) => {
       await openSync(page, "/settings", { sync });
       await seed(page, [item("standup")]);
+      // "Importing…" lasts 250 ms in the mock: hold it long enough to be seen
+      // on a slow machine.
+      await page.evaluate(() => (window.__ghiSettingsMock!.inboxImportMs = 3000));
       await page.getByRole("status").filter({ hasText: "waiting to import" }).getByRole("button", { name: "Review" }).click();
       const dialog = page.getByRole("dialog", { name: "Waiting to import" });
       await expect(dialog.getByText("Imported files are processed on this phone.")).toBeVisible();

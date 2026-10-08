@@ -60,6 +60,8 @@ export interface GhiSettingsMock {
   cloudLocked: string[];
   /** The share-extension inbox. */
   inbox: InboxItem[];
+  /** How long a confirmed inbox item stays "importing" (ms). */
+  inboxImportMs: number;
   /** The archive password of the last export, once it was accepted. */
   exportedWith: string | null;
   /** Everything was deleted. */
@@ -141,6 +143,7 @@ const hooks: GhiSettingsMock = {
   failSend: [],
   cloudLocked: [],
   inbox: [],
+  inboxImportMs: 250,
   exportedWith: null,
   wiped: false,
   setInbox(items) {
@@ -159,7 +162,7 @@ const hooks: GhiSettingsMock = {
     mobile = freshMobile();
     meDeleted = false;
     ignored = [];
-    Object.assign(hooks, { calls: {}, args: {}, locked: false, starting: false, storeProblem: null, startupFails: false, noAuthMethod: false, warnings: [], retentionNote: "", faceIdOk: true, faceIdPrompts: 0, busy: false, keys: {}, lastKey: "", cloudRequests: 0, logAt: null, terms: [], learned: ["Linh Trần"], maxTerms: 200, failSend: [], cloudLocked: [], inbox: [], exportedWith: null, wiped: false });
+    Object.assign(hooks, { calls: {}, args: {}, locked: false, starting: false, storeProblem: null, startupFails: false, noAuthMethod: false, warnings: [], retentionNote: "", faceIdOk: true, faceIdPrompts: 0, busy: false, keys: {}, lastKey: "", cloudRequests: 0, logAt: null, terms: [], learned: ["Linh Trần"], maxTerms: 200, failSend: [], cloudLocked: [], inbox: [], inboxImportMs: 250, exportedWith: null, wiped: false });
   },
 };
 if (typeof window !== "undefined") {
@@ -393,7 +396,7 @@ const scripted: Partial<Commands> = {
     setTimeout(() => {
       hooks.inbox = hooks.inbox.filter((i) => i.id !== id);
       window.__ghiMock?.simulateMobileEvent({ type: "inboxChanged" });
-    }, 250);
+    }, hooks.inboxImportMs);
     return ok(`imported-${id}`);
   },
   inboxDismiss: async (id) => {
