@@ -1,5 +1,7 @@
 # Ghira 0.1.0-alpha.1 (macOS)
 
+> These notes describe 0.1.0-alpha.1 as released. Some plans changed since: there is no update check yet, and app lock, calendar, voice profiles, sync and the iPhone app have since been built. See [Privacy](../../PRIVACY.md) for what Ghira sends today.
+
 ## English
 
 The first alpha of Ghira, an offline-first meeting note taker for English and
@@ -35,6 +37,8 @@ Please report problems on the issue tracker. Never attach recordings,
 transcripts or screenshots with meeting content.
 
 ## Tiếng Việt
+
+> Ghi chú này mô tả bản 0.1.0-alpha.1 như lúc phát hành. Một số kế hoạch đã đổi: hiện chưa có kiểm tra cập nhật, còn khoá ứng dụng, lịch, voice profile, đồng bộ và ứng dụng iPhone đã được xây dựng. Xem [Quyền riêng tư](../../PRIVACY.md) để biết hiện Ghira gửi gì.
 
 Bản alpha đầu tiên của Ghira, ứng dụng ghi chú cuộc họp ưu tiên ngoại tuyến cho
 tiếng Anh và tiếng Việt. Máy Mac Apple Silicon, macOS 14.2 trở lên.

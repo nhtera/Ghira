@@ -13,7 +13,7 @@ export const FAQ_TITLE = "Questions people ask first";
 export const FAQ: readonly Faq[] = [
   {
     q: "Does any of my audio go to the internet?",
-    a: "No. Audio is recorded and transcribed on your Mac and never leaves it. Even when you choose cloud AI for one meeting, only the transcript text you reviewed is sent.",
+    a: "No. Audio is recorded and transcribed on your Mac and never goes to the internet. Even when you choose cloud AI for one meeting, only the transcript text you reviewed is sent.",
   },
   {
     q: "Does a bot join my Zoom, Meet or Teams call?",

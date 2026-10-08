@@ -150,3 +150,78 @@ If a `cf` beta breaks the build or deploy, use the GA path: replace
 Build with `vite build` (output in `dist/client` and `dist/server`; point
 `scripts/paths.mjs` there), and deploy with a pinned `wrangler` in
 `apps/website/deploy/` (`wrangler deploy`).
+
+## Claim audit
+
+Date: 2026-10-09 (Phase 8). Every product claim on the site needs a source in
+the code or a reworded cell. Paths are relative to the repo root.
+
+### Landing and FAQ
+
+| Claim (where) | Source |
+|---|---|
+| Pre-release, Apple Silicon, macOS 14.2+ (hero status, get, FAQ, llms) | `apps/desktop/src-tauri/tauri.release.conf.json:7` (`minimumSystemVersion`), `tools/release/build-dmg.sh:12,98` (aarch64, `min_macos`), `docs/install.md:8` |
+| English, Vietnamese, both in one sentence (hero, FAQ) | `docs/overview.md`; notes language switch `docs/notes.md:57-59` |
+| No bot, mic + meeting app sound (listen, FAQ) | `native/macos/GhiAudioMac/Sources/GhiAudioMac/AggregateDevice.swift:4` (mic + process tap), `crates/ghi-audio/src/detect.rs:179` |
+| Zoom, Meet, Teams, "anything that plays sound" (listen) | `detect.rs:62-63` (Zoom, Teams bundle ids); browsers prompt generically (`detect.rs:8-14`); no listed app in a call: whole system is captured (`detect.rs:179-180`) |
+| Offers to record when a call starts (listen) | `apps/desktop/src-tauri/src/system.rs:8-10` poller; setting "Ask to record when a call starts" (`en.json:710`), opt-in per `docs/recording.md:19-24` |
+| Room mode, Mac and iPhone (listen) | `en.json:28,405`; `docs/recording.md:8-11`; `apps/mobile` record screens |
+| Speaker color + number, rename live (apps) | `packages/ui/src/components/speaker-chip/speaker-chip.tsx:3,37` |
+| Notes: summary, decisions, actions, questions, citations (after) | `crates/ghi-llm` templates + citations; `docs/notes.md` |
+| Notes written by a model on the Mac (after) | `crates/ghi-llm-worker`; registry `qwen3-4b` (`crates/ghi-models/registry.toml:29`) |
+| iPhone in testing, Simulator only, hands to Mac over own network (hero, apps, features, get) | `CLAUDE.md` iOS section; `docs/iphone-sync.md` Status; `crates/ghi-sync` |
+| Never sent: meetings; exceptions cloud AI + LAN sync (privacy) | `PRIVACY.md:9-11`; `crates/ghi-net` (`CloudGrant`, `lan`) |
+| Model downloads Hugging Face only; update check off until signed releases (privacy) | `PRIVACY.md:11,19-30`; `crates/ghi-update/src/lib.rs:19,28` (`FEED_URL: None`) |
+| Strict offline turns both off (privacy) | `en.json:924-925,1115,887`; `PRIVACY.md:11,30`; `docs/models.md:53` |
+| No telemetry; crash reports local, you can send them (privacy) | `PRIVACY.md:12`; `crates/ghi-diag` |
+| Fonts and icons bundled (privacy) | `PRIVACY.md:13`; `packages/ui` gen:fonts, CSP |
+| Cloud AI per meeting, exact preview, redaction, no audio, no typed notes, own key (privacy) | `PRIVACY.md:41-47`; `crates/ghi-core/src/cloud.rs`; `docs/cloud-ai.md` |
+| No account, no server (FAQ) | `PRIVACY.md:41`; `CLAUDE.md` invariants |
+| Models "a few GB", download once, SHA-256 pinned (get, FAQ) | `registry.toml` sizes: 742+107+2497+639+28 MB, about 4 GB; `docs/models.md:36-41`; `PRIVACY.md:19-22` |
+| Matching by meaning needs Balanced or Max (features) | `crates/ghi-models/src/tier.rs:152` (`embed_id: (tier != Tier::Light)`); `crates/ghi-core/src/ask_all.rs:13` (semantic skipped without the embedder) |
+| Accents optional, Ask across meetings with sources (features) | `ghi-store` VN-folded FTS5; `crates/ghi-core/src/ask_all.rs` |
+| Import Voice Memos, Plaud, Zoom per-participant, any file (features) | `crates/ghi-core/src/presets.rs:18`; `import::import_tracks` |
+| Export Markdown, Word, text, subtitles, Obsidian, follow-up email (features) | `crates/ghi-core/src/export.rs:2-3`; `crates/ghi-core/src/email.rs` |
+| Own key per meeting; delete destroys it (features) | `crates/ghi-store` per-meeting DEKs, crypto-shred delete; `docs/overview.md` |
+| Calendar optional, attendee names (features) | `PRIVACY.md:52-58`; `crates/ghi-core/src/calendar.rs`; `docs/calendar.md` |
+| Voice profile with consent; others later (features) | `PRIVACY.md:49-52`; `THIRD_PARTY_APPROVED` in `system.rs` (hard-off) |
+| App lock: Touch ID or password; recording continues (features) | `crates/ghi-app/src/lock_cmd.rs:119-134` (`DeviceOwnerAuthentication`); `CLAUDE.md` P1 (recording uses `store_even_locked`) |
+| Windows not shipped; code compiles (get, FAQ) | `.github/workflows/ci.yml:57` (windows-latest build); `docs/install.md:86` |
+| Android: no app (get, FAQ) | no Android target in the repo |
+| Build needs Rust, Node 22 + pnpm, CMake 3.26+, Xcode (get) | `docs/install.md:9-13` |
+| Demo is a sample meeting from the test set (demo) | `apps/website/src/content/demo-data.ts` header |
+
+### Comparison rows (landing.ts compare)
+
+Read October 2026. "Typical" = public docs of well-known tools.
+
+| Row | Sources checked | Result |
+|---|---|---|
+| Audio processed on their servers | tl;dv https://tldv.io/features/security-commitment/ ; Otter https://help.otter.ai/hc/en-us/articles/360048322493-Transcription-processing-time-FAQ | tl;dv: data processed in its GCP/Hetzner data centers, confirmed. Otter: 403 to the fetcher; search found only third-party pages, not confirmed directly |
+| Something joins the call | Fireflies https://guide.fireflies.ai/articles/6388921822-how-to-add-fireflies-to-a-meeting-as-a-participant ; Fathom https://help.fathom.video/en/articles/13114369 | Both confirm a notetaker bot joins ("Fathom Notetaker joining the call"). "Often a bot" fits |
+| Account required | Fathom https://help.fathom.video/en/articles/276608 ; Otter terms https://otter.ai/terms-of-service | Fathom: "create your account". Otter 3.1: "you must register for an account" for most features. Confirmed |
+| Works with no internet | Otter processing times (above); Fireflies https://guide.fireflies.ai/articles/1360888790-how-to-upload-unprocessed-files-in-the-fireflies-mobile-app | Fireflies: offline recordings wait "until you're back online" to upload and transcribe. Confirmed. Otter: not opened (403) |
+| Vietnamese / mixed | Otter https://help.otter.ai/hc/en-us/articles/360047247414-Supported-languages ; Fireflies https://guide.fireflies.ai/articles/2585231364-transcribe-fireflies-meetings-in-multiple-languages-with-multi-language-mode-beta | Fireflies: 60+ languages incl. Vietnamese, word-level switching. Otter: 403; secondary sources list no Vietnamese. "Varies by tool" holds |
+| Closed source | Otter terms https://otter.ai/terms-of-service ; Fireflies https://fireflies.ai/terms-of-service | Both: proprietary, no reverse engineering (Otter 6 and 11(f)(ii); Fireflies 6(a), 9, 11(a)). Neither says "closed source" literally |
+
+### Docs and PRIVACY (checked by page)
+
+- overview, install, getting-started: `tauri.release.conf.json`, `build-dmg.sh`, `ci.yml`, `ghi-update` `FEED_URL None`.
+- models: `crates/ghi-models/registry.toml` (sizes), `tier.rs` (Light < 12 GiB, Balanced < 28 GiB), `ghi-net` allowlist.
+- recording, shortcuts: `crates/ghi-audio/src/detect.rs`, `apps/desktop/src-tauri/src/menu.rs:44,69`; bold labels match `packages/i18n/locales/en.json`.
+- iphone-sync: `crates/ghi-sync`, `packages/i18n/locales/mobile/{sync,settings}.en.json` (labels), `PRIVACY.md`.
+- settings, speakers, notes, search, import, export, calendar, cloud-ai, cli: UI labels spot-checked against `en.json` (about 30 bold labels, all found; "Search or Jump To…" is the macOS menu text in `menu.rs`), behavior against the `ghi-core` modules named in `CLAUDE.md`.
+- PRIVACY.md: `crates/ghi-net`, `crates/ghi-update`, `tools/release/net-audit.sh`, `crates/ghi-diag`; no change needed.
+- Release notes 0.1.0-alpha.1: historical; a note was added under the H1 (EN and VI).
+
+### Changed
+
+- Landing "Ghira notices when a call starts and offers to record." became "Turn on detection and Ghira offers to record when a call starts." The setting is off until you enable it (`docs/recording.md:19-24`, `system.rs`).
+- FAQ "never leaves it" became "never goes to the internet": paired-phone sync sends audio to the Mac over the local network (`PRIVACY.md:9`).
+- Compare row "Works with no internet": the Fireflies troubleshooting page only said to use a stable connection; swapped for Fireflies' offline-recordings article, which says transcription waits for a connection.
+- `docs/release-notes/0-1-0-alpha-1.md`: added a note (EN and VI) that plans changed (no update check yet; lock, calendar, voice profiles, sync, iPhone app now built) with a link to PRIVACY.md. The body is untouched.
+
+### Owner review
+
+- Otter help pages (processing times, languages) returned 403; kept as sources, confirmed only indirectly by search.
+- The "Closed source" cell rests on proprietary-license terms, not the words "closed source".

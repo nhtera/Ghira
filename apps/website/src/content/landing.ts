@@ -46,7 +46,7 @@ export const landing = {
       {
         icon: "apps",
         title: "Any meeting app",
-        body: "Zoom, Google Meet, Microsoft Teams or anything else that plays sound. Ghira notices when a call starts and offers to record.",
+        body: "Zoom, Google Meet, Microsoft Teams or anything else that plays sound. Turn on detection and Ghira offers to record when a call starts.",
       },
       {
         icon: "room",
@@ -206,7 +206,7 @@ export const landing = {
         ours: "Yes, after the models download",
         sources: [
           { label: "Otter processing times", href: "https://help.otter.ai/hc/en-us/articles/360048322493-Transcription-processing-time-FAQ" },
-          { label: "Fireflies troubleshooting", href: "https://guide.fireflies.ai/articles/5736968288-troubleshooting-transcription-issues" },
+          { label: "Fireflies offline recordings", href: "https://guide.fireflies.ai/articles/1360888790-how-to-upload-unprocessed-files-in-the-fireflies-mobile-app" },
         ],
       },
       {
