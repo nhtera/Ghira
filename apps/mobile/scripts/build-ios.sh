@@ -59,6 +59,9 @@ fi
 # The simulator needs no signing, but the Tauri CLI wants a team id.
 export APPLE_DEVELOPMENT_TEAM="${APPLE_DEVELOPMENT_TEAM:-0000000000}"
 
+# The project lists these as sources; a fresh clone has neither (Externals is
+# build output, assets is empty until the frontend is copied in).
+mkdir -p "$mobile/src-tauri/gen/apple/Externals" "$mobile/src-tauri/gen/apple/assets"
 (cd "$mobile/src-tauri/gen/apple" && xcodegen generate --quiet)
 cd "$mobile"
 # Only this build's outputs are checked below (not a stale app of the other target).
