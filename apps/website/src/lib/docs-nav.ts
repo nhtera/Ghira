@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// What the docs site publishes, and in which order: docs/README.md is the
+// nav. Each `## Section` heading is followed by a table whose rows are
+// `| [file.md](file.md) | Contents |`; order = sidebar order. Only table rows
+// under a `##` heading are read; bullet lists (the repository links) are
+// ignored. A file not listed is not published.
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { slugOfSource, sourceOfNavHref } from "./doc-paths.ts";
+
+export interface DocEntry {
+  /** Repository path: `docs/notes.md`, `PRIVACY.md`. */
+  source: string;
+  /** Site slug: `notes`, `privacy`, `release-notes/0-1-0-alpha-1`. */
+  slug: string;
+  /** The Contents cell, as plain text. */
+  description: string;
+}
+
+export interface NavSection {
+  title: string;
+  docs: DocEntry[];
+}
+
+/** Markdown inline text → plain text: links keep their text, code loses its backticks. */
+export function plainText(md: string): string {
+  return md
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const ROW = /^\|\s*\[[^\]]+\]\(([^)#\s]+)\)\s*\|\s*(.+?)\s*\|\s*$/;
+
+/** Parse docs/README.md into sections. Throws on a refused or duplicate row. */
+export function parseNav(md: string): NavSection[] {
+  const sections: NavSection[] = [];
+  const seen = new Set<string>();
+  let current: NavSection | undefined;
+  let fence = false;
+  for (const line of md.split("\n")) {
+    if (line.trim().startsWith("```")) fence = !fence;
+    if (fence) continue;
+    const heading = line.match(/^##\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      current = { title: plainText(heading[1]), docs: [] };
+      sections.push(current);
+      continue;
+    }
+    if (/^#\s/.test(line)) {
+      current = undefined;
+      continue;
+    }
+    const row = line.match(ROW);
+    if (!row) continue;
+    if (!current) throw new Error(`docs/README.md: table row "${row[1]}" is not under a "## Section" heading`);
+    const source = sourceOfNavHref(row[1]);
+    if (seen.has(source)) throw new Error(`docs/README.md: ${row[1]} is listed twice`);
+    seen.add(source);
+    const description = plainText(row[2]);
+    if (!description) throw new Error(`docs/README.md: ${row[1]} has no description`);
+    current.docs.push({ source, slug: slugOfSource(source), description });
+  }
+  const nav = sections.filter((s) => s.docs.length > 0);
+  if (nav.length === 0) throw new Error("docs/README.md: no table rows under a ## heading (`| [file.md](file.md) | Contents |`)");
+  return nav;
+}
+
+/** Read docs/README.md from a repository checkout and build the nav. */
+export function loadNav(repoRoot: string): NavSection[] {
+  return parseNav(readFileSync(join(repoRoot, "docs", "README.md"), "utf8"));
+}
+
+/** Every published source path, plus docs/README.md, which becomes /docs. */
+export function publishedSources(nav: NavSection[]): Map<string, string> {
+  const out = new Map<string, string>([["docs/README.md", ""]]);
+  for (const s of nav) for (const d of s.docs) out.set(d.source, d.slug);
+  return out;
+}

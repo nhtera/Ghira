@@ -32,7 +32,7 @@ Needs Rust (rustup), Node 22+ with pnpm (`corepack enable`), CMake 3.26+ and
 Xcode on an Apple Silicon Mac.
 
 ```sh
-git clone <repo-url> && cd ghi
+git clone https://github.com/nhtera/Ghira.git && cd Ghira
 git submodule update --init                  # not --recursive
 pnpm install && pnpm build
 ./tools/scripts/build-nemo.sh                # speech engines (Metal)

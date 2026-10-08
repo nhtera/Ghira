@@ -1,0 +1,66 @@
+{
+  "desk-live": {
+    "width": 2800,
+    "height": 1602,
+    "light": [
+      {
+        "w": 2800,
+        "src": "/screens/desk-live-light-2800.b30fee69.webp"
+      }
+    ],
+    "dark": [
+      {
+        "w": 2800,
+        "src": "/screens/desk-live-dark-2800.e92174d4.webp"
+      }
+    ]
+  },
+  "desk-notes": {
+    "width": 2800,
+    "height": 1602,
+    "light": [
+      {
+        "w": 2800,
+        "src": "/screens/desk-notes-light-2800.2d1e5135.webp"
+      }
+    ],
+    "dark": [
+      {
+        "w": 2800,
+        "src": "/screens/desk-notes-dark-2800.ecacd888.webp"
+      }
+    ]
+  },
+  "phone-live": {
+    "width": 1179,
+    "height": 2556,
+    "light": [
+      {
+        "w": 1179,
+        "src": "/screens/phone-live-light-1179.c33ba3ee.webp"
+      }
+    ],
+    "dark": [
+      {
+        "w": 1179,
+        "src": "/screens/phone-live-dark-1179.545862db.webp"
+      }
+    ]
+  },
+  "phone-meetings": {
+    "width": 1179,
+    "height": 2556,
+    "light": [
+      {
+        "w": 1179,
+        "src": "/screens/phone-meetings-light-1179.65e97c93.webp"
+      }
+    ],
+    "dark": [
+      {
+        "w": 1179,
+        "src": "/screens/phone-meetings-dark-1179.643b42c6.webp"
+      }
+    ]
+  }
+}
