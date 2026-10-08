@@ -88,10 +88,16 @@ fn nullable_string() -> Value {
     json!({"type": ["string", "null"]})
 }
 
-/// A speaker alias from `speakers`, or null.
-fn speaker(speakers: &[String]) -> Value {
+/// A speaker alias from `speakers`, or null. Cloud schemas leave out the
+/// enum (Anthropic rejects an enum next to a `["string", "null"]` type); the
+/// validator keeps only known aliases either way.
+fn speaker(s: &Shape) -> Value {
+    let speakers = s.speakers;
     if speakers.is_empty() {
         return json!({"type": "null"});
+    }
+    if s.dialect == Dialect::Cloud {
+        return nullable_string();
     }
     let mut options: Vec<Value> = speakers.iter().map(|s| json!(s)).collect();
     options.push(Value::Null);
@@ -117,13 +123,13 @@ pub fn notes(template: &Template, s: &Shape) -> Value {
     let d = s.dialect;
     let action = object(&[
         ("text", string()),
-        ("owner", speaker(s.speakers)),
+        ("owner", speaker(s)),
         ("due", nullable_string()),
         ("cite", cites(s, true)),
     ]);
     let quote = object(&[
         ("text", string()),
-        ("speaker", speaker(s.speakers)),
+        ("speaker", speaker(s)),
         ("cite", cites(s, true)),
     ]);
     let topic = object(&[("title", string()), ("cite", cites(s, true))]);
@@ -203,8 +209,8 @@ pub fn facts(s: &Shape) -> Value {
     let fact = object(&[
         ("kind", json!({"type": "string", "enum": FACT_KINDS})),
         ("text", string()),
-        ("speaker", speaker(s.speakers)),
-        ("owner", speaker(s.speakers)),
+        ("speaker", speaker(s)),
+        ("owner", speaker(s)),
         ("due", nullable_string()),
         ("cite", cites(s, true)),
     ]);
@@ -321,7 +327,9 @@ mod tests {
             speakers: &sp,
         };
         let s = notes(&t, &sh).to_string();
-        for bound in ["minItems", "maxItems", "minimum", "[1,2]"] {
+        // No enums at all: Anthropic rejects one next to a ["string","null"]
+        // type (the speakers); aliases are checked when the reply is parsed.
+        for bound in ["minItems", "maxItems", "minimum", "[1,2]", "\"enum\""] {
             assert!(!s.contains(bound), "{bound}");
         }
         sh.dialect = Dialect::Local;
