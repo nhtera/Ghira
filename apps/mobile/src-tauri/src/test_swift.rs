@@ -32,6 +32,8 @@ pub extern "C" fn ghi_swift_memory_footprint() -> u64 {
 pub extern "C" fn ghi_swift_battery_level() -> f32 {
     -1.0
 }
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_swift_keep_awake(_on: bool) {}
 /// # Safety
 /// Never dereferences `path`.
 #[unsafe(no_mangle)]
@@ -126,6 +128,7 @@ pub fn keep() -> usize {
         ghi_swift_thermal_state as *const () as usize,
         ghi_swift_memory_footprint as *const () as usize,
         ghi_swift_battery_level as *const () as usize,
+        ghi_swift_keep_awake as *const () as usize,
         ghi_swift_exclude_from_backup as *const () as usize,
         ghi_swift_call_active as *const () as usize,
         ghi_swift_launched_in_background as *const () as usize,

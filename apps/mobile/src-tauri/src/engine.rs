@@ -1147,6 +1147,7 @@ fn watched(open: ghi_core::notes_job::LlmFactory) -> ghi_core::notes_job::LlmFac
     impl Drop for Watched {
         fn drop(&mut self) {
             self.done.store(true, std::sync::atomic::Ordering::Relaxed);
+            crate::platform::keep_awake(false);
         }
     }
     fn log_stats(when: &str) {
@@ -1177,6 +1178,9 @@ fn watched(open: ghi_core::notes_job::LlmFactory) -> ghi_core::notes_job::LlmFac
                 log_stats("after");
             });
         log_stats("loaded");
+        // The run needs the app on screen (no GPU in the background): the
+        // screen does not auto-lock while the model is loaded.
+        crate::platform::keep_awake(true);
         Ok(Box::new(Watched { llm, done }) as Box<dyn ghi_llm::Llm + Send>)
     })
 }

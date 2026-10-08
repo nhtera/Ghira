@@ -326,6 +326,16 @@ public func ghiSwiftThermalState() -> Int32 {
     Int32(ProcessInfo.processInfo.thermalState.rawValue)
 }
 
+/// Keeps the screen from locking while notes are written on the phone: iOS
+/// does not allow GPU work in the background, so a lock would stop the run.
+/// Called with false when the run ends.
+@_cdecl("ghi_swift_keep_awake")
+public func ghiSwiftKeepAwake(_ on: Bool) {
+    DispatchQueue.main.async {
+        UIApplication.shared.isIdleTimerDisabled = on
+    }
+}
+
 @_cdecl("ghi_swift_memory_footprint")
 public func ghiSwiftMemoryFootprint() -> UInt64 {
     GhiAudio.memoryFootprint()

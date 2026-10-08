@@ -69,6 +69,8 @@ mod swift {
         pub fn ghi_swift_activity_end();
         /// `ProcessInfo.thermalState` raw value.
         pub fn ghi_swift_thermal_state() -> i32;
+        /// `UIApplication.isIdleTimerDisabled` (on the main thread).
+        pub fn ghi_swift_keep_awake(on: bool);
         /// Physical footprint in bytes.
         pub fn ghi_swift_memory_footprint() -> u64;
         /// 0..1, or < 0 when unknown.
@@ -213,6 +215,18 @@ pub fn activity_update(phase: Phase, marks: u32, finished: bool) {
             swift::ghi_swift_activity_update(_args.0, _args.1)
         }
     }
+}
+
+/// Keeps the screen from auto-locking (`true`) while notes are written on
+/// the phone, or lets it lock again (`false`).
+pub fn keep_awake(on: bool) {
+    #[cfg(target_os = "ios")]
+    // SAFETY: a plain C call into Swift.
+    unsafe {
+        swift::ghi_swift_keep_awake(on)
+    };
+    #[cfg(not(target_os = "ios"))]
+    let _ = on;
 }
 
 #[cfg(target_os = "ios")]
