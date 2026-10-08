@@ -174,6 +174,9 @@ test("models: waiting for Wi-Fi offers cellular once; later leaves the models ou
 
   // The mock's download finishes at once: start again from the waiting state.
   await openOnboarding(page, { completed: ["languages", "micPriming", "consent", "processing"], knobs: { onCellular: true } });
+  // Settled in the waiting state first: on a slow machine the step is still
+  // re-rendering when the button first shows.
+  await expect(page.getByText(/Waiting for Wi-Fi\. The download continues/)).toBeVisible();
   await page.getByRole("button", { name: "Download later" }).click();
   await expect(step(page)).toHaveAttribute("data-step", "voice");
 });

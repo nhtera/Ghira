@@ -41,7 +41,7 @@ test("Delete voice data (Me) is a separate confirm and leaves everything else", 
   await expect(page.getByRole("alertdialog")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Remove name from notes…" })).toHaveCount(0);
   await page.getByRole("button", { name: "Delete voice data", exact: true }).click();
-  await expect(page.getByText(/Voice data deleted/)).toBeVisible();
+  await expect(page.getByText(/^Voice data deleted/)).toBeVisible();
   await expect(list(page).getByRole("button").first()).toContainText("No voice profile");
   await expect(page.getByRole("button", { name: "Delete voice data…" })).toHaveCount(0);
 });

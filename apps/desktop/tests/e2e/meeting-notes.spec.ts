@@ -80,5 +80,5 @@ test("Transcribe again asks for the spoken language, then processes the meeting"
   await panel.getByRole("radio", { name: "Tiếng Việt" }).click();
   await panel.getByRole("button", { name: "Transcribe again" }).click();
   await expect(panel).toBeHidden();
-  await expect(page.getByText("Transcribing again…")).toBeVisible();
+  await expect(page.getByText("Transcribing again…", { exact: true })).toBeVisible();
 });

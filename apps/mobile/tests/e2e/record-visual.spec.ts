@@ -2,7 +2,7 @@
 // M2/M6 visual baselines: light/dark x EN/VI, and 200% text with Vietnamese
 // diacritics (ệ, ỗ, ẫ) that must not clip. Update with --update-snapshots.
 import { expect, test, type Page } from "@playwright/test";
-import { expectAccessible } from "./helpers";
+import { expectAccessible, settle } from "./helpers";
 import { openRecord, startRecording } from "./record-support";
 
 const LOOKS = [
@@ -32,15 +32,28 @@ async function goLive(page: Page, n = 6) {
   await expect(page.getByTestId("line")).not.toHaveCount(0);
 }
 
+/** The transcript where live follow leaves it, at its newest line. Whether the
+ * follow kicks in depends on how the lines arrive (batches differ on a loaded
+ * machine), so put every scroll area at its end, then let it settle. */
+async function atNewest(page: Page) {
+  await settle(page);
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll("*")) if (el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight;
+  });
+  await settle(page);
+}
+
 for (const look of LOOKS) {
   test(`record idle ${look.id}`, async ({ page }) => {
     await open(page, look);
+    await atNewest(page);
     await expect(page).toHaveScreenshot(`record-idle-${look.id}.png`, { animations: "disabled" });
   });
 
   test(`record live ${look.id}`, async ({ page }) => {
     await open(page, look);
     await goLive(page);
+    await atNewest(page);
     await expect(page).toHaveScreenshot(`record-live-${look.id}.png`, { animations: "disabled" });
   });
 
@@ -49,6 +62,7 @@ for (const look of LOOKS) {
     await goLive(page);
     await page.getByRole("button", { name: /^(Pause|Tạm dừng)$/ }).click();
     await expect(page.getByRole("button", { name: /^(Resume|Tiếp tục)$/ })).toBeVisible();
+    await atNewest(page);
     await expect(page).toHaveScreenshot(`record-paused-${look.id}.png`, { animations: "disabled" });
   });
 
@@ -60,6 +74,7 @@ for (const look of LOOKS) {
     await mobile(page, { type: "backlog", backlogS: 20, catchUpX: 2 });
     await mobile(page, { type: "pocket", muffled: true });
     await expect(page.getByText(/%/).first()).toBeVisible();
+    await atNewest(page);
     await expect(page).toHaveScreenshot(`record-catching-up-${look.id}.png`, { animations: "disabled" });
   });
 
@@ -69,6 +84,7 @@ for (const look of LOOKS) {
     await mobile(page, { type: "interruption", began: true, kind: "call" });
     await phase(page, "interrupted");
     await expect(page.getByRole("dialog")).toBeVisible();
+    await atNewest(page);
     await expect(page).toHaveScreenshot(`record-interrupted-${look.id}.png`, { animations: "disabled" });
   });
 
@@ -79,6 +95,7 @@ for (const look of LOOKS) {
     // The design's height at default English text; large for the longer Vietnamese and at big text.
     if (look.lang === "en" && !look.id.endsWith("200")) await expect(page.getByRole("dialog")).toHaveAttribute("data-detent", "medium");
     await expect(page.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
+    await atNewest(page);
     await expect(page).toHaveScreenshot(`record-call-notice-${look.id}.png`, { animations: "disabled" });
   });
 }

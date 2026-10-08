@@ -2,7 +2,7 @@
 // The 16-J visual matrix: light and dark, English and Vietnamese, and 200%
 // text. Each cell checks axe and compares against a baseline.
 import { expect, test, type Page } from "@playwright/test";
-import { expectAccessible, openApp } from "./helpers";
+import { expectAccessible, openApp, settle } from "./helpers";
 
 export const VARIANTS = [
   { name: "en-light", lang: "en", scheme: "light", scale: undefined },
@@ -38,6 +38,7 @@ export function visualMatrix(group: string, screens: Screen[]) {
           await page.evaluate(() => {
             for (const el of document.querySelectorAll("*")) if (el.scrollTop > 0) el.scrollTop = 0;
           });
+          await settle(page);
           await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
           await expectAccessible(page);
           await expect(page).toHaveScreenshot(`${group}-${s.name}-${v.name}.png`);

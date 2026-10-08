@@ -28,7 +28,7 @@ test("notepad: type, tag, edit, delete", async ({ page }) => {
   const decision = pad(page).locator("li[data-kind=decision]");
   await expect(decision).toContainText("go with option B");
   // A tagged line is a mark for the notes.
-  await expect(page.getByText("1 marked")).toBeVisible();
+  await expect(page.getByText(/^1 marked/)).toBeVisible();
 
   await padInput(page).fill("who owns this");
   await padInput(page).press("Alt+Digit3");

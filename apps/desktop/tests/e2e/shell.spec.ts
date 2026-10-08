@@ -32,7 +32,7 @@ test("records a meeting on the mocked core", async ({ page }) => {
   // A new speaker turn is announced once ("Me: …"), not every line.
   await expect(page.getByTestId("speaker-announcer")).toContainText("Me: Okay");
   await page.keyboard.press("Control+M");
-  await expect(page.getByText("1 marked")).toBeVisible();
+  await expect(page.getByText(/^1 marked/)).toBeVisible();
   await page.getByRole("button", { name: "Stop" }).click();
   // Stop opens the new meeting's notes, not the library.
   await expect(page).toHaveURL(/#\/meetings\/[^/]+\/notes/);

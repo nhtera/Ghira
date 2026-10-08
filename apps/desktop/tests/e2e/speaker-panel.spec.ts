@@ -123,7 +123,7 @@ test("not a person asks first, hides them from the notes, and can be undone from
   await panel(page).getByRole("button", { name: "Not a person (video, music)" }).click();
   await expect(panel(page).getByRole("alertdialog")).toContainText("Mark Sarah as not a person?");
   await panel(page).getByRole("button", { name: "Mark as not a person" }).click();
-  await expect(page.getByText(/marked as not a person/)).toBeVisible();
+  await expect(page.getByText(/^Sarah marked as not a person/)).toBeVisible();
   await expect(panel(page).getByRole("button", { name: "This is a person" })).toBeVisible();
   await panel(page).getByRole("button", { name: "This is a person" }).click();
   await expect(panel(page).getByRole("button", { name: "Not a person (video, music)" })).toBeVisible();

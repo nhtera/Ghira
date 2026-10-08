@@ -88,7 +88,10 @@ test("A person scope: pick someone, the scope line and the answer's footer name 
   await page.getByRole("button", { name: "Choose a person" }).click();
   await page.getByRole("menuitem", { name: "Linh" }).click();
   await expect(page.getByTestId("ask-scope-line")).toContainText(/Searching \d+ meetings? with Linh/);
-  await page.getByRole("textbox", { name: "Question" }).fill("nhận diện");
-  await page.keyboard.press("Enter");
+  // Enter on the box itself: the closing menu hands focus back to its button,
+  // which can land after the fill on a slow machine.
+  const question = page.getByRole("textbox", { name: "Question" });
+  await question.fill("nhận diện");
+  await question.press("Enter");
   await expect(page.getByTestId("ask-entry").getByText(/meetings? read · Linh/)).toBeVisible();
 });
