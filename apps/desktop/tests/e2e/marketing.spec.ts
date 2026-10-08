@@ -9,8 +9,6 @@
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-// The shared settle helper (animations, fonts, scroll positions); no copy.
-import { settle } from "../../../mobile/tests/e2e/helpers";
 
 test.skip(!process.env.GHI_MARKETING, "set GHI_MARKETING=1 to capture the website screenshots");
 // WKWebView is what ships on macOS: one project, not one set of shots per browser.
@@ -21,6 +19,28 @@ const THEMES = ["light", "dark"] as const;
 const LINE_MS = 1800; // apps/desktop/src/ipc/mock.ts
 
 type Theme = (typeof THEMES)[number];
+
+/** Finite animations finished, fonts loaded, and scroll positions still for 5 frames (the mobile e2e helper's settle; desktop has none to import). */
+async function settle(page: Page) {
+  await page.evaluate(async () => {
+    await Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+        .map((a) => a.finished.catch(() => undefined)),
+    );
+    await document.fonts.ready;
+    const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const scrolls = () => [...document.querySelectorAll("*")].map((el) => `${el.scrollTop}/${el.scrollHeight}`).join(",");
+    let last = scrolls();
+    for (let still = 0, n = 0; still < 5 && n < 120; n++) {
+      await frame();
+      const now = scrolls();
+      still = now === last ? still + 1 : 0;
+      last = now;
+    }
+  });
+}
 
 /** A fresh context and page: theme, size, seeded randomness, a clock to step, console errors collected. */
 async function shot(browser: Browser, theme: Theme) {
