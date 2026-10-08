@@ -15,7 +15,7 @@ under that license.
 | Windows | Visual Studio 2022 Build Tools (C++), WebView2 |
 
 ```sh
-git clone <repo-url> && cd ghi
+git clone https://github.com/nhtera/Ghira.git && cd Ghira
 git submodule update --init                  # not --recursive: NeMo-Speech.cpp nests large/LGPL repos we don't use
 pnpm install
 pnpm build                                   # frontend (needed before cargo builds the desktop crate)
@@ -32,7 +32,7 @@ cargo test -p ghi-speech -p ghi-cli --features ghi-cli/nemo
 cargo build --release -p ghi-cli --features nemo   # target/release/ghi
 ```
 
-Audio capture (phase 4): `crates/ghi-audio` needs CMake (it builds libopus)
+Audio capture: `crates/ghi-audio` needs CMake (it builds libopus)
 and, on macOS, the Xcode Swift toolchain: its `build.rs` compiles
 `native/macos/GhiAudioMac` with `swift build`. To record on this Mac:
 
@@ -41,7 +41,7 @@ cargo build -p ghi-cli && codesign -s - -f target/debug/ghi   # binds the embedd
 target/debug/ghi record --mode call --duration 10 --out /tmp/rec   # prompts for mic + System Audio Recording
 ```
 
-Storage (phase 5): `crates/ghi-store` builds SQLCipher; on Windows and Linux
+Storage: `crates/ghi-store` builds SQLCipher; on Windows and Linux
 it also builds OpenSSL, which needs Perl (Apple targets use CommonCrypto).
 Debug builds of `ghi` keep a store's key ring in `<dir>.devkey`
 instead of the Keychain (`GHI_KEYSTORE=keychain` to use it); release builds

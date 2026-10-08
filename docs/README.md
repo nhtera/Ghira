@@ -6,11 +6,32 @@ heading are published; a file not listed is not published. Root documents
 allowed: ../PRIVACY.md, ../SECURITY.md, ../CONTRIBUTING.md, ../TRADEMARKS.md.
 docs/release/ is never published. -->
 
+## Get started
+
+| Page | Contents |
+|---|---|
+| [overview.md](overview.md) | What Ghira does, and what is and is not shipped yet |
+| [install.md](install.md) | Build and run Ghira on a Mac from source |
+| [getting-started.md](getting-started.md) | Set up Ghira, then record and review your first meeting |
+| [models.md](models.md) | The speech and notes models: presets, sizes, downloads and offline install |
+
 ## Reference
 
 | Page | Contents |
 |---|---|
 | [../PRIVACY.md](../PRIVACY.md) | What may leave your device, and when |
+| [../SECURITY.md](../SECURITY.md) | How to report a vulnerability, and how releases are protected |
+| [cli.md](cli.md) | The `ghi` command: every command and its main options |
+| [shortcuts.md](shortcuts.md) | Keyboard shortcuts in the app and from any app |
+| [settings.md](settings.md) | Every section of Settings, and what each option does |
+
+## Project
+
+| Page | Contents |
+|---|---|
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | Set up a development build, run the checks, follow the conventions |
+| [../TRADEMARKS.md](../TRADEMARKS.md) | What you may and may not do with the Ghira name and logo |
+| [release-notes/0-1-0-alpha-1.md](release-notes/0-1-0-alpha-1.md) | What the first alpha does, and its known limits |
 
 ## Repository files (not published)
 
@@ -26,7 +47,7 @@ docs/release/ is never published. -->
 - [Smoke checklist (macOS)](release/smoke-checklist.md)
 - [Network audit](release/network-audit.md)
 - [Security verification](release/security-verification.md)
-- [0.1.0-alpha.1 release notes](release/notes-0.1.0-alpha.1.md)
+- [0.1.0-alpha.1 release notes](release-notes/0-1-0-alpha-1.md)
 - [1.0 release notes, draft (EN)](release-notes/v1.0.en.md) and [(VI)](release-notes/v1.0.vi.md)
 
 ### Evaluation kit
