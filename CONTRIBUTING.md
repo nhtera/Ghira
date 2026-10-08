@@ -3,19 +3,6 @@
 Thanks for helping. Ghira is Apache-2.0 licensed, and every contribution is made
 under that license.
 
-## Sign your commits (DCO)
-
-We use the [Developer Certificate of Origin](https://developercertificate.org/)
-instead of a CLA. Add a sign-off to every commit:
-
-```sh
-git commit -s -m "feat(store): add VN fold"
-```
-
-This appends `Signed-off-by: Your Name <you@example.com>`, matching your git
-author. CI rejects pull requests with unsigned commits. To fix a branch:
-`git rebase --signoff main`.
-
 ## Development setup
 
 | Tool | Version |
@@ -77,7 +64,7 @@ cargo deny check licenses bans advisories sources
   `// SPDX-License-Identifier: Apache-2.0` (`#` for shell/Python).
 - **Naming.** Rust: `snake_case`. TypeScript/JS files: `kebab-case`.
 - **Commits.** [Conventional Commits](https://www.conventionalcommits.org/)
-  (`feat:`, `fix:`, `docs:`...), signed off.
+  (`feat:`, `fix:`, `docs:`...).
 - **Typed commands.** Tauri commands use tauri-specta. After changing one, run
   `GHI_UPDATE_BINDINGS=1 cargo test -p ghi-desktop` and commit
   `apps/desktop/src/bindings.ts`.

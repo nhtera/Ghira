@@ -64,7 +64,7 @@ cargo deny check licenses bans advisories sources
 ## Principles
 
 - **Offline by default.** No telemetry. All network I/O goes through one crate (`crates/ghi-net`); the webview never touches the network. See [PRIVACY.md](PRIVACY.md) for exactly what may leave your device.
-- **Open source**, [Apache-2.0](LICENSE). Contributions use Conventional Commits, a DCO sign-off (`git commit -s`) and an SPDX header on every source file; see [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Open source**, [Apache-2.0](LICENSE). Contributions use Conventional Commits and an SPDX header on every source file; see [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Your voice is yours.** Voice profiles need explicit consent. Cloud AI is opt-in per meeting and sends transcript text only.
 
 ## Repository layout

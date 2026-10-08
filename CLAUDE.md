@@ -23,7 +23,7 @@ members get it separately.
 
 - `// SPDX-License-Identifier: Apache-2.0` (or `#`) at the top of every source file.
 - Rust `snake_case`; TS/JS files `kebab-case`.
-- Conventional Commits, signed off (`git commit -s`).
+- Conventional Commits.
 - Tauri commands via tauri-specta; regenerate bindings with
   `GHI_UPDATE_BINDINGS=1 cargo test -p ghi-desktop`.
 

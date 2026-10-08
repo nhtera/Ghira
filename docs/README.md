@@ -6,7 +6,7 @@ material.
 ## Project
 
 - [README](../README.md): what Ghira is, how to build it
-- [CONTRIBUTING](../CONTRIBUTING.md): setup, checks, conventions, DCO sign-off
+- [CONTRIBUTING](../CONTRIBUTING.md): setup, checks, conventions
 - [PRIVACY](../PRIVACY.md): what may leave your device
 - [SECURITY](../SECURITY.md): reporting vulnerabilities
 - [TRADEMARKS](../TRADEMARKS.md), [CODE_OF_CONDUCT](../CODE_OF_CONDUCT.md)
