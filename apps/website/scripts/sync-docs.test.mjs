@@ -42,7 +42,7 @@ function fixtureRepo({ shallow = false } = {}) {
   };
   w(
     "docs/README.md",
-    "# Docs\n\n## Get started\n\n| Page | Contents |\n|---|---|\n| [install.md](install.md) | Build from source |\n\n## Project\n\n| Page | Contents |\n|---|---|\n| [../PRIVACY.md](../PRIVACY.md) | What may leave your device |\n| [release-notes/0-1-0-alpha-1.md](release-notes/0-1-0-alpha-1.md) | First alpha |\n\n## Repository files (not published)\n\n- [Smoke](release/smoke.md)\n",
+    "# Docs\n\n## Get started\n\n| Page | Contents |\n|---|---|\n| [install.md](install.md) | Build from source |\n\n## Project\n\n| Page | Contents |\n|---|---|\n| [Privacy](../PRIVACY.md) | What may leave your device |\n| [release-notes/0-1-0-alpha-1.md](release-notes/0-1-0-alpha-1.md) | First alpha |\n\n## Repository files (not published)\n\n- [Smoke](release/smoke.md)\n",
   );
   w("docs/install.md", "# Install from source\n\nRun this:\n\n<!-- quickstart -->\n\nSee [privacy](../PRIVACY.md).\n");
   w("docs/release-notes/0-1-0-alpha-1.md", "# Ghira 0.1.0-alpha.1\n\nNotes.\n");
@@ -73,6 +73,9 @@ test("sync writes docs with frontmatter, meta.json, nav, quick start and inputs"
   const nav = JSON.parse(readFileSync(join(out, "generated/nav.json"), "utf8"));
   assert.deepEqual(nav.sections.map((s) => [s.title, s.pages.map((p) => p.slug)]), [["Get started", ["install"]], ["Project", ["privacy", "release-notes/0-1-0-alpha-1"]]]);
   assert.equal(nav.sections[0].pages[0].title, "Install from source");
+  // The nav name is the row's label when it has one; the page keeps its H1.
+  assert.equal(nav.sections[1].pages[0].title, "Privacy");
+  assert.match(readFileSync(join(out, "docs/privacy.md"), "utf8"), /^---\ntitle: Privacy\n/);
   assert.deepEqual(JSON.parse(readFileSync(join(out, "generated/quickstart.json"), "utf8")), { commands: "git clone x && cd y\npnpm install" });
   assert.deepEqual(unpublished, ["docs/release/smoke.md"]);
   assert.ok(logs.some((l) => l.startsWith("unpublished docs: docs/release/smoke.md")));

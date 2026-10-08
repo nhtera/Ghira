@@ -1,7 +1,8 @@
 # Ghira docs
 
 <!-- This file is the docs site's nav (ghira.app/docs). Each "## Section" is
-followed by a table of pages, in sidebar order. Only table rows under a "##"
+followed by a table of pages, in sidebar order; the link text is the page's
+name in the sidebar. Only table rows under a "##"
 heading are published; a file not listed is not published. Root documents
 allowed: ../PRIVACY.md, ../SECURITY.md, ../CONTRIBUTING.md, ../TRADEMARKS.md.
 docs/release/ is never published. -->
@@ -10,42 +11,42 @@ docs/release/ is never published. -->
 
 | Page | Contents |
 |---|---|
-| [overview.md](overview.md) | What Ghira does, and what is and is not shipped yet |
-| [install.md](install.md) | Build and run Ghira on a Mac from source |
-| [getting-started.md](getting-started.md) | Set up Ghira, then record and review your first meeting |
-| [models.md](models.md) | The speech and notes models: presets, sizes, downloads and offline install |
+| [Overview](overview.md) | What Ghira does, and what is and is not shipped yet |
+| [Install from source](install.md) | Build and run Ghira on a Mac from source |
+| [Record your first meeting](getting-started.md) | Set up Ghira, then record and review your first meeting |
+| [Speech models](models.md) | The speech and notes models: presets, sizes, downloads and offline install |
 
 ## Using Ghira
 
 | Page | Contents |
 |---|---|
-| [recording.md](recording.md) | Call or Room, meeting detection, echo cancellation, consent message, pause, marks, sensitive meetings |
-| [speakers.md](speakers.md) | Naming and fixing speakers, People, your own voice profile |
-| [notes.md](notes.md) | How notes are written: sections, templates, your notes kept, regenerate, language, the local model |
-| [search.md](search.md) | Accent-insensitive search and Ask, in one meeting or across all |
-| [import.md](import.md) | Import audio and video files, Voice Memos, Zoom participant tracks, Plaud, iPhone share sheet |
-| [export.md](export.md) | Export to Markdown, Word, text, subtitles and Obsidian, and draft a follow-up email |
-| [calendar.md](calendar.md) | Connect your Calendar app or an ICS file, offers to record, attendees |
-| [iphone-sync.md](iphone-sync.md) | iPhone app status, QR pairing, local-network encrypted sync, Export for another device |
-| [cloud-ai.md](cloud-ai.md) | Optional cloud notes and Ask: exact-text preview, redaction, your own API key, request log |
+| [Recording](recording.md) | Call or Room, meeting detection, echo cancellation, consent message, pause, marks, sensitive meetings |
+| [Speakers and voices](speakers.md) | Naming and fixing speakers, People, your own voice profile |
+| [Notes](notes.md) | How notes are written: sections, templates, your notes kept, regenerate, language, the local model |
+| [Search and Ask](search.md) | Accent-insensitive search and Ask, in one meeting or across all |
+| [Import](import.md) | Import audio and video files, Voice Memos, Zoom participant tracks, Plaud, iPhone share sheet |
+| [Export](export.md) | Export to Markdown, Word, text, subtitles and Obsidian, and draft a follow-up email |
+| [Calendar](calendar.md) | Connect your Calendar app or an ICS file, offers to record, attendees |
+| [iPhone and sync](iphone-sync.md) | iPhone app status, QR pairing, local-network encrypted sync, Export for another device |
+| [Cloud AI](cloud-ai.md) | Optional cloud notes and Ask: exact-text preview, redaction, your own API key, request log |
 
 ## Reference
 
 | Page | Contents |
 |---|---|
-| [../PRIVACY.md](../PRIVACY.md) | What may leave your device, and when |
-| [../SECURITY.md](../SECURITY.md) | How to report a vulnerability, and how releases are protected |
-| [cli.md](cli.md) | The `ghi` command: every command and its main options |
-| [shortcuts.md](shortcuts.md) | Keyboard shortcuts in the app and from any app |
-| [settings.md](settings.md) | Every section of Settings, and what each option does |
+| [Privacy](../PRIVACY.md) | What may leave your device, and when |
+| [Security](../SECURITY.md) | How to report a vulnerability, and how releases are protected |
+| [Command line](cli.md) | The `ghi` command: every command and its main options |
+| [Keyboard shortcuts](shortcuts.md) | Keyboard shortcuts in the app and from any app |
+| [Settings](settings.md) | Every section of Settings, and what each option does |
 
 ## Project
 
 | Page | Contents |
 |---|---|
-| [../CONTRIBUTING.md](../CONTRIBUTING.md) | Set up a development build, run the checks, follow the conventions |
-| [../TRADEMARKS.md](../TRADEMARKS.md) | What you may and may not do with the Ghira name and logo |
-| [release-notes/0-1-0-alpha-1.md](release-notes/0-1-0-alpha-1.md) | What the first alpha does, and its known limits |
+| [Contributing](../CONTRIBUTING.md) | Set up a development build, run the checks, follow the conventions |
+| [Trademarks](../TRADEMARKS.md) | What you may and may not do with the Ghira name and logo |
+| [Release notes](release-notes/0-1-0-alpha-1.md) | What the first alpha does, and its known limits |
 
 ## Repository files (not published)
 

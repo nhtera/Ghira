@@ -6,7 +6,7 @@ import { docLinkIn, type GeneratedNav } from "./site-links.ts";
 
 const nav: GeneratedNav = {
   index: { title: "Docs", description: "d" },
-  sections: [{ title: "Get started", pages: [{ slug: "install", title: "Install", description: "x", source: "docs/install.md" }] }],
+  sections: [{ title: "Get started", pages: [{ slug: "install", title: "Install", heading: "Install", description: "x", source: "docs/install.md" }] }],
 };
 
 test("published pages link to themselves; others fall back", () => {

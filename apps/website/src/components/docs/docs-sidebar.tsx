@@ -10,14 +10,9 @@ import { SearchButton } from "./docs-search";
 export function DocsNav({ slug }: { slug: string }) {
   return (
     <nav aria-label={strings.docs.navLabel} className="docs-nav">
-      {nav.sections.map((section, i) => (
+      {nav.sections.map((section) => (
         <div className="nav-group" key={section.title}>
           <p>{section.title}</p>
-          {i === 0 ? (
-            <Link to="/docs/$" params={{ _splat: "" }} activeOptions={{ exact: true }} aria-current={slug === "" ? "page" : undefined}>
-              {docsStrings.overview}
-            </Link>
-          ) : null}
           {section.pages.map((page) => (
             <Link key={page.slug} to="/docs/$" params={{ _splat: page.slug }} activeOptions={{ exact: true }} aria-current={slug === page.slug ? "page" : undefined}>
               {page.title}

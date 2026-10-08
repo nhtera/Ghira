@@ -78,11 +78,11 @@ test("/docs lists every section and page from the nav", async () => {
 test("every nav page renders with the sidebar in nav order", async () => {
   for (const p of pages) {
     const { page, context, problems } = await open(`/docs/${p.slug}`);
-    assert.equal(await page.locator("article[data-docs-article] h1").textContent(), p.title, p.slug);
+    assert.equal(await page.locator("article[data-docs-article] h1").textContent(), p.heading, p.slug);
     assert.equal(await page.locator("article .crumb").textContent(), p.section, p.slug);
     assert.equal(await page.locator("article .lead").textContent(), p.description, p.slug);
     const links = await page.locator("aside.docs-side .nav-group a").evaluateAll((as) => as.map((a) => [a.getAttribute("href"), a.getAttribute("aria-current")]));
-    assert.deepEqual(links.slice(1).map((l) => l[0]), pages.map((q) => `/docs/${q.slug}`), p.slug);
+    assert.deepEqual(links.map((l) => l[0]), pages.map((q) => `/docs/${q.slug}`), p.slug);
     assert.deepEqual(links.filter((l) => l[1] === "page").map((l) => l[0]), [`/docs/${p.slug}`], p.slug);
     assert.deepEqual(problems, [], p.slug);
     await context.close();
@@ -191,7 +191,7 @@ test("client navigation reads the static docs index, never a server function", a
   const target = pages[pages.length - 1];
   await page.locator(`aside.docs-side a[href="/docs/${target.slug}"]`).click();
   await page.waitForURL(`**/docs/${target.slug}`);
-  await page.getByRole("heading", { level: 1, name: target.title }).waitFor();
+  await page.getByRole("heading", { level: 1, name: target.heading }).waitFor();
   assert.deepEqual(requests.filter((p) => !p.startsWith("/assets/")), ["/api/docs-tree.json"]);
   assert.equal(await page.evaluate(() => document.activeElement?.tagName), "H1");
   await context.close();

@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { formatDate, pageContext, parseDocsUrl } from "./docs-toc.ts";
 import type { GeneratedNav } from "./site-links.ts";
 
-const page = (slug: string) => ({ slug, title: slug, description: "d", source: `docs/${slug}.md` });
+const page = (slug: string) => ({ slug, title: slug, heading: slug, description: "d", source: `docs/${slug}.md` });
 const nav: GeneratedNav = {
   index: { title: "Docs", description: "d" },
   sections: [

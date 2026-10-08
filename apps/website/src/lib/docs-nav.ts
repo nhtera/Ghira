@@ -17,6 +17,8 @@ export interface DocEntry {
   slug: string;
   /** The Contents cell, as plain text. */
   description: string;
+  /** The link text, when it is a label rather than the file name: the page's name in the sidebar. */
+  label?: string;
 }
 
 export interface NavSection {
@@ -35,7 +37,7 @@ export function plainText(md: string): string {
     .trim();
 }
 
-const ROW = /^\|\s*\[[^\]]+\]\(([^)#\s]+)\)\s*\|\s*(.+?)\s*\|\s*$/;
+const ROW = /^\|\s*\[([^\]]+)\]\(([^)#\s]+)\)\s*\|\s*(.+?)\s*\|\s*$/;
 
 /** Parse docs/README.md into sections. Throws on a refused or duplicate row. */
 export function parseNav(md: string): NavSection[] {
@@ -58,13 +60,15 @@ export function parseNav(md: string): NavSection[] {
     }
     const row = line.match(ROW);
     if (!row) continue;
-    if (!current) throw new Error(`docs/README.md: table row "${row[1]}" is not under a "## Section" heading`);
-    const source = sourceOfNavHref(row[1]);
-    if (seen.has(source)) throw new Error(`docs/README.md: ${row[1]} is listed twice`);
+    const [, text, href, cell] = row;
+    if (!current) throw new Error(`docs/README.md: table row "${href}" is not under a "## Section" heading`);
+    const source = sourceOfNavHref(href);
+    if (seen.has(source)) throw new Error(`docs/README.md: ${href} is listed twice`);
     seen.add(source);
-    const description = plainText(row[2]);
-    if (!description) throw new Error(`docs/README.md: ${row[1]} has no description`);
-    current.docs.push({ source, slug: slugOfSource(source), description });
+    const description = plainText(cell);
+    if (!description) throw new Error(`docs/README.md: ${href} has no description`);
+    const label = /\.md$/i.test(text.trim()) ? undefined : plainText(text);
+    current.docs.push({ source, slug: slugOfSource(source), description, ...(label ? { label } : {}) });
   }
   const nav = sections.filter((s) => s.docs.length > 0);
   if (nav.length === 0) throw new Error("docs/README.md: no table rows under a ## heading (`| [file.md](file.md) | Contents |`)");

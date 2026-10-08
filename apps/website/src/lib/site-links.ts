@@ -10,7 +10,10 @@ import { doc, repoFile } from "./urls.ts";
 
 export interface NavPage {
   slug: string;
+  /** The page's name in the sidebar (the nav row's label, else the H1). */
   title: string;
+  /** The page's H1. */
+  heading: string;
   description: string;
   source: string;
   /** YYYY-MM-DD of the last commit to the source, when the build has git history. */

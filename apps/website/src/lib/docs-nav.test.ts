@@ -21,7 +21,7 @@ const FIXTURE = `# Ghira docs
 
 | Page | Contents |
 |---|---|
-| [../PRIVACY.md](../PRIVACY.md) | What may leave your device |
+| [Privacy](../PRIVACY.md) | What may leave your device |
 
 ## Project
 
@@ -47,7 +47,9 @@ test("sections and rows parse in order, with plain-text descriptions; bullets ar
     { source: "docs/overview.md", slug: "overview", description: "What Ghira is, and what ships today" },
     { source: "docs/install.md", slug: "install", description: "Build from source with pnpm" },
   ]);
-  assert.deepEqual(nav[1].docs[0], { source: "PRIVACY.md", slug: "privacy", description: "What may leave your device" });
+  // A link text that is a label (not the file name) becomes the sidebar name.
+  assert.deepEqual(nav[1].docs[0], { source: "PRIVACY.md", slug: "privacy", description: "What may leave your device", label: "Privacy" });
+  assert.equal(nav[0].docs[0].label, undefined);
   assert.equal(nav[2].docs[0].slug, "release-notes/0-1-0-alpha-1");
   const published = publishedSources(nav);
   assert.ok(!published.has("SECURITY.md"), "a bullet link is not published");

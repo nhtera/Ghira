@@ -158,7 +158,7 @@ export function sync({ repo = REPO, out = join(SITE, "content"), dates = !proces
   const navOut = [];
   for (const section of nav) {
     const pages = [];
-    for (const { source, slug, description } of section.docs) {
+    for (const { source, slug, description, label } of section.docs) {
       if (!SOURCE_PATH.test(source)) throw new Error(`${source}: not a valid docs path`);
       const file = join(repo, source);
       if (!existsSync(file)) throw new Error(`${source}: listed in the docs nav but missing`);
@@ -176,7 +176,9 @@ export function sync({ repo = REPO, out = join(SITE, "content"), dates = !proces
       const target = join(docsOut, contentPathOfSlug(slug));
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, frontmatter(data) + body);
-      pages.push({ slug, title: split.title, description, source, ...(data.lastUpdated ? { lastUpdated: data.lastUpdated } : {}) });
+      // `title` is the page's name in the sidebar, cards, pager and llms.txt:
+      // the nav row's link text when it is a label, else the H1.
+      pages.push({ slug, title: label ?? split.title, heading: split.title, description, source, ...(data.lastUpdated ? { lastUpdated: data.lastUpdated } : {}) });
     }
     navOut.push({ title: section.title, pages });
   }

@@ -11,8 +11,8 @@ import { robotsTxt, sitemapEntries, sitemapXml } from "./sitemap.ts";
 const nav: GeneratedNav = {
   index: { title: "Ghira documentation", description: "d" },
   sections: [
-    { title: "Get started", pages: [{ slug: "install", title: "Install from source", description: "Build it", source: "docs/install.md", lastUpdated: "2026-10-08" }] },
-    { title: "Project", pages: [{ slug: "release-notes/0-1-0-alpha-1", title: "Release notes", description: "First alpha", source: "docs/release-notes/0-1-0-alpha-1.md" }] },
+    { title: "Get started", pages: [{ slug: "install", title: "Install from source", heading: "Install from source", description: "Build it", source: "docs/install.md", lastUpdated: "2026-10-08" }] },
+    { title: "Project", pages: [{ slug: "release-notes/0-1-0-alpha-1", title: "Release notes", heading: "Ghira 0.1.0-alpha.1", description: "First alpha", source: "docs/release-notes/0-1-0-alpha-1.md" }] },
   ],
 };
 

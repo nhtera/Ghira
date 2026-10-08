@@ -34,13 +34,16 @@
   .article blockquote > p:first-child { margin-top: 0; }
   .callout b { display: block; font-weight: 600; margin-bottom: 2px; }
   .article .steps { list-style: none; padding: 0; counter-reset: step; display: grid; gap: 18px; }
-  .article .steps > li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 4px 14px; margin: 0; }
+  /* Block layout, the number in the gutter: a step's text may hold any inline
+     content (bold, code, links), which a grid would split into cells. */
+  .article .steps > li { counter-increment: step; position: relative; display: block; min-height: 28px; padding-left: 44px; margin: 0; }
   .article .steps > li::before {
-    content: counter(step); grid-row: 1 / span 2; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+    content: counter(step); position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
     border: 1px solid var(--line2); background: var(--surface); font-size: 13.5px; font-weight: 600; color: var(--ink);
   }
-  .article .steps > li > strong:first-child, .article .steps > li > p:first-child > strong:first-child { display: block; font-weight: 600; }
-  .article .steps > li > :not(:first-child) { grid-column: 2; margin-top: 0; }
+  .article .steps > li > strong:first-child, .article .steps > li > p:first-child > strong:first-child { display: block; font-weight: 600; padding-top: 2px; }
+  .article .steps > li > p { margin-top: 4px; }
+  .article .steps > li > p:first-child { margin-top: 0; }
   .article h1:focus-visible { outline: none; }
   .article kbd { font-size: 0.82em; }
   .article a { overflow-wrap: anywhere; }

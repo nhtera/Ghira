@@ -7,6 +7,5 @@ export const docsStrings = {
   searchHint: "Type to search titles, headings and text.",
   searchStatus: (n: number) => (n === 1 ? "1 result" : `${n} results`),
   sidebar: "Docs",
-  overview: "Overview",
   copyFailed: "Copy failed",
 } as const;
