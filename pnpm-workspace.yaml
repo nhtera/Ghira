@@ -2,3 +2,8 @@ packages:
   - "apps/desktop"
   - "apps/mobile"
   - "packages/*"
+
+# Scripts never install first: CI and apps/mobile/scripts/build-ios.sh install
+# up front, and an install started inside Xcode's build phase (no TTY, a
+# different environment) wanted to purge node_modules and failed the iOS build.
+verifyDepsBeforeRun: false
