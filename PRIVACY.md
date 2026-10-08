@@ -7,18 +7,36 @@ can check it against the code (all network access lives in `crates/ghi-net`).
 
 | Class | What | Rule |
 |---|---|---|
-| **Your content**: audio, transcripts, notes, voiceprints, meeting titles, people | **Never sent** | Only three exceptions, each an explicit opt-in: **cloud AI** (transcript text only, after you review exactly what will be sent), **sync with your own paired devices** over your local network (end-to-end encrypted, pinned keys), and integrations you choose to connect |
-| **Content-free traffic**: model downloads, update check | Only to an **allowlist**: `huggingface.co` and its CDN, the Ghira model mirror, the Ghira update feed (GitHub Releases: `github.com` and its download host `*.githubusercontent.com`). The update check sends nothing but the request for the public manifest: no ID, no version in the URL | You can switch each one off (Settings → About → Check automatically). **Strict offline** blocks all internet traffic; sync with your paired devices on your private network stays allowed |
-| **Telemetry / analytics** | **None** | Crash reports and an event log (no meeting content) are written locally (Settings → About → Diagnostics). You can open, review and send them yourself |
+| **Your content**: audio, transcripts, notes, voiceprints, meeting titles, people | **Never sent** | Only two exceptions, each an explicit opt-in: **cloud AI** (transcript text only, after you review exactly what will be sent) and **sync with your own paired devices** over your local network (end-to-end encrypted, pinned keys) |
+| **Content-free traffic**: model downloads, update check | Only to an **allowlist**. Model downloads: `huggingface.co` and its CDN (`hf.co`). Update check: GitHub Releases (`github.com` and its download host `*.githubusercontent.com`). | **Strict offline** blocks all internet traffic; sync with your paired devices on your private network stays allowed |
+| **Telemetry / analytics** | **None** | Crash reports and an event log (no meeting content) are written locally (Settings → About → Diagnostics). You can open and review them, and send them yourself if you choose |
 | **Fonts, icons, UI assets** | Bundled with the app | Nothing is loaded from the internet at runtime |
 
-## What we promise, and how it is tested
+Ghira connects to no other service, and there are no integrations with other
+services yet.
+
+## Model downloads
+
+The speech and notes models are not bundled. Ghira downloads them from Hugging
+Face, at a pinned revision, and checks each file's SHA-256 before use. Nothing
+is sent but the request for the file. Strict offline blocks the download; you
+can install the files from a copy instead (see [Speech models](docs/models.md)).
+
+## Update checks
+
+This build has no update feed, so it checks for nothing and sends nothing. Once
+signed releases exist, the check will ask GitHub Releases for a public manifest
+and nothing else: no ID, no meeting data. You can switch it off (Settings →
+About → Check automatically), and Strict offline blocks it.
+
+## What we promise, and how it is checked
 
 1. With **Strict offline** on, recording a 60-minute meeting and processing it
-   makes **zero outbound connections**. We verify this with firewall logs
-   (Little Snitch on macOS, Windows Firewall).
-2. In the default mode, no network request contains your content. We verify this
-   with a proxy capture test.
+   makes **zero outbound connections**. The release checks measure this with a
+   socket audit (`tools/release/net-audit.sh`) and firewall logs (Little Snitch
+   on macOS).
+2. In the default mode, no network request contains your content. The release
+   checks measure this with an intercepting-proxy capture.
 
 ## Cloud AI
 
