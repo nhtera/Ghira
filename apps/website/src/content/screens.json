@@ -5,13 +5,21 @@
     "light": [
       {
         "w": 2800,
-        "src": "/screens/desk-live-light-2800.b30fee69.webp"
+        "src": "/screens/desk-live-light-2800.02a7f528.webp"
+      },
+      {
+        "w": 1400,
+        "src": "/screens/desk-live-light-1400.8711879a.webp"
       }
     ],
     "dark": [
       {
         "w": 2800,
-        "src": "/screens/desk-live-dark-2800.e92174d4.webp"
+        "src": "/screens/desk-live-dark-2800.fd092f80.webp"
+      },
+      {
+        "w": 1400,
+        "src": "/screens/desk-live-dark-1400.88fb7f52.webp"
       }
     ]
   },
@@ -21,13 +29,21 @@
     "light": [
       {
         "w": 2800,
-        "src": "/screens/desk-notes-light-2800.2d1e5135.webp"
+        "src": "/screens/desk-notes-light-2800.453fef56.webp"
+      },
+      {
+        "w": 1400,
+        "src": "/screens/desk-notes-light-1400.2d9368eb.webp"
       }
     ],
     "dark": [
       {
         "w": 2800,
-        "src": "/screens/desk-notes-dark-2800.ecacd888.webp"
+        "src": "/screens/desk-notes-dark-2800.0b5d21ed.webp"
+      },
+      {
+        "w": 1400,
+        "src": "/screens/desk-notes-dark-1400.88517ef6.webp"
       }
     ]
   },
@@ -37,13 +53,21 @@
     "light": [
       {
         "w": 1179,
-        "src": "/screens/phone-live-light-1179.c33ba3ee.webp"
+        "src": "/screens/phone-live-light-1179.b9a4fd4d.webp"
+      },
+      {
+        "w": 590,
+        "src": "/screens/phone-live-light-590.0600e9bb.webp"
       }
     ],
     "dark": [
       {
         "w": 1179,
-        "src": "/screens/phone-live-dark-1179.545862db.webp"
+        "src": "/screens/phone-live-dark-1179.751c5e04.webp"
+      },
+      {
+        "w": 590,
+        "src": "/screens/phone-live-dark-590.342644a6.webp"
       }
     ]
   },
@@ -53,13 +77,21 @@
     "light": [
       {
         "w": 1179,
-        "src": "/screens/phone-meetings-light-1179.65e97c93.webp"
+        "src": "/screens/phone-meetings-light-1179.45a85bc9.webp"
+      },
+      {
+        "w": 590,
+        "src": "/screens/phone-meetings-light-590.410fa28f.webp"
       }
     ],
     "dark": [
       {
         "w": 1179,
-        "src": "/screens/phone-meetings-dark-1179.643b42c6.webp"
+        "src": "/screens/phone-meetings-dark-1179.51d1bbc4.webp"
+      },
+      {
+        "w": 590,
+        "src": "/screens/phone-meetings-dark-590.2ec4cc9a.webp"
       }
     ]
   }
