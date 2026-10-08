@@ -197,11 +197,11 @@ Read October 2026. "Typical" = public docs of well-known tools.
 
 | Row | Sources checked | Result |
 |---|---|---|
-| Audio processed on their servers | tl;dv https://tldv.io/features/security-commitment/ ; Otter https://help.otter.ai/hc/en-us/articles/360048322493-Transcription-processing-time-FAQ | tl;dv: data processed in its GCP/Hetzner data centers, confirmed. Otter: 403 to the fetcher; search found only third-party pages, not confirmed directly |
+| Audio processed on their servers | tl;dv https://tldv.io/features/security-commitment/ ; Otter https://help.otter.ai/hc/en-us/articles/360048322493-Transcription-processing-time-FAQ | tl;dv: data processed in its GCP/Hetzner data centers, confirmed. Otter (read in a browser 2026-10-09): processing starts after you finish recording or upload the audio, on Otter's processing system. Confirmed |
 | Something joins the call | Fireflies https://guide.fireflies.ai/articles/6388921822-how-to-add-fireflies-to-a-meeting-as-a-participant ; Fathom https://help.fathom.video/en/articles/13114369 | Both confirm a notetaker bot joins ("Fathom Notetaker joining the call"). "Often a bot" fits |
 | Account required | Fathom https://help.fathom.video/en/articles/276608 ; Otter terms https://otter.ai/terms-of-service | Fathom: "create your account". Otter 3.1: "you must register for an account" for most features. Confirmed |
-| Works with no internet | Otter processing times (above); Fireflies https://guide.fireflies.ai/articles/1360888790-how-to-upload-unprocessed-files-in-the-fireflies-mobile-app | Fireflies: offline recordings wait "until you're back online" to upload and transcribe. Confirmed. Otter: not opened (403) |
-| Vietnamese / mixed | Otter https://help.otter.ai/hc/en-us/articles/360047247414-Supported-languages ; Fireflies https://guide.fireflies.ai/articles/2585231364-transcribe-fireflies-meetings-in-multiple-languages-with-multi-language-mode-beta | Fireflies: 60+ languages incl. Vietnamese, word-level switching. Otter: 403; secondary sources list no Vietnamese. "Varies by tool" holds |
+| Works with no internet | Otter processing times (above); Fireflies https://guide.fireflies.ai/articles/1360888790-how-to-upload-unprocessed-files-in-the-fireflies-mobile-app | Fireflies: offline recordings wait "until you're back online" to upload and transcribe. Confirmed. Otter: processing starts after upload. Confirmed |
+| Vietnamese / mixed | Otter https://help.otter.ai/hc/en-us/articles/360047247414-Supported-languages ; Fireflies https://guide.fireflies.ai/articles/2585231364-transcribe-fireflies-meetings-in-multiple-languages-with-multi-language-mode-beta | Fireflies: 60+ languages incl. Vietnamese, word-level switching. Otter (read in a browser 2026-10-09): English, Spanish, French, German, Japanese, Chinese only. "Varies by tool" holds |
 | Closed source | Otter terms https://otter.ai/terms-of-service ; Fireflies https://fireflies.ai/terms-of-service | Both: proprietary, no reverse engineering (Otter 6 and 11(f)(ii); Fireflies 6(a), 9, 11(a)). Neither says "closed source" literally |
 
 ### Docs and PRIVACY (checked by page)
@@ -223,5 +223,5 @@ Read October 2026. "Typical" = public docs of well-known tools.
 
 ### Owner review
 
-- Otter help pages (processing times, languages) returned 403; kept as sources, confirmed only indirectly by search.
+- Otter help pages (processing times, languages) block plain fetchers (Cloudflare); both were read in a headless browser on 2026-10-09 and support their rows.
 - The "Closed source" cell rests on proprietary-license terms, not the words "closed source".
