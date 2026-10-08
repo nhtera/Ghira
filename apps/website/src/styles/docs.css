@@ -10,6 +10,7 @@
   }
   .search-btn svg { width: 15px; height: 15px; }
   .search-btn kbd { margin-left: auto; }
+  .docs-nav { display: grid; gap: 22px; }
   .nav-group { display: grid; gap: 2px; }
   .nav-group p { font-weight: 600; font-size: 13.5px; padding: 0 10px 4px; }
   .nav-group a { display: block; padding: 5px 10px; border-radius: var(--radius-seg); color: var(--muted); text-decoration: none; line-height: 1.4; }
@@ -38,38 +39,67 @@
     content: counter(step); grid-row: 1 / span 2; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
     border: 1px solid var(--line2); background: var(--surface); font-size: 13.5px; font-weight: 600; color: var(--ink);
   }
+  .article .steps > li > strong:first-child, .article .steps > li > p:first-child > strong:first-child { display: block; font-weight: 600; }
+  .article .steps > li > :not(:first-child) { grid-column: 2; margin-top: 0; }
+  .article h1:focus-visible { outline: none; }
+  .article kbd { font-size: 0.82em; }
+  .article a { overflow-wrap: anywhere; }
+  .table-scroll, .code pre { scrollbar-width: thin; }
+  .table-scroll:focus-visible, .code pre:focus-visible { outline-offset: -2px; border-radius: var(--radius-panel); }
   .table-scroll { margin-top: 18px; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface); }
   .article table { width: 100%; border-collapse: collapse; font-size: 15px; }
   .article th, .article td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
   .article th { font-weight: 600; font-size: 13.5px; color: var(--muted); background: var(--surface2); }
   .article tr:last-child td { border-bottom: 0; }
+  /* Shiki's line spans carry the class "line", which the landing page's transcript also uses. */
+  .article .shiki .line { display: inline; grid-template-columns: none; gap: 0; padding: 0; border: 0; border-radius: 0; }
+  .code-head .copy-btn { flex: none; }
+  .code-head > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .article .cards { list-style: none; padding: 0; margin-top: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: 12px; }
+  .article .cards li { margin: 0; }
+  .cards a { display: grid; gap: 4px; height: 100%; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-row); background: var(--surface); color: var(--ink); text-decoration: none; }
+  .cards a:hover { border-color: var(--accent); }
+  .cards span { color: var(--muted); font-size: 14.5px; }
   .pager { margin-top: 56px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .pager a { display: grid; gap: 2px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-row); text-decoration: none; color: var(--ink); background: var(--surface); }
   .pager a:hover { border-color: var(--accent); }
   .pager small { color: var(--faint); font-size: 13px; }
+  .pager .prev { grid-column: 1; }
   .pager .next { text-align: right; grid-column: 2; }
   .edit { margin-top: 28px; font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 20px; }
 
   .toc { position: sticky; top: 84px; align-self: start; font-size: 13.5px; display: grid; gap: 8px; }
   .toc p { font-weight: 600; }
   .toc a { color: var(--muted); text-decoration: none; display: block; padding-left: 12px; border-left: 2px solid var(--line); line-height: 1.5; }
+  .toc a[data-depth="3"] { padding-left: 24px; }
   .toc a:hover { color: var(--ink); }
   .toc a[aria-current="true"] { color: var(--ink); border-left-color: var(--accent); }
 
   /* search dialog */
-  dialog.search { width: min(560px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); color: var(--ink); box-shadow: var(--shadow); margin-top: 12vh; }
+  dialog.search { width: min(560px, calc(100vw - 32px)); max-width: none; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); color: var(--ink); box-shadow: var(--shadow); margin: 12vh auto auto; overflow: hidden; }
   dialog.search::backdrop { background: var(--scrim); }
   .search-field { display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--line); }
   .search-field svg { width: 17px; height: 17px; color: var(--faint); flex: none; }
+  .search-field:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
   .search-field input { flex: 1; min-width: 0; height: 52px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 16px; outline: none; }
-  .results { list-style: none; margin: 0; padding: 8px; max-height: 50vh; overflow-y: auto; }
-  .results a { display: grid; padding: 9px 12px; border-radius: var(--radius-ctl); color: var(--ink); text-decoration: none; }
-  .results a small { color: var(--faint); font-size: 13px; }
-  .results a:hover, .results a:focus-visible, .results a[aria-selected="true"] { background: var(--accent-soft); outline: none; }
-  .results .empty { padding: 14px 12px; color: var(--muted); }
+  .search-field input::placeholder { color: var(--muted); opacity: 1; }
+  .results { margin: 0; padding: 0 8px; max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; }
+  .results:not(:empty) { padding-block: 8px; }
+  .results [role="group"] + [role="group"] { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+  .results a { display: grid; padding: 9px 12px; border-radius: var(--radius-ctl); color: var(--ink); text-decoration: none; overflow-wrap: anywhere; }
+  .results .result-page span { font-weight: 600; }
+  .results .result-hit { padding-left: 24px; color: var(--muted); font-size: 14.5px; }
+  .results a small { color: var(--muted); font-size: 13px; }
+  .results a:hover, .results a[aria-selected="true"] { background: var(--accent-soft); color: var(--ink); }
+  .results mark { background: none; color: var(--ink); font-weight: 700; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 2px; }
+  .search-note { margin: 0; padding: 14px 20px; color: var(--muted); }
+  .results:not(:empty) + .search-note { border-top: 1px solid var(--line); }
 
   @media (pointer: coarse) {
     .nav-group a, .search-btn, .toc a { min-height: 44px; display: flex; align-items: center; }
+    .results a { min-height: 44px; align-content: center; }
+    .edit a, .pager a { min-height: 44px; }
+    .edit a { display: inline-flex; align-items: center; }
   }
   @media (max-width: 1100px) {
     .docs { grid-template-columns: 220px minmax(0, 1fr); }

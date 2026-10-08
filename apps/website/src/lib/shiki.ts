@@ -17,7 +17,7 @@ export const ghiraTheme: ThemeRegistration = {
   fg: v("ink"),
   bg: v("surface2"),
   tokenColors: [
-    { scope: ["comment", "punctuation.definition.comment"], settings: { foreground: v("muted"), fontStyle: "italic" } },
+    { scope: ["comment", "punctuation.definition.comment"], settings: { foreground: v("muted") } },
     { scope: ["string", "string.regexp", "markup.inline.raw"], settings: { foreground: v("s3") } },
     { scope: ["constant.numeric", "constant.language", "constant.character", "constant.other"], settings: { foreground: v("s2") } },
     { scope: ["entity.name.section", "markup.heading", "entity.name.tag"], settings: { foreground: v("s5") } },

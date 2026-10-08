@@ -2,23 +2,18 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { notFound } from "@tanstack/react-router";
-import type { source as Source } from "./source";
 
-type SerializedPageTree = Awaited<ReturnType<typeof Source.serializePageTree>>;
-
-// What the docs route needs for one page. The page tree is the same for
-// every page; it is serialized (names and icons as HTML strings) so it
-// survives JSON.
+// What the docs route needs for one page. The sidebar, pager and crumb come
+// from the published nav (site-links), so only the content file's path and
+// its frontmatter text are looked up here.
 export interface DocsPageData {
   path: string;
   title: string;
   description: string;
-  pageTree: SerializedPageTree;
 }
 
 export interface DocsIndex {
-  pageTree: SerializedPageTree;
-  pages: Record<string, { path: string; title: string; description: string }>;
+  pages: Record<string, DocsPageData>;
 }
 
 export const DOCS_INDEX_URL = "/api/docs-tree.json";
@@ -34,13 +29,14 @@ export async function buildDocsIndex(): Promise<DocsIndex> {
       description: page.data.description ?? "",
     };
   }
-  return { pageTree: await source.serializePageTree(source.getPageTree()), pages };
+  return { pages };
 }
 
 function pick(index: DocsIndex, slugs: string[]): DocsPageData {
-  const page = index.pages[slugs.join("/")];
+  const key = slugs.join("/");
+  const page = Object.hasOwn(index.pages, key) ? index.pages[key] : undefined;
   if (!page) throw notFound();
-  return { ...page, pageTree: index.pageTree };
+  return page;
 }
 
 // Runs during prerender (SSR), in-process.

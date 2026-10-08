@@ -35,6 +35,9 @@ export default defineConfig({
     remarkPlugins: (defaults) => [[remarkGhiraLinks, { repoRoot, contentDir, published: publishedSources(loadNav(repoRoot)) }], ...defaults],
     rehypeCodeOptions: {
       themes: { light: ghiraTheme, dark: ghiraTheme },
+      // Colours inline as var(--token): one theme, so no dark/light switching.
+      defaultColor: "light",
+      addLanguageClass: true,
       langs: ["sh", "bash", "json", "toml", "yaml", "rust", "ts", "md"],
     },
   },

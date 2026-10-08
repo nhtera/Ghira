@@ -3,6 +3,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import browserCollections from "collections/browser";
 import { Suspense } from "react";
+import { DocsArticle, DocsShell } from "@/components/docs/docs-shell";
+import { Toc } from "@/components/docs/toc";
 import { getMDXComponents } from "@/components/mdx";
 import { strings } from "@/content/strings";
 import { loadDocsPage } from "@/lib/docs-data";
@@ -27,24 +29,25 @@ export const Route = createFileRoute("/docs/$")({
       : {},
 });
 
+// The article and the table of contents are siblings in the shell's grid.
 const clientLoader = browserCollections.docs.createClientLoader({
-  component({ frontmatter, default: MDX }) {
+  component({ toc, frontmatter, default: MDX }, { slug }: { slug: string }) {
     return (
-      <article className="article" data-docs-article="">
-        <h1>{frontmatter.title}</h1>
-        <p className="lead">{frontmatter.description}</p>
-        <MDX components={getMDXComponents()} />
-      </article>
+      <>
+        <DocsArticle slug={slug} title={frontmatter.title} description={frontmatter.description} source={frontmatter.source} lastUpdated={frontmatter.lastUpdated}>
+          <MDX components={getMDXComponents()} />
+        </DocsArticle>
+        <Toc key={slug} items={toc} />
+      </>
     );
   },
 });
 
-// Placeholder chrome until the docs site lands (phase 6).
 function Page() {
-  const { path } = Route.useLoaderData();
+  const { path, slug } = Route.useLoaderData();
   return (
-    <main id="main" className="wrap docs">
-      <Suspense>{clientLoader.useContent(path)}</Suspense>
-    </main>
+    <DocsShell slug={slug}>
+      <Suspense>{clientLoader.useContent(path, { slug })}</Suspense>
+    </DocsShell>
   );
 }
