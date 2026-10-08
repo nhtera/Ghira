@@ -227,7 +227,8 @@
     "open": "Mở",
     "language": "Ngôn ngữ",
     "remove": "Gỡ",
-    "metaSep": " · "
+    "metaSep": " · ",
+    "close": "Đóng"
   },
   "notes": {
     "tab": "Ghi chú",

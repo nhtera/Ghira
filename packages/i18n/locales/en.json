@@ -239,7 +239,8 @@
     "open": "Open",
     "language": "Language",
     "remove": "Remove",
-    "metaSep": " · "
+    "metaSep": " · ",
+    "close": "Close"
   },
   "notes": {
     "tab": "Notes",
