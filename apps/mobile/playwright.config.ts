@@ -11,6 +11,9 @@ const origin = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "tests/e2e",
+  // One retry on CI only, for browser crashes ("WebKit encountered an internal
+  // error"); a test that needs it is still reported as flaky.
+  retries: process.env.CI ? 1 : 0,
   use: { baseURL: origin },
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
   projects: [
