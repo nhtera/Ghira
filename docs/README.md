@@ -15,6 +15,20 @@ docs/release/ is never published. -->
 | [getting-started.md](getting-started.md) | Set up Ghira, then record and review your first meeting |
 | [models.md](models.md) | The speech and notes models: presets, sizes, downloads and offline install |
 
+## Using Ghira
+
+| Page | Contents |
+|---|---|
+| [recording.md](recording.md) | Call or Room, meeting detection, echo cancellation, consent message, pause, marks, sensitive meetings |
+| [speakers.md](speakers.md) | Naming and fixing speakers, People, your own voice profile |
+| [notes.md](notes.md) | How notes are written: sections, templates, your notes kept, regenerate, language, the local model |
+| [search.md](search.md) | Accent-insensitive search and Ask, in one meeting or across all |
+| [import.md](import.md) | Import audio and video files, Voice Memos, Zoom participant tracks, Plaud, iPhone share sheet |
+| [export.md](export.md) | Export to Markdown, Word, text, subtitles and Obsidian, and draft a follow-up email |
+| [calendar.md](calendar.md) | Connect your Calendar app or an ICS file, offers to record, attendees |
+| [iphone-sync.md](iphone-sync.md) | iPhone app status, QR pairing, local-network encrypted sync, Export for another device |
+| [cloud-ai.md](cloud-ai.md) | Optional cloud notes and Ask: exact-text preview, redaction, your own API key, request log |
+
 ## Reference
 
 | Page | Contents |
