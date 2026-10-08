@@ -51,6 +51,32 @@ npm --prefix apps/website run check-links # on the build output
   app; `src/styles/fonts.css` has the same faces as `packages/ui/src/fonts.css`
   (a test keeps them equal). Site copy lives in `src/content/*.ts`.
 
+## Screenshots
+
+The landing page images come from the apps' own e2e mocks
+(`apps/desktop/tests/e2e/marketing.spec.ts`, `apps/mobile/tests/e2e/marketing.spec.ts`).
+Recapture on macOS when the app UI they show changes; never in CI (the
+specs skip unless `GHI_MARKETING=1`).
+
+```sh
+pnpm install
+pnpm --filter @ghi/desktop build && pnpm --filter @ghi/ui gallery:build
+pnpm --filter @ghi/mobile build
+# once: npx playwright install webkit   (from apps/desktop and apps/mobile)
+GHI_MARKETING=1 pnpm --filter @ghi/desktop exec playwright test marketing --project=webkit
+GHI_MARKETING=1 pnpm --filter @ghi/mobile exec playwright test marketing
+npm --prefix apps/website run screens
+```
+
+The specs write 8 PNGs (`desk-live`, `desk-notes`, `phone-live`,
+`phone-meetings`, each light and dark) to `apps/website/.screens/`
+(gitignored; override with `GHI_MARKETING_OUT`). They are deterministic
+(seeded `Math.random`, Playwright's fixed clock, reduced motion). `screens`
+turns them into hashed WebP in `public/screens/` and rewrites
+`src/content/screens.json`. A WebP is replaced only when the image visibly
+changed, so recapturing an unchanged UI changes no files. Commit the WebP and
+the manifest, never the PNGs. The total must stay under 2.5 MiB.
+
 ## Isolation
 
 `apps/website` has its own `package-lock.json` and is installed with
