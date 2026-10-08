@@ -87,4 +87,7 @@ pub trait Llm {
     fn stopper(&self) -> Option<std::sync::Arc<dyn Fn() + Send + Sync>> {
         None
     }
+    /// Where the model reports progress during a request (prompt tokens read,
+    /// tokens written so far); models that cannot tell ignore it.
+    fn set_progress(&mut self, _progress: Box<dyn FnMut(u32, u32) + Send>) {}
 }

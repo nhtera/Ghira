@@ -1140,6 +1140,9 @@ fn watched(open: ghi_core::notes_job::LlmFactory) -> ghi_core::notes_job::LlmFac
         fn stopper(&self) -> Option<Arc<dyn Fn() + Send + Sync>> {
             self.llm.stopper()
         }
+        fn set_progress(&mut self, progress: Box<dyn FnMut(u32, u32) + Send>) {
+            self.llm.set_progress(progress);
+        }
     }
     impl Drop for Watched {
         fn drop(&mut self) {
@@ -1240,11 +1243,17 @@ pub fn job_handlers(
                 llm: watched(ghi_app::core::llm_factory(models)),
                 ready: notes_ready,
             },
-            // iOS thermal state serious (2) or critical (3): wait, or pause a run.
+            // iOS thermal state: start only below serious (2); a run goes on
+            // through serious and stops only at critical (3).
             hot: Arc::new(|| {
                 crate::platform::device_stats()
                     .thermal
                     .is_some_and(|t| t >= 2)
+            }),
+            too_hot: Arc::new(|| {
+                crate::platform::device_stats()
+                    .thermal
+                    .is_some_and(|t| t >= 3)
             }),
         }),
         Arc::new(VoiceLearnJob {

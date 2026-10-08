@@ -45,7 +45,8 @@ export function NotesPanel({
   // The cloud entry only exists once the user offered cloud notes in Settings.
   const cloudOffered = useCloudOffered();
   const local = useNotesModel();
-  // Notes written here pause while the phone is hot (thermal serious or worse).
+  // Notes written here wait to start while the phone is hot (thermal serious
+  // or worse); once started they run on (their progress is above 0).
   const hot = usePhoneHeat() >= 2;
   const [failed, setFailed] = useState<string | null>(null);
   const groups = groupBlocks(notes.blocks);
@@ -86,7 +87,7 @@ export function NotesPanel({
         <p role={state === "writing" ? "status" : undefined} className="text-ios-subhead m-0 max-w-sm text-muted">
           {state === "writing" && job?.waitingForModels
             ? t("mobile.detail.notesEmpty.writing.waiting")
-            : state === "writing" && hot
+            : state === "writing" && hot && !(job?.progress && job.progress > 0)
               ? t("mobile.detail.notesEmpty.writing.cooling")
               : t(`mobile.detail.notesEmpty.${state}.body`)}
         </p>

@@ -380,13 +380,16 @@ impl JobHandler for NotesJob {
 }
 
 /// [`NotesJob`] on a phone: compact notes (no quotes or topics, fewer items:
-/// about half the output, so half the time and heat), and it waits while the
-/// phone is hot (`hot`: iOS thermal state serious or worse). A run that heats
-/// the phone up stops mid-answer and yields; it starts over once cooled (the
-/// phone wakes the runner on a thermal change).
+/// about half the output, so half the time and heat). It starts only while
+/// the phone is not hot (`hot`: iOS thermal serious or worse; the phone wakes
+/// the runner on a thermal change), and once started it runs on through
+/// "serious" (iOS slows it down) and stops only at `too_hot` (critical): a
+/// run stopped at every "serious" restarts from scratch each time and never
+/// ends, since one prompt alone takes longer than the phone stays cool.
 pub struct PhoneNotesJob {
     pub job: NotesJob,
     pub hot: crate::jobs::Ready,
+    pub too_hot: crate::jobs::Ready,
 }
 
 impl JobHandler for PhoneNotesJob {
@@ -403,7 +406,7 @@ impl JobHandler for PhoneNotesJob {
     }
 
     fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
-        self.job.run_with(ctx, true, &*self.hot)
+        self.job.run_with(ctx, true, &*self.too_hot)
     }
 }
 
@@ -472,6 +475,23 @@ impl NotesJob {
             opts.compact = compact;
             let bytes: usize = segs.iter().map(|s| s.text.len()).sum();
             let mut llm = (self.llm)(bytes)?;
+            // The model's own progress, as the meeting's: reading the
+            // transcript to 40 %, writing to 80 % (the expected output: about
+            // 900 tokens compact, 1,800 full), then the user's notes.
+            let shown = Arc::new(std::sync::atomic::AtomicU32::new(0));
+            {
+                let shown = shown.clone();
+                let est_in = (bytes as f64 / 3.0).max(1.0);
+                let est_out = if compact { 900.0 } else { 1_800.0 };
+                llm.set_progress(Box::new(move |read, written| {
+                    let p = if written == 0 {
+                        0.05 + 0.35 * (f64::from(read) / est_in).min(1.0)
+                    } else {
+                        0.4 + 0.4 * (f64::from(written) / est_out).min(1.0)
+                    };
+                    shown.fetch_max((p * 1000.0) as u32, std::sync::atomic::Ordering::Relaxed);
+                }));
+            }
             // A model that can be stopped mid-answer (the phone's in-process
             // engine) is stopped as soon as a recording starts or the app
             // leaves the screen (iOS forbids the GPU in the background): the
@@ -489,17 +509,25 @@ impl NotesJob {
                 }
             }
             let written = std::thread::scope(|scope| {
-                if let Some(stop) = &stop {
-                    scope.spawn(|| {
-                        while !finished.load(std::sync::atomic::Ordering::Relaxed) {
-                            if stop_requested() {
-                                stop();
-                                return;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(100));
+                scope.spawn(|| {
+                    let mut reported = 0;
+                    let mut stopped = false;
+                    while !finished.load(std::sync::atomic::Ordering::Relaxed) {
+                        if !stopped
+                            && let Some(stop) = &stop
+                            && stop_requested()
+                        {
+                            stop();
+                            stopped = true;
                         }
-                    });
-                }
+                        let now = shown.load(std::sync::atomic::Ordering::Relaxed);
+                        if now > reported + 9 {
+                            reported = now;
+                            ctx.progress(Some(Stage::WritingNotes), now as f32 / 1000.0);
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                });
                 let _finished = Finished(&finished);
                 (|| -> Result<_, String> {
                     let run =

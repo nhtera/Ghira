@@ -61,8 +61,9 @@ fn setup() -> Setup {
     setup_with(None)
 }
 
-/// With `hot`, the phone's job (compact notes, paused while hot).
-fn setup_with(hot: Option<Arc<AtomicBool>>) -> Setup {
+/// With `(hot, critical)`, the phone's job (compact notes; starts only while
+/// not hot, stops only when critical).
+fn setup_with(heat: Option<(Arc<AtomicBool>, Arc<AtomicBool>)>) -> Setup {
     let tmp = tempfile::tempdir().unwrap();
     let store = Arc::new(
         Store::open(
@@ -113,10 +114,11 @@ fn setup_with(hot: Option<Arc<AtomicBool>>) -> Setup {
                 }),
                 ready: always_ready(),
             };
-            match hot {
-                Some(hot) => Arc::new(PhoneNotesJob {
+            match heat {
+                Some((hot, critical)) => Arc::new(PhoneNotesJob {
                     job,
                     hot: Arc::new(move || hot.load(Ordering::SeqCst)),
+                    too_hot: Arc::new(move || critical.load(Ordering::SeqCst)),
                 }) as Arc<dyn JobHandler>,
                 None => Arc::new(job),
             }
@@ -170,18 +172,29 @@ fn leaving_the_screen_stops_the_notes_engine_and_the_job_waits() {
 }
 
 #[test]
-fn a_hot_phone_pauses_its_notes_and_writes_them_once_cool() {
+fn a_phone_that_heats_up_keeps_writing_and_stops_only_when_critical() {
     let hot = Arc::new(AtomicBool::new(false));
-    // Heats up mid-answer: stopped, queued again.
-    stopped_in(setup_with(Some(hot.clone())), |_| {
-        hot.store(true, Ordering::SeqCst)
+    let critical = Arc::new(AtomicBool::new(false));
+    let setup = setup_with(Some((hot.clone(), critical.clone())));
+    let stop = setup.3.clone();
+    stopped_in(setup, |_| {
+        // Serious: the run goes on (one prompt outlasts the cool spells).
+        hot.store(true, Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(500));
+        assert!(!stop.load(Ordering::SeqCst), "not stopped while only hot");
+        // Critical: stopped, queued again.
+        critical.store(true, Ordering::SeqCst);
     });
-    // While hot nothing starts.
-    let (_store, runner, _id, stop, _asked, _tmp) = setup_with(Some(hot.clone()));
+}
+
+#[test]
+fn a_hot_phone_starts_no_notes_until_it_cools() {
+    let hot = Arc::new(AtomicBool::new(true));
+    let (_store, runner, _id, stop, _asked, _tmp) =
+        setup_with(Some((hot.clone(), Arc::new(AtomicBool::new(false)))));
     assert!(runner.run_one().is_none(), "a hot phone starts no notes");
     hot.store(false, Ordering::SeqCst);
     stop.store(true, Ordering::SeqCst); // the scripted model answers at once
-
     assert!(runner.run_one().is_some(), "cool again: the notes run");
 }
 
@@ -225,6 +238,7 @@ fn the_phone_writes_compact_notes() {
                 ready: always_ready(),
             },
             hot: Arc::new(|| false),
+            too_hot: Arc::new(|| false),
         })],
     );
     assert_eq!(runner.run_pending(), 1);

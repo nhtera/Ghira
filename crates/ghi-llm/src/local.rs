@@ -38,6 +38,7 @@ pub struct LocalLlm {
     sidecar: Sidecar,
     engine: EngineInfo,
     n_ctx: u32,
+    progress: Option<Box<dyn FnMut(u32, u32) + Send>>,
 }
 
 impl LocalLlm {
@@ -72,6 +73,7 @@ impl LocalLlm {
                     sidecar,
                     engine,
                     n_ctx,
+                    progress: None,
                 })
             }
             Body::Error { message } => Err(LlmError::Worker(message)),
@@ -124,6 +126,10 @@ impl Llm for LocalLlm {
         self.sidecar.stopper()
     }
 
+    fn set_progress(&mut self, progress: Box<dyn FnMut(u32, u32) + Send>) {
+        self.progress = Some(progress);
+    }
+
     fn count_tokens(&mut self, text: &str) -> Result<u32> {
         let reply = self.sidecar.request(
             Op::Count {
@@ -161,7 +167,11 @@ impl Llm for LocalLlm {
             },
             IDLE_TIMEOUT,
             HARD_TIMEOUT,
-            &mut |_, _| {},
+            &mut |read, written| {
+                if let Some(p) = self.progress.as_mut() {
+                    p(read, written);
+                }
+            },
         )?;
         match reply.body {
             Body::Completed {
