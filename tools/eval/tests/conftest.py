@@ -40,6 +40,11 @@ FAKE_GHI = """\
 import os, sys
 from pathlib import Path
 
+# UTF-8 like the real ghi: a Windows pipe defaults to cp1252, which cannot
+# write the golden documents' Vietnamese ("ố").
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
+
 GOLD = Path(__GOLD__)
 mode = os.environ.get("FAKE_GHI_MODE", "ok")
 args = sys.argv[1:]
