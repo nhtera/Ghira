@@ -596,12 +596,17 @@ fn level_meter_reports_rms_at_most_ten_times_a_second() {
         .map(|i| (i as f32 * 0.05).sin() * 0.2)
         .collect();
     let lv = levels_of(samples);
-    assert!(lv.len() >= 10, "{} level events in 2 s", lv.len());
-    for (mic, sys, _) in &lv {
-        let m = mic.expect("the mic flows");
-        assert!((-19.0..=-15.0).contains(&m), "{m}");
-        assert_eq!(*sys, None, "a room has no system track");
+    // A tick in which no block arrived (a loaded machine) sends one empty
+    // reading to clear the meter: only the readings are checked.
+    let mic: Vec<f32> = lv.iter().filter_map(|(m, _, _)| *m).collect();
+    assert!(mic.len() >= 10, "{} mic readings in 2 s: {lv:?}", mic.len());
+    for m in &mic {
+        assert!((-19.0..=-15.0).contains(m), "{m}");
     }
+    assert!(
+        lv.iter().all(|(_, sys, _)| sys.is_none()),
+        "a room has no system track"
+    );
     let span = lv.last().unwrap().2 - lv.first().unwrap().2;
     assert!(
         (lv.len() as u64 - 1) * 100 <= span + 20,
@@ -609,10 +614,11 @@ fn level_meter_reports_rms_at_most_ten_times_a_second() {
         lv.len()
     );
 
-    // Digital silence reads the floor, not -inf or None.
+    // Digital silence reads the floor, not -inf (or no reading at all).
     let lv = levels_of(vec![0.0; 16_000]);
-    assert!(!lv.is_empty());
-    assert!(lv.iter().all(|(m, _, _)| *m == Some(-100.0)));
+    let mic: Vec<f32> = lv.iter().filter_map(|(m, _, _)| *m).collect();
+    assert!(!mic.is_empty(), "{lv:?}");
+    assert!(mic.iter().all(|m| *m == -100.0), "{lv:?}");
 }
 
 #[test]
