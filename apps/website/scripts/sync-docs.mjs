@@ -176,7 +176,7 @@ export function sync({ repo = REPO, out = join(SITE, "content"), dates = !proces
       const target = join(docsOut, contentPathOfSlug(slug));
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, frontmatter(data) + body);
-      pages.push({ slug, title: split.title, description, source });
+      pages.push({ slug, title: split.title, description, source, ...(data.lastUpdated ? { lastUpdated: data.lastUpdated } : {}) });
     }
     navOut.push({ title: section.title, pages });
   }

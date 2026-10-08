@@ -10,6 +10,23 @@ export const strings = {
     description:
       "Ghira records calls and in-person meetings in English and Vietnamese, shows who said what as people talk, and writes notes you can check line by line. Everything runs on your Mac. Open source.",
   },
+  llms: {
+    summary:
+      "Ghira is an offline-first AI meeting note taker for English and Vietnamese. It records calls and in-person meetings on a Mac, tells speakers apart as they talk, and writes notes with citations to the transcript. Audio, transcripts and notes stay on the device; cloud AI is an opt-in per meeting and sends reviewed transcript text only.",
+    details: [
+      "Status: pre-release. The Mac app (Apple Silicon, macOS 14.2 or later) is built from source; the iPhone app is in testing. Open source under the Apache 2.0 license: https://github.com/nhtera/Ghira",
+    ],
+  },
+  ogCard: {
+    headline: "Meeting notes that stay on your Mac.",
+    sub: "English and Vietnamese. Speakers told apart as they talk. Open source.",
+    lines: [
+      { who: "Linh", slot: 2, text: "I collected feedback from 12 user tests." },
+      { who: "Minh", slot: 4, text: "Bản Nemotron mới giảm lỗi nhiều." },
+      { who: "Sarah", slot: 8, text: "People want to rename speakers during the call." },
+    ],
+    local: "Local only",
+  },
   nav: {
     skip: "Skip to content",
     label: "Site",

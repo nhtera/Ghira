@@ -13,6 +13,8 @@ export interface NavPage {
   title: string;
   description: string;
   source: string;
+  /** YYYY-MM-DD of the last commit to the source, when the build has git history. */
+  lastUpdated?: string;
 }
 
 export interface GeneratedNav {

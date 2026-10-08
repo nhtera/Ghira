@@ -30,8 +30,17 @@ export default defineConfig({
         // A link with an anchor is the same page; render it once.
         filter: (page) => !page.path.includes("#"),
       },
-      // Routes no page links to: the search and docs indexes, the 404 page, sitemap and robots.
-      pages: [{ path: "/api/search.json" }, { path: "/api/docs-tree.json" }, { path: "/404.html" }, { path: "/sitemap.xml" }, { path: "/robots.txt" }],
+      // Routes no page links to: the search and docs indexes, the 404 page,
+      // sitemap, robots, llms.txt and the share card (captured to og.png).
+      pages: [
+        { path: "/api/search.json" },
+        { path: "/api/docs-tree.json" },
+        { path: "/404.html" },
+        { path: "/sitemap.xml" },
+        { path: "/robots.txt" },
+        { path: "/llms.txt" },
+        { path: "/og-card" },
+      ],
     }),
     react(),
   ],

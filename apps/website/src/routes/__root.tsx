@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
+import { createRootRoute, HeadContent, Outlet, Scripts, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteHeader } from "@/components/site/site-header";
@@ -15,13 +15,15 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { name: "color-scheme", content: "light dark" },
+      { name: "theme-color", content: "#EEF1EF", media: "(prefers-color-scheme: light)" },
+      { name: "theme-color", content: "#0C110F", media: "(prefers-color-scheme: dark)" },
       // The not-found state (a docs link to a page that does not exist, on
       // client navigation) gets the 404 page's title and noindex.
       ...(matches.some((m) => m.status === "notFound" || ("globalNotFound" in m && m.globalNotFound))
         ? [{ title: strings.notFound.metaTitle }, { name: "robots", content: "noindex" }]
         : [{ title: strings.site.title }, { name: "description", content: strings.site.description }]),
     ],
-    links: [...fontPreloads, { rel: "stylesheet", href: siteCss }, { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
+    links: [...fontPreloads, { rel: "stylesheet", href: siteCss }, { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }, { rel: "apple-touch-icon", href: "/apple-touch-icon.png" }],
     // Before first paint: the theme (stored pick, else the OS setting).
     scripts: [{ children: THEME_INIT_SCRIPT }],
   }),
@@ -37,6 +39,8 @@ function RootComponent() {
 }
 
 function RootDocument({ children }: { children: ReactNode }) {
+  // The share card is captured on its own, without the site chrome.
+  const bare = useRouterState({ select: (s) => s.location.pathname === "/og-card" });
   return (
     // The init script sets data-theme before React hydrates.
     <html lang="en" suppressHydrationWarning>
@@ -44,9 +48,9 @@ function RootDocument({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <SiteHeader />
+        {bare ? null : <SiteHeader />}
         {children}
-        <SiteFooter />
+        {bare ? null : <SiteFooter />}
         <Scripts />
       </body>
     </html>
