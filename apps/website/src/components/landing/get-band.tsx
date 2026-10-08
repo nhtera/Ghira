@@ -35,7 +35,8 @@ export function GetBand() {
                 <span>{t.codeTitle}</span>
                 <CopyButton text={`${t.codeComment}\n${COMMANDS}`} target={pre} />
               </div>
-              <pre ref={pre}>
+              {/* Scrolls sideways on a phone: focusable, named. */}
+              <pre ref={pre} tabIndex={0} role="group" aria-label={t.codeTitle}>
                 <span className="c">{t.codeComment}</span>
                 {"\n"}
                 {COMMANDS}

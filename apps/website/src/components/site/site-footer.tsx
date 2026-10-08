@@ -36,9 +36,9 @@ export function SiteFooter() {
         <nav className="foot-col" aria-label={t.product.title}>
           <p>{t.product.title}</p>
           {t.product.links.map((l) => (
-            <Link key={l.hash} to="/" hash={l.hash}>
+            <a key={l.hash} href={`/#${l.hash}`}>
               {l.label}
-            </Link>
+            </a>
           ))}
         </nav>
         <nav className="foot-col" aria-label={t.docs.label}>

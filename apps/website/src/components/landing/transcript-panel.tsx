@@ -13,7 +13,8 @@ export function TranscriptPanel({ lang, cited, scrollerRef }: { lang: Lang; cite
         <strong>{SAMPLE_LABELS[lang].transcript}</strong>
         <span>{SAMPLE_LABELS[lang].meta}</span>
       </div>
-      <div className="tx-scroll" ref={scrollerRef}>
+      {/* Scrolls on its own: focusable so keyboard users can scroll it too. */}
+      <div className="tx-scroll" ref={scrollerRef} tabIndex={0} role="group" aria-label={SAMPLE_LABELS[lang].transcript}>
         {LINES.map((_, i) => (
           <TranscriptLine key={i} i={i} shown={99} partial={false} lang={lang} cited={cited.includes(i)} />
         ))}

@@ -156,6 +156,7 @@
     .head-nav a, .icon-btn, .head-nav .head-cta, .brand { min-height: 44px; }
     .icon-btn { min-width: 44px; justify-content: center; }
     .link-btn, .copy-btn, .lang-switch button, .foot-col a { min-height: 44px; }
+    .foot-col a { min-width: 44px; }
   }
   @media (max-width: 900px) {
     .foot-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

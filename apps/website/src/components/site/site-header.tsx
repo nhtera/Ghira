@@ -37,19 +37,20 @@ export function SiteHeader() {
             <Link to="/docs/$" params={{ _splat: "" }} aria-current={inDocs ? "page" : undefined}>
               {t.docs}
             </Link>
-            <Link className="hide-sm" to="/" hash="privacy">
+            {/* Plain anchors: a router Link would mark "/#x" as the current page on "/". */}
+            <a className="hide-sm" href="/#privacy">
               {t.privacy}
-            </Link>
-            <Link className="hide-sm" to="/" hash="faq">
+            </a>
+            <a className="hide-sm" href="/#faq">
               {t.faq}
-            </Link>
+            </a>
             <a className="hide-xs" href={REPO_URL}>
               {t.github}
             </a>
             <ThemeToggle />
-            <Link className="head-cta" to="/" hash="get">
+            <a className="head-cta" href="/#get">
               {t.cta}
-            </Link>
+            </a>
           </nav>
         </div>
       </header>
