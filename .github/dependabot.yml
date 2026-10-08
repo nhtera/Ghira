@@ -6,6 +6,18 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly }
+  # The website is a standalone npm project (not in the pnpm workspace),
+  # and its deploy job installs only deploy/ (the pinned cf CLI).
+  - package-ecosystem: npm
+    directory: /apps/website
+    schedule: { interval: weekly }
+    groups:
+      website: { patterns: ["*"] }
+  - package-ecosystem: npm
+    directory: /apps/website/deploy
+    schedule: { interval: weekly }
+    groups:
+      website-deploy: { patterns: ["*"] }
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }

@@ -14,3 +14,12 @@
 /apps/desktop/src-tauri/tauri.release.conf.json    @nhtera
 /SECURITY.md                  @nhtera
 /PRIVACY.md                   @nhtera
+# The website: what is deployed with the Cloudflare token, the Worker, the
+# security headers, and the list of published docs.
+/apps/website/deploy/                      @nhtera
+/apps/website/src/server.ts                @nhtera
+/apps/website/src/worker/                  @nhtera
+/apps/website/src/lib/security-headers.ts  @nhtera
+/apps/website/scripts/csp-headers.mjs      @nhtera
+/apps/website/scripts/build-worker.mjs     @nhtera
+/docs/README.md                            @nhtera
