@@ -102,6 +102,8 @@ pub struct JobCtx<'a> {
     fence: Option<&'a Fence>,
     /// The handler gave up because the lease no longer holds.
     fenced: AtomicBool,
+    /// Progress last saved with the job (per mille; u32::MAX: none yet).
+    saved_progress: std::sync::atomic::AtomicU32,
 }
 
 /// When a job that keeps yielding without saving anything new is held back.
@@ -214,6 +216,18 @@ impl JobCtx<'_> {
                 .lease_set_progress(&l.job_uuid, f64::from(progress.clamp(0.0, 1.0)))
         {
             log::debug!("lease progress not saved: {e}");
+        }
+        // Saved with the job too (each 1 %), so a screen opened mid-run reads
+        // where it is instead of 0 % until the next event.
+        let permille = (progress.clamp(0.0, 1.0) * 1000.0) as u32;
+        let last = self.saved_progress.load(Ordering::Relaxed);
+        if (last == u32::MAX || permille.abs_diff(last) >= 10)
+            && self
+                .store
+                .set_job_progress(self.job.id, f64::from(permille) / 1000.0)
+                .is_ok()
+        {
+            self.saved_progress.store(permille, Ordering::Relaxed);
         }
         self.events.emit(Event::JobProgress {
             meeting: self.job.meeting_gid.clone(),
@@ -520,6 +534,7 @@ impl JobRunner {
                 preempt: &self.preempt,
                 inactive: &self.inactive,
                 refunded: AtomicBool::new(false),
+                saved_progress: std::sync::atomic::AtomicU32::new(u32::MAX),
                 fence: fence.as_ref(),
                 fenced: AtomicBool::new(false),
             };
@@ -874,6 +889,7 @@ mod tests {
             preempt: &runner.preempt,
             inactive: &runner.inactive,
             refunded: AtomicBool::new(false),
+            saved_progress: std::sync::atomic::AtomicU32::new(u32::MAX),
             fence: None,
             fenced: AtomicBool::new(false),
         };
@@ -1039,5 +1055,53 @@ mod tests {
         assert!(runner.held_jobs().is_empty());
         drop(runner.run_one().unwrap()); // streak 2: now held
         assert_eq!(runner.held_jobs(), [a]);
+    }
+
+    /// A screen opened mid-run reads the job's progress from the store: it is
+    /// saved as it is reported (each 1 %), not only sent as an event.
+    #[test]
+    fn reported_progress_is_saved_with_the_running_job() {
+        struct Reports(std::sync::Mutex<Vec<f64>>);
+        impl JobHandler for Reports {
+            fn kind(&self) -> &'static str {
+                "reports"
+            }
+            fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
+                for p in [0.25, 0.252, 0.5] {
+                    ctx.progress(None, p);
+                    let saved = ctx
+                        .store
+                        .job(ctx.job.id)
+                        .map_err(|e| e.to_string())?
+                        .progress;
+                    self.0.lock().unwrap().push(saved);
+                }
+                Ok(Outcome::Done)
+            }
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            Store::open(
+                tmp.path(),
+                Arc::new(MemoryKeyStore::default()),
+                Protection::default(),
+            )
+            .unwrap(),
+        );
+        let m = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        store
+            .enqueue_job(Some(&m), "reports", JOB_PAYLOAD_VERSION, &json!({}))
+            .unwrap();
+        let (tx, _rx) = bus();
+        let h = Arc::new(Reports(std::sync::Mutex::new(Vec::new())));
+        let runner = JobRunner::new(store, tx, vec![h.clone()]);
+        assert_eq!(runner.run_pending(), 1);
+        let seen = h.0.lock().unwrap().clone();
+        assert!((seen[0] - 0.25).abs() < 1e-6);
+        assert!(
+            (seen[1] - 0.25).abs() < 1e-6,
+            "under 1 % more is not written again"
+        );
+        assert!((seen[2] - 0.5).abs() < 1e-6);
     }
 }

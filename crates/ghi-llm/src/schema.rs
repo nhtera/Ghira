@@ -154,6 +154,24 @@ pub const COMPACT_CAPS: &[(&str, usize)] = &[
 ];
 /// Items per template section in a compact schema.
 pub const COMPACT_SECTION_CAP: usize = 4;
+/// Facts per part and citations per fact in a compact map step (a phone part
+/// once wrote 40 facts, ~2,000 tokens, ~5 min).
+pub const COMPACT_FACTS: usize = 8;
+pub const COMPACT_CITES: usize = 3;
+/// The answer cap of a compact map step, in tokens.
+pub const COMPACT_FACTS_TOKENS: u32 = 700;
+
+/// The compact form of a local [`facts`] schema: at most [`COMPACT_FACTS`]
+/// facts of at most [`COMPACT_CITES`] citations.
+pub fn compact_facts(mut schema: Value, d: Dialect) -> Value {
+    if d != Dialect::Local {
+        return schema;
+    }
+    let facts = &mut schema["properties"]["facts"];
+    facts["maxItems"] = json!(COMPACT_FACTS);
+    facts["items"]["properties"]["cite"]["maxItems"] = json!(COMPACT_CITES);
+    schema
+}
 
 /// The compact form of a local [`notes`] schema (`maxItems` lowered; cloud
 /// schemas carry no bounds and are returned as they are).
@@ -275,6 +293,13 @@ mod tests {
         assert_eq!(max("action_items"), Some(8));
         // Still every key, still required: the parser is unchanged.
         assert_eq!(c["required"], notes(&t, &sh)["required"]);
+        // Compact map steps: few facts, few citations each.
+        let f = compact_facts(facts(&sh), Dialect::Local);
+        assert_eq!(f["properties"]["facts"]["maxItems"], COMPACT_FACTS);
+        assert_eq!(
+            f["properties"]["facts"]["items"]["properties"]["cite"]["maxItems"],
+            COMPACT_CITES
+        );
         // Cloud schemas carry no bounds.
         let cloud = Shape {
             dialect: Dialect::Cloud,

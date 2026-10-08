@@ -795,8 +795,16 @@ fn map_part(
                 &render(t, aliases, &segs),
             )),
         ],
-        schema: Some(schema::facts(&shape)),
-        max_tokens: opts.max_output_tokens,
+        schema: Some(if opts.compact {
+            schema::compact_facts(schema::facts(&shape), Dialect::Local)
+        } else {
+            schema::facts(&shape)
+        }),
+        max_tokens: if opts.compact {
+            opts.max_output_tokens.min(schema::COMPACT_FACTS_TOKENS)
+        } else {
+            opts.max_output_tokens
+        },
         temperature: 0.3,
     };
     let in_part: HashSet<u64> = ids.iter().copied().collect();

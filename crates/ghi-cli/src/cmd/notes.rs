@@ -52,6 +52,10 @@ pub struct NotesArgs {
     /// Notes the user typed, one per line (`[mm:ss] ` prefix = when typed), to enhance.
     #[arg(long)]
     pub user_notes: Option<std::path::PathBuf>,
+    /// The phone's way: compact notes, written in 5-minute steps (map-reduce)
+    /// when the meeting is longer (use with --n-ctx 12288).
+    #[arg(long)]
+    pub phone: bool,
 }
 
 pub fn llm_error(e: LlmError) -> ErrorDoc {
@@ -193,7 +197,11 @@ pub fn run(
 ) -> Result<(), ErrorDoc> {
     let started = Instant::now();
     let t = to_llm(&crate::read_transcript(transcript)?)?;
-    let opts = Options::new(load_template(args)?, out_lang(lang, &t));
+    let mut opts = Options::new(load_template(args)?, out_lang(lang, &t));
+    if args.phone {
+        opts.compact = true;
+        opts.chunk_minutes = 5;
+    }
     let user_notes = args
         .user_notes
         .as_deref()
@@ -260,7 +268,15 @@ fn notes_with(
 ) -> Result<Option<NotesOut>, ErrorDoc> {
     let local = |mut extra: serde_json::Map<String, Value>| -> Result<NotesOut, ErrorDoc> {
         let mut llm = open_local(model)?;
-        let run = notes::generate(&mut llm, t, opts).map_err(llm_error)?;
+        let run = if opts.compact {
+            let mut steps = 0;
+            let run = notes::generate_steps(&mut llm, t, opts, None, &mut |s| steps = s.done)
+                .map_err(llm_error)?;
+            extra.insert("steps".into(), json!(steps));
+            run
+        } else {
+            notes::generate(&mut llm, t, opts).map_err(llm_error)?
+        };
         extra.insert("strategy".into(), json!(run.strategy));
         Ok(NotesOut {
             run,

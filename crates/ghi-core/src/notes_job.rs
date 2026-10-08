@@ -492,6 +492,37 @@ impl NotesJob {
                 .get("steps")
                 .and_then(|v| serde_json::from_value(v.clone()).ok());
             let latest = std::sync::Mutex::new(ctx.job.payload.clone());
+            // Steps: parts done and in all (an estimate from the meeting's
+            // length until the first part is saved), for the progress below.
+            let parts_done = Arc::new(std::sync::atomic::AtomicUsize::new(
+                saved.as_ref().map_or(0, |s| s.done),
+            ));
+            let parts_all = Arc::new(std::sync::atomic::AtomicUsize::new(
+                saved.as_ref().map_or_else(
+                    || {
+                        let span = segs.last().map_or(0, |s| s.t1_ms)
+                            - segs.first().map_or(0, |s| s.t0_ms);
+                        (span / 300_000 + 1).max(1) as usize
+                    },
+                    notes::Steps::parts,
+                ),
+            ));
+            if steps {
+                // Within a part too: reading it, then writing its facts (a
+                // compact part writes up to ~600 tokens), so the percent moves.
+                let (shown, done, all) = (shown.clone(), parts_done.clone(), parts_all.clone());
+                llm.set_progress(Box::new(move |read, written| {
+                    let f = if written == 0 {
+                        0.15 * (f64::from(read) / 1_700.0).min(1.0)
+                    } else {
+                        0.15 + 0.8 * (f64::from(written) / 600.0).min(1.0)
+                    };
+                    let done = done.load(std::sync::atomic::Ordering::Relaxed) as f64;
+                    let all = all.load(std::sync::atomic::Ordering::Relaxed) as f64;
+                    let p = 0.05 + 0.75 * (done + f).min(all + 1.0) / (all + 1.0);
+                    shown.fetch_max((p * 1000.0) as u32, std::sync::atomic::Ordering::Relaxed);
+                }));
+            }
             if !steps {
                 let shown = shown.clone();
                 let est_in = (bytes as f64 / 3.0).max(1.0);
@@ -554,6 +585,8 @@ impl NotesJob {
                                 // Grows with every part: the runner sees progress, not spinning.
                                 obj.insert("done".into(), st.done.into());
                             }
+                            parts_done.store(st.done, std::sync::atomic::Ordering::Relaxed);
+                            parts_all.store(st.parts(), std::sync::atomic::Ordering::Relaxed);
                             let p = 0.05 + 0.75 * st.done as f64 / (st.parts() + 1) as f64;
                             shown.fetch_max(
                                 (p * 1000.0) as u32,
