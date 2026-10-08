@@ -7,6 +7,7 @@ import react from "@vitejs/plugin-react";
 import { fumadocsMdx } from "fumadocs-mdx/vite";
 import { randomUUID } from "node:crypto";
 import { defineConfig } from "vite";
+import { recordInputs } from "./scripts/record-inputs.mjs";
 
 // Prerender requests carry this per-build token. It only exists in the
 // prerender Worker; the Worker that is deployed is rebuilt from a 404-only
@@ -43,6 +44,7 @@ export default defineConfig({
       ],
     }),
     react(),
+    recordInputs(),
   ],
   resolve: {
     tsconfigPaths: true,
