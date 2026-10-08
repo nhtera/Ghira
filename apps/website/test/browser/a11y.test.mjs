@@ -9,9 +9,9 @@
 import AxeBuilder from "@axe-core/playwright";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { openPage, useSite } from "./helpers.mjs";
+import { openPage, siteFixture } from "./helpers.mjs";
 
-const site = useSite();
+const site = siteFixture();
 const PAGES = ["/", "/docs/getting-started", "/docs/cli", "/nope"];
 const VIEWPORTS = [
   [375, 812],

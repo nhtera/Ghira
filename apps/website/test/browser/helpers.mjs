@@ -13,7 +13,7 @@ import { startServer } from "../../scripts/serve-dist.mjs";
 export const THEME_KEY = "ghira-site-theme";
 export const LANG_KEY = "ghira-site-lang";
 
-export function useSite() {
+export function siteFixture() {
   const ctx = { base: process.env.BASE_URL?.replace(/\/$/, ""), browser: undefined, server: undefined };
   before(async () => {
     if (!ctx.base) {

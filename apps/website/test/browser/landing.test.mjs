@@ -9,9 +9,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { LANG_KEY, openPage, useSite } from "./helpers.mjs";
+import { LANG_KEY, openPage, siteFixture } from "./helpers.mjs";
 
-const site = useSite();
+const site = siteFixture();
 const LANGS = { en: "English", vi: "Tiếng Việt" };
 
 test("the page is complete without JavaScript", async () => {

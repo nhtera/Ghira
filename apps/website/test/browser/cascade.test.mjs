@@ -7,9 +7,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { openPage, THEME_KEY, tokenColor, useSite } from "./helpers.mjs";
+import { openPage, THEME_KEY, tokenColor, siteFixture } from "./helpers.mjs";
 
-const site = useSite();
+const site = siteFixture();
 
 /** data-theme as the first parsed body element sees it (before any module script runs). */
 async function firstPaintTheme(page) {
