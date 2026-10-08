@@ -40,6 +40,7 @@ const preview = (over: Partial<CloudPreview> = {}): CloudPreview => ({
   sha256: "ab".repeat(32),
   tokensEst: 1200,
   costEstUsd: 0.04,
+  costMaxUsd: 0.04,
   retentionNote: "Kept 30 days.",
   warnings: [],
   redactions: [{ kind: "person", count: 1 }],
@@ -112,7 +113,8 @@ describe("CloudSheet", () => {
     expect(pre.querySelector("*")).toBeNull();
     // The destination is a visible row, and also named by the exact-data disclosure.
     expect(screen.getAllByText(/api\.openai\.com|cloud\.sheet\.host/).length).toBeGreaterThan(1);
-    expect(screen.getByText("Kept 30 days.")).toBeTruthy();
+    // The provider by its name, in the app's language (not the core's English note).
+    expect(screen.getByText(/OpenAI handles this text on its servers/)).toBeTruthy();
     expect(commands.cloudPreview).toHaveBeenCalledWith(
       "m1",
       expect.objectContaining({

@@ -152,16 +152,29 @@ pub async fn delete_cloud_key(core: CoreState<'_>, provider: String) -> Result<(
 pub struct CloudModel {
     pub provider: String,
     pub model: String,
+    /// USD per 1M input / output tokens today (an introductory price while it
+    /// lasts), for the menus.
+    pub input_usd_per_m: Option<f64>,
+    pub output_usd_per_m: Option<f64>,
 }
 
 /// The models with a known price, per provider (the sheet's menus).
 #[tauri::command]
 #[specta::specta]
 pub fn cloud_models() -> Vec<CloudModel> {
-    Prices::builtin()
+    let prices = Prices::builtin();
+    prices
         .models()
         .into_iter()
-        .map(|(provider, model)| CloudModel { provider, model })
+        .map(|(provider, model)| {
+            let price = prices.lookup(&provider, &model);
+            CloudModel {
+                input_usd_per_m: price.map(|p| p.0),
+                output_usd_per_m: price.map(|p| p.1),
+                provider,
+                model,
+            }
+        })
         .collect()
 }
 
@@ -215,6 +228,8 @@ pub struct CloudPreview {
     pub sha256: String,
     pub tokens_est: u32,
     pub cost_est_usd: Option<f64>,
+    /// The most it can cost (all of the answer allowance used).
+    pub cost_max_usd: Option<f64>,
     pub retention_note: String,
     /// Things in the text that still look like personal data.
     pub warnings: Vec<String>,
@@ -363,6 +378,7 @@ pub async fn cloud_preview(
                     sha256: pv.sha256,
                     tokens_est: pv.tokens_est,
                     cost_est_usd: pv.cost_est_usd,
+                    cost_max_usd: pv.cost_max_usd,
                     retention_note: pv.retention_note,
                     warnings: pv.warnings,
                     redactions,

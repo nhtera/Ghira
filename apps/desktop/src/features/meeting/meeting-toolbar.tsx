@@ -198,8 +198,8 @@ export function MeetingToolbar({
               onClick={() => onOnlyMine(!onlyMine)}
               className="flex h-[30px] items-center gap-2 text-[12.5px] text-muted"
             >
-              <span className={cn("relative h-[18px] w-8 rounded-[9px] transition-colors", onlyMine ? "bg-accent" : "bg-line2")}>
-                <i className={cn("absolute top-0.5 size-3.5 rounded-full bg-white transition-[left]", onlyMine ? "left-4" : "left-0.5")} />
+              <span className={cn("inline-flex h-[18px] w-[32px] items-center rounded-full p-[2px] transition-colors", onlyMine ? "bg-accent" : "bg-line2")}>
+                <i className={cn("block size-[14px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.25)] transition-transform", onlyMine && "translate-x-[14px]")} />
               </span>
               {t("notes.onlyMine")}
             </button>

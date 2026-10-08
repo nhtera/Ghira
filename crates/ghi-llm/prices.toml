@@ -4,9 +4,14 @@
 # approximate and override with `ghi notes --prices <file>` (same format).
 # A model not listed here shows no cost estimate. `model` matches a model id
 # exactly or as a prefix (dated snapshots such as claude-haiku-4-5-20251001;
-# the longest listed prefix wins). Reasoning models get room to think (see
-# `cloud::traits`): their estimate is an upper bound.
-# Last reviewed 2026-10-07: platform.claude.com/docs/en/models/overview,
+# the longest listed prefix wins). The preview shows the likely cost (a typical
+# answer, more for a model that thinks first) and, apart, at most (the whole
+# answer allowance). `until` + `then_input`/`then_output`: an introductory price
+# and the regular one after that day (UTC). `over_tokens` +
+# `over_input`/`over_output`: the price of a prompt longer than that.
+# Last reviewed 2026-10-09 against each provider's model list (GET /v1/models
+# with a key) and its docs: only each provider's current generation, one model
+# per tier. platform.claude.com/docs/en/about-claude/models/overview + /pricing,
 # developers.openai.com/api/docs/models + /pricing,
 # ai.google.dev/gemini-api/docs/models + /pricing.
 
@@ -28,13 +33,6 @@ model = "gpt-6-astra"
 input = 10.00
 output = 50.00
 
-# No reasoning: the fastest answer, and it takes a temperature.
-[[model]]
-provider = "openai"
-model = "gpt-4.1-mini"
-input = 0.40
-output = 1.60
-
 [[model]]
 provider = "anthropic"
 model = "claude-sonnet-5-5"
@@ -43,9 +41,12 @@ output = 10.00
 
 [[model]]
 provider = "anthropic"
-model = "claude-haiku-4-5"
-input = 1.00
-output = 5.00
+model = "claude-haiku-5-5"
+input = 0.10
+output = 0.50
+over_tokens = 100000
+over_input = 0.50
+over_output = 2.50
 
 [[model]]
 provider = "anthropic"
@@ -53,12 +54,21 @@ model = "claude-opus-5-5"
 input = 4.00
 output = 20.00
 
-# 0.75 / 3.75 is an introductory price until 2026-12-31 (then 1.50 / 7.50).
+[[model]]
+provider = "anthropic"
+model = "claude-fable-5-1"
+input = 10.00
+output = 50.00
+
+# 0.75 / 3.75 is an introductory price until 2026-12-31, then 1.50 / 7.50.
 [[model]]
 provider = "gemini"
 model = "gemini-3.8-flash"
 input = 0.75
 output = 3.75
+until = "2026-12-31"
+then_input = 1.50
+then_output = 7.50
 
 [[model]]
 provider = "gemini"
@@ -66,14 +76,24 @@ model = "gemini-3.5-flash-lite"
 input = 0.30
 output = 2.50
 
-[[model]]
-provider = "gemini"
-model = "gemini-3.1-flash-lite"
-input = 0.25
-output = 1.50
+# Shut down or deprecated by the provider, or replaced by a newer model of the
+# same tier (`successor`): a saved choice with one of these prefixes moves to
+# its successor, else to the provider's default (`Prices::current_model`).
+[[retired]]
+provider = "openai"
+model = "gpt-4.1-mini"
+successor = "gpt-6-luna"
 
-# Shut down or deprecated by the provider: a saved choice with one of these
-# prefixes moves to the provider's default (`Prices::current_model`).
+[[retired]]
+provider = "openai"
+model = "gpt-6-sol"
+successor = "gpt-6.1-sol"
+
+[[retired]]
+provider = "anthropic"
+model = "claude-haiku-4"
+successor = "claude-haiku-5-5"
+
 [[retired]]
 provider = "anthropic"
 model = "claude-sonnet-4-5"
@@ -81,6 +101,11 @@ model = "claude-sonnet-4-5"
 [[retired]]
 provider = "anthropic"
 model = "claude-3"
+
+[[retired]]
+provider = "gemini"
+model = "gemini-3.1-flash-lite"
+successor = "gemini-3.5-flash-lite"
 
 [[retired]]
 provider = "gemini"

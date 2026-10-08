@@ -3,7 +3,7 @@
 // returned), the cloud send preview / send with a request log, "Ask this
 // meeting", the custom vocabulary, export-everything and delete-all. `?cloudfail=1`
 // in the URL makes cloud sends fail (to see the local fallback).
-import type { AsrEngine, AskAllAnswer, AskScope, AskAnswer, CloudLogEntry, CloudPreview, MeetingRow, MeetingRef, MeetingTranscript, RelatedHit, Vocabulary } from "../bindings";
+import type { AsrEngine, AskAllAnswer, AskScope, AskAnswer, CloudLogEntry, CloudModel, CloudPreview, MeetingRow, MeetingRef, MeetingTranscript, RelatedHit, Vocabulary } from "../bindings";
 import email from "@ghi/ui/mocks/email.json";
 import type { Commands } from "./ipc";
 
@@ -21,17 +21,17 @@ export interface AiHost {
 
 const PROVIDERS = ["openai", "anthropic", "gemini"];
 // The menus of crates/ghi-llm/prices.toml (each provider's first is its default).
-const MODELS = [
-  { provider: "openai", model: "gpt-6.1-sol" },
-  { provider: "openai", model: "gpt-6-luna" },
-  { provider: "openai", model: "gpt-6-astra" },
-  { provider: "openai", model: "gpt-4.1-mini" },
-  { provider: "anthropic", model: "claude-sonnet-5-5" },
-  { provider: "anthropic", model: "claude-haiku-4-5" },
-  { provider: "anthropic", model: "claude-opus-5-5" },
-  { provider: "gemini", model: "gemini-3.8-flash" },
-  { provider: "gemini", model: "gemini-3.5-flash-lite" },
-  { provider: "gemini", model: "gemini-3.1-flash-lite" },
+// The menus of crates/ghi-llm/prices.toml (each provider's first is its default).
+const MODELS: CloudModel[] = [
+  { provider: "openai", model: "gpt-6.1-sol", inputUsdPerM: 2, outputUsdPerM: 10 },
+  { provider: "openai", model: "gpt-6-luna", inputUsdPerM: 0.1, outputUsdPerM: 0.5 },
+  { provider: "openai", model: "gpt-6-astra", inputUsdPerM: 10, outputUsdPerM: 50 },
+  { provider: "anthropic", model: "claude-sonnet-5-5", inputUsdPerM: 2, outputUsdPerM: 10 },
+  { provider: "anthropic", model: "claude-haiku-5-5", inputUsdPerM: 0.1, outputUsdPerM: 0.5 },
+  { provider: "anthropic", model: "claude-opus-5-5", inputUsdPerM: 4, outputUsdPerM: 20 },
+  { provider: "anthropic", model: "claude-fable-5-1", inputUsdPerM: 10, outputUsdPerM: 50 },
+  { provider: "gemini", model: "gemini-3.8-flash", inputUsdPerM: 0.75, outputUsdPerM: 3.75 },
+  { provider: "gemini", model: "gemini-3.5-flash-lite", inputUsdPerM: 0.3, outputUsdPerM: 2.5 },
 ];
 const keys = new Set<string>();
 let asrEngine: AsrEngine = "nemo";
@@ -212,6 +212,8 @@ export function aiCommands(host: AiHost): AiCommands {
       }
       const body = JSON.stringify({ model: ask.model, max_tokens: 4096, messages: [{ role: "user", content: question ? `${question}\n\n${text}` : text }] }, null, 1);
       const tokens = Math.ceil(body.length / 3);
+      const m = MODELS.find((x) => x.provider === ask.provider && x.model === ask.model);
+      const price = m?.inputUsdPerM != null && m.outputUsdPerM != null ? { in: m.inputUsdPerM, out: m.outputUsdPerM } : null;
       const id = `plan-${++seq}`;
       pending.set(id, { meeting, provider: ask.provider, model: ask.model, ask: question, tokens });
       const preview: CloudPreview = {
@@ -222,7 +224,8 @@ export function aiCommands(host: AiHost): AiCommands {
         payload: body,
         sha256: Array.from({ length: 64 }, (_, i) => "0123456789abcdef"[(i * 7 + body.length) % 16]).join(""),
         tokensEst: tokens,
-        costEstUsd: (tokens * 1 + 4096 * 5) / 1_000_000,
+        costEstUsd: price ? (tokens * price.in + 1500 * price.out) / 1_000_000 : null,
+        costMaxUsd: price ? (tokens * price.in + 4096 * price.out) / 1_000_000 : null,
         retentionNote: "The provider may keep requests for up to 30 days for abuse monitoring.",
         warnings: [],
         redactions: names.length ? [{ kind: "person", count: names.length }] : [],

@@ -36,7 +36,7 @@ export function Switch({
       >
         <span
           className={cn(
-            "absolute top-0.5 block size-[1.6875rem] rounded-full bg-on-accent shadow transition-transform duration-(--motion-fast) motion-reduce:transition-none",
+            "absolute top-0.5 block size-[1.6875rem] rounded-full bg-white shadow transition-transform duration-(--motion-fast) motion-reduce:transition-none",
             checked ? "translate-x-[1.3125rem]" : "translate-x-0.5",
           )}
         />

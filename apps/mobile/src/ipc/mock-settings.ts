@@ -302,16 +302,15 @@ const scripted: Partial<Commands> = {
 
   // The menus of crates/ghi-llm/prices.toml (each provider's first is its default).
   cloudModels: async () => [
-    { provider: "openai", model: "gpt-6.1-sol" },
-    { provider: "openai", model: "gpt-6-luna" },
-    { provider: "openai", model: "gpt-6-astra" },
-    { provider: "openai", model: "gpt-4.1-mini" },
-    { provider: "anthropic", model: "claude-sonnet-5-5" },
-    { provider: "anthropic", model: "claude-haiku-4-5" },
-    { provider: "anthropic", model: "claude-opus-5-5" },
-    { provider: "gemini", model: "gemini-3.8-flash" },
-    { provider: "gemini", model: "gemini-3.5-flash-lite" },
-    { provider: "gemini", model: "gemini-3.1-flash-lite" },
+    { provider: "openai", model: "gpt-6.1-sol", inputUsdPerM: 2, outputUsdPerM: 10 },
+    { provider: "openai", model: "gpt-6-luna", inputUsdPerM: 0.1, outputUsdPerM: 0.5 },
+    { provider: "openai", model: "gpt-6-astra", inputUsdPerM: 10, outputUsdPerM: 50 },
+    { provider: "anthropic", model: "claude-sonnet-5-5", inputUsdPerM: 2, outputUsdPerM: 10 },
+    { provider: "anthropic", model: "claude-haiku-5-5", inputUsdPerM: 0.1, outputUsdPerM: 0.5 },
+    { provider: "anthropic", model: "claude-opus-5-5", inputUsdPerM: 4, outputUsdPerM: 20 },
+    { provider: "anthropic", model: "claude-fable-5-1", inputUsdPerM: 10, outputUsdPerM: 50 },
+    { provider: "gemini", model: "gemini-3.8-flash", inputUsdPerM: 0.75, outputUsdPerM: 3.75 },
+    { provider: "gemini", model: "gemini-3.5-flash-lite", inputUsdPerM: 0.3, outputUsdPerM: 2.5 },
   ],
   cloudKeys: async () => ok(["anthropic", "openai"].map((provider) => ({ provider, stored: Boolean(hooks.keys[provider]) }))),
   setCloudKey: async (provider, key) => {
@@ -363,6 +362,7 @@ const scripted: Partial<Commands> = {
       sha256: "9f2c4e7a",
       tokensEst: 1240,
       costEstUsd: 0.04,
+      costMaxUsd: 0.17,
       retentionNote: hooks.retentionNote,
       warnings: hooks.warnings,
       redactions: ask.redact ? [{ kind: "PERSON", count: 2 }] : [],

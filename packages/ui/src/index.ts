@@ -10,6 +10,7 @@ export * from "./icons/icon";
 export { ICON_NAMES } from "./icons/icon-data";
 export * from "./primitives/button";
 export * from "./primitives/segmented";
+export * from "./primitives/select";
 export * from "./primitives/dialog";
 export * from "./primitives/popover";
 export * from "./primitives/tooltip";

@@ -5,9 +5,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Icon, cn, usePlatform, type IconName } from "@ghi/ui";
+import { Button, Icon, Select, cn, usePlatform, type IconName } from "@ghi/ui";
 import { APP_NAME, formatDate, formatTime, type Locale } from "@ghi/i18n";
 import { ipc } from "../../ipc";
+import { modelOption } from "../cloud-sheet/model-price";
 import { providerName } from "../cloud-sheet/provider-names";
 import { Card, Note, Row, Switch, SwitchRow, inputCls, useFail, useSettings } from "./parts";
 
@@ -121,11 +122,13 @@ function KeyRow({ provider, stored }: { provider: string; stored: boolean }) {
       <b className="w-24 shrink-0 text-[14px] font-semibold">{name}</b>
       {stored ? (
         <>
-          <span className="text-small flex flex-1 items-center gap-1.5 text-accent">
-            <Icon name="check_circle" size={16} />
-            {t("settings.ai.keys.saved")}
+          <span className="flex flex-1 items-center">
+            <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-accent-soft px-2.5 text-[12.5px] font-medium text-accent">
+              <Icon name="check_circle" size={16} />
+              {t("settings.ai.keys.saved")}
+            </span>
           </span>
-          <Button size="sm" onClick={() => void remove()} aria-label={t("settings.ai.keys.removeFor", { provider: name })}>
+          <Button onClick={() => void remove()} aria-label={t("settings.ai.keys.removeFor", { provider: name })}>
             {t("common.remove")}
           </Button>
         </>
@@ -147,7 +150,7 @@ function KeyRow({ provider, stored }: { provider: string; stored: boolean }) {
             placeholder={t("settings.ai.keys.placeholder")}
             onChange={(e) => setKey(e.target.value)}
           />
-          <Button type="submit" size="sm" variant="primary" disabled={!key.trim() || busy} aria-label={t("settings.ai.keys.saveFor", { provider: name })}>
+          <Button type="submit" variant="primary" disabled={!key.trim() || busy} aria-label={t("settings.ai.keys.saveFor", { provider: name })}>
             {t("common.save")}
           </Button>
         </form>
@@ -157,7 +160,7 @@ function KeyRow({ provider, stored }: { provider: string; stored: boolean }) {
 }
 
 function DefaultsCard() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { settings, patch } = useSettings();
   const { data: keys } = useQuery({
     queryKey: keysKey,
@@ -182,35 +185,32 @@ function DefaultsCard() {
       ) : (
         <>
           <Row label={t("cloud.provider")}>
-            <select
-              className={inputCls}
-              aria-label={t("cloud.provider")}
+            <Select
+              className="w-[260px]"
+              label={t("cloud.provider")}
               value={withKey.has(settings.cloudProvider) ? settings.cloudProvider : ""}
-              onChange={(e) => {
-                const provider = e.target.value;
+              onChange={(provider) =>
                 void patch({
                   cloudProvider: provider,
                   cloudModel: (models ?? []).find((m) => m.provider === provider)?.model ?? "",
-                });
-              }}
-            >
-              <option value="">{t("settings.ai.defaults.none")}</option>
-              {providers.map((p) => (
-                <option key={p} value={p}>
-                  {providerName(p)}
-                </option>
-              ))}
-            </select>
+                })
+              }
+              options={[{ value: "", label: t("settings.ai.defaults.none") }, ...providers.map((p) => ({ value: p, label: providerName(p) }))]}
+            />
           </Row>
           {withKey.has(settings.cloudProvider) && (
-            <Row label={t("settings.ai.defaults.model")}>
-              <select className={inputCls} aria-label={t("settings.ai.defaults.model")} value={settings.cloudModel} onChange={(e) => void patch({ cloudModel: e.target.value })}>
-                {forProvider.map((m) => (
-                  <option key={m.model} value={m.model}>
-                    {m.model}
-                  </option>
-                ))}
-              </select>
+            <Row label={t("settings.ai.defaults.model")} hint={t("cloud.modelPriceUnit")}>
+              <Select
+                className="w-[260px]"
+                label={t("settings.ai.defaults.model")}
+                value={settings.cloudModel}
+                onChange={(cloudModel) => void patch({ cloudModel })}
+                options={[
+                  // A saved model the menu no longer lists stays visible as it is.
+                  ...(forProvider.some((m) => m.model === settings.cloudModel) || !settings.cloudModel ? [] : [{ value: settings.cloudModel, label: settings.cloudModel }]),
+                  ...forProvider.map((m) => ({ value: m.model, label: modelOption(t, m, i18n.language) })),
+                ]}
+              />
             </Row>
           )}
         </>

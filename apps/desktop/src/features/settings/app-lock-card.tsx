@@ -5,12 +5,12 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, usePlatform } from "@ghi/ui";
+import { Button, Select, usePlatform } from "@ghi/ui";
 import { APP_NAME } from "@ghi/i18n";
 import { lockErrorText } from "../../shell/lock-gate";
 import { ipc } from "../../ipc";
 import { settingsQuery } from "../../shell/root-view";
-import { Card, Row, Switch, inputCls, useFail, useSettings } from "./parts";
+import { Card, Row, Switch, useFail, useSettings } from "./parts";
 
 export const LOCK_MINUTES = [1, 5, 15, 60, 0] as const;
 const DEFAULT_MINUTES = 5;
@@ -22,6 +22,7 @@ export function AppLockCard() {
   const queryClient = useQueryClient();
   const { settings } = useSettings();
   const id = useId();
+  const lockAfterId = useId();
   if (!settings) return null;
 
   const apply = async (on: boolean, minutes: number) => {
@@ -39,16 +40,15 @@ export function AppLockCard() {
       </Row>
       {settings.appLock && (
         <div data-row className="flex flex-wrap items-center justify-between gap-3 border-b border-line py-3.5">
-          <label className="text-body flex items-center gap-3">
-            {t("settings.privacy.lockAfter")}
-            <select className={inputCls} value={lockMinutes} onChange={(e) => void apply(true, Number(e.target.value))}>
-              {LOCK_MINUTES.map((m) => (
-                <option key={m} value={m}>
-                  {t(`settings.privacy.lockAfterOptions.${m}`)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <span className="text-body flex items-center gap-3">
+            <label htmlFor={lockAfterId}>{t("settings.privacy.lockAfter")}</label>
+            <Select
+              id={lockAfterId}
+              value={String(lockMinutes)}
+              onChange={(v) => void apply(true, Number(v))}
+              options={LOCK_MINUTES.map((m) => ({ value: String(m), label: t(`settings.privacy.lockAfterOptions.${m}`) }))}
+            />
+          </span>
           <Button icon="lock" onClick={() => void ipc.commands.lockNow()}>
             {t("settings.privacy.lockNow")}
           </Button>

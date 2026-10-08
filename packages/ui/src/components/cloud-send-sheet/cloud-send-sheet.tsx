@@ -113,9 +113,10 @@ export function CloudSendSheet(p: CloudSendSheetProps) {
             checked={p.redact}
             onCheckedChange={p.onRedactChange}
             disabled={busy || p.state === "sent"}
-            className="relative h-5 w-9 shrink-0 rounded-full bg-ctl transition-colors duration-(--motion-fast) data-[state=checked]:bg-accent disabled:opacity-50"
+            // px, not rem: the knob stays centred at any text size.
+            className="inline-flex h-[20px] w-[36px] shrink-0 items-center rounded-full bg-line2 p-[2px] transition-colors duration-(--motion-fast) data-[state=checked]:bg-accent disabled:opacity-50"
           >
-            <Switch.Thumb className="block size-4 translate-x-0.5 rounded-full bg-surface transition-transform duration-(--motion-fast) data-[state=checked]:translate-x-[18px]" />
+            <Switch.Thumb className="block size-[16px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.25)] transition-transform duration-(--motion-fast) data-[state=checked]:translate-x-[16px]" />
           </Switch.Root>
           <label htmlFor={redactId} className="text-body">
             {t("cloud.redact")}

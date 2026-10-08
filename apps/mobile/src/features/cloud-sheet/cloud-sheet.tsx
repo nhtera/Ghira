@@ -191,13 +191,20 @@ function CloudFlow({
     }
   };
   const done = send.kind === "sent" || send.kind === "failed";
+  // The likely cost (a typical answer), and at most (the whole answer allowance).
+  const usd = (v: number) =>
+    new Intl.NumberFormat(i18n.language, {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2,
+    }).format(Math.max(v, 0.01));
   const cost =
     preview?.costEstUsd != null
-      ? new Intl.NumberFormat(i18n.language, {
-          style: "currency",
-          currency: "USD",
-          maximumFractionDigits: 2,
-        }).format(preview.costEstUsd)
+      ? usd(preview.costEstUsd)
+      : null;
+  const costMax =
+    preview?.costEstUsd != null && preview.costMaxUsd != null && preview.costMaxUsd >= preview.costEstUsd * 1.5
+      ? usd(preview.costMaxUsd)
       : null;
 
   return (
@@ -341,7 +348,7 @@ function CloudFlow({
                         preview.tokensEst,
                       ),
                     }),
-                    cost && t("mobile.cloudSheet.cost", { cost }),
+                    cost && (costMax ? t("mobile.cloudSheet.costRange", { cost, max: costMax }) : t("mobile.cloudSheet.cost", { cost })),
                   ]
                     .filter(Boolean)
                     .join(" · ")}
@@ -368,13 +375,11 @@ function CloudFlow({
                     </ul>
                   </div>
                 )}
-                {preview.retentionNote && (
-                  <p className="text-ios-footnote m-0 text-muted">
-                    {t("mobile.cloudSheet.retention", {
-                      note: preview.retentionNote,
-                    })}
-                  </p>
-                )}
+                <p className="text-ios-footnote m-0 text-muted">
+                  {t("mobile.cloudSheet.retention", {
+                    provider: providerName(preview.provider),
+                  })}
+                </p>
                 <section
                   aria-labelledby={`${redactId}-exact`}
                   className="flex flex-col gap-1"

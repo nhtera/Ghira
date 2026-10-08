@@ -565,6 +565,12 @@ export type CloudLogEntry = {
 export type CloudModel = {
 	provider: string,
 	model: string,
+	/**
+	 *  USD per 1M input / output tokens today (an introductory price while it
+	 *  lasts), for the menus.
+	 */
+	inputUsdPerM: number | null,
+	outputUsdPerM: number | null,
 };
 
 /**  The send preview the sheet shows (nothing has left the device). */
@@ -579,6 +585,8 @@ export type CloudPreview = {
 	sha256: string,
 	tokensEst: number,
 	costEstUsd: number | null,
+	/**  The most it can cost (all of the answer allowance used). */
+	costMaxUsd: number | null,
 	retentionNote: string,
 	/**  Things in the text that still look like personal data. */
 	warnings: string[],

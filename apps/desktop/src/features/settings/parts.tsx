@@ -75,9 +75,11 @@ export function Switch({ checked, onChange, labelledBy, label, disabled }: { che
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={cn("relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full border-0 p-0 transition-colors disabled:opacity-55", checked ? "bg-accent" : "bg-line2")}
+      // px, not rem: the knob stays centred at any text size.
+      // A locked switch fades its track only: the knob stays white.
+      className={cn("inline-flex h-[20px] w-[36px] shrink-0 items-center rounded-full border-0 p-[2px] transition-colors disabled:cursor-default", checked ? (disabled ? "bg-accent/45" : "bg-accent") : disabled ? "bg-line2/50" : "bg-line2")}
     >
-      <i className={cn("absolute top-0.5 left-0 block size-3.5 rounded-full bg-white transition-transform", checked ? "translate-x-4" : "translate-x-0.5")} />
+      <i className={cn("block size-[16px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.25)] transition-transform", checked && "translate-x-[16px]")} />
     </button>
   );
 }

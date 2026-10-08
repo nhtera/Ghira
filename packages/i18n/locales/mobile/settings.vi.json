@@ -293,6 +293,7 @@
       "redactionOffWarn": "Tên và thông tin cá nhân sẽ được gửi nguyên văn.",
       "tokens": "Khoảng {{tokens}} token",
       "cost": "Khoảng {{cost}}",
+      "costRange": "Khoảng {{cost}}, tối đa {{max}}",
       "host": "Gửi tới {{host}}",
       "redactions": "Đã ẩn: {{items}}",
       "exactHeader": "Đúng nội dung sẽ được gửi",
@@ -309,7 +310,7 @@
       "failedLeft": "Yêu cầu có thể đã tới {{provider}}.",
       "close": "Đóng",
       "warningsIntro": "Nội dung này vẫn trông giống thông tin cá nhân:",
-      "retention": "Nhà cung cấp lưu giữ: {{note}}",
+      "retention": "{{provider}} xử lý văn bản này theo điều khoản tài khoản của bạn ở đó; {{app}} không thể xem hay kiểm soát thời gian họ lưu giữ.",
       "kind": {
         "email": "Email",
         "url": "Liên kết",

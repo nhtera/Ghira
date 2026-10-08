@@ -55,7 +55,7 @@ export const SwitchRows: Story = {
         defaultChecked
         className="relative h-[1.9375rem] w-[3.1875rem] shrink-0 rounded-full bg-line2 data-[state=checked]:bg-accent"
       >
-        <Switch.Thumb className="block size-[1.6875rem] translate-x-0.5 rounded-full bg-surface shadow-float transition-transform duration-(--motion-fast) data-[state=checked]:translate-x-[1.3125rem]" />
+        <Switch.Thumb className="block size-[1.6875rem] translate-x-0.5 rounded-full bg-white shadow-float transition-transform duration-(--motion-fast) data-[state=checked]:translate-x-[1.3125rem]" />
       </Switch.Root>
     );
     return (

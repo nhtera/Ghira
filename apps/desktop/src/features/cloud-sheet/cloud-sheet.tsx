@@ -8,6 +8,7 @@ import {
   Dialog,
   Icon,
   Segmented,
+  Select,
   useToast,
   usePlatform,
 } from "@ghi/ui";
@@ -25,6 +26,7 @@ import type {
 import { ipc } from "../../ipc";
 import { invalidateMeeting } from "../../state/meeting-queries";
 import { userText } from "./user-text";
+import { modelOption } from "./model-price";
 import { providerName } from "./provider-names";
 import {
   initialSelection,
@@ -60,10 +62,16 @@ const toTask = (t: CloudSheetTask): CloudTask =>
     : { kind: "ask", question: t.question, language: t.language ?? "meeting" };
 
 /** A label and its value, like the rows of a receipt. */
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+function Fact({ label, labelFor, children }: { label: string; labelFor?: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[150px_minmax(0,1fr)] items-baseline gap-x-3 text-[14px]">
-      <span className="text-muted">{label}</span>
+      {labelFor ? (
+        <label htmlFor={labelFor} className="text-muted">
+          {label}
+        </label>
+      ) : (
+        <span className="text-muted">{label}</span>
+      )}
       <span className="min-w-0">{children}</span>
     </div>
   );
@@ -181,14 +189,17 @@ function CloudSheetBody({
   const before = excerptIsSent && preview?.excerptBefore?.trim() ? clip(preview.excerptBefore) : null;
   const excerpt = after;
   const excerptWords = fullText.split(/\s+/).filter(Boolean).length;
+  // The likely cost (a typical answer), and at most (the whole answer allowance).
+  const usd = (v: number) =>
+    v < 0.01
+      ? `< ${new Intl.NumberFormat(i18n.language, { style: "currency", currency: "USD" }).format(0.01)}`
+      : `≈ ${new Intl.NumberFormat(i18n.language, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(v)}`;
   const cost =
     preview?.costEstUsd == null
       ? null
-      : new Intl.NumberFormat(i18n.language, {
-          style: "currency",
-          currency: "USD",
-          maximumFractionDigits: 2,
-        }).format(preview.costEstUsd);
+      : preview.costMaxUsd != null && preview.costMaxUsd >= preview.costEstUsd * 1.5
+        ? t("cloud.costRange", { cost: usd(preview.costEstUsd), max: usd(preview.costMaxUsd).replace("≈ ", "") })
+        : usd(preview.costEstUsd);
   const provider = sel ? providerName(sel.provider) : "";
 
   const footer = failure ? (
@@ -243,36 +254,28 @@ function CloudSheetBody({
         {!blocked && !failure && sel && (
           <>
             <Fact label={t("cloud.provider")}>
-              <span className="flex flex-wrap items-center gap-2">
-                {/* A disabled fieldset disables every button inside it. */}
-                <fieldset disabled={sending} className="m-0 min-w-0 border-0 p-0">
-                  <Segmented
-                    label={t("cloud.provider")}
-                    value={sel.provider}
-                    onChange={pickProvider}
-                    options={choices.providers.map((p) => ({
-                      value: p,
-                      label: providerName(p),
-                    }))}
-                  />
-                </fieldset>
-                <label htmlFor={modelId} className="sr-only">
-                  {t("cloud.sheet.model")}
-                </label>
-                <select
-                  id={modelId}
-                  value={sel.model}
-                  onChange={(e) => setPicked({ ...sel, model: e.target.value })}
-                  disabled={sending || models.length === 0}
-                  className="text-body h-7 rounded-ctl border border-ctl bg-surface px-2 text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-accent"
-                >
-                  {models.map((m) => (
-                    <option key={m.model} value={m.model}>
-                      {m.model}
-                    </option>
-                  ))}
-                </select>
-              </span>
+              {/* A disabled fieldset disables every button inside it. */}
+              <fieldset disabled={sending} className="m-0 min-w-0 border-0 p-0">
+                <Segmented
+                  label={t("cloud.provider")}
+                  value={sel.provider}
+                  onChange={pickProvider}
+                  options={choices.providers.map((p) => ({
+                    value: p,
+                    label: providerName(p),
+                  }))}
+                />
+              </fieldset>
+            </Fact>
+            <Fact label={t("cloud.sheet.model")} labelFor={modelId}>
+              <Select
+                id={modelId}
+                className="w-[240px]"
+                value={sel.model}
+                onChange={(model) => setPicked({ ...sel, model })}
+                disabled={sending || models.length === 0}
+                options={models.map((m) => ({ value: m.model, label: modelOption(t, m, i18n.language) }))}
+              />
             </Fact>
             {preview && <Fact label={t("cloud.sheet.destination")}>{preview.host}</Fact>}
 
@@ -314,7 +317,7 @@ function CloudSheetBody({
                         {t("cloud.audioNever")}
                       </span>
                     </Fact>
-                    {cost && <Fact label={t("cloud.cost")}>{`≈ ${cost}`}</Fact>}
+                    {cost && <Fact label={t("cloud.cost")}>{cost}</Fact>}
                   </>
                 )}
 
@@ -332,9 +335,11 @@ function CloudSheetBody({
                   />
                   <span
                     aria-hidden
-                    className="relative h-5 w-9 shrink-0 rounded-full bg-ctl transition-colors peer-checked:bg-accent peer-checked:[&>i]:translate-x-[18px] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent peer-disabled:opacity-50"
+                    // The Settings switch (parts.tsx): px, not rem, so the
+                    // knob stays centred at any text size.
+                    className="inline-flex h-[20px] w-[36px] shrink-0 items-center rounded-full bg-line2 p-[2px] transition-colors peer-checked:bg-accent peer-checked:[&>i]:translate-x-[16px] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent peer-disabled:opacity-50"
                   >
-                    <i className="absolute top-0.5 left-0 block size-4 translate-x-0.5 rounded-full bg-surface transition-transform" />
+                    <i className="block size-[16px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.25)] transition-transform" />
                   </span>
                   {t("cloud.sheet.redact")}
                 </label>
@@ -450,7 +455,7 @@ function CloudSheetBody({
                         </span>
                       </div>
                     </details>
-                    <p className="text-small m-0 text-muted">{preview.retentionNote}</p>
+                    <p className="text-small m-0 text-muted">{t("cloud.sheet.retention", { provider: providerName(preview.provider) })}</p>
                   </>
                 )}
               </>

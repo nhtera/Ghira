@@ -9,6 +9,7 @@ import { Dialog } from "./dialog";
 import { Menu } from "./menu";
 import { Popover } from "./popover";
 import { Segmented } from "./segmented";
+import { Select } from "./select";
 import { ToastPreview, ToastView } from "./toast";
 import { Tooltip } from "./tooltip";
 
@@ -55,6 +56,23 @@ function SegmentedDemo() {
   );
 }
 export const SegmentedControl: Story = { render: () => <SegmentedDemo /> };
+
+function SelectDemo() {
+  const [v, setV] = useState("claude-sonnet-5-5");
+  const options = [
+    { value: "claude-sonnet-5-5", label: "claude-sonnet-5-5 · $2 / $10" },
+    { value: "claude-haiku-5-5", label: "claude-haiku-5-5 · $0.10 / $0.50" },
+    { value: "claude-opus-5-5", label: "claude-opus-5-5 · $4 / $20" },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Select label="Model" value={v} onChange={setV} options={options} />
+      <Select label="Model (small)" size="sm" value={v} onChange={setV} options={options} />
+      <Select label="Model (disabled)" disabled value={v} onChange={setV} options={options} />
+    </div>
+  );
+}
+export const SelectControl: Story = { render: () => <SelectDemo /> };
 
 export const Icons: Story = {
   note: "Material Symbols Rounded on mac; Fluent 20 Regular on Windows (?platform=win).",

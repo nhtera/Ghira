@@ -296,6 +296,7 @@
       "redactionOffWarn": "Names and personal data will be sent as written.",
       "tokens": "About {{tokens}} tokens",
       "cost": "About {{cost}}",
+      "costRange": "About {{cost}}, at most {{max}}",
       "host": "Sent to {{host}}",
       "redactions": "Hidden: {{items}}",
       "exactHeader": "Exactly what will be sent",
@@ -312,7 +313,7 @@
       "failedLeft": "The request may already have reached {{provider}}.",
       "close": "Close",
       "warningsIntro": "This still looks like personal data:",
-      "retention": "Provider retention: {{note}}",
+      "retention": "{{provider}} handles this text under the terms of your account there; {{app}} can’t see or control how long it’s kept.",
       "kind": {
         "email": "Emails",
         "url": "Links",

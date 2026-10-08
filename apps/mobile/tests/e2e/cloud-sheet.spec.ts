@@ -82,13 +82,13 @@ test("previews the exact text and sends nothing until the click", async ({ page 
 test("shows the warnings, the retention note and the hidden kinds in words", async ({ page }) => {
   await page.evaluate(() => {
     window.__ghiSettingsMock!.warnings = ["A phone number may remain on line 4."];
-    window.__ghiSettingsMock!.retentionNote = "kept for 30 days";
   });
   await openSheet(page);
   const dialog = sheet(page);
   await expect(dialog.getByText("This still looks like personal data:")).toBeVisible();
   await expect(dialog.getByText("A phone number may remain on line 4.")).toBeVisible();
-  await expect(dialog.getByText("Provider retention: kept for 30 days")).toBeVisible();
+  // The provider by name, in the app's language (not the core's English note).
+  await expect(dialog.getByText(/^(OpenAI|Anthropic|Gemini) handles this text under the terms of your account there; Ghira can’t see or control how long it’s kept\.$/)).toBeVisible();
   await expect(dialog.getByText("Hidden: People ×2")).toBeVisible();
 });
 
