@@ -493,7 +493,14 @@ impl Core {
         app: &AppHandle<R>,
         on_event: impl Fn(&ghi_core::events::Event) + Send + 'static,
     ) -> Result<Core, String> {
-        Core::with_hooks(app, on_event, CoreHooks::default())
+        let mut hooks = CoreHooks::default();
+        // Debug builds only: `GHI_DATA_DIR` runs the app on another data folder
+        // (a second instance, a test run next to the real data).
+        #[cfg(debug_assertions)]
+        if let Some(dir) = std::env::var_os("GHI_DATA_DIR") {
+            hooks.data_dir = Some(PathBuf::from(dir));
+        }
+        Core::with_hooks(app, on_event, hooks)
     }
 
     /// [`Core::new`] with an app's own data directory, handlers and key stores.
