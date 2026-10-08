@@ -72,6 +72,9 @@ jobs:
         with:
           persist-credentials: false
           submodules: true # NeMo-Speech.cpp LICENSE / NOTICE texts
+      # ggml's LICENSE lives in NeMo's own nested submodule; only that one is
+      # fetched (as tools/scripts/build-nemo.sh does), never kenlm (LGPL).
+      - run: git -C third_party/NeMo-Speech.cpp submodule update --init --depth 1 ggml
       - run: rustup toolchain install
       - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
