@@ -118,7 +118,7 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then git status --porcelain; exit 1; fi
       # The production pin (deploy/), as the deploy job runs it.
       - run: deploy/node_modules/.bin/cf deploy --prebuilt --mode production --dry-run
-      - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.SITE_DEPLOY == '1'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: site-output
@@ -142,7 +142,10 @@ jobs:
 
   site-deploy:
     needs: site-build
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Off until the owner has set up Cloudflare (token, environment "site" with
+    # a required reviewer, secrets): then set the repository variable
+    # SITE_DEPLOY=1. Without it, a push to main builds and checks only.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.SITE_DEPLOY == '1'
     runs-on: ubuntu-latest
     environment:
       name: site
