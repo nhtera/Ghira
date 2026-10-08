@@ -131,6 +131,91 @@ in production.
 - **Markdown, not MDX.** fumadocs-mdx compiles `.md` as Markdown: `{…}` is
   text, raw HTML is dropped (`test/fixtures/hostile.md`).
 
+## Deploy
+
+`.github/workflows/site.yml`, with the `cf` CLI (beta, pinned in
+`package.json` and `deploy/package.json`; a test keeps them equal):
+
+- `changes`: runs the site jobs only when a pull request, or a push to
+  `main`, touches `SITE_PATHS` (the site, `docs/`, the published root
+  documents, the token and font files, the locale files and the sample
+  meeting). `scripts/ci-paths.mjs covers` fails a build that reads a
+  repository file the filter does not list.
+- `site-build` (no secrets): installs without scripts, checks install scripts,
+  licences and `npm audit` for both lockfiles, then lint, typecheck, tests,
+  `cf build`, `finalize` (static 404, `_headers`, the 404-only Worker),
+  `check-links`, the browser suites, "the build changed no file", and
+  `cf deploy --prebuilt --dry-run` with the production pin. Uploads the output
+  on `main` when deploys are on.
+- `site-gate`: always runs; the one check to require in branch protection.
+- `site-deploy` (`main` only, environment `site`, **only when the repository
+  variable `SITE_DEPLOY` is `1`**): installs only `deploy/` (the pinned `cf`),
+  deploys the artifact with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
+  on that one step, then runs `deploy/smoke.sh`: against https://ghira.app
+  when `SITE_LIVE` is `1`, else against `SITE_WORKERS_URL` if set.
+- `DO_NOT_TRACK=1` turns off the `cf` CLI's telemetry in CI.
+
+### One-time setup (owner)
+
+1. Cloudflare API token, account-owned: **Workers Scripts: Edit** (add
+   **Account Settings: Read** only if `cf` asks for it), expiring after one
+   year; rotate yearly. The same Cloudflare account hosts `sonde-site`
+   (accepted 2026-10-09): a Workers token from either repository could
+   overwrite the other's Worker, so keep both tokens scoped, short-lived and
+   rotated.
+2. GitHub environment `site`: deployment branch `main`, a required reviewer,
+   secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Branch
+   protection: require `site-gate`.
+3. Set `SITE_DEPLOY=1`. The first deploy goes to
+   `ghira-website.<account>.workers.dev`; set `SITE_WORKERS_URL` to that URL
+   so the smoke test runs against it.
+
+### Cutover to ghira.app (owner present; log each step here, no secret values)
+
+1. Zone settings for `ghira.app`, **off**: Email Address Obfuscation, Rocket
+   Loader, Bot Fight Mode / JavaScript detections, Automatic Signed
+   Exchanges, Web Analytics / RUM, managed robots.txt, AI-crawler blocking.
+   **On**: Always Use HTTPS, minimum TLS 1.2. No zone HSTS (the site's
+   `_headers` sends it).
+2. `cf dns records list -z ghira.app`: confirm the 4 parking records
+   (apex A ×2, `www` CNAME, `*` CNAME), then delete them only with the
+   owner's OK.
+3. Attach the apex Custom Domain `ghira.app` to the `ghira-website` Worker in
+   the dashboard (the config has no `domains`, so the token needs no zone
+   access). Redeploy once (workflow_dispatch) and confirm the domain is still
+   attached.
+4. `www`: a proxied `A www 192.0.2.0` record and one Single Redirect rule:
+   `http.host eq "www.ghira.app"` → `concat("https://ghira.app", http.request.uri.path)`,
+   301, keep the query string.
+5. Email Routing: enable it, verify the owner's inbox, add routes for
+   `security@` and `conduct@`, set catch-all to drop; add
+   `_dmarc TXT "v=DMARC1; p=reject; adkim=s; aspf=s"` and CAA records for the
+   CAs Cloudflare uses; send a test mail to each address. Then add
+   `security@ghira.app` to SECURITY.md (GitHub private reporting stays first)
+   and `conduct@ghira.app` to CODE_OF_CONDUCT.md.
+6. When every page in `docs/README.md` is published and SECURITY.md names
+   the address, set `SITE_LIVE=1` and re-run the deploy: the smoke test then
+   also checks the www redirect, every live page and the mail address. Run
+   the landing privacy suite once against production:
+   `BASE_URL=https://ghira.app npm run test:browser -- --test-name-pattern=privacy`.
+
+## Rollback
+
+With a Cloudflare login (`npx cf auth login`) or `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID` in the environment:
+
+```sh
+cd apps/website/deploy && npm ci --ignore-scripts
+npx cf workers deployments list --worker ghira-website      # the active version
+npx cf workers versions list --worker-id ghira-website      # pick the previous version id
+npx cf workers deployments create --worker ghira-website --strategy percentage \
+  --versions '[{"version_id":"<previous-id>","percentage":100}]'
+```
+
+With Wrangler: `npx wrangler rollback --name ghira-website`. Roll forward by
+deploying the newer version id the same way, or by re-running the `site`
+workflow on `main`. Try a rollback once after the first good deploy.
+
 ## Fallback: Wrangler
 
 If a `cf` beta breaks the build or deploy, use the GA path: replace

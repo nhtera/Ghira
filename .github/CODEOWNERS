@@ -22,4 +22,6 @@
 /apps/website/src/lib/security-headers.ts  @nhtera
 /apps/website/scripts/csp-headers.mjs      @nhtera
 /apps/website/scripts/build-worker.mjs     @nhtera
+/apps/website/cloudflare.config.ts         @nhtera
+/apps/website/vite.config.ts               @nhtera
 /docs/README.md                            @nhtera

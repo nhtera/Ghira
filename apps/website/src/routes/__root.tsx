@@ -15,8 +15,6 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { name: "color-scheme", content: "light dark" },
-      { name: "theme-color", content: "#EEF1EF", media: "(prefers-color-scheme: light)" },
-      { name: "theme-color", content: "#0C110F", media: "(prefers-color-scheme: dark)" },
       // The not-found state (a docs link to a page that does not exist, on
       // client navigation) gets the 404 page's title and noindex.
       ...(matches.some((m) => m.status === "notFound" || ("globalNotFound" in m && m.globalNotFound))
@@ -46,6 +44,10 @@ function RootDocument({ children }: { children: ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        {/* Two theme-color tags with media queries: written here because the
+            router's head merges meta tags of the same name into one. */}
+        <meta name="theme-color" content="#EEF1EF" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#0C110F" media="(prefers-color-scheme: dark)" />
       </head>
       <body>
         {bare ? null : <SiteHeader />}

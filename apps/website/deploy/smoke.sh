@@ -39,8 +39,9 @@ for path in "${pages[@]}"; do
   if printf '%s\n' "$h" | grep -qi '^set-cookie:'; then check "$path: sets a cookie" bad; else check "$path: no cookie" ok; fi
   # Pages are piped, never held in a shell variable: the hydration data
   # carries a NUL byte, which bash would drop (and the script hash with it).
-  # -a: grep would otherwise print "binary file matches".
-  if body "$base$path" | grep -aq '/cdn-cgi/'; then check "$path: Cloudflare-injected /cdn-cgi/ content" bad; else check "$path: no /cdn-cgi/" ok; fi
+  # -a: grep would otherwise print "binary file matches". Counts, not -q: -q
+  # exits at the first match and, under pipefail, curl's SIGPIPE would flip it.
+  if [ "$(body "$base$path" | grep -ac '/cdn-cgi/')" != 0 ]; then check "$path: Cloudflare-injected /cdn-cgi/ content" bad; else check "$path: no /cdn-cgi/" ok; fi
   csp="$(printf '%s\n' "$h" | grep -i '^content-security-policy:' | cut -d: -f2-)"
   if body "$base$path" | node "$here/check-inline-scripts.mjs" "$csp"; then check "$path: inline scripts allowed by the CSP" ok; else check "$path: an inline script is not in the CSP" bad; fi
 done
@@ -51,7 +52,7 @@ code="$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' "$base/docs/priv
 nope="$base/nope-$(date +%s)"
 code="$(status "$nope")"
 [ "$code" = 404 ] && check "/nope: 404" ok || check "/nope: status $code (want 404)" bad
-curl -sS --retry 5 "$nope" 2>/dev/null | grep -aq "Page not found" && check "/nope: site 404 page" ok || check "/nope: not the site 404 page" bad
+[ "$(curl -sS --retry 5 "$nope" 2>/dev/null | grep -ac "Page not found")" != 0 ] && check "/nope: site 404 page" ok || check "/nope: not the site 404 page" bad
 if curl -sS -o /dev/null -D - "$nope" | tr -d '\r' | grep -qi '^set-cookie:'; then check "/nope: sets a cookie" bad; else check "/nope: no cookie" ok; fi
 
 [ "$(status "$base/llms.txt")" = 200 ] && check "/llms.txt: 200" ok || check "/llms.txt: not served" bad
@@ -60,13 +61,13 @@ if [ -n "${BUILD_ASSETS:-}" ]; then
   if cmp -s <(body "$base/robots.txt") "$BUILD_ASSETS/robots.txt"; then check "/robots.txt: as built" ok; else check "/robots.txt: differs from the build (managed robots.txt?)" bad; fi
 fi
 
-asset="$(body "$base/" | grep -ao '/assets/[^"]*\.js' | head -n 1)"
+asset="$(body "$base/" | grep -ao '/assets/[^"]*\.js' | sed -n 1p)"
 if [ -n "$asset" ] && headers "$base$asset" | grep -qi '^cache-control:.*immutable'; then check "$asset: immutable" ok; else check "${asset:-no asset found}: not immutable" bad; fi
 
 if [ "$live" = 1 ]; then
   code="$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' "https://www.ghira.app/docs?x=1")"
   [ "$code" = "301 https://ghira.app/docs?x=1" ] && check "www: 301 to the apex" ok || check "www: $code (want 301 https://ghira.app/docs?x=1)" bad
-  body "$base/docs/security" | grep -aq 'mailto:security@ghira.app' && check "/docs/security: security@ghira.app" ok || check "/docs/security: no mailto:security@ghira.app" bad
+  [ "$(body "$base/docs/security" | grep -ac 'mailto:security@ghira.app')" != 0 ] && check "/docs/security: security@ghira.app" ok || check "/docs/security: no mailto:security@ghira.app" bad
 fi
 
 exit "$fail"

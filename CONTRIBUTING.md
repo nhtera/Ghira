@@ -58,6 +58,20 @@ pnpm lint && pnpm typecheck && pnpm test
 cargo deny check licenses bans advisories sources
 ```
 
+If you change the website or the docs (`apps/website/`, `docs/`, or the root
+documents the docs publish), also run the site's checks. The site is a
+separate npm project (Node 22.18 or later), not part of the pnpm workspace;
+see [apps/website/README.md](apps/website/README.md):
+
+```sh
+npm --prefix apps/website ci --ignore-scripts
+npm --prefix apps/website run lint && npm --prefix apps/website run typecheck && npm --prefix apps/website test
+npm --prefix apps/website run build:site && npm --prefix apps/website run check-links
+npm --prefix apps/website run test:browser   # once: npx --prefix apps/website playwright install chromium
+```
+
+A docs page is published only when `docs/README.md` lists it.
+
 ## Conventions
 
 - **License header.** Every source file starts with

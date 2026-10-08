@@ -63,12 +63,22 @@ jobs:
           fetch-depth: 0
       - id: filter
         run: |
-          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then echo "site=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          # A pull request: its changes against the base. A push: the pushed
+          # range (all of it on a new branch or a forced push). Manual runs
+          # always build.
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            range="origin/$BASE_REF...HEAD"
+          elif [ "$GITHUB_EVENT_NAME" = push ] && [ -n "$BEFORE" ] && ! printf '%s' "$BEFORE" | grep -q '^0*$' && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            range="$BEFORE..HEAD"
+          else
+            echo "site=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
           # No rename pairing: a moved file lists its old path too.
-          git -c core.quotePath=false diff --name-only --no-renames "origin/$BASE_REF...HEAD" > "$RUNNER_TEMP/changed.txt"
+          git -c core.quotePath=false diff --name-only --no-renames "$range" > "$RUNNER_TEMP/changed.txt"
           node apps/website/scripts/ci-paths.mjs match "$RUNNER_TEMP/changed.txt" | tee -a "$GITHUB_OUTPUT"
         env:
           BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
 
   site-build:
     needs: changes

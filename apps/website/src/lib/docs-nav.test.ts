@@ -65,12 +65,21 @@ test("refused rows fail: docs/release, other root files, duplicates, rows before
   assert.throws(() => nav("| [a.md](a.md) | x |\n| [a.md](a.md) | y |"), /listed twice/);
   assert.throws(() => parseNav("# Docs\n\n| [a.md](a.md) | x |\n"), /not under a "## Section"/);
   assert.throws(() => parseNav("# Docs\n\n## Only bullets\n\n- [a](a.md)\n"), /no table rows/);
+  // Two rows for one slug (docs/privacy.md and ../PRIVACY.md).
+  assert.throws(() => nav("| [privacy.md](privacy.md) | x |\n| [../PRIVACY.md](../PRIVACY.md) | y |"), /listed twice/);
+  // A row under a ### heading is not under a ## section.
+  assert.throws(() => parseNav("# Docs\n\n## S\n\n| [a.md](a.md) | x |\n\n### Sub\n\n| [b.md](b.md) | y |\n"), /not under a "## Section"/);
 });
 
 test("the repository's docs/README.md parses and publishes nothing under docs/release", () => {
   const published = publishedSources(loadNav(repo));
   assert.ok(published.has("PRIVACY.md"));
   for (const source of published.keys()) assert.ok(!source.startsWith("docs/release/"), source);
+});
+
+test("rows in HTML comments and ~~~ fences are not published", () => {
+  const md = "# Docs\n\n## S\n\n| [a.md](a.md) | x |\n<!--\n| [hidden.md](hidden.md) | y |\n-->\n<!-- | [inline.md](inline.md) | z | -->\n~~~md\n| [fenced.md](fenced.md) | w |\n```\n| [still.md](still.md) | v |\n~~~\n";
+  assert.deepEqual(parseNav(md)[0].docs.map((d) => d.slug), ["a"]);
 });
 
 test("markdown to plain text", () => {

@@ -44,17 +44,28 @@ export function parseNav(md: string): NavSection[] {
   const sections: NavSection[] = [];
   const seen = new Set<string>();
   let current: NavSection | undefined;
-  let fence = false;
+  let fence: string | undefined;
+  let comment = false;
   for (const line of md.split("\n")) {
-    if (line.trim().startsWith("```")) fence = !fence;
+    // Rows inside code fences (``` or ~~~) and HTML comments are not published.
+    const marker = line.trim().match(/^(`{3,}|~{3,})/)?.[1];
+    if (marker && (!fence || marker[0] === fence[0])) {
+      fence = fence ? undefined : marker;
+      continue;
+    }
     if (fence) continue;
+    if (comment || line.includes("<!--")) {
+      comment = !line.slice(line.lastIndexOf("<!--") >= 0 ? line.lastIndexOf("<!--") : 0).includes("-->");
+      continue;
+    }
     const heading = line.match(/^##\s+(.+?)\s*#*\s*$/);
     if (heading) {
       current = { title: plainText(heading[1]), docs: [] };
       sections.push(current);
       continue;
     }
-    if (/^#\s/.test(line)) {
+    // Any other heading (# or ###) ends the section: rows under it fail.
+    if (/^#{1,6}\s/.test(line)) {
       current = undefined;
       continue;
     }
@@ -63,12 +74,14 @@ export function parseNav(md: string): NavSection[] {
     const [, text, href, cell] = row;
     if (!current) throw new Error(`docs/README.md: table row "${href}" is not under a "## Section" heading`);
     const source = sourceOfNavHref(href);
-    if (seen.has(source)) throw new Error(`docs/README.md: ${href} is listed twice`);
+    const slug = slugOfSource(source);
+    if (seen.has(source) || seen.has(`slug:${slug}`)) throw new Error(`docs/README.md: ${href} is listed twice (or another row has the slug "${slug}")`);
     seen.add(source);
+    seen.add(`slug:${slug}`);
     const description = plainText(cell);
     if (!description) throw new Error(`docs/README.md: ${href} has no description`);
     const label = /\.md$/i.test(text.trim()) ? undefined : plainText(text);
-    current.docs.push({ source, slug: slugOfSource(source), description, ...(label ? { label } : {}) });
+    current.docs.push({ source, slug, description, ...(label ? { label } : {}) });
   }
   const nav = sections.filter((s) => s.docs.length > 0);
   if (nav.length === 0) throw new Error("docs/README.md: no table rows under a ## heading (`| [file.md](file.md) | Contents |`)");

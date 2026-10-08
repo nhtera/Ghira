@@ -3,16 +3,19 @@
 // Serves the built site (scripts/paths.mjs OUTPUT_DIR) the way Cloudflare's
 // static assets do with `drop-trailing-slash` and `404-page`: /docs/x is
 // docs/x/index.html, /docs/x/ redirects to /docs/x, and a miss is 404.html
-// with status 404. Text is brotli-compressed, as Cloudflare does, so
+// with status 404. Every response carries the headers the build's `_headers`
+// gives its path (a miss, those of /404), so the browser suites run under the
+// production CSP. Text is brotli-compressed, as Cloudflare does, so
 // audits see production-like transfer sizes. For the browser tests and local audits; the real
 // Worker is exercised by `npm run preview`.
 //
 //   node scripts/serve-dist.mjs [port] [dir]
 
-import { createReadStream, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createBrotliCompress } from "node:zlib";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
+import { headersFor, parseHeadersFile } from "./headers-file.mjs";
 import { OUTPUT_DIR } from "./paths.mjs";
 
 const TYPES = {
@@ -38,6 +41,8 @@ function isFile(p) {
 
 export function startServer({ port = 0, dir = OUTPUT_DIR } = {}) {
   const root = resolve(dir);
+  const headersFile = join(root, "_headers");
+  const rules = existsSync(headersFile) ? parseHeadersFile(readFileSync(headersFile, "utf8")) : [];
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     let path = decodeURIComponent(url.pathname);
@@ -56,7 +61,7 @@ export function startServer({ port = 0, dir = OUTPUT_DIR } = {}) {
     const served = file ?? join(root, "404.html");
     const type = TYPES[extname(served)] ?? "application/octet-stream";
     const compress = /^(text\/|application\/(json|xml)|image\/svg)/.test(type) && /\bbr\b/.test(req.headers["accept-encoding"] ?? "");
-    res.writeHead(status, { "content-type": type, ...(compress ? { "content-encoding": "br", vary: "accept-encoding" } : {}) });
+    res.writeHead(status, { ...headersFor(rules, file ? path : "/404"), "content-type": type, ...(compress ? { "content-encoding": "br", vary: "accept-encoding" } : {}) });
     const body = createReadStream(served);
     (compress ? body.pipe(createBrotliCompress()) : body).pipe(res);
   });

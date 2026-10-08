@@ -104,8 +104,15 @@ test("a page links to its source on GitHub and shows when it changed", async () 
   const p = pages[0];
   const { page, context } = await open(`/docs/${p.slug}`);
   assert.equal(await page.getByRole("link", { name: "Edit this page on GitHub" }).getAttribute("href"), `https://github.com/nhtera/Ghira/edit/main/${p.source}`);
-  const updated = page.locator(".edit time");
-  if (await updated.count()) assert.match(await updated.textContent(), /^\d{1,2} [A-Z][a-z]+ \d{4}$/);
+  // Every page has a date unless the build was told to skip them (shallow clones).
+  if (!process.env.GHIRA_SITE_NO_DATES) {
+    for (const q of pages) {
+      assert.match(q.lastUpdated ?? "", /^\d{4}-\d{2}-\d{2}$/, `${q.slug}: no lastUpdated in nav.json`);
+    }
+    const updated = page.locator(".edit time");
+    assert.equal(await updated.getAttribute("datetime"), p.lastUpdated);
+    assert.match(await updated.textContent(), /^\d{1,2} [A-Z][a-z]+ \d{4}$/);
+  }
   await context.close();
 });
 
