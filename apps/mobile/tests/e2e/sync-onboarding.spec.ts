@@ -18,6 +18,7 @@ test("pairing is a step before processing: scan, Paired with <name>, Continue", 
   await expect(page.getByRole("button", { name: "Not now" })).toBeVisible();
   await expectAccessible(page);
 
+  await expect(page.getByTestId("pair-viewfinder")).toHaveAttribute("data-phase", "scanning");
   await mockHook(page, "syncSimulateScan");
   const card = page.getByTestId("paired-card");
   await expect(card).toContainText("Paired with MacBook Pro");
@@ -74,6 +75,9 @@ for (const [code, message, settings] of [
 
 test("not on the same Wi-Fi: guides to Personal Hotspot, then the export", async ({ page }) => {
   await openPairStep(page);
+  // The mock only fails a running scan: wait for the camera to start (a slow
+  // machine gets the hook in before it).
+  await expect(page.getByTestId("pair-viewfinder")).toHaveAttribute("data-phase", "scanning");
   await mockHook(page, "syncSimulateScanFailure", "unreachable");
   await expect(page.getByRole("status").filter({ hasText: "Couldn’t find your computer. Check that both are on the same Wi-Fi." })).toBeVisible();
   const help = page.getByTestId("hotspot-help");
@@ -89,6 +93,7 @@ test("Vietnamese copy", async ({ page }) => {
     window.location.hash = "#/onboarding";
   });
   await expect(page.getByRole("heading", { name: "Ghép nối với máy tính" })).toBeVisible();
+  await expect(page.getByTestId("pair-viewfinder")).toHaveAttribute("data-phase", "scanning");
   await mockHook(page, "syncSimulateScan");
   await expect(page.getByTestId("paired-card")).toContainText("Đã ghép với MacBook Pro");
   await expect(page.getByTestId("paired-card")).toContainText("Hồ sơ giọng nói ở lại trên từng thiết bị");

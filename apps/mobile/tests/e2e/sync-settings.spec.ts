@@ -42,6 +42,7 @@ test("a failed scan can be retried", async ({ page }) => {
   await page.getByRole("button", { name: "Scan the code" }).click();
   await expect(page.getByRole("status").filter({ hasText: "That code has expired" })).toBeVisible();
   await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByTestId("pair-viewfinder")).toHaveAttribute("data-phase", "scanning");
   await mockHook(page, "syncSimulateScan");
   await expect(page.getByText("Last synced 4 minutes ago")).toBeVisible();
 });
