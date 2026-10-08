@@ -86,6 +86,13 @@ impl RingProducer {
         true
     }
 
+    /// Whether a block of `samples` fits now. For a producer that may wait
+    /// (a replay as fast as possible): waiting is not a drop, and `push`
+    /// counts every refusal as one.
+    pub fn has_room(&self, samples: usize) -> bool {
+        self.inner.slots() >= HEADER + samples
+    }
+
     /// Samples dropped so far because the ring was full.
     pub fn dropped_samples(&self) -> u64 {
         self.counters.dropped_samples.load(Ordering::Relaxed)

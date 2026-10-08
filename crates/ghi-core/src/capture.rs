@@ -190,14 +190,15 @@ fn play(mut feeds: Vec<(RingProducer, ReplayTrack)>, speed: Option<f64>, stop: &
             more = true;
             let to = (from + n).min(t.samples.len());
             let at = start_ns + from as u64 * 1_000_000_000 / u64::from(t.sample_rate);
-            while !tx.push(&t.samples[from..to], f64::from(t.sample_rate), at) {
-                // Full ring: in real time that is a drop (counted by the ring);
-                // as fast as possible, wait for the session.
-                if speed.is_some() || stop.load(Ordering::Relaxed) {
-                    break;
+            // Full ring: in real time that is a drop (counted by `push`); as
+            // fast as possible, wait for the session first, so a slow reader
+            // is not reported as lost audio.
+            if speed.is_none() {
+                while !tx.has_room(to - from) && !stop.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(2));
                 }
-                std::thread::sleep(Duration::from_millis(2));
             }
+            tx.push(&t.samples[from..to], f64::from(t.sample_rate), at);
         }
         if !more || stop.load(Ordering::Relaxed) {
             return;
@@ -288,6 +289,40 @@ mod tests {
             }
         }
         assert_eq!(got, 48_000 * 6, "no drops: the ring is 4 s, the audio 6 s");
+        assert_eq!(rx.dropped_samples(), 0);
+        while !cap.ended() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// A reader that falls behind (a loaded machine) only makes a fast replay
+    /// wait: the ring fills, nothing is counted as dropped (CI saw 960).
+    #[test]
+    fn fast_replay_waiting_for_a_slow_reader_is_not_a_drop() {
+        let total = 48_000 * 6;
+        let samples: Vec<f32> = (0..total).map(|i| (i as f32 * 0.01).sin()).collect();
+        let mut cap = replay(
+            vec![ReplayTrack {
+                track: Track::Mic,
+                samples,
+                sample_rate: 48_000,
+            }],
+            None,
+        )
+        .unwrap();
+        let mut rx = cap.mic.take().unwrap();
+        // The 4 s ring fills long before this, so the replay has to wait.
+        std::thread::sleep(Duration::from_millis(300));
+        let (mut got, mut buf, t) = (0usize, Vec::new(), Instant::now());
+        while got < total {
+            if rx.pop_into(&mut buf).is_some() {
+                got += buf.len();
+            } else {
+                assert!(t.elapsed() < Duration::from_secs(10), "stalled at {got}");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        assert_eq!(got, total);
         assert_eq!(rx.dropped_samples(), 0);
         while !cap.ended() {
             std::thread::sleep(Duration::from_millis(1));
