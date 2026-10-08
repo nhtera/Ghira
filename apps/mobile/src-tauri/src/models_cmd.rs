@@ -19,8 +19,7 @@ use crate::cmd::events::{MobileEvent, emit};
 use crate::cmd::models::{MobileModelItem, MobileModelRole, MobileModelState, MobileModelsStatus};
 
 /// The models a phone needs: the live and final engines, then the voice model
-/// (Me). The notes model is optional ([`notes_model`]); the embedding model
-/// never comes to the phone.
+/// (Me). The notes LLM and the embedding model never come to the phone.
 pub fn needed() -> Vec<(String, MobileModelRole)> {
     let voice = ghi_models::preset(ghi_models::Tier::Light).voice_id;
     [
@@ -31,57 +30,6 @@ pub fn needed() -> Vec<(String, MobileModelRole)> {
     .into_iter()
     .map(|(id, role)| (id.to_owned(), role))
     .collect()
-}
-
-/// The notes model, on a phone that can write notes itself (8 GB; see
-/// `tier::notes_capable`): downloaded only when asked for (2.5 GB).
-pub fn notes_model() -> Option<(String, MobileModelRole)> {
-    crate::tier::detect().notes.then(|| {
-        (
-            ghi_app::core::preset().llm_id.to_owned(),
-            MobileModelRole::Notes,
-        )
-    })
-}
-
-/// Deletes the notes model (and a partial download), calls off the notes jobs
-/// still waiting for it and settles their meetings; refused while one runs.
-pub fn remove_notes_model(store: &ghi_store::store::Store, models: &Path) -> Result<(), String> {
-    use ghi_store::jobs::JobState;
-    let err = |e: ghi_store::StoreError| e.to_string();
-    let notes: Vec<_> = store
-        .active_jobs()
-        .map_err(err)?
-        .into_iter()
-        .filter(|j| j.kind == ghi_core::notes_job::NOTES_FINAL_JOB)
-        .collect();
-    if notes.iter().any(|j| j.state == JobState::Running) {
-        return Err("notes are being written".into());
-    }
-    let m = ghi_models::find(ghi_app::core::preset().llm_id).ok_or("unknown model")?;
-    let path = ghi_models::path_in(models, &m);
-    for p in [part_path(&path), path] {
-        match std::fs::remove_file(&p) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-    for j in notes {
-        store.cancel_job(j.id).map_err(err)?;
-        let Some(meeting) = j.meeting_gid else {
-            continue;
-        };
-        let busy = store
-            .jobs_for_meeting(&meeting)
-            .map_err(err)?
-            .iter()
-            .any(|o| matches!(o.state, JobState::Queued | JobState::Running));
-        if !busy {
-            store.set_meeting_status(&meeting, "ready").map_err(err)?;
-        }
-    }
-    Ok(())
 }
 
 /// What the download thread last said about a model.
@@ -136,13 +84,38 @@ pub fn status(
     downloads: &Downloads,
     damaged: &std::collections::BTreeSet<String>,
 ) -> MobileModelsStatus {
+    let live = downloads.inner().live.clone();
+    let running = downloads.running();
     let mut missing = 0u64;
     let items: Vec<MobileModelItem> = needed()
         .into_iter()
         .filter_map(|(id, role)| {
-            let (item, left) = row(dir, id, role, downloads, damaged)?;
-            missing += left;
-            Some(item)
+            let m = ghi_models::find(&id)?;
+            let dest = ghi_models::path_in(dir, &m);
+            let installed = file_len(&dest) == m.size && !damaged.contains(&id);
+            let part = file_len(&part_path(&dest)).min(m.size);
+            let (state, received) = if installed {
+                (MobileModelState::Ready, m.size)
+            } else {
+                missing += m.size.saturating_sub(part);
+                match live.get(&id) {
+                    // A finished or stale entry says nothing once the file is gone.
+                    Some(l) if l.state == MobileModelState::Downloading && !running => {
+                        (MobileModelState::Missing, part)
+                    }
+                    Some(l) if l.state != MobileModelState::Ready => {
+                        (l.state, l.received.max(part))
+                    }
+                    _ => (MobileModelState::Missing, part),
+                }
+            };
+            Some(MobileModelItem {
+                id,
+                role,
+                size_bytes: m.size as f64,
+                received_bytes: received as f64,
+                state,
+            })
         })
         .collect();
     MobileModelsStatus {
@@ -150,46 +123,6 @@ pub fn status(
         missing_bytes: missing as f64,
         wifi_only,
     }
-}
-
-/// One model's row (installed, downloading, waiting, …) and the bytes it still needs.
-pub fn row(
-    dir: &Path,
-    id: String,
-    role: MobileModelRole,
-    downloads: &Downloads,
-    damaged: &std::collections::BTreeSet<String>,
-) -> Option<(MobileModelItem, u64)> {
-    let live = downloads.inner().live.get(&id).copied();
-    let running = downloads.running();
-    let m = ghi_models::find(&id)?;
-    let dest = ghi_models::path_in(dir, &m);
-    let installed = file_len(&dest) == m.size && !damaged.contains(&id);
-    let part = file_len(&part_path(&dest)).min(m.size);
-    let mut missing = 0;
-    let (state, received) = if installed {
-        (MobileModelState::Ready, m.size)
-    } else {
-        missing = m.size.saturating_sub(part);
-        match live {
-            // A finished or stale entry says nothing once the file is gone.
-            Some(l) if l.state == MobileModelState::Downloading && !running => {
-                (MobileModelState::Missing, part)
-            }
-            Some(l) if l.state != MobileModelState::Ready => (l.state, l.received.max(part)),
-            _ => (MobileModelState::Missing, part),
-        }
-    };
-    Some((
-        MobileModelItem {
-            id,
-            role,
-            size_bytes: m.size as f64,
-            received_bytes: received as f64,
-            state,
-        },
-        missing,
-    ))
 }
 
 /// The phone is on a metered path: Swift's `NWPath.isExpensive` /
@@ -346,7 +279,6 @@ pub fn start(
     downloads: Arc<Downloads>,
     wifi_only: bool,
     policy: NetPolicy,
-    which: Vec<(String, MobileModelRole)>,
 ) -> Result<(), String> {
     let cancel = {
         let mut inner = downloads.inner();
@@ -372,7 +304,7 @@ pub fn start(
             let _clear = Clear(downloads.clone());
             // A little extra time when the app goes to the background.
             let bg = crate::platform::begin_bg_task("models");
-            let models: Vec<_> = which
+            let models: Vec<_> = needed()
                 .into_iter()
                 .filter_map(|(id, role)| Some((id.clone(), role, ghi_models::find(&id)?)))
                 .collect();
@@ -597,42 +529,6 @@ mod tests {
         );
         assert_eq!(ev.last(), Some(&MobileModelState::Failed));
         assert!(t.calls.lock().unwrap().is_empty());
-    }
-
-    #[test]
-    fn removing_the_notes_model_calls_off_waiting_notes() {
-        use ghi_store::jobs::JobState;
-        let tmp = tempfile::tempdir().unwrap();
-        let store = ghi_store::store::Store::open(
-            &tmp.path().join("store"),
-            std::sync::Arc::new(ghi_store::keys::MemoryKeyStore::default()),
-            ghi_store::keys::Protection::default(),
-        )
-        .unwrap();
-        let models = tmp.path().join("models");
-        std::fs::create_dir_all(&models).unwrap();
-        let m = ghi_models::find("qwen3-4b").unwrap();
-        let file = ghi_models::path_in(&models, &m);
-        std::fs::write(&file, b"model").unwrap();
-        let meeting = store
-            .create_meeting(ghi_store::store::NewMeeting::default())
-            .unwrap()
-            .gid;
-        let job = store
-            .enqueue_job(
-                Some(&meeting),
-                ghi_core::notes_job::NOTES_FINAL_JOB,
-                ghi_core::session::JOB_PAYLOAD_VERSION,
-                &serde_json::json!({}),
-            )
-            .unwrap();
-        store.set_meeting_status(&meeting, "processing").unwrap();
-        remove_notes_model(&store, &models).unwrap();
-        assert!(!file.exists());
-        assert_eq!(store.job(job).unwrap().state, JobState::Cancelled);
-        assert_eq!(store.get_meeting(&meeting).unwrap().status, "ready");
-        // Gone already: removing again is fine.
-        remove_notes_model(&store, &models).unwrap();
     }
 
     #[test]

@@ -68,8 +68,7 @@
         "role": {
           "asr": "Nhận dạng giọng nói",
           "diarization": "Tách người nói",
-          "voice": "Khớp giọng nói",
-          "notes": "Ghi chú và việc cần làm"
+          "voice": "Khớp giọng nói"
         },
         "state": {
           "ready": "Sẵn sàng",
@@ -78,12 +77,7 @@
           "waitingForWifi": "Đang chờ Wi-Fi",
           "failed": "Tải không thành công"
         },
-        "progress": "Tiến độ tải: {{name}}",
-        "notes": {
-          "header": "Ghi chú trên điện thoại này",
-          "footer": "Không bắt buộc. Viết ghi chú và việc cần làm ngay tại đây, không cần đám mây hay máy tính. Hoạt động khi {{app}} đang mở.",
-          "remove": "Xoá ({{size}})"
-        }
+        "progress": "Tiến độ tải: {{name}}"
       },
       "voice": {
         "title": "Hồ sơ giọng nói",

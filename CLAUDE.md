@@ -116,8 +116,9 @@ suggestions and the notes template). Needs the Calendars entitlement + plist key
 Notes engine: `crates/ghi-llm` (templates in `templates/*.toml`, generated
 JSON schemas, map-reduce notes with citations, enhance, Ask, redaction, send
 preview, cloud providers) + `crates/ghi-llm-worker` (llama.cpp over stdio, a
-separate process; the engine is `ghi_llm_worker::serve`, which the iOS app runs on a thread instead,
-`ghi-llm` feature `inproc`, `Sidecar::in_process`); `ghi notes|ask|keys` and `ghi store notes`. Local model:
+separate process; the engine is `ghi_llm_worker::serve`, which can also run on a thread: `ghi-llm`
+feature `inproc`, `Sidecar::in_process`, unused by the apps today; `notes::generate_steps` and compact
+notes are what `ghi notes --phone` uses); `ghi notes|ask|keys` and `ghi store notes`. Local model:
 `tools/scripts/fetch-models.sh qwen3-4b`, then `cargo build -p ghi-llm-worker`
 (the golden tests skip without both). Cloud sends only go through `ghi-net`'s
 `CloudGrant`, bound to the exact previewed bytes.
@@ -193,22 +194,10 @@ scripted mock `ipc/mock*.ts` outside Tauri). `native/ios`: `GhiAudio` (Swift aud
 lifecycle, Live Activity, C ABI in `include/ghi_ios.h`), `GhiLiveActivity`,
 `GhiShareExtension` (inbox in the App Group), `GhiUITests` (XCUITest). Data is
 Application Support, encrypted store + bundles; no `UIFileSharingEnabled`.
-Notes on the phone (2026-10-08, reverses phase 16 D5): an 8 GB live iPhone (`tier::notes_capable`,
-`DeviceTier.notes`) writes notes with the same Qwen3-4B, in process, once the optional notes model is
-downloaded (Settings → Models, `models_download_notes`/`models_remove_notes`); the phone's final pass
-(`FinalPassNotesIf`) then queues `notes_final`, and the Notes tab offers "Write notes" (`regenerate_notes`).
-Context capped at 12k tokens on iOS (`LLM_MAX_CTX`). The phone's job is `PhoneNotesJob`: compact notes
-(`Options.compact`, `schema::compact`: no quotes/topics, capped lists) and it waits / pauses while iOS thermal
-is serious or worse (measured: 162 → 108 tok/s prompt, 11 → 6.6 tok/s out within a minute of LLM work;
-speed check `GHI_SELFTEST=llm:<text>` with `GHI_DEVICE_TIER=record-only`, see `llm_bench.rs`). A recording or the app leaving the screen stops the
-engine mid-answer (`Llm::stopper`, `JobCtx::stop_signal`; the job yields and starts over); one engine at a time
-(`sidecar` waits for a stopped one); its pipes never raise SIGPIPE. The phone writes notes through its own
-`write_notes` (capability-checked), not `regenerate_notes`. Elsewhere `start()` keeps the worker process
-even in `--workspace` builds (`use_in_process` for host tests); release `panic = "abort"`, so a llama.cpp
-abort in process ends the app (accepted).
-Device check: `TEST_RUNNER_GHI_LONG_MEETING=1 GHI_REC_SECONDS=<s> GHI_FAKE_MIC_PATH=<wav> ... run.sh
--only-testing:GhiUITests/ReviewScreensTests/testLongMeetingNotesOnThePhone` (GHI_KEYSTORE=file on a phone
-whose data a test-hooks build made).
+Notes on the phone: none from a local model (owner, 2026-10-09, after an on-device trial: Qwen3-4B on an
+iPhone 15 Pro Max wrote ~7-11 tok/s and heated to "serious" within a minute). Notes come from the paired
+computer (Desktop target / lease) or the cloud send sheet; the phone's recovery calls off any own notes jobs
+(`recover::drop_local_notes_jobs`, CoreHooks `no_local_notes`) and removes a leftover notes model file.
 Calendar on iOS: `native/ios/GhiAudio/GhiCalendar.swift` (EventKit, JSON over the C ABI) and
 `src-tauri/src/cmd/calendar.rs` (setting `calendar_phone`, read on demand, 60 s memory
 cache, names a meeting at record start; the EventKit → event conversion is shared in

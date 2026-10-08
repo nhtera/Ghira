@@ -151,6 +151,36 @@ pub fn requeue_unfinished_stops(store: &Store) -> Result<usize, String> {
     Ok(n)
 }
 
+/// A device that writes no notes itself (the phone): notes jobs of its own
+/// (not leased to a computer) would wait forever for a model it never runs;
+/// they are called off and their meetings settle `ready` unless another job
+/// still runs for them. Returns how many were called off.
+pub fn drop_local_notes_jobs(store: &Store) -> Result<usize, String> {
+    let mut n = 0;
+    for j in store.active_jobs().map_err(err)? {
+        let notes = j.kind == NOTES_FINAL_JOB || j.kind == NOTES_LIVE_JOB;
+        if !notes || j.payload.get("lease").is_some() {
+            continue;
+        }
+        store.cancel_job(j.id).map_err(err)?;
+        n += 1;
+        let Some(m) = j.meeting_gid else { continue };
+        let busy = store
+            .active_jobs()
+            .map_err(err)?
+            .iter()
+            .any(|o| o.meeting_gid.as_deref() == Some(m.as_str()));
+        if !busy
+            && store
+                .get_meeting(&m)
+                .is_ok_and(|x| x.status == "processing")
+        {
+            store.set_meeting_status(&m, "ready").map_err(err)?;
+        }
+    }
+    Ok(n)
+}
+
 /// Applies the audio side of discards whose text side was stored but whose
 /// bundle rotation never ran [RT-1]; `meeting` limits it to one meeting.
 /// Returns how many were completed. A recording that stops must call this
@@ -591,5 +621,47 @@ mod tests {
         }
         // Queued already: not twice.
         assert_eq!(requeue_unfinished_stops(&store).unwrap(), 0);
+    }
+
+    /// The phone's leftover notes jobs are called off and their meetings
+    /// settle; a job leased to a computer and other meetings' jobs stay.
+    #[test]
+    fn a_device_without_notes_drops_its_waiting_notes_jobs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        let new = || store.create_meeting(NewMeeting::default()).unwrap().gid;
+        let (a, b, c) = (new(), new(), new());
+        let job = |m: &str, kind: &str, payload: serde_json::Value| {
+            store.set_meeting_status(m, "processing").unwrap();
+            store
+                .enqueue_job(Some(m), kind, JOB_PAYLOAD_VERSION, &payload)
+                .unwrap()
+        };
+        let mine = job(&a, NOTES_FINAL_JOB, serde_json::json!({}));
+        let leased = job(
+            &b,
+            NOTES_FINAL_JOB,
+            serde_json::json!({"lease": "x", "epoch": 1}),
+        );
+        let pass = job(&c, FINAL_PASS_JOB, serde_json::json!({}));
+        assert_eq!(drop_local_notes_jobs(&store).unwrap(), 1);
+        assert_eq!(
+            store.job(mine).unwrap().state,
+            ghi_store::jobs::JobState::Cancelled
+        );
+        assert_eq!(store.get_meeting(&a).unwrap().status, "ready");
+        assert_eq!(
+            store.job(leased).unwrap().state,
+            ghi_store::jobs::JobState::Queued
+        );
+        assert_eq!(
+            store.job(pass).unwrap().state,
+            ghi_store::jobs::JobState::Queued
+        );
     }
 }

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The phone's use of the job runner: explicit job kinds at stop, a final pass
-//! that queues no `notes_final` (or does, on a phone that writes notes itself),
-//! and the app-inactive preempt.
+//! that queues no `notes_final`, and the app-inactive preempt.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -10,7 +9,7 @@ use ghi_audio::Track;
 use ghi_core::capture::{ReplayTrack, replay};
 use ghi_core::engines::{FakeEngines, Script, SpeechEngines};
 use ghi_core::events::{Event, bus};
-use ghi_core::final_pass::{FinalPassJob, FinalPassNoNotes, FinalPassNotesIf};
+use ghi_core::final_pass::{FinalPassJob, FinalPassNoNotes};
 use ghi_core::jobs::{JobRunner, always_ready};
 use ghi_core::live::Mode;
 use ghi_core::notes_job::NOTES_FINAL_JOB;
@@ -385,110 +384,4 @@ fn an_empty_pass_and_a_failed_pass_settle_the_meeting_ready_with_an_event() {
         told.contains(&failed) && told.contains(&empty),
         "the UI is told"
     );
-}
-
-/// An 8 GB phone with the notes model: the pass queues `notes_final` and the
-/// meeting stays processing for it; without the model it settles as before.
-/// Checked at the end of each pass, so a model downloaded later counts.
-#[test]
-fn a_phone_that_writes_notes_queues_them_once_it_can() {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    let tmp = tempfile::tempdir().unwrap();
-    let store = Arc::new(
-        Store::open(
-            tmp.path(),
-            Arc::new(MemoryKeyStore::default()),
-            Protection::default(),
-        )
-        .unwrap(),
-    );
-    let (tx, rx) = bus();
-    let engines: Arc<dyn SpeechEngines> = FakeEngines::new(script());
-    let final_engines = engines.clone();
-    let can = Arc::new(AtomicBool::new(false));
-    let runner = JobRunner::new(
-        store.clone(),
-        tx.clone(),
-        vec![Arc::new(FinalPassNotesIf {
-            job: FinalPassJob {
-                engines: Arc::new(move || Ok(final_engines.clone())),
-                chunk_s: 600.0,
-                ready: always_ready(),
-                voice: None,
-            },
-            notes: {
-                let can = can.clone();
-                Arc::new(move || can.load(Ordering::Relaxed))
-            },
-        })],
-    );
-    let capture = replay(
-        vec![ReplayTrack {
-            track: Track::Mic,
-            samples: (0..48_000 * 4)
-                .map(|i| (i as f32 * 0.03).sin() * 0.2)
-                .collect(),
-            sample_rate: 48_000,
-        }],
-        None,
-    )
-    .unwrap();
-    let mut s = Session::start(
-        store.clone(),
-        Some(engines),
-        capture,
-        SessionConfig {
-            sensitive: false,
-            mode: Mode::Room,
-            language: None,
-            title: "phone".into(),
-            queue_jobs: true,
-            lossless: true,
-            echo_cancellation: true,
-        },
-        tx,
-        Some(runner.clone()),
-    )
-    .unwrap();
-    s.set_job_kinds(&[FINAL_PASS_JOB]);
-    let meeting = s.meeting().to_string();
-    let t = Instant::now();
-    loop {
-        assert!(t.elapsed() < Duration::from_secs(20));
-        if let Ok(env) = rx.recv_timeout(Duration::from_millis(50))
-            && matches!(env.event, Event::TranscriptFinal { .. })
-        {
-            break;
-        }
-    }
-    s.stop().unwrap();
-    // No notes model yet: settled without notes.
-    assert_eq!(runner.run_pending(), 1);
-    assert!(
-        store
-            .active_job(&meeting, NOTES_FINAL_JOB)
-            .unwrap()
-            .is_none()
-    );
-    assert_eq!(store.get_meeting(&meeting).unwrap().status, "ready");
-    // The model is downloaded; the meeting is transcribed again: notes follow.
-    can.store(true, Ordering::Relaxed);
-    store
-        .enqueue_job(
-            Some(&meeting),
-            FINAL_PASS_JOB,
-            ghi_core::session::JOB_PAYLOAD_VERSION,
-            &serde_json::json!({}),
-        )
-        .unwrap();
-    store.set_meeting_status(&meeting, "processing").unwrap();
-    assert_eq!(runner.run_pending(), 1);
-    assert!(
-        store
-            .active_job(&meeting, NOTES_FINAL_JOB)
-            .unwrap()
-            .is_some(),
-        "notes_final queued"
-    );
-    assert_eq!(store.get_meeting(&meeting).unwrap().status, "processing");
 }

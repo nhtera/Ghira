@@ -4,10 +4,9 @@
 //! rest); everything that reads or edits stored meetings is the `ghi-app`
 //! command, registered here by path so the DTOs match the desktop's.
 //!
-//! Notes are written on the phone through its own `write_notes` (an 8 GB phone
-//! with the notes model only). Left out on purpose: `regenerate_notes` (no
-//! capability check: on any other phone its job would wait forever),
-//! `list_templates` (the phone writes with the meeting's template), `ask_*`, people,
+//! Left out on purpose: `regenerate_notes` and `list_templates` (the phone never
+//! runs local notes, D5: regenerating would leave a meeting stuck in
+//! processing; cloud notes go through the cloud send sheet), `ask_*`, people,
 //! folders, tags, the calendar's ICS file and ticker (EventKit only, see
 //! `calendar`) and the desktop import queue (the phone imports
 //! through the share inbox).
@@ -57,15 +56,10 @@ pub fn builder() -> Builder<tauri::Wry> {
             lifecycle::app_version,
             lifecycle::lifecycle_state,
             lifecycle::device_tier,
-            lifecycle::thermal_level,
             lifecycle::open_app_settings,
             models::models_status,
             models::models_download,
             models::models_cancel,
-            models::notes_model_status,
-            models::models_download_notes,
-            models::models_remove_notes,
-            models::write_notes,
             privacy::privacy_export_all_share,
             privacy::privacy_delete_all,
             store::store_status,

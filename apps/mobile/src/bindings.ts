@@ -71,12 +71,6 @@ export const commands = {
 	appVersion: () => __TAURI_INVOKE<MobileAppVersion>("app_version"),
 	lifecycleState: () => typedError<LifecycleState, string>(__TAURI_INVOKE("lifecycle_state")),
 	deviceTier: () => typedError<DeviceTier, string>(__TAURI_INVOKE("device_tier")),
-	/**
-	 *  The phone's thermal state now (0 nominal, 1 fair, 2 serious, 3 critical);
-	 *  notes written on the phone wait at 2 or more. Changes arrive as
-	 *  `MobileEvent::Thermal`.
-	 */
-	thermalLevel: () => __TAURI_INVOKE<number>("thermal_level"),
 	/**  Opens this app's page in the Settings app (microphone denied). */
 	openAppSettings: () => __TAURI_INVOKE<void>("open_app_settings"),
 	modelsStatus: () => typedError<MobileModelsStatus, string>(__TAURI_INVOKE("models_status")),
@@ -87,35 +81,6 @@ export const commands = {
 	 */
 	modelsDownload: (wifiOnly: boolean) => typedError<null, string>(__TAURI_INVOKE("models_download", { wifiOnly })),
 	modelsCancel: () => typedError<null, string>(__TAURI_INVOKE("models_cancel")),
-	/**
-	 *  The notes model on this phone: `None` when the phone cannot write notes
-	 *  itself (below 8 GB), else its row (missing, downloading, ready, …).
-	 */
-	notesModelStatus: () => typedError<{
-	id: string,
-	role: MobileModelRole,
-	sizeBytes: number | null,
-	receivedBytes: number | null,
-	state: MobileModelState,
-} | null, string>(__TAURI_INVOKE("notes_model_status")),
-	/**
-	 *  Downloads the notes model (2.5 GB), Wi-Fi only unless the user allows
-	 *  cellular this time; refused on a phone that cannot write notes.
-	 */
-	modelsDownloadNotes: (wifiOnly: boolean) => typedError<null, string>(__TAURI_INVOKE("models_download_notes", { wifiOnly })),
-	/**
-	 *  Removes the notes model to free its 2.5 GB (notes then come from the
-	 *  cloud or the computer again). Refused while notes are being written or a
-	 *  download runs; notes still waiting to be written are called off, and their
-	 *  meetings settle (they would wait for the model forever).
-	 */
-	modelsRemoveNotes: () => typedError<null, string>(__TAURI_INVOKE("models_remove_notes")),
-	/**
-	 *  Writes (or rewrites) a meeting's notes on this phone. Only a phone that
-	 *  can run the notes model and has it installed: anywhere else the job would
-	 *  wait for a model that never comes and leave the meeting "processing".
-	 */
-	writeNotes: (meeting: string) => typedError<null, string>(__TAURI_INVOKE("write_notes", { meeting })),
 	/**
 	 *  Exports everything as an encrypted archive and presents the system share
 	 *  sheet (the path never reaches the webview). Resolves once the sheet is
@@ -732,11 +697,6 @@ export type DeviceTier = {
 	ramGb: number | null,
 	simulator: boolean,
 	tier: TierClass,
-	/**
-	 *  It can write notes and action items itself (an 8 GB live phone; the
-	 *  notes model is an optional download).
-	 */
-	notes: boolean,
 };
 
 /**  What "discard the last N seconds" would remove, shown before confirming [RT-1]. */
@@ -1132,9 +1092,7 @@ export type MobileModelItem = {
 	state: MobileModelState,
 };
 
-export type MobileModelRole = "asr" | "diarization" | "voice" | 
-/**  The notes model (optional, 8 GB phones). */
-"notes";
+export type MobileModelRole = "asr" | "diarization" | "voice";
 
 export type MobileModelState = "missing" | "downloading" | "ready" | 
 /**  Waiting for Wi-Fi (the default is Wi-Fi only). */

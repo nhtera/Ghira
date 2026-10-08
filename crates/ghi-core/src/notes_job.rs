@@ -375,51 +375,7 @@ impl JobHandler for NotesJob {
     }
 
     fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
-        self.run_with(ctx, false, &|| false)
-    }
-}
-
-/// [`NotesJob`] on a phone: compact notes (no quotes or topics, fewer items:
-/// about half the output, so half the time and heat). It starts only while
-/// the phone is not hot (`hot`: iOS thermal serious or worse; the phone wakes
-/// the runner on a thermal change), and once started it runs on through
-/// "serious" (iOS slows it down) and stops only at `too_hot` (critical): a
-/// run stopped at every "serious" restarts from scratch each time and never
-/// ends, since one prompt alone takes longer than the phone stays cool.
-pub struct PhoneNotesJob {
-    pub job: NotesJob,
-    pub hot: crate::jobs::Ready,
-    pub too_hot: crate::jobs::Ready,
-}
-
-impl JobHandler for PhoneNotesJob {
-    fn kind(&self) -> &'static str {
-        self.job.kind()
-    }
-
-    fn ready(&self) -> bool {
-        self.job.ready() && !(self.hot)()
-    }
-
-    fn failed(&self, ctx: &JobCtx) {
-        self.job.failed(ctx);
-    }
-
-    fn run(&self, ctx: &JobCtx) -> Result<Outcome, String> {
-        self.job.run_with(ctx, true, &*self.too_hot)
-    }
-}
-
-impl NotesJob {
-    /// The run; `compact` writes compact notes, and `pause()` true stops a
-    /// model that can be stopped and yields, like a recording does.
-    fn run_with(
-        &self,
-        ctx: &JobCtx,
-        compact: bool,
-        pause: &(dyn Fn() -> bool + Sync),
-    ) -> Result<Outcome, String> {
-        if ctx.preempted() || pause() {
+        if ctx.preempted() {
             return Ok(Outcome::Yield(ctx.job.payload.clone()));
         }
         let meeting = ctx.meeting()?;
@@ -472,77 +428,29 @@ impl NotesJob {
                     .unwrap_or(OutLang::En),
             );
             opts.pinned = kept_texts(ctx.store, meeting)?;
-            opts.compact = compact;
             let bytes: usize = segs.iter().map(|s| s.text.len()).sum();
             let mut llm = (self.llm)(bytes)?;
             // The model's own progress, as the meeting's: reading the
-            // transcript to 40 %, writing to 80 % (the expected output: about
-            // 900 tokens compact, 1,800 full), then the user's notes.
+            // transcript to 40 %, writing to 80 % (about 1,800 tokens
+            // expected), then the user's notes.
             let shown = Arc::new(std::sync::atomic::AtomicU32::new(0));
-            // On a phone (compact) the notes go step by step (~5-minute parts),
-            // each part saved with the job, so a run stopped when the app left
-            // the screen continues from there; their progress is the steps'.
-            let steps = compact;
-            if steps {
-                opts.chunk_minutes = 5;
-            }
-            let saved: Option<notes::Steps> = ctx
-                .job
-                .payload
-                .get("steps")
-                .and_then(|v| serde_json::from_value(v.clone()).ok());
-            let latest = std::sync::Mutex::new(ctx.job.payload.clone());
-            // Steps: parts done and in all (an estimate from the meeting's
-            // length until the first part is saved), for the progress below.
-            let parts_done = Arc::new(std::sync::atomic::AtomicUsize::new(
-                saved.as_ref().map_or(0, |s| s.done),
-            ));
-            let parts_all = Arc::new(std::sync::atomic::AtomicUsize::new(
-                saved.as_ref().map_or_else(
-                    || {
-                        let span = segs.last().map_or(0, |s| s.t1_ms)
-                            - segs.first().map_or(0, |s| s.t0_ms);
-                        (span / 300_000 + 1).max(1) as usize
-                    },
-                    notes::Steps::parts,
-                ),
-            ));
-            if steps {
-                // Within a part too: reading it, then writing its facts (a
-                // compact part writes up to ~600 tokens), so the percent moves.
-                let (shown, done, all) = (shown.clone(), parts_done.clone(), parts_all.clone());
-                llm.set_progress(Box::new(move |read, written| {
-                    let f = if written == 0 {
-                        0.15 * (f64::from(read) / 1_700.0).min(1.0)
-                    } else {
-                        0.15 + 0.8 * (f64::from(written) / 600.0).min(1.0)
-                    };
-                    let done = done.load(std::sync::atomic::Ordering::Relaxed) as f64;
-                    let all = all.load(std::sync::atomic::Ordering::Relaxed) as f64;
-                    let p = 0.05 + 0.75 * (done + f).min(all + 1.0) / (all + 1.0);
-                    shown.fetch_max((p * 1000.0) as u32, std::sync::atomic::Ordering::Relaxed);
-                }));
-            }
-            if !steps {
+            {
                 let shown = shown.clone();
                 let est_in = (bytes as f64 / 3.0).max(1.0);
-                let est_out = if compact { 900.0 } else { 1_800.0 };
                 llm.set_progress(Box::new(move |read, written| {
                     let p = if written == 0 {
                         0.05 + 0.35 * (f64::from(read) / est_in).min(1.0)
                     } else {
-                        0.4 + 0.4 * (f64::from(written) / est_out).min(1.0)
+                        0.4 + 0.4 * (f64::from(written) / 1_800.0).min(1.0)
                     };
                     shown.fetch_max((p * 1000.0) as u32, std::sync::atomic::Ordering::Relaxed);
                 }));
             }
-            // A model that can be stopped mid-answer (the phone's in-process
-            // engine) is stopped as soon as a recording starts or the app
-            // leaves the screen (iOS forbids the GPU in the background): the
-            // run then yields and starts over later, nothing half-written kept.
+            // A model that can be stopped mid-answer (an in-process engine)
+            // is stopped as soon as a recording starts or the app leaves the
+            // screen: the run then yields and starts over later.
             let stop = llm.stopper();
-            let preempted = ctx.stop_signal();
-            let stop_requested = || preempted() || pause();
+            let stop_requested = ctx.stop_signal();
             let finished = std::sync::atomic::AtomicBool::new(false);
             // Ends the watcher however the run ends (a panic included), so the
             // scope below never waits on it forever.
@@ -574,34 +482,8 @@ impl NotesJob {
                 });
                 let _finished = Finished(&finished);
                 (|| -> Result<_, String> {
-                    let run = if steps {
-                        let mut on_step = |st: &notes::Steps| {
-                            let mut payload = ctx.job.payload.clone();
-                            if let Some(obj) = payload.as_object_mut() {
-                                obj.insert(
-                                    "steps".into(),
-                                    serde_json::to_value(st).unwrap_or_default(),
-                                );
-                                // Grows with every part: the runner sees progress, not spinning.
-                                obj.insert("done".into(), st.done.into());
-                            }
-                            parts_done.store(st.done, std::sync::atomic::Ordering::Relaxed);
-                            parts_all.store(st.parts(), std::sync::atomic::Ordering::Relaxed);
-                            let p = 0.05 + 0.75 * st.done as f64 / (st.parts() + 1) as f64;
-                            shown.fetch_max(
-                                (p * 1000.0) as u32,
-                                std::sync::atomic::Ordering::Relaxed,
-                            );
-                            if ctx.checkpoint(p, &payload).is_ok() {
-                                ctx.made_progress();
-                            }
-                            *latest.lock().unwrap_or_else(|e| e.into_inner()) = payload;
-                        };
-                        notes::generate_steps(llm.as_mut(), &t, &opts, saved, &mut on_step)
-                    } else {
-                        notes::generate(llm.as_mut(), &t, &opts)
-                    }
-                    .map_err(|e| e.to_string())?;
+                    let run =
+                        notes::generate(llm.as_mut(), &t, &opts).map_err(|e| e.to_string())?;
                     // The final notes also expand the user's own lines; a failure
                     // there leaves them as typed (the notes still count).
                     let extra = if self.version >= 2 {
@@ -617,10 +499,8 @@ impl NotesJob {
             let (run, extra) = match written {
                 Ok(w) => w,
                 // Stopped (or failed) while asked to stop: try again later.
-                // (With the parts written so far: the next run goes on from there.)
                 Err(_) if stop.is_some() && stop_requested() => {
-                    let payload = latest.lock().unwrap_or_else(|e| e.into_inner()).clone();
-                    return Ok(Outcome::Yield(payload));
+                    return Ok(Outcome::Yield(ctx.job.payload.clone()));
                 }
                 Err(e) => return Err(e),
             };

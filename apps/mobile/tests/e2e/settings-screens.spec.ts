@@ -73,32 +73,6 @@ test.describe("models", () => {
     await page.getByRole("button", { name: "Use cellular this time" }).click();
     await expect(page.getByText("All models are ready.")).toBeVisible();
   });
-
-  test("an 8 GB phone downloads and removes the notes model on its own", async ({ page }) => {
-    await openApp(page, "/settings");
-    await page.evaluate(() => (window.__ghiRecord!.notesModel = "missing"));
-    await go(page, "/settings/models");
-    const section = page.getByRole("list", { name: "Notes on this phone" });
-    await expect(section.getByText("Notes and action items")).toBeVisible();
-    await expect(section.getByText("Not downloaded")).toBeVisible();
-    // Its own button: the speech models' download leaves it alone.
-    await page.getByRole("button", { name: /^Download 2[.,]5 GB/ }).click();
-    await expect(section.getByText("Ready", { exact: true })).toBeVisible();
-    await expect(page.getByText("Not downloaded")).toHaveCount(3);
-    await expectAccessible(page);
-    await page.getByRole("button", { name: /^Remove/ }).click();
-    await expect(section.getByText("Not downloaded")).toBeVisible();
-    expect(await page.evaluate(() => window.__ghiRecord!.log.filter((l) => /Notes/.test(l)))).toEqual([
-      "modelsDownloadNotes:true",
-      "modelsRemoveNotes",
-    ]);
-  });
-
-  test("a phone that cannot write notes shows no notes model", async ({ page }) => {
-    await openApp(page, "/settings/models");
-    await expect(page.getByText("Not downloaded")).toHaveCount(3);
-    await expect(page.getByText("Notes on this phone")).toHaveCount(0);
-  });
 });
 
 test.describe("voice profile", () => {

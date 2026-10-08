@@ -46,9 +46,6 @@ pub struct DeviceTier {
     pub ram_gb: f64,
     pub simulator: bool,
     pub tier: TierClass,
-    /// It can write notes and action items itself (an 8 GB live phone; the
-    /// notes model is an optional download).
-    pub notes: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -81,17 +78,6 @@ pub async fn lifecycle_state() -> Result<LifecycleState, String> {
 #[specta::specta]
 pub async fn device_tier() -> Result<DeviceTier, String> {
     Ok(crate::tier::detect())
-}
-
-/// The phone's thermal state now (0 nominal, 1 fair, 2 serious, 3 critical);
-/// notes written on the phone wait at 2 or more. Changes arrive as
-/// `MobileEvent::Thermal`.
-#[tauri::command]
-#[specta::specta]
-pub fn thermal_level() -> u8 {
-    platform::device_stats()
-        .thermal
-        .map_or(0, |t| t.clamp(0, 3) as u8)
 }
 
 /// Opens this app's page in the Settings app (microphone denied).

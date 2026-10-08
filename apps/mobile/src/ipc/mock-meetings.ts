@@ -537,17 +537,6 @@ export const meetingCommands: Partial<Commands> = {
       ];
     return ok(m.transcript);
   },
-  // Like the phone's write_notes: refused while recording or another job
-  // runs; the meeting gets a notes job and is processing.
-  writeNotes: async (id) => {
-    const m = find(id);
-    if (!m) return fail("not found");
-    if (m.detail.status === "recording") return fail("the meeting is still recording");
-    if (m.detail.job) return fail("the notes are already being written");
-    m.detail.job = { kind: "notes_final", progress: 0, waitingForModels: false };
-    m.detail.status = "processing";
-    return ok(null);
-  },
   // Like ghi-app's retranscribe: audio kept here, nothing running; the mock
   // records the language and the meeting is processing again.
   retranscribe: async (id, language) => {

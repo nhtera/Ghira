@@ -49,6 +49,22 @@ pub fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 /// The job kinds crash recovery queues on a device of this tier: the final
 /// pass on a live device; nothing below the tier (those meetings stay as
 /// recorded, with the `Phone` target disabled).
+/// The phone writes no notes itself any more: a notes model a test build
+/// put there (2.5 GB) and any partial download are removed.
+fn remove_notes_model(models: &std::path::Path) {
+    let Some(m) = ghi_models::find(ghi_app::core::preset().llm_id) else {
+        return;
+    };
+    let path = ghi_models::path_in(models, &m);
+    for p in [ghi_net::fetch::part_path(&path), path] {
+        match std::fs::remove_file(&p) {
+            Ok(()) => log::info!("removed the unused notes model file"),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("removing the notes model file: {e}"),
+        }
+    }
+}
+
 pub fn recover_kinds(tier: TierClass) -> Vec<&'static str> {
     match tier {
         TierClass::Live => vec![ghi_core::session::FINAL_PASS_JOB],
@@ -99,7 +115,6 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     }
     let tier = crate::tier::detect();
     let class = tier.tier;
-    let notes = tier.notes;
 
     // The lifecycle needs the job runner, the core needs the lifecycle (it
     // pauses a runner created in the background): meet in a cell.
@@ -115,10 +130,13 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     let hooks = CoreHooks {
         data_dir: Some(data.clone()),
         handlers: Some(Arc::new(move |store, models| {
-            crate::engine::job_handlers(models, store, class, notes)
+            crate::engine::job_handlers(models, store, class)
         })),
         recover_kinds: Some(recover_kinds(class)),
         requeue_unfinished_stops: class == TierClass::Live,
+        // Notes come from the paired computer or a cloud provider, never a
+        // model on the phone (owner, 2026-10-09).
+        no_local_notes: true,
         before_spawn: Some(Arc::new(move |runner| lifecycle.sync_runner(runner))),
         mic: Some(enrollment_mic()),
         gate_launch: true,
@@ -135,6 +153,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     for d in [&backlog_dir, &metrics_dir, &core.models()] {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
+    remove_notes_model(&core.models());
     let recorder = Recorder::new(RecorderDeps {
         store: {
             let core = core.clone();

@@ -199,39 +199,6 @@ test.describe("meeting view", () => {
     );
   });
 
-  test("a meeting without notes is written on an 8 GB phone with the notes model", async ({ page }) => {
-    await openMeetings(page, "/meetings/m-nonotes");
-    // The default phone cannot: the cloud copy.
-    await expect(page.locator('[data-notes-state="cloud"]')).toBeVisible();
-    // A reload would reset the scripted core: set the phone, then move by hash.
-    await page.evaluate(() => {
-      window.__ghiRecord!.notesModel = "ready";
-      location.hash = "#/meetings";
-    });
-    await page.evaluate(() => (location.hash = "#/meetings/m-nonotes"));
-    const empty = page.locator('[data-notes-state="local"]');
-    await expect(empty.getByText("Ghira can write the notes and action items on this phone. Nothing leaves it.")).toBeVisible();
-    await expectAccessible(page);
-    await page.getByRole("button", { name: "Write notes" }).click();
-    await expect(page.locator('[data-notes-state="writing"]').getByRole("status")).toHaveText(/being written on this phone/);
-    // The phone gets hot: the notes pause and say so.
-    await page.evaluate(() => window.__ghiMock!.simulateMobileEvent({ type: "thermal", level: 2 }));
-    await expect(page.locator('[data-notes-state="writing"]').getByRole("status")).toHaveText(
-      "Paused while the phone cools down. The notes continue on their own.",
-    );
-  });
-
-  test("without the notes model the empty notes point to its download", async ({ page }) => {
-    await openMeetings(page, "/meetings");
-    await page.evaluate(() => {
-      window.__ghiRecord!.notesModel = "missing";
-      location.hash = "#/meetings/m-nonotes";
-    });
-    await page.getByRole("button", { name: "Get the notes model" }).click();
-    await expect(page.getByRole("heading", { name: "Models", level: 1 })).toBeVisible();
-    await expect(page.getByText("Notes on this phone")).toBeVisible();
-  });
-
   test("Transcribe again picks the spoken language and starts", async ({ page }) => {
     await openMeetings(page, "/meetings/m-nonotes?tab=transcript");
     const start = page.getByRole("button", { name: "Transcribe again Start" });

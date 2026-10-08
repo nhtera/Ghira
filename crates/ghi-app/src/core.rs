@@ -114,6 +114,9 @@ pub struct CoreHooks {
     /// Recovery also gives a final pass to recorded meetings whose stop never
     /// finished (`recover::requeue_unfinished_stops`; the live-tier phone).
     pub requeue_unfinished_stops: bool,
+    /// This device writes no notes itself (the phone): recovery calls off its
+    /// own notes jobs (`recover::drop_local_notes_jobs`).
+    pub no_local_notes: bool,
     /// Runs on the new job runner right before it is spawned (the phone
     /// pauses it when launched in the background).
     pub before_spawn: Option<RunnerHook>,
@@ -350,12 +353,7 @@ pub fn llm_factory(models: &Path) -> ghi_core::notes_job::LlmFactory {
     })
 }
 
-/// The longest notes context. A phone keeps the KV cache small (12k tokens of
-/// Qwen3-4B with a q8 cache is about 0.9 GB next to the 2.5 GB model); longer
-/// meetings are written in parts, as on any machine.
-#[cfg(target_os = "ios")]
-pub const LLM_MAX_CTX: u32 = 12_288;
-#[cfg(not(target_os = "ios"))]
+/// The longest notes context; longer meetings are written in parts.
 pub const LLM_MAX_CTX: u32 = 32_768;
 
 /// The notes model for this machine's tier is installed (and this build runs
@@ -1197,6 +1195,13 @@ impl Core {
             Some(kinds) => ghi_core::recover::recover_with_kinds(&store, kinds)?,
             None => ghi_core::recover::recover(&store)?,
         };
+        if self.hooks.no_local_notes {
+            match ghi_core::recover::drop_local_notes_jobs(&store) {
+                Ok(0) => {}
+                Ok(n) => log::info!("recovery: {n} notes job(s) called off (no local notes here)"),
+                Err(e) => log::warn!("recovery of notes jobs: {e}"),
+            }
+        }
         if self.hooks.requeue_unfinished_stops {
             match ghi_core::recover::requeue_unfinished_stops(&store) {
                 Ok(0) => {}

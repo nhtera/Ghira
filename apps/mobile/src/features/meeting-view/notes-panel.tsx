@@ -1,18 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // M4 Notes tab: blocks by section with provenance (user / AI / AI-edited) and
 // citation chips. A legend ("You wrote" / "Written by Ghira") explains the two
-// looks once, the way the design does; AI sections carry the sparkle. A
-// meeting without notes offers to write them on this phone (8 GB with the
-// notes model), points to the model download (8 GB without it), and offers
-// the cloud sheet when cloud notes are on.
+// looks once, the way the design does; AI sections carry the sparkle. The phone never writes notes, so a meeting without them says
+// so and offers the cloud sheet.
 import { Button, Icon, ListRow, ListSection, NoteBlock } from "@ghi/ui";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Citation, MeetingJob, MeetingNotes } from "../../bindings";
-import { ipc } from "../../ipc";
-import { useNotesModel } from "../models/use-notes-model";
-import { usePhoneHeat } from "../models/use-phone-heat";
-import { useGo } from "../settings/go";
+import type { Citation, MeetingNotes } from "../../bindings";
 import { openCloudSheet } from "./handoff";
 import { useCloudOffered } from "../settings/use-cloud-offered";
 import { groupBlocks, noteKind, toNoteCitation } from "./notes-model";
@@ -24,10 +17,6 @@ export type NotesPanelProps = {
   notes: MeetingNotes;
   visited: ReadonlySet<string>;
   onCite: (citation: Citation, key: string) => void;
-  /** The meeting's running or waiting job, if any. */
-  job: MeetingJob | null;
-  /** There is a transcript to write notes from. */
-  hasTranscript: boolean;
 };
 
 export function NotesPanel({
@@ -37,84 +26,27 @@ export function NotesPanel({
   notes,
   visited,
   onCite,
-  job,
-  hasTranscript,
 }: NotesPanelProps) {
   const { t } = useTranslation();
-  const go = useGo();
   // The cloud entry only exists once the user offered cloud notes in Settings.
   const cloudOffered = useCloudOffered();
-  const local = useNotesModel();
-  // Notes written here wait to start while the phone is hot (thermal serious
-  // or worse); once started they run on (their progress is above 0).
-  const hot = usePhoneHeat() >= 2;
-  const [failed, setFailed] = useState<string | null>(null);
   const groups = groupBlocks(notes.blocks);
   if (groups.length === 0) {
-    // Nothing until this phone's notes model is known (no cloud copy flashing by).
-    if (local.item === undefined && !local.error) return <div data-state="no-notes" className="min-h-40" />;
-    const writing = job?.kind === "notes_final" || job?.kind === "notes_live";
-    // Which empty state: being written, written after the transcript, can write
-    // here, can after a download, or cloud only.
-    const state = writing
-      ? "writing"
-      : job?.kind === "final_pass" && local.ready
-        ? "after"
-        : local.ready
-          ? "local"
-          : local.item
-            ? "download"
-            : "cloud";
-    const write = async () => {
-      setFailed(null);
-      const r = await ipc.commands
-        .writeNotes(meeting)
-        .catch((e: unknown) => ({ status: "error" as const, error: String(e) }));
-      if (r.status === "error") return setFailed(r.error);
-      // The reloaded meeting carries the notes job: the "writing" state follows it.
-      onSent();
-    };
     return (
       <div
         data-state="no-notes"
-        data-notes-state={state}
         className="flex flex-col items-center gap-3 px-6 py-10 text-center"
       >
-        <Icon name={state === "cloud" ? "description" : "auto_awesome"} size={40} className="size-10 text-muted" />
+        <Icon name="description" size={40} className="size-10 text-muted" />
         <h2 className="text-ios-title3 m-0">
-          {t(`mobile.detail.notesEmpty.${state}.title`)}
+          {t("mobile.detail.notesEmpty.title")}
         </h2>
-        <p role={state === "writing" ? "status" : undefined} className="text-ios-subhead m-0 max-w-sm text-muted">
-          {state === "writing" && job?.waitingForModels
-            ? t("mobile.detail.notesEmpty.writing.waiting")
-            : state === "writing" && hot && !(job?.progress && job.progress > 0)
-              ? t("mobile.detail.notesEmpty.writing.cooling")
-              : t(`mobile.detail.notesEmpty.${state}.body`)}
+        <p className="text-ios-subhead m-0 max-w-sm text-muted">
+          {t("mobile.detail.notesEmpty.body")}
         </p>
-        {state === "local" && (
+        {cloudOffered && (
           <Button
             variant="primary"
-            icon="auto_awesome"
-            className="min-h-ios-target px-5"
-            disabled={!hasTranscript || job != null}
-            onClick={() => void write()}
-          >
-            {t("mobile.detail.notesEmpty.local.action")}
-          </Button>
-        )}
-        {(state === "download" || (state === "writing" && job?.waitingForModels && local.item && !local.ready)) && (
-          <Button icon="download" className="min-h-ios-target px-5" onClick={() => go("/settings/models")}>
-            {t("mobile.detail.notesEmpty.download.action")}
-          </Button>
-        )}
-        {failed && (
-          <p role="alert" className="text-ios-footnote m-0 text-warn">
-            {t("system.commandFailed", { message: failed })}
-          </p>
-        )}
-        {cloudOffered && state !== "writing" && (
-          <Button
-            variant={state === "cloud" ? "primary" : "secondary"}
             icon="cloud"
             className="min-h-ios-target px-5"
             onClick={() => openCloudSheet(meeting, cloudLocked, onSent)}

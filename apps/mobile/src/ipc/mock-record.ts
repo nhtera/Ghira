@@ -41,10 +41,7 @@ export interface GhiRecordMock {
   modelsReady: boolean;
   /** `modelsStatus` says the download waits for Wi-Fi. */
   onCellular: boolean;
-  /** The notes model: `none` on a phone that cannot write notes (the default), else its state. */
-  notesModel: "none" | "missing" | "ready";
-  /** The phone's thermal state (0 nominal .. 3 critical). */
-  heat: number;
+
   /** `recordStart` fails with this message. */
   failStart: string | null;
   /** The snapshot gives `reason` whatever the session is doing (events alone drive the phase in tests). */
@@ -107,8 +104,6 @@ const SAMPLE = [
 const ORDER: OnboardingStep[] = ["languages", "micPriming", "consent", "pair", "processing", "models", "voice", "done"];
 
 const defaults: GhiRecordMock = {
-  notesModel: "none",
-  heat: 0,
   mic: "notDetermined",
   failStart: null,
   reason: "deviceTier",
@@ -302,15 +297,6 @@ function emitModel(item: MobileModelItem) {
   mobile({ type: "modelDownload", item });
 }
 
-const NOTES_MODEL: MobileModelItem = { id: "qwen3-4b", role: "notes", sizeBytes: 2_497_280_256, receivedBytes: 0, state: "missing" };
-const notesModelItem = (): MobileModelItem | null =>
-  hooks.notesModel === "none"
-    ? null
-    : hooks.notesModel === "ready"
-      ? { ...NOTES_MODEL, receivedBytes: NOTES_MODEL.sizeBytes, state: "ready" }
-      : hooks.onCellular
-        ? { ...NOTES_MODEL, state: "waitingForWifi" }
-        : NOTES_MODEL;
 
 export const recordCommands: Partial<Commands> = {
   // First launch
@@ -372,7 +358,7 @@ export const recordCommands: Partial<Commands> = {
     appSettings = { ...appSettings, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v != null)) } as AppSettings;
     return ok(appSettings);
   },
-  deviceTier: async () => ok({ modelId: "iPhone16,1", ramGb: 8, simulator: true, tier: hooks.tier, notes: hooks.tier === "live" }),
+  deviceTier: async () => ok({ modelId: "iPhone16,1", ramGb: 8, simulator: true, tier: hooks.tier }),
   modelsStatus: async () => {
     const items = models.map((m): MobileModelItem => {
       if (hooks.modelsReady) return { ...m, state: "ready" };
@@ -398,27 +384,6 @@ export const recordCommands: Partial<Commands> = {
     return ok(null);
   },
   modelsCancel: async () => ok(null),
-  notesModelStatus: async () => ok(notesModelItem()),
-  thermalLevel: async () => hooks.heat,
-  modelsDownloadNotes: async (wifiOnly) => {
-    hooks.log.push(`modelsDownloadNotes:${wifiOnly}`);
-    if (hooks.notesModel === "none") return fail("this phone cannot write notes itself");
-    for (const step of [0.4, 1]) {
-      await pause(30);
-      const done = step === 1;
-      if (done) hooks.notesModel = "ready";
-      mobile({
-        type: "modelDownload",
-        item: { ...NOTES_MODEL, receivedBytes: Math.round((NOTES_MODEL.sizeBytes ?? 0) * step), state: done ? "ready" : "downloading" },
-      });
-    }
-    return ok(null);
-  },
-  modelsRemoveNotes: async () => {
-    hooks.log.push("modelsRemoveNotes");
-    if (hooks.notesModel !== "none") hooks.notesModel = "missing";
-    return ok(null);
-  },
 
   // Recording
   recordConsentMessage: async (language) => {

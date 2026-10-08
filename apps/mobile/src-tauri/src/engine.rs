@@ -1116,94 +1116,20 @@ pub fn selftest(dir: &Path, file: String, pcm: &[f32]) -> SelfTest {
     out
 }
 
-/// The notes model with a watcher: every 30 s while it is loaded, the log gets
-/// the phone's thermal state, the app's memory footprint and the battery
-/// (numbers only), so a slow or killed notes run can be explained.
-fn watched(open: ghi_core::notes_job::LlmFactory) -> ghi_core::notes_job::LlmFactory {
-    struct Watched {
-        llm: Box<dyn ghi_llm::Llm + Send>,
-        done: Arc<std::sync::atomic::AtomicBool>,
-    }
-    impl ghi_llm::Llm for Watched {
-        fn engine(&self) -> ghi_llm::EngineInfo {
-            self.llm.engine()
-        }
-        fn context_tokens(&self) -> u32 {
-            self.llm.context_tokens()
-        }
-        fn complete(&mut self, req: &ghi_llm::Request) -> ghi_llm::Result<ghi_llm::Completion> {
-            self.llm.complete(req)
-        }
-        fn count_tokens(&mut self, text: &str) -> ghi_llm::Result<u32> {
-            self.llm.count_tokens(text)
-        }
-        fn stopper(&self) -> Option<Arc<dyn Fn() + Send + Sync>> {
-            self.llm.stopper()
-        }
-        fn set_progress(&mut self, progress: Box<dyn FnMut(u32, u32) + Send>) {
-            self.llm.set_progress(progress);
-        }
-    }
-    impl Drop for Watched {
-        fn drop(&mut self) {
-            self.done.store(true, std::sync::atomic::Ordering::Relaxed);
-            crate::platform::keep_awake(false);
-        }
-    }
-    fn log_stats(when: &str) {
-        let s = crate::platform::device_stats();
-        log::info!(
-            "llm device {when} thermal={:?} memory_mb={:.0} battery={:?}",
-            s.thermal,
-            s.memory_mb.unwrap_or(0.0),
-            s.battery
-        );
-    }
-    Arc::new(move |bytes| {
-        log_stats("before");
-        let llm = open(bytes)?;
-        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let watching = done.clone();
-        let _ = std::thread::Builder::new()
-            .name("ghi-llm-watch".into())
-            .spawn(move || {
-                let mut ticks = 0u32;
-                while !watching.load(std::sync::atomic::Ordering::Relaxed) {
-                    std::thread::sleep(std::time::Duration::from_secs(1));
-                    ticks += 1;
-                    if ticks.is_multiple_of(30) {
-                        log_stats("running");
-                    }
-                }
-                log_stats("after");
-            });
-        log_stats("loaded");
-        // The run needs the app on screen (no GPU in the background): the
-        // screen does not auto-lock while the model is loaded.
-        crate::platform::keep_awake(true);
-        Ok(Box::new(Watched { llm, done }) as Box<dyn ghi_llm::Llm + Send>)
-    })
-}
-
 /// The job handlers the phone registers on its [`JobRunner`] (16-G calls this
-/// from the mobile core): the final pass, which queues `notes_final` only on a
-/// phone that can write notes (`notes`: 8 GB) once the notes model is
-/// installed, the notes job itself (the engine in process), and, because the
-/// voice step queues `voice_learn` when Me is enrolled, the job that learns
-/// the voice. They wait while their models are missing or the device is below
-/// the live tier; the runner itself never claims while a session exists or the
-/// app is inactive (so the notes model never runs in the background, where
-/// iOS forbids the GPU).
+/// from the mobile core): the final pass without `notes_final` (the phone has
+/// no local notes; D5) and, because the voice step queues `voice_learn` when
+/// Me is enrolled, the job that learns the voice. Both wait while the models
+/// are missing or the device is below the live tier; the runner itself never
+/// claims while a session exists or the app is inactive.
 ///
 /// [`JobRunner`]: ghi_core::jobs::JobRunner
 pub fn job_handlers(
     models: &Path,
     store: &Arc<ghi_store::store::Store>,
     tier_class: crate::cmd::lifecycle::TierClass,
-    notes: bool,
 ) -> Vec<Arc<dyn ghi_core::jobs::JobHandler>> {
-    use ghi_core::final_pass::{FinalPassJob, FinalPassNotesIf};
-    use ghi_core::notes_job::{NOTES_FINAL_JOB, NotesJob, PhoneNotesJob};
+    use ghi_core::final_pass::{FinalPassJob, FinalPassNoNotes};
     use ghi_core::voice_job::VoiceLearnJob;
     use ghi_core::voice_step::VoiceStep;
     let tier_ok = tier_class == crate::cmd::lifecycle::TierClass::Live;
@@ -1219,47 +1145,18 @@ pub fn job_handlers(
     };
     let provider = provider(models);
     let m = models.to_path_buf();
-    let notes_ready: ghi_core::jobs::Ready = {
-        let m = models.to_path_buf();
-        Arc::new(move || notes && ghi_app::core::llm_ready(&m))
-    };
-    let template = ghi_llm::template::builtin("general").expect("the built-in template parses");
     vec![
-        Arc::new(FinalPassNotesIf {
-            notes: notes_ready.clone(),
-            job: FinalPassJob {
-                engines: Arc::new(move || provider()),
-                ready: Arc::new(move || tier_ok && engines_available(&m)),
-                // Shorter than the desktop's 10 minutes: a lower peak on the phone.
-                chunk_s: 300.0,
-                voice: Some(VoiceStep {
-                    embedder: ghi_app::core::voice_factory(models),
-                    ready: voice_ready.clone(),
-                    third_party: Arc::new(third_party.clone()),
-                }),
-            },
-        }),
-        Arc::new(PhoneNotesJob {
-            job: NotesJob {
-                kind: NOTES_FINAL_JOB,
-                version: 2,
-                template,
-                llm: watched(ghi_app::core::llm_factory(models)),
-                ready: notes_ready,
-            },
-            // iOS thermal state: start only below serious (2); a run goes on
-            // through serious and stops only at critical (3).
-            hot: Arc::new(|| {
-                crate::platform::device_stats()
-                    .thermal
-                    .is_some_and(|t| t >= 2)
+        Arc::new(FinalPassNoNotes(FinalPassJob {
+            engines: Arc::new(move || provider()),
+            ready: Arc::new(move || tier_ok && engines_available(&m)),
+            // Shorter than the desktop's 10 minutes: a lower peak on the phone.
+            chunk_s: 300.0,
+            voice: Some(VoiceStep {
+                embedder: ghi_app::core::voice_factory(models),
+                ready: voice_ready.clone(),
+                third_party: Arc::new(third_party.clone()),
             }),
-            too_hot: Arc::new(|| {
-                crate::platform::device_stats()
-                    .thermal
-                    .is_some_and(|t| t >= 3)
-            }),
-        }),
+        })),
         Arc::new(VoiceLearnJob {
             embedder: ghi_app::core::voice_factory(models),
             ready: voice_ready,
