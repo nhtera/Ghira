@@ -40,7 +40,7 @@
           "title": "No notes yet"
         },
         "writing": {
-          "body": "Notes and action items are being written on this phone. Keep {{app}} open; it takes a few minutes.",
+          "body": "Notes and action items are being written on this phone, part by part. If you leave {{app}}, they go on from where they stopped when you come back.",
           "cooling": "Paused while the phone cools down. The notes continue on their own.",
           "title": "Writing notes…",
           "waiting": "The notes will be written once the notes model is downloaded."

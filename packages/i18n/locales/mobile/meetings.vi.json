@@ -40,7 +40,7 @@
           "title": "Chưa có ghi chú"
         },
         "writing": {
-          "body": "Ghi chú và việc cần làm đang được viết trên điện thoại này. Hãy giữ {{app}} mở; việc này mất vài phút.",
+          "body": "Ghi chú và việc cần làm đang được viết trên điện thoại này, từng phần một. Nếu bạn rời {{app}}, việc viết sẽ tiếp tục từ chỗ đã dừng khi bạn quay lại.",
           "cooling": "Tạm dừng để điện thoại nguội bớt. Ghi chú sẽ tự tiếp tục.",
           "title": "Đang viết ghi chú…",
           "waiting": "Ghi chú sẽ được viết khi mô hình ghi chú được tải về."

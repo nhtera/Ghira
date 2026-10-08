@@ -479,7 +479,20 @@ impl NotesJob {
             // transcript to 40 %, writing to 80 % (the expected output: about
             // 900 tokens compact, 1,800 full), then the user's notes.
             let shown = Arc::new(std::sync::atomic::AtomicU32::new(0));
-            {
+            // On a phone (compact) the notes go step by step (~5-minute parts),
+            // each part saved with the job, so a run stopped when the app left
+            // the screen continues from there; their progress is the steps'.
+            let steps = compact;
+            if steps {
+                opts.chunk_minutes = 5;
+            }
+            let saved: Option<notes::Steps> = ctx
+                .job
+                .payload
+                .get("steps")
+                .and_then(|v| serde_json::from_value(v.clone()).ok());
+            let latest = std::sync::Mutex::new(ctx.job.payload.clone());
+            if !steps {
                 let shown = shown.clone();
                 let est_in = (bytes as f64 / 3.0).max(1.0);
                 let est_out = if compact { 900.0 } else { 1_800.0 };
@@ -530,8 +543,32 @@ impl NotesJob {
                 });
                 let _finished = Finished(&finished);
                 (|| -> Result<_, String> {
-                    let run =
-                        notes::generate(llm.as_mut(), &t, &opts).map_err(|e| e.to_string())?;
+                    let run = if steps {
+                        let mut on_step = |st: &notes::Steps| {
+                            let mut payload = ctx.job.payload.clone();
+                            if let Some(obj) = payload.as_object_mut() {
+                                obj.insert(
+                                    "steps".into(),
+                                    serde_json::to_value(st).unwrap_or_default(),
+                                );
+                                // Grows with every part: the runner sees progress, not spinning.
+                                obj.insert("done".into(), st.done.into());
+                            }
+                            let p = 0.05 + 0.75 * st.done as f64 / (st.parts() + 1) as f64;
+                            shown.fetch_max(
+                                (p * 1000.0) as u32,
+                                std::sync::atomic::Ordering::Relaxed,
+                            );
+                            if ctx.checkpoint(p, &payload).is_ok() {
+                                ctx.made_progress();
+                            }
+                            *latest.lock().unwrap_or_else(|e| e.into_inner()) = payload;
+                        };
+                        notes::generate_steps(llm.as_mut(), &t, &opts, saved, &mut on_step)
+                    } else {
+                        notes::generate(llm.as_mut(), &t, &opts)
+                    }
+                    .map_err(|e| e.to_string())?;
                     // The final notes also expand the user's own lines; a failure
                     // there leaves them as typed (the notes still count).
                     let extra = if self.version >= 2 {
@@ -547,8 +584,10 @@ impl NotesJob {
             let (run, extra) = match written {
                 Ok(w) => w,
                 // Stopped (or failed) while asked to stop: try again later.
+                // (With the parts written so far: the next run goes on from there.)
                 Err(_) if stop.is_some() && stop_requested() => {
-                    return Ok(Outcome::Yield(ctx.job.payload.clone()));
+                    let payload = latest.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    return Ok(Outcome::Yield(payload));
                 }
                 Err(e) => return Err(e),
             };

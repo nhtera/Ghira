@@ -194,6 +194,89 @@ pub fn generate(llm: &mut dyn Llm, t: &Transcript, opts: &Options) -> Result<Run
     map_reduce(llm, t, &aliases, opts, budget, diag)
 }
 
+/// Where a step-by-step notes run is (map-reduce with the parts' facts kept):
+/// saved after every part, so a run stopped on a phone (the app left the
+/// screen) continues from the next part instead of starting over.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Steps {
+    /// Which transcript these steps belong to (lines and last line id): a
+    /// changed transcript starts over.
+    fingerprint: (usize, u64),
+    /// The parts (segment indices), as cut (and split when a reply ran long).
+    parts: Vec<Vec<usize>>,
+    /// Parts done.
+    pub done: usize,
+    facts: Vec<Fact>,
+}
+
+impl Steps {
+    /// Parts in all (the reduce step comes after them).
+    pub fn parts(&self) -> usize {
+        self.parts.len()
+    }
+}
+
+fn fingerprint(t: &Transcript) -> (usize, u64) {
+    (t.segments().len(), t.segments().last().map_or(0, |s| s.id))
+}
+
+/// Notes step by step: a transcript that spans more than
+/// `opts.chunk_minutes` (plus a minute) is written as map steps of about that
+/// long and a reduce step, whatever the context, and `saved` steps of the same
+/// transcript are skipped; `on_step` gets the state after every part (the
+/// caller saves it). A shorter transcript is one call, as in [`generate`].
+pub fn generate_steps(
+    llm: &mut dyn Llm,
+    t: &Transcript,
+    opts: &Options,
+    saved: Option<Steps>,
+    on_step: &mut dyn FnMut(&Steps),
+) -> Result<Run> {
+    if t.is_empty() {
+        return Err(LlmError::Invalid("the transcript is empty".into()));
+    }
+    let segs = t.segments();
+    let span_ms = segs.last().map_or(0, |s| s.t1_ms) - segs.first().map_or(0, |s| s.t0_ms);
+    let step_ms = i64::from(opts.chunk_minutes.max(1)) * 60_000 + 60_000;
+    if !t.has_times() || span_ms <= step_ms {
+        return generate(llm, t, opts);
+    }
+    let aliases = Aliases::new(t);
+    let mut diag = Diagnostics::default();
+    let budget = transcript_budget(llm, opts.max_output_tokens)
+        .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
+        .max(512);
+    let mut st = match saved {
+        Some(s) if s.fingerprint == fingerprint(t) && s.done <= s.parts.len() => s,
+        _ => Steps {
+            fingerprint: fingerprint(t),
+            parts: chunk(t, &aliases, budget, opts.chunk_minutes),
+            done: 0,
+            facts: Vec::new(),
+        },
+    };
+    while st.done < st.parts.len() {
+        let i = st.done;
+        let of = st.parts.len();
+        match map_part(llm, t, &aliases, opts, &st.parts[i], i + 1, of, &mut diag)? {
+            Some(f) => {
+                st.facts.extend(f);
+                st.done += 1;
+                on_step(&st);
+            }
+            // Too much to say for one reply: split the part (once it can be split).
+            None if st.parts[i].len() > 1 => {
+                let half = st.parts[i].len() / 2;
+                let second = st.parts[i].split_off(half);
+                st.parts.insert(i + 1, second);
+            }
+            None => return Err(LlmError::InvalidOutput("output hit the token limit".into())),
+        }
+    }
+    let n = st.parts.len();
+    reduce(llm, t, &aliases, opts, budget, st.facts, n, diag)
+}
+
 /// Tokens of transcript one call can take.
 fn transcript_budget(llm: &dyn Llm, max_output: u32) -> u32 {
     llm.context_tokens()
@@ -520,7 +603,7 @@ fn parse_notes(v: &Value, ctx: &Ctx, d: &mut Diagnostics) -> std::result::Result
 }
 
 /// One extracted fact of the map step (speakers still aliased).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Fact {
     kind: String,
     text: String,
@@ -584,7 +667,21 @@ fn map_reduce(
         }
     }
     let n = parts.len();
+    reduce(llm, t, aliases, opts, budget, facts, n, diag)
+}
 
+/// The reduce step over the map steps' facts (`n` parts).
+#[allow(clippy::too_many_arguments)]
+fn reduce(
+    llm: &mut dyn Llm,
+    t: &Transcript,
+    aliases: &Aliases,
+    opts: &Options,
+    budget: u32,
+    mut facts: Vec<Fact>,
+    n: usize,
+    mut diag: Diagnostics,
+) -> Result<Run> {
     // Reduce: the facts, in transcript order, with the lines they cite. If
     // they don't fit, minor points go first, then quotes, then the tail.
     for minor in ["point", "quote"] {
@@ -970,6 +1067,84 @@ pub(crate) mod tests {
         // Map calls only allow their own part's ids.
         let map1 = llm.requests[0].schema.as_ref().unwrap().to_string();
         assert!(map1.contains("\"enum\":[0,1,") && !map1.contains(",21,"));
+    }
+
+    /// Stopped after two of four parts, the saved steps resume at the third:
+    /// the first two parts are not read again, their facts reach the reduce.
+    #[test]
+    fn step_notes_resume_after_the_last_saved_part() {
+        struct Stops(Scripted, usize);
+        impl Llm for Stops {
+            fn engine(&self) -> EngineInfo {
+                self.0.engine()
+            }
+            fn context_tokens(&self) -> u32 {
+                self.0.context_tokens()
+            }
+            fn complete(&mut self, req: &Request) -> Result<Completion> {
+                if self.0.requests.len() == self.1 {
+                    return Err(LlmError::Worker("stopped".into()));
+                }
+                self.0.complete(req)
+            }
+        }
+        let mut segs = Vec::new();
+        for i in 0..40u64 {
+            let sp = if i % 2 == 0 { "S1" } else { "S2" };
+            segs.push(seg(
+                i,
+                i as f64 * 30.0,
+                i as f64 * 30.0 + 25.0,
+                sp,
+                "word word",
+                "en",
+            ));
+        }
+        let t = Transcript::new(segs).unwrap();
+        let fact = |text: &str, cite: u64| {
+            format!(
+                r#"{{"facts":[{{"kind":"decision","text":"{text}","speaker":"SPK1","owner":null,"due":null,"cite":[{cite}]}}]}}"#
+            )
+        };
+        let mut opts = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        opts.chunk_minutes = 5;
+        // 20 min at 5-minute parts: 4 map steps, stopped after 2.
+        let (f1, f2, f3, f4) = (
+            fact("One", 0),
+            fact("Two", 11),
+            fact("Three", 21),
+            fact("Four", 31),
+        );
+        let mut first = Stops(Scripted::new(&[&f1, &f2]), 2);
+        let mut saved = None;
+        let r = generate_steps(&mut first, &t, &opts, None, &mut |s| {
+            saved = Some(s.clone())
+        });
+        assert!(r.is_err());
+        let saved = saved.expect("saved after each part");
+        assert_eq!((saved.done, saved.parts()), (2, 4));
+        // Resumed: parts 3 and 4, then the reduce with all four parts' facts.
+        let reduce = reply(r#"{"decisions":[{"text":"One","cite":[0]}]}"#);
+        let mut second = Scripted::new(&[&f3, &f4, &reduce]);
+        let mut steps = Vec::new();
+        let run = generate_steps(&mut second, &t, &opts, Some(saved), &mut |s| {
+            steps.push(s.done)
+        })
+        .unwrap();
+        assert_eq!(steps, [3, 4]);
+        assert_eq!(second.requests.len(), 3, "parts 1-2 not read again");
+        let prompt = &second.requests[2].messages[1].content;
+        for f in ["One", "Two", "Three", "Four"] {
+            assert!(prompt.contains(f), "{f} reaches the reduce");
+        }
+        assert_eq!(run.strategy, Strategy::MapReduce { parts: 4 });
+        // Another transcript does not take these steps.
+        let mut other = Scripted::new(&[&reply(r#"{"tldr":[{"text":"a","cite":[0]}]}"#)]);
+        let short = meeting();
+        generate_steps(&mut other, &short, &opts, None, &mut |_| {
+            panic!("a short meeting is one call")
+        })
+        .unwrap();
     }
 
     #[test]
