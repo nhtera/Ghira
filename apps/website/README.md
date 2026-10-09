@@ -204,6 +204,37 @@ in production.
    the landing privacy suite once against production:
    `BASE_URL=https://ghira.app npm run test:browser -- --test-name-pattern=privacy`.
 
+### Cutover log
+
+2026-10-09, done with the owner's go-ahead (no secret values here):
+
+- First deploys from a Mac with the pinned `cf` (OAuth login, not a stored
+  token): version `cdbc1fa2` on `ghira-website.tienn.workers.dev`, smoke
+  passed; then `cd8de996` (same build) to check that the hand-attached domain
+  survives a deploy: it does.
+- Zone `ghira.app` (Free plan): Email Address Obfuscation **off** (was on),
+  Web Analytics RUM auto-install **off** (was on), Always Use HTTPS **on**
+  (was off), minimum TLS **1.2** (was 1.0). Already off: Rocket Loader, Bot
+  Fight Mode, JavaScript detections, managed robots.txt, AI-crawler blocking.
+- Deleted the 4 Porkbun parking records (apex A 207.207.210.107 and
+  207.207.210.229, `www` and `*` CNAME pixie.porkbun.com, all proxied).
+- Apex Custom Domain `ghira.app` → `ghira-website` (certificate: Let's
+  Encrypt, issued automatically).
+- `www`: proxied `A www 192.0.2.0` and the Single Redirect rule
+  (`http.host eq "www.ghira.app"`, 301, keeps path and query).
+- Checks on https://ghira.app: `deploy/smoke.sh https://ghira.app 1` passes
+  except the `security@ghira.app` mail address (Email Routing not set up
+  yet); browser suites against production (`BASE_URL=https://ghira.app`):
+  privacy (same-origin only, no cookies), CSP (6 pages, search), docs (17)
+  all pass; `http://` and `www` redirect with 301.
+- Rollback tried: `cd8de996` → `cdbc1fa2` → `cd8de996`, the site answered
+  200 throughout.
+- GitHub environment `site` created (required reviewer, branch `main`).
+  Still to do by the owner: the account API token and the
+  `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets, then
+  `SITE_DEPLOY=1`; branch protection requiring `site-gate`; Email Routing
+  (step 5), then `SITE_LIVE=1`.
+
 ## Rollback
 
 With a Cloudflare login (`npx cf auth login`) or `CLOUDFLARE_API_TOKEN` and
