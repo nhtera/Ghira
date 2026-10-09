@@ -47,6 +47,28 @@ redact. Audio is never sent, and neither are the notes you type yourself. Each
 request is recorded on your device (provider, model and token counts, not the
 text), and the meeting is marked as having used cloud AI.
 
+A cloud request carries the transcript text and nothing built from your own
+settings or habits: it leaves out the moments you marked, your glossary
+spellings, and the titles and instructions of your own note templates. If a
+meeting uses one of your templates, a cloud rewrite uses the built-in General
+template instead and the preview says so.
+
+## Marks, glossaries, templates and saved answers
+
+These features add no network traffic and no new data that leaves your device.
+
+- **Marks** (the moments you mark while recording) and the stars and lists
+  Ghira builds from them are worked out on your device each time and stored
+  only as part of the meeting, encrypted with it.
+- **Glossary packs** are bundled with the app. Which packs are on syncs between
+  your own paired devices like other settings; the terms never go anywhere.
+- **Your note templates** stay on the computer where you made them (they do not
+  sync) and are only used by the model on that computer.
+- **Saved Ask answers** are note blocks in the meeting, encrypted like the rest
+  of it. Before you save one, the answer waits in memory only. It is cleared
+  when the app locks, when its meeting is deleted, when you delete all data, and
+  after 30 minutes.
+
 ## Voice profiles
 
 Recognizing a speaker by voice uses a voiceprint, which is biometric data. Ghira

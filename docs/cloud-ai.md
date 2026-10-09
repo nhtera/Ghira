@@ -6,6 +6,7 @@ Ghira writes notes and answers questions on your Mac. Cloud AI is an optional ex
 
 - Only transcript text is sent. Audio never leaves your Mac.
 - The notes you typed yourself are not sent.
+- Your marks, your glossary spellings and the titles and instructions of your own templates are not sent. If a meeting uses one of your templates, Ghira sends the built-in General template instead and says so. See [Marks](marks.md), [Glossaries](glossaries.md) and [Templates](templates.md).
 - Before anything is sent, Ghira shows the exact text, the address it goes to, a checksum and an estimated cost. Ghira sends those bytes and nothing else.
 - A meeting marked **Sensitive**, or one you mark **Never send to cloud**, cannot be sent.
 - **Strict offline** blocks cloud requests together with every other network use.

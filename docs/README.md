@@ -23,6 +23,11 @@ docs/release/ is never published. -->
 | [Recording](recording.md) | Call or Room, meeting detection, echo cancellation, consent message, pause, marks, sensitive meetings |
 | [Speakers and voices](speakers.md) | Naming and fixing speakers, People, your own voice profile |
 | [Notes](notes.md) | How notes are written: sections, templates, your notes kept, regenerate, language, the local model |
+| [Marks](marks.md) | Mark moments while recording, how they steer the notes, and which notes cover them |
+| [Proposed and decided](decided-and-proposed.md) | Decisions the meeting settled versus ones only suggested, and how to change them |
+| [Map](map.md) | The notes as a mind map: read it, play from it, copy it as an outline |
+| [Glossaries](glossaries.md) | Ready-made term lists for medicine, law, finance and tech |
+| [Templates](templates.md) | Make your own note templates, and what happens when you edit or delete one |
 | [Search and Ask](search.md) | Accent-insensitive search and Ask, in one meeting or across all |
 | [Import](import.md) | Import audio and video files, Voice Memos, Zoom participant tracks, Plaud, iPhone share sheet |
 | [Export](export.md) | Export to Markdown, Word, text, subtitles and Obsidian, and draft a follow-up email |

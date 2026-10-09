@@ -186,6 +186,23 @@ per-profile keys, crypto-shred), speaker embeddings in `ghi-speech` feature
 Third-party voice profiles are hard-off (`THIRD_PARTY_APPROVED` in `system.rs`,
 store `ThirdPartyApproved` token) until counsel signs off.
 
+Review studio (marks, proposals, answers, packs, templates, map): `ghi-core::marks` is the single
+source of truth for mark → line (the last line starting at or before it, within 10 s; `MarkView.segment`, `MarkedMoment`
+via `ghi-app` `detail.rs`); coverage is by time overlap of AI sentences and actions only (`covers_marks`: not topics,
+not your notes) and is computed on read; marks steer the LOCAL notes prompt only and never go to cloud. Decisions are
+`decision` or `proposal` blocks (user toggle: `set_decision_status`, kind change → `ai_edited`); `ghi-core::source_check`
+scores a claim's cited lines per claim language. Saved Ask answers are pinned `answer` blocks written by
+`cloud_cmd::save_answer(meeting, answer_id)` from a core-side cache (`AnswerCache`: last 10/meeting, 50 total, 30 min,
+cleared on lock/delete; never `put` on the phone: `CoreHooks::no_saved_answers`). Glossary packs are bundled in
+`ghi-core/glossaries`, the setting `vocabulary.packs` syncs, and they are note spellings only: never rewrite the
+transcript. User templates (`ghi-core::user_templates`, `ghi-app` `templates_cmd`, setting `templates.user`, desktop-local,
+NOT in `SYNCED_KEYS`, ≤ 20, `Records` keeps entries it cannot read) are `user:<gid>`; a cloud notes request with one
+sends General and sets `CloudPreview.template_fallback` (`cloud_notes_template`); `user_templates::sections_for` lists
+the template's sections plus any `section:<id>` the blocks hold, for the notes tab, exports and phone. Mind map:
+`apps/desktop/src/features/mindmap` (`tidyLayout`, `MindMap`, `MindMapTab`); `talkShare` and `notesToTree` live in
+`packages/ui/src/lib` (pure: `layering.test.ts` forbids React and app imports there) and the phone uses them for its
+talk share bar and Outline list.
+
 iOS app (phase 7 spike, phase 16 app; Simulator-verified, device runs are owner items):
 `crates/ghi-app` is the shared core of both apps; `apps/mobile` (Tauri 2, iOS only)
 mounts it with the phone's own `src-tauri/src/cmd/*` (record, meetings, onboarding,

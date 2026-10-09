@@ -30,7 +30,7 @@ Anything you wrote, edited, pinned or ticked off stays through both steps. If th
 
 ## Templates
 
-A template decides which sections the notes have. Ghira has seven:
+A template decides which sections the notes have. Ghira has seven built in, and you can make your own (see [Templates](templates.md)):
 
 | Template | Extra sections |
 |---|---|
