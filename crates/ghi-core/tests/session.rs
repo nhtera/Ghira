@@ -728,8 +728,10 @@ fn waiting_for_a_job_to_yield_does_not_lose_live_audio() {
         Some(Arc::new(SlowIdle(Duration::from_millis(4500)))),
     )
     .unwrap();
+    // A pump that waited instead of draining would show ~0 ms here; the
+    // 4.5 s wait gives ~4.4 s, and a loaded CI simulator measured 3.9 s.
     assert!(
-        s.now_ms() >= 4_000,
+        s.now_ms() >= 3_000,
         "the timeline ran during the wait: {} ms",
         s.now_ms()
     );
