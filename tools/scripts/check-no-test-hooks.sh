@@ -9,7 +9,9 @@
 #   artifact: a static library (libghi_mobile_lib.a, libapp.a), a binary, or an
 #             .app bundle (every file inside is scanned).
 #   --expect-hooks: inverted, for a build made WITH the hooks; fails when a
-#             marker is missing, which proves the check still detects them (CI).
+#             marker is in none of the artifacts, which proves the check still
+#             detects them (CI). Swift-only markers live in the app, not in
+#             the Rust library, so the artifacts are checked together.
 set -euo pipefail
 
 markers=("GHI_FAKE_MIC" "GHI_FAKE_ENGINES" "GHI_FAKE_CALENDAR" "GHI_FAKE_MIC_TAP" "GHI_IGNORE_THERMAL" "com.nhtera.ghira.test.")
@@ -18,6 +20,7 @@ if [[ "${1:-}" == --expect-hooks ]]; then expect=1; shift; fi
 [[ $# -gt 0 ]] || { echo "usage: $0 [--expect-hooks] <artifact>..." >&2; exit 2; }
 
 status=0
+seen=" "
 for artifact in "$@"; do
   if [[ ! -e "$artifact" ]]; then
     echo "error: $artifact not found (build it first)" >&2
@@ -44,12 +47,19 @@ for artifact in "$@"; do
     if [[ $expect == 0 && $found == 1 ]]; then
       echo "error: $artifact contains the test hook marker '$marker'" >&2
       status=1
-    elif [[ $expect == 1 && $found == 0 ]]; then
-      echo "error: $artifact has no '$marker' but was built with the hooks: the check is blind" >&2
-      status=1
+    elif [[ $found == 1 ]]; then
+      seen="$seen$marker "
     fi
   done
 done
+if [[ $expect == 1 ]]; then
+  for marker in "${markers[@]}"; do
+    if [[ "$seen" != *" $marker "* ]]; then
+      echo "error: no '$marker' in $* but they were built with the hooks: the check is blind" >&2
+      status=1
+    fi
+  done
+fi
 if [[ $status -eq 0 ]]; then
   [[ $expect == 1 ]] && echo "test hooks detected as expected: ok ($#)" || echo "no test hooks: ok ($#)"
 fi
