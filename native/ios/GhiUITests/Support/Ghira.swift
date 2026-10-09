@@ -79,7 +79,13 @@ enum Ghira {
         let toggle = app.switches["Require Face ID"]
         if toggle.value as? String != "1" {
             toggle.tap()
-            faceID(match: true)
+            // The prompt can come up after the first match on a slow machine
+            // (the switch stays off): keep matching until it takes.
+            for _ in 0..<8 where toggle.value as? String != "1" {
+                faceID(match: true)
+                _ = waitUntil(1.5) { toggle.value as? String == "1" }
+            }
+            XCTAssertEqual(toggle.value as? String, "1", "Face ID not turned on\n" + app.debugDescription)
         }
         let immediately = app.buttons["Only when reopened Selected"]
         // The choices show once the Face ID save is done (slow on a CI machine).
