@@ -508,6 +508,15 @@ impl Core {
         !self.hooks.no_saved_answers
     }
 
+    /// Meetings may have been deleted by a sync from another device: their Ask
+    /// answers go from memory too.
+    pub fn prune_answers_of_missing_meetings(&self) {
+        if let Ok(store) = self.store_even_locked() {
+            self.answers
+                .prune_missing(&|m| store.get_meeting(m).is_ok());
+        }
+    }
+
     /// A meeting was deleted: its Ask answers go from memory too.
     pub fn forget_meeting_answers(&self, meeting: &str) {
         self.answers.forget_meeting(meeting);

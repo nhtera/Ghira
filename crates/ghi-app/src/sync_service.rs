@@ -261,6 +261,8 @@ enum Seen {
     Settings,
     /// A phone offered a lease: its job may start now.
     Lease,
+    /// A sync deleted something here (a meeting deleted on another device).
+    Deleted,
 }
 
 /// How many times one lease's job is started: the first, plus restarts after
@@ -290,7 +292,6 @@ impl SyncStore for Watched {
         fn changes_since(&self, seq: i64, max: usize) -> StoreResult<ChangeBatch>;
         fn tombs_since(&self, seq: i64, max: usize) -> StoreResult<TombBatch>;
         fn relog_meeting(&self, meeting_gid: &str) -> StoreResult<()>;
-        fn apply_tombs(&self, from_device: &str, tombs: &[SyncTombstone]) -> StoreResult<TombResult>;
         fn mark_clean(&self, gid: &str, lamport: i64) -> StoreResult<()>;
         fn retry_pending(&self) -> StoreResult<usize>;
         fn observe_lamport(&self, remote: i64) -> StoreResult<()>;
@@ -356,6 +357,14 @@ impl SyncStore for Watched {
             (self.seen)(Seen::Lease);
         }
         Ok(opened)
+    }
+
+    fn apply_tombs(&self, from_device: &str, tombs: &[SyncTombstone]) -> StoreResult<TombResult> {
+        let res = SyncStore::apply_tombs(self.store.as_ref(), from_device, tombs)?;
+        if !res.applied.is_empty() {
+            (self.seen)(Seen::Deleted);
+        }
+        Ok(res)
     }
 
     fn apply_rows(&self, from_device: &str, rows: &[Record]) -> StoreResult<ApplyResult> {
@@ -1190,6 +1199,8 @@ impl SyncService {
                 (self.cfg.settings_changed)();
             }
             Seen::Lease => self.start_lease_jobs(),
+            // Answers waiting to be saved, of a meeting that is gone now.
+            Seen::Deleted => self.core.prune_answers_of_missing_meetings(),
         }
     }
 

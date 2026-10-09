@@ -304,7 +304,7 @@ impl AnswerCache {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn put(&self, d: AnswerDraft) -> String {
+    pub(crate) fn put(&self, d: AnswerDraft) -> String {
         let mut b = [0u8; 16];
         OsRng.fill_bytes(&mut b);
         let id: String = b.iter().map(|x| format!("{x:02x}")).collect();
@@ -348,6 +348,18 @@ impl AnswerCache {
     /// Forgets a meeting's answers (it was deleted).
     pub fn forget_meeting(&self, meeting: &str) {
         self.lock().retain(|(_, d, _)| d.meeting != meeting);
+    }
+
+    /// Forgets the answers of every meeting `exists` says is gone (deleted on
+    /// another device and synced here).
+    pub fn prune_missing(&self, exists: &dyn Fn(&str) -> bool) {
+        self.lock().retain(|(_, d, _)| exists(&d.meeting));
+    }
+
+    /// Whether any answer of `meeting` is waiting.
+    #[cfg(test)]
+    pub(crate) fn has_meeting(&self, meeting: &str) -> bool {
+        self.lock().iter().any(|(_, d, _)| d.meeting == meeting)
     }
 }
 

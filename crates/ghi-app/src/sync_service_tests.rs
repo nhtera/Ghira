@@ -1012,6 +1012,42 @@ fn a_leased_job_dropped_by_the_fence_runs_again_when_the_lease_is_renewed() {
 }
 
 #[test]
+fn a_meeting_deleted_on_the_phone_takes_its_waiting_ask_answers_off_the_hub_too() {
+    use crate::cloud_cmd::AnswerDraft;
+    let (hub, phone) = (hub(), spoke());
+    pair(&hub, &phone);
+    let make = |title: &str| {
+        let m = phone
+            .store
+            .create_meeting(NewMeeting {
+                title: title.into(),
+                ..Default::default()
+            })
+            .unwrap();
+        phone.store.finish_meeting(&m.gid, 1_000).unwrap();
+        m.gid
+    };
+    let (gone, kept) = (make("to delete"), make("to keep"));
+    sync(&hub, &phone);
+    sync(&hub, &phone);
+    let draft = |m: &str| AnswerDraft {
+        meeting: m.into(),
+        question: "q?".into(),
+        text: "a".into(),
+        anchors: Vec::new(),
+    };
+    let cache = hub.core.answers();
+    let (id_gone, id_kept) = (cache.put(draft(&gone)), cache.put(draft(&kept)));
+    assert!(cache.has_meeting(&gone) && cache.has_meeting(&kept));
+    phone.store.delete_meeting(&gone).unwrap();
+    sync(&hub, &phone);
+    sync(&hub, &phone);
+    assert!(hub.store().get_meeting(&gone).is_err(), "deleted on the hub by the sync");
+    assert!(!cache.has_meeting(&gone), "its waiting answers went with it ({id_gone})");
+    assert!(cache.has_meeting(&kept), "the other meeting's answer stays ({id_kept})");
+}
+
+#[test]
 fn a_local_delete_is_pending_until_the_phone_has_it_then_progress_says_zero() {
     let (hub, phone) = (hub(), spoke());
     pair(&hub, &phone);
