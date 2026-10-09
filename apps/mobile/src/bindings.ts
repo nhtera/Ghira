@@ -608,6 +608,11 @@ export type CloudPreview = {
 	excerptBefore: string | null,
 	/**  The same text as sent (placeholders for what is hidden). */
 	excerptAfter: string | null,
+	/**
+	 *  The notes use the built-in General template because the one asked for
+	 *  is one of yours: its instructions never leave this device.
+	 */
+	templateFallback: boolean,
 };
 
 export type CloudPreviewResult = {

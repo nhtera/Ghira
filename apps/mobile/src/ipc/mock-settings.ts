@@ -385,6 +385,7 @@ const scripted: Partial<Commands> = {
       redactions: ask.redact ? [{ kind: "PERSON", count: 2 }] : [],
       excerptBefore: RAW_TEXT,
       excerptAfter: ask.redact ? REDACTED_TEXT : RAW_TEXT,
+      templateFallback: false,
     });
   },
   cloudSend: async (id) => {

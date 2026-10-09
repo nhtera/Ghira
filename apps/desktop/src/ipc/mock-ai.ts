@@ -249,6 +249,8 @@ export function aiCommands(host: AiHost): AiCommands {
         retentionNote: "The provider may keep requests for up to 30 days for abuse monitoring.",
         warnings: [],
         redactions: names.length ? [{ kind: "person", count: names.length }] : [],
+        // Notes with one of your own templates go as General (its instructions stay here).
+        templateFallback: ask.task.kind === "notes" && (ask.task.template ?? row(meeting)?.template ?? "").startsWith("user:"),
         ...excerpt(raw, text),
       };
       return ok({ kind: "preview", ...preview });

@@ -5,7 +5,7 @@ import type {
   MeetingNotes,
   NoteBlockView,
 } from "../../bindings";
-import { hasMine, layoutNotes } from "./notes-model";
+import { hasMine, humanizeSectionId, layoutNotes, sectionsWithFallback } from "./notes-model";
 
 const b = (
   gid: string,
@@ -81,5 +81,34 @@ describe("layoutNotes", () => {
         actionItems: [a("x", "ai")],
       }),
     ).toBe(false);
+  });
+});
+
+describe("sections never disappear", () => {
+  const withBlocks = (sections: MeetingNotes["sections"], kinds: string[]): MeetingNotes => ({
+    sections,
+    blocks: kinds.map((k, i) => b(`b${i}`, k, "ai")),
+    actionItems: [],
+    marks: [],
+  });
+
+  it("a template that no longer lists a section still shows its blocks, titled from the id", () => {
+    const l = layoutNotes(withBlocks([{ id: "risks", titleEn: "Risks", titleVi: "Rủi ro" }], ["section:risks", "section:went_well", "section:went_well"]), false);
+    expect(l.sections.map((s) => [s.section.id, s.section.titleEn, s.blocks.length])).toEqual([
+      ["risks", "Risks", 1],
+      ["went_well", "Went well", 2],
+    ]);
+  });
+
+  it("a deleted template (no sections at all) keeps every section of the notes", () => {
+    const l = layoutNotes(withBlocks([], ["tldr", "section:a_b", "section:c"]), false);
+    expect(l.sections.map((s) => s.section.id)).toEqual(["a_b", "c"]);
+    expect(l.sections[0]!.section.titleVi).toBe("A b");
+  });
+
+  it("listed sections come first in the template's order, and the humanizer is plain", () => {
+    expect(sectionsWithFallback(withBlocks([{ id: "x", titleEn: "X", titleVi: "X" }], ["section:y", "section:x"])).map((s) => s.id)).toEqual(["x", "y"]);
+    expect(humanizeSectionId("quyet_dinh")).toBe("Quyet dinh");
+    expect(humanizeSectionId("")).toBe("");
   });
 });

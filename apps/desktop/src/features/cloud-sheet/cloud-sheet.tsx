@@ -368,6 +368,12 @@ function CloudSheetBody({
                 )}
                 {preview && (
                   <>
+                    {preview.templateFallback && (
+                      <p data-testid="template-fallback" className="text-small m-0 flex items-start gap-1.5 text-muted">
+                        <Icon name="info" size={16} className="shrink-0" />
+                        {t("cloud.templateFallback", { context: platform })}
+                      </p>
+                    )}
                     {preview.warnings.length > 0 && (
                       <ul
                         aria-label={t("cloud.sheet.warnings")}

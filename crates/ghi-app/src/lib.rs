@@ -23,6 +23,7 @@ pub mod store_problem;
 pub mod sync_cmd;
 pub mod sync_service;
 pub mod system;
+pub mod templates_cmd;
 pub mod voice_cmd;
 
 use std::sync::Arc;

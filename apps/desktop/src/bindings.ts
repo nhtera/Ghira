@@ -207,8 +207,13 @@ export const commands = {
 	/**  Sets (or clears) who owns an action item: one of the meeting's speakers. */
 	setActionOwner: (meeting: string, item: string, owner: string | null) => typedError<null, string>(__TAURI_INVOKE("set_action_owner", { meeting, item, owner })),
 	deleteActionItem: (meeting: string, item: string) => typedError<null, string>(__TAURI_INVOKE("delete_action_item", { meeting, item })),
-	/**  The built-in notes templates, in menu order. */
-	listTemplates: () => __TAURI_INVOKE<TemplateInfo[]>("list_templates"),
+	listTemplates: () => typedError<TemplateInfo[], string>(__TAURI_INVOKE("list_templates")),
+	/**  Your templates. */
+	userTemplates: () => typedError<UserTemplateView[], string>(__TAURI_INVOKE("user_templates")),
+	createTemplate: (form: TemplateForm) => typedError<UserTemplateView, string>(__TAURI_INVOKE("create_template", { form })),
+	updateTemplate: (id: string, form: TemplateForm) => typedError<UserTemplateView, string>(__TAURI_INVOKE("update_template", { id, form })),
+	deleteTemplate: (id: string) => typedError<null, string>(__TAURI_INVOKE("delete_template", { id })),
+	duplicateTemplate: (id: string, language: string) => typedError<UserTemplateView, string>(__TAURI_INVOKE("duplicate_template", { id, language })),
 	/**
 	 *  Rewrites the AI notes (template and language as chosen); what the user
 	 *  wrote, edited, pinned or ticked off stays [RT-7]. Returns whether it waits
@@ -893,6 +898,11 @@ export type CloudPreview = {
 	excerptBefore: string | null,
 	/**  The same text as sent (placeholders for what is hidden). */
 	excerptAfter: string | null,
+	/**
+	 *  The notes use the built-in General template because the one asked for
+	 *  is one of yours: its instructions never leave this device.
+	 */
+	templateFallback: boolean,
 };
 
 export type CloudPreviewResult = {
@@ -1154,6 +1164,13 @@ export type FolderRow = {
 	name: string,
 	/**  Meetings in it. */
 	meetings: number,
+};
+
+export type FormSection = {
+	/**  Set for a section the template already has (kept for good); none for a new one. */
+	id: string | null,
+	title: string,
+	instruction: string,
 };
 
 export type IcsInfo = {
@@ -1919,6 +1936,16 @@ export type TagRow = {
 	meetings: number,
 };
 
+/**  What the editor shows and sends. */
+export type TemplateForm = {
+	name: string,
+	/**  The language the text is written in: `en` or `vi`. */
+	language: string,
+	/**  A line on what the meetings are, for the model (optional). */
+	guidance: string,
+	sections: FormSection[],
+};
+
 export type TemplateInfo = {
 	id: string,
 	name: string,
@@ -1972,6 +1999,12 @@ export type UpdateStatus = {
 	/**  Too old to update in place: download the new version. */
 	reinstallNeeded: boolean,
 	error: string | null,
+};
+
+export type UserTemplateView = {
+	/**  `user:<gid>`. */
+	id: string,
+	form: TemplateForm,
 };
 
 export type Vocabulary = {

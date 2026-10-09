@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-user-templates"
+description = "Enables the user_templates command without any pre-configured scope."
+commands.allow = ["user_templates"]
+
+[[permission]]
+identifier = "deny-user-templates"
+description = "Denies the user_templates command without any pre-configured scope."
+commands.deny = ["user_templates"]

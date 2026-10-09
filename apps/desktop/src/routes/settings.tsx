@@ -12,8 +12,9 @@ import { PrivacySection } from "../features/settings/privacy-section";
 import { RecordingSection } from "../features/settings/recording-section";
 import { ShortcutsSection } from "../features/settings/shortcuts-section";
 import { SyncSection } from "../features/settings/sync-section";
+import { TemplatesSection } from "../features/settings/templates-section";
 
-export const SETTINGS_SECTIONS = ["general", "languages", "recording", "ai", "models", "privacy", "sync", "shortcuts", "about"] as const;
+export const SETTINGS_SECTIONS = ["general", "languages", "recording", "ai", "templates", "models", "privacy", "sync", "shortcuts", "about"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 const ICONS: Record<SettingsSection, IconName> = {
@@ -21,6 +22,7 @@ const ICONS: Record<SettingsSection, IconName> = {
   languages: "translate",
   recording: "mic",
   ai: "auto_awesome",
+  templates: "description",
   models: "download",
   privacy: "lock",
   sync: "sync",
@@ -56,6 +58,7 @@ export function SettingsScreen() {
           {section === "languages" && <LanguagesSection />}
           {section === "recording" && <RecordingSection />}
           {section === "ai" && <AiSection />}
+          {section === "templates" && <TemplatesSection />}
           {section === "models" && <ModelsSection />}
           {section === "privacy" && <PrivacySection />}
           {section === "sync" && <SyncSection />}

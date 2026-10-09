@@ -14,6 +14,7 @@ import type {
   MeetingSpeaker,
   NoteBlockView,
   SegmentView,
+  TemplateSection,
 } from "../../bindings";
 
 /** user / AI / AI-edited; an AI expansion with no text is "not found". */
@@ -50,19 +51,65 @@ export const SECTION_ORDER: SectionKey[] = [
 
 export function sectionOf(kind: string): SectionKey {
   if (kind.startsWith("enhanced:") || kind === "action") return "note";
+  // A template's own section is grouped by its id (see `groupBlocks`), not as "More".
   return (SECTION_ORDER as string[]).includes(kind)
     ? (kind as SectionKey)
     : "other";
 }
 
-/** Blocks grouped by section in reading order; empty sections are left out. */
+export type BlockGroup = {
+  /** A fixed section, or `section:<id>` for one of the meeting template's own. */
+  key: string;
+  /** The heading of a template's section (the fixed ones are named by locale key). */
+  title?: string;
+  blocks: NoteBlockView[];
+};
+
+/** An id as words (`went_well` → "Went well"): the title of a section whose template this device does not have. */
+export const humanizeSectionId = (id: string) => {
+  const words = id.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+/**
+ * Blocks grouped by section in reading order; empty sections are left out.
+ * The template's own sections (`section:<id>`) come after the summary, titled
+ * from `sections` when the notes list it, else from the id: a section whose
+ * template was edited or deleted, or that was made on the computer with a
+ * template this phone does not have, still shows.
+ */
 export function groupBlocks(
   blocks: NoteBlockView[],
-): { key: SectionKey; blocks: NoteBlockView[] }[] {
-  return SECTION_ORDER.map((key) => ({
+  sections: readonly TemplateSection[] = [],
+  vi = false,
+): BlockGroup[] {
+  const fixed: BlockGroup[] = SECTION_ORDER.map((key) => ({
     key,
-    blocks: blocks.filter((b) => sectionOf(b.kind) === key),
+    blocks: blocks.filter(
+      (b) => !b.kind.startsWith("section:") && sectionOf(b.kind) === key,
+    ),
   })).filter((g) => g.blocks.length > 0);
+  const ids: string[] = [];
+  for (const b of blocks)
+    if (b.kind.startsWith("section:")) {
+      const id = b.kind.slice("section:".length);
+      if (!ids.includes(id)) ids.push(id);
+    }
+  // The template's order first, then any the template does not list.
+  const order = [
+    ...sections.map((s) => s.id).filter((id) => ids.includes(id)),
+    ...ids.filter((id) => !sections.some((s) => s.id === id)),
+  ];
+  const own: BlockGroup[] = order.map((id) => {
+    const s = sections.find((x) => x.id === id);
+    return {
+      key: `section:${id}`,
+      title: s ? (vi ? s.titleVi : s.titleEn) : humanizeSectionId(id),
+      blocks: blocks.filter((b) => b.kind === `section:${id}`),
+    };
+  });
+  const at = fixed.findIndex((g) => g.key === "tldr") + 1;
+  return [...fixed.slice(0, at), ...own, ...fixed.slice(at)];
 }
 
 /** The chip a citation draws: its time, or its number when it has none. A moment with no words is dashed. */

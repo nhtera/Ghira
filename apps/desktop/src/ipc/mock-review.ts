@@ -20,7 +20,10 @@ import type {
   SearchHitView,
   SegmentView,
   StagedFile,
+  TemplateForm,
   TemplateInfo,
+  TemplateSection,
+  UserTemplateView,
 } from "../bindings";
 import type { Commands } from "./ipc";
 import { audioDeleted, lockedMeetings, sensitiveMeetings, takeAnswerDraft } from "./mock-ai";
@@ -255,6 +258,63 @@ function silentWav(ms: number): string {
 }
 const audio = new Map<string, string>();
 
+/** Templates of this device (`user:<gid>`), as the core keeps them. */
+const userTpls: UserTemplateView[] = [];
+let userSeq = 0;
+const retired = new Map<string, string[]>();
+const MAX_USER = 20;
+const MAX_SECTIONS = 8;
+
+const slug = (title: string, taken: string[]) => {
+  const base =
+    title
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[đĐ]/g, "d")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 24) || "s";
+  let id = /^[a-z]/.test(base) ? base : `s_${base}`;
+  for (let n = 2; taken.includes(id) || ["tldr", "decisions", "actions"].includes(id); n++) id = `${base}_${n}`;
+  return id;
+};
+
+/** The core's checks of a form (names, caps) and its ids: kept, retired ones never reused, new ones from the title. */
+function formToView(id: string, form: TemplateForm, known: string[], gone: string[]): UserTemplateView | string {
+  const one = (s: string) => s.split(/\s+/).filter(Boolean).join(" ");
+  if (!one(form.name) || [...one(form.name)].length > 60) return "a name of 1 to 60 characters";
+  if (form.sections.length > MAX_SECTIONS) return "at most 8 sections";
+  const taken = [...known, ...gone];
+  const sections = [];
+  for (const s of form.sections) {
+    const title = one(s.title);
+    const instruction = one(s.instruction);
+    if (!title || !instruction || [...title].length > 60 || [...instruction].length > 200) return "a section needs a title and an instruction of at most 200 characters";
+    if (s.id != null && !known.includes(s.id)) return `unknown section id ${s.id}`;
+    const sid = s.id ?? slug(title, taken);
+    taken.push(sid);
+    sections.push({ id: sid, title, instruction });
+  }
+  return { id, form: { ...form, name: one(form.name), guidance: one(form.guidance), sections } };
+}
+
+const sectionTitle = (id: string) => (id.replace(/_/g, " ").charAt(0).toUpperCase() + id.replace(/_/g, " ").slice(1)).trim();
+
+/** The Notes tab's sections: the template's own, then any `section:<id>` the blocks hold that it does not list. */
+function sectionsFor(template: string | null | undefined, blocks: NoteBlockView[]): TemplateSection[] {
+  const user = userTpls.find((u) => u.id === template);
+  const own: TemplateSection[] = user
+    ? user.form.sections.map((s) => ({ id: s.id ?? "", titleEn: s.title, titleVi: s.title }))
+    : (TEMPLATES.find((t) => t.id === (template ?? "general"))?.sections ?? []);
+  const out = [...own];
+  for (const b of blocks) {
+    const id = b.kind.startsWith("section:") ? b.kind.slice(8) : null;
+    if (id && !out.some((s) => s.id === id)) out.push({ id, titleEn: sectionTitle(id), titleVi: sectionTitle(id) });
+  }
+  return out;
+}
+
 const TEMPLATES: TemplateInfo[] = [
   { id: "general", name: "General meeting", sections: [] },
   { id: "one_on_one", name: "1:1", sections: [] },
@@ -421,6 +481,11 @@ type ReviewCommands = Pick<
   | "setActionOwner"
   | "deleteActionItem"
   | "listTemplates"
+  | "userTemplates"
+  | "createTemplate"
+  | "updateTemplate"
+  | "deleteTemplate"
+  | "duplicateTemplate"
   | "regenerateNotes"
   | "retranscribe"
   | "searchMeetings"
@@ -504,7 +569,7 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
       });
       return ok(null);
     },
-    meetingNotes: (m) => withDetail(m, (d) => structuredClone({ ...d.notes, marks: momentsOf(d) })),
+    meetingNotes: (m) => withDetail(m, (d) => structuredClone({ ...d.notes, sections: sectionsFor(row(m)?.template, d.notes.blocks), marks: momentsOf(d) })),
     meetingTranscript: (m) => withDetail(m, (d) => structuredClone(d.transcript)),
     updateSegmentText: (m, s, text) =>
       withDetail(m, (d) => {
@@ -627,7 +692,50 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         d.notes.actionItems = d.notes.actionItems.filter((x) => x.gid !== a);
         return null;
       }),
-    listTemplates: () => Promise.resolve(TEMPLATES),
+    listTemplates: () =>
+      ok([
+        ...TEMPLATES,
+        ...userTpls.map((u) => ({ id: u.id, name: u.form.name, sections: u.form.sections.map((s) => ({ id: s.id ?? "", titleEn: s.title, titleVi: s.title })) })),
+      ]),
+    userTemplates: () => ok(structuredClone(userTpls)),
+    createTemplate: (form) => {
+      if (userTpls.length >= MAX_USER) return fail(`at most ${MAX_USER} templates: delete one first`);
+      const id = `user:t${String(++userSeq).padStart(12, "0")}`;
+      const v = formToView(id, form, [], []);
+      if (typeof v === "string") return fail(v);
+      userTpls.push(v);
+      return ok(structuredClone(v));
+    },
+    updateTemplate: (id, form) => {
+      const i = userTpls.findIndex((u) => u.id === id);
+      if (i < 0) return fail("this template is gone");
+      const known = userTpls[i]!.form.sections.map((s) => s.id ?? "");
+      const gone = retired.get(id) ?? [];
+      const v = formToView(id, form, known, gone);
+      if (typeof v === "string") return fail(v);
+      const kept = v.form.sections.map((s) => s.id);
+      retired.set(id, [...gone, ...known.filter((k) => !kept.includes(k) && !gone.includes(k))]);
+      userTpls[i] = v;
+      return ok(structuredClone(v));
+    },
+    deleteTemplate: (id) => {
+      const i = userTpls.findIndex((u) => u.id === id);
+      if (i < 0) return fail("this template is gone");
+      userTpls.splice(i, 1);
+      return ok(null);
+    },
+    duplicateTemplate: (id, language) => {
+      const src = userTpls.find((u) => u.id === id);
+      const builtin = TEMPLATES.find((t) => t.id === id);
+      if (!src && !builtin) return fail(`unknown template ${id}`);
+      const sections = src ? src.form.sections : (builtin?.sections ?? []).map((s) => ({ id: null, title: language === "vi" ? s.titleVi : s.titleEn, instruction: "What belongs in this section." }));
+      const name = src ? src.form.name : builtin!.name;
+      if (userTpls.length >= MAX_USER) return fail(`at most ${MAX_USER} templates: delete one first`);
+      const v = formToView(`user:t${String(++userSeq).padStart(12, "0")}`, { name: `${name} (copy)`, language, guidance: src?.form.guidance ?? "", sections: sections.map((s) => ({ ...s, id: null })) }, [], []);
+      if (typeof v === "string") return fail(v);
+      userTpls.push(v);
+      return ok(structuredClone(v));
+    },
     regenerateNotes: (m, template) => {
       const r = row(m);
       if (!r) return fail(`meeting not found: ${m}`);
@@ -636,10 +744,19 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
       const d = detailOf(m);
       const fresh = build(document.documentElement.lang === "vi" ? "vi" : "en");
       const keep = d.notes.blocks.filter((b) => b.origin !== "ai" || b.pinned);
+      // A template's own sections get a block each (the model wrote them).
+      const own: NoteBlockView[] = sectionsFor(r.template, []).map((s) => ({
+        gid: gid("blk"),
+        kind: `section:${s.id}`,
+        origin: "ai",
+        text: `Notes for ${s.titleEn}`,
+        pinned: false,
+        citations: [],
+      }));
       d.notes = {
-        blocks: [...fresh.notes.blocks.filter((b) => b.origin === "ai" && !b.kind.startsWith("enhanced:")), ...keep],
+        blocks: [...fresh.notes.blocks.filter((b) => b.origin === "ai" && !b.kind.startsWith("enhanced:")), ...own, ...keep],
         actionItems: [...d.notes.actionItems.filter((a) => a.origin !== "ai" || a.done), ...fresh.notes.actionItems.filter((a) => a.origin === "ai")],
-        sections: TEMPLATES.find((t) => t.id === template)?.sections ?? [],
+        sections: [],
         marks: [],
       };
       host.process(m);

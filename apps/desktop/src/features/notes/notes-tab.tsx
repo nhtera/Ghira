@@ -7,7 +7,7 @@ import { Icon } from "@ghi/ui";
 import { useId, useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingDetail } from "../../bindings";
-import { useMeetingNotes } from "../../state/meeting-queries";
+import { useMeetingNotes, useTemplates } from "../../state/meeting-queries";
 import { usePlayer } from "../../state/player";
 import { inProgress } from "../library/meeting-status";
 import { templateName } from "../meeting/template-names";
@@ -48,6 +48,7 @@ export function NotesTab({
 }) {
   const { t, i18n } = useTranslation();
   const q = useMeetingNotes(meeting);
+  const templates = useTemplates();
   const edit = useNotesEdit(meeting);
   const notes = q.data;
   const layout = useMemo(
@@ -120,7 +121,7 @@ export function NotesTab({
             </b>
             <p className="text-small m-0 mt-1 text-muted">
               {t("detail.noMine.body", {
-                template: templateName(detail.template, t),
+                template: templateName(detail.template, t, templates.data?.find((x) => x.id === detail.template)?.name),
               })}
             </p>
           </div>

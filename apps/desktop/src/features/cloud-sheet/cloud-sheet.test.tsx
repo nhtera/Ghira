@@ -46,6 +46,7 @@ const preview = (over: Partial<CloudPreview> = {}): CloudPreview => ({
   redactions: [{ kind: "person", count: 1 }],
   excerptBefore: null,
   excerptAfter: null,
+  templateFallback: false,
   ...over,
 });
 
@@ -124,6 +125,18 @@ describe("CloudSheet", () => {
         task: { kind: "notes", template: null, language: "meeting" },
       }),
     );
+  });
+
+  it("says General is sent when the notes template is one of yours, and only then", async () => {
+    setup();
+    commands.cloudPreview.mockImplementation(() => ok({ kind: "preview", ...preview({ templateFallback: true }) }));
+    await settle();
+    expect((await screen.findByTestId("template-fallback")).textContent).toMatch(/General template is sent. Your instructions never leave/);
+    cleanup();
+    setup();
+    await settle();
+    await screen.findByTestId("cloud-payload");
+    expect(screen.queryByTestId("template-fallback")).toBeNull();
   });
 
   it("counts and excerpts only the user message, never a longer system prompt", async () => {

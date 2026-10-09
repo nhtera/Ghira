@@ -290,19 +290,53 @@ pub fn segment_citation(s: &Segment, version: i64) -> Citation {
     }
 }
 
-fn sections_of(template: Option<&str>) -> Vec<TemplateSection> {
-    ghi_llm::template::builtin(template.unwrap_or("general"))
-        .map(|t| {
-            t.sections
-                .into_iter()
-                .map(|s| TemplateSection {
-                    id: s.id,
-                    title_en: s.title_en,
-                    title_vi: s.title_vi,
-                })
-                .collect()
+fn sections_of(t: &ghi_llm::template::Template) -> Vec<TemplateSection> {
+    t.sections
+        .iter()
+        .map(|s| TemplateSection {
+            id: s.id.clone(),
+            title_en: s.title_en.clone(),
+            title_vi: s.title_vi.clone(),
         })
-        .unwrap_or_default()
+        .collect()
+}
+
+/// A template by id: a built-in, or `user:<gid>` (this device's own).
+fn template_of(store: &Store, id: &str) -> Option<ghi_llm::template::Template> {
+    if ghi_core::user_templates::gid_of(id).is_some() {
+        ghi_core::user_templates::find(store, id)
+    } else {
+        ghi_llm::template::builtin(id).ok()
+    }
+}
+
+/// The sections of the Notes tab: the meeting's template's own, then any
+/// `section:<id>` the blocks hold that the template does not list (it was
+/// edited or deleted, or the notes were written on the computer with a
+/// template this device does not have), so no section ever disappears. Their
+/// titles are the ids as words.
+pub fn sections_for(
+    store: &Store,
+    template: Option<&str>,
+    blocks: &[ghi_store::store::NoteBlock],
+) -> Vec<TemplateSection> {
+    let mut out = template_of(store, template.unwrap_or("general"))
+        .map(|t| sections_of(&t))
+        .unwrap_or_default();
+    for b in blocks {
+        let Some(id) = b.kind.strip_prefix("section:") else {
+            continue;
+        };
+        if !out.iter().any(|s| s.id == id) {
+            let title = ghi_llm::template::humanize_id(id);
+            out.push(TemplateSection {
+                id: id.to_string(),
+                title_en: title.clone(),
+                title_vi: title,
+            });
+        }
+    }
+    out
 }
 
 /// Whether a block of this kind covers a mark. Only what the Notes tab draws
@@ -350,6 +384,7 @@ fn notes_of(store: &Store, meeting: &str) -> Result<MeetingNotes, String> {
     let segs = store.segments(meeting).map_err(err)?;
     let v = m.transcript_version;
     let raw_blocks = store.note_blocks(meeting).map_err(err)?;
+    let sections = sections_for(store, m.template.as_deref(), &raw_blocks);
     let raw_actions = store.action_items(meeting).map_err(err)?;
     let mark_rows = store.marks(meeting).map_err(err)?;
     let moments = if mark_rows.is_empty() {
@@ -392,7 +427,7 @@ fn notes_of(store: &Store, meeting: &str) -> Result<MeetingNotes, String> {
     Ok(MeetingNotes {
         blocks,
         action_items,
-        sections: sections_of(m.template.as_deref()),
+        sections,
         marks: moments,
     })
 }
@@ -800,18 +835,32 @@ pub enum NotesLanguage {
     Vi,
 }
 
-/// The built-in notes templates, in menu order.
+/// The notes templates, in menu order: the built-in ones, then this device's own (`user:<gid>`).
+pub fn templates_now(c: &crate::core::Core) -> Result<Vec<TemplateInfo>, String> {
+    let info = |id: String, t: &ghi_llm::template::Template| TemplateInfo {
+        sections: sections_of(t),
+        id,
+        name: t.name.clone(),
+    };
+    let mut all: Vec<TemplateInfo> = ghi_llm::template::builtin_ids()
+        .filter_map(|id| ghi_llm::template::builtin(id).ok())
+        .map(|t| info(t.id.clone(), &t))
+        .collect();
+    // Behind the app lock only the built-in names show.
+    if let Ok(store) = c.store() {
+        for u in ghi_core::user_templates::load(&store)? {
+            if let Some(t) = u.template() {
+                all.push(info(u.id(), &t));
+            }
+        }
+    }
+    Ok(all)
+}
+
 #[tauri::command]
 #[specta::specta]
-pub fn list_templates() -> Vec<TemplateInfo> {
-    ghi_llm::template::builtin_ids()
-        .filter_map(|id| ghi_llm::template::builtin(id).ok())
-        .map(|t| TemplateInfo {
-            sections: sections_of(Some(&t.id)),
-            id: t.id,
-            name: t.name,
-        })
-        .collect()
+pub async fn list_templates(core: CoreState<'_>) -> Result<Vec<TemplateInfo>, String> {
+    blocking(&core, templates_now).await
 }
 
 /// Rewrites the AI notes (template and language as chosen); what the user
@@ -858,8 +907,10 @@ pub fn queue_notes_again(
         ghi_core::import::IMPORTING => return Err("the file is still being imported".into()),
         _ => {}
     }
-    if let Some(t) = template {
-        ghi_llm::template::builtin(t).map_err(|e| e.to_string())?;
+    if let Some(t) = template
+        && template_of(store, t).is_none()
+    {
+        return Err(format!("unknown template `{t}`"));
     }
     // Notes written meanwhile on the computer would race these.
     if crate::sync_service::spoke::meeting_sync_view(store, meeting)
@@ -1380,9 +1431,113 @@ mod tests {
         }
     }
 
+    fn core_and_meeting() -> (tempfile::TempDir, std::sync::Arc<crate::core::Core>, String) {
+        let tmp = tempfile::tempdir().unwrap();
+        let (core, _rx) = crate::core::Core::for_test(tmp.path().join("data"));
+        let m = core
+            .store()
+            .unwrap()
+            .create_meeting(ghi_store::store::NewMeeting {
+                title: "x".into(),
+                ..Default::default()
+            })
+            .unwrap()
+            .gid;
+        (tmp, core, m)
+    }
+
+    fn section_block(id: &str) -> NewNoteBlock {
+        NewNoteBlock {
+            kind: format!("section:{id}"),
+            provenance: Provenance::Ai,
+            body: "b".into(),
+            anchors: vec![],
+            pinned: false,
+        }
+    }
+
+    #[test]
+    fn a_deleted_or_edited_template_never_hides_the_sections_of_written_notes() {
+        let (_t, core, m) = core_and_meeting();
+        let store = core.store().unwrap();
+        let form = crate::templates_cmd::TemplateForm {
+            name: "Retro".into(),
+            language: "en".into(),
+            guidance: String::new(),
+            sections: vec![crate::templates_cmd::FormSection {
+                id: None,
+                title: "Went well".into(),
+                instruction: "What worked.".into(),
+            }],
+        };
+        let made = crate::templates_cmd::create_now(&core, &form).unwrap();
+        store.set_meeting_template(&m, Some(&made.id)).unwrap();
+        store.add_note_block(&m, section_block("went_well")).unwrap();
+        let notes = notes_of(&store, &m).unwrap();
+        assert_eq!(notes.sections.len(), 1);
+        assert_eq!(notes.sections[0].title_en, "Went well");
+
+        // Edited: the section is renamed and another added; the blocks' section stays listed.
+        let mut f = made.form.clone();
+        f.sections.clear();
+        f.sections.push(crate::templates_cmd::FormSection {
+            id: None,
+            title: "Risks".into(),
+            instruction: "i".into(),
+        });
+        crate::templates_cmd::update_now(&core, &made.id, &f).unwrap();
+        let ids: Vec<String> = notes_of(&store, &m).unwrap().sections.into_iter().map(|s| s.id).collect();
+        assert_eq!(ids, ["risks", "went_well"]);
+
+        // Deleted: nothing resolves, every section the blocks name still shows, titled from its id.
+        crate::templates_cmd::delete_now(&core, &made.id).unwrap();
+        let notes = notes_of(&store, &m).unwrap();
+        assert_eq!(notes.sections.len(), 1);
+        assert_eq!((notes.sections[0].id.as_str(), notes.sections[0].title_en.as_str()), ("went_well", "Went well"));
+    }
+
+    #[test]
+    fn built_in_sections_come_first_and_a_phone_without_the_template_still_lists_them() {
+        let (_t, core, m) = core_and_meeting();
+        let store = core.store().unwrap();
+        store.set_meeting_template(&m, Some("standup")).unwrap();
+        store.add_note_block(&m, section_block("done")).unwrap();
+        store.add_note_block(&m, section_block("from_computer")).unwrap();
+        let ids: Vec<String> = notes_of(&store, &m).unwrap().sections.into_iter().map(|s| s.id).collect();
+        assert_eq!(ids, ["done", "next", "blockers", "from_computer"]);
+        // a template id this device does not have
+        store.set_meeting_template(&m, Some("user:t0123")).unwrap();
+        let ids: Vec<String> = notes_of(&store, &m).unwrap().sections.into_iter().map(|s| s.id).collect();
+        assert_eq!(ids, ["done", "from_computer"]);
+    }
+
+    #[test]
+    fn regenerate_accepts_your_template_and_refuses_an_unknown_one() {
+        let (_t, core, m) = core_and_meeting();
+        let store = core.store().unwrap();
+        let made = crate::templates_cmd::create_now(
+            &core,
+            &crate::templates_cmd::TemplateForm {
+                name: "Retro".into(),
+                language: "en".into(),
+                guidance: String::new(),
+                sections: vec![],
+            },
+        )
+        .unwrap();
+        store.set_meeting_status(&m, "ready").unwrap();
+        assert!(queue_notes_again(&store, &m, Some("user:t000"), NotesLanguage::En, false).is_err());
+        queue_notes_again(&store, &m, Some(&made.id), NotesLanguage::En, false).unwrap();
+        assert_eq!(store.get_meeting(&m).unwrap().template.as_deref(), Some(made.id.as_str()));
+        let jobs = store.jobs_for_meeting(&m).unwrap();
+        assert_eq!(jobs.len(), 1);
+    }
+
     #[test]
     fn every_template_lists_its_sections() {
-        let all = list_templates();
+        let tmp = tempfile::tempdir().unwrap();
+        let (core, _rx) = crate::core::Core::for_test(tmp.path().join("data"));
+        let all = templates_now(&core).unwrap();
         assert_eq!(all.first().map(|t| t.id.as_str()), Some("general"));
         let client = all.iter().find(|t| t.id == "client").unwrap();
         assert_eq!(client.sections[0].id, "requests");

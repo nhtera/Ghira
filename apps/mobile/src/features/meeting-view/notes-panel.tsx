@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import type { Citation, MeetingNotes } from "../../bindings";
 import { openCloudSheet } from "./handoff";
 import { useCloudOffered } from "../settings/use-cloud-offered";
-import { groupBlocks, noteKind, toNoteCitation, uncoveredMarks } from "./notes-model";
+import { groupBlocks, noteKind, toNoteCitation, uncoveredMarks, type SectionKey } from "./notes-model";
 
 export type NotesPanelProps = {
   meeting: string;
@@ -31,10 +31,10 @@ export function NotesPanel({
   onCite,
   onPlayAt,
 }: NotesPanelProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // The cloud entry only exists once the user offered cloud notes in Settings.
   const cloudOffered = useCloudOffered();
-  const groups = groupBlocks(notes.blocks);
+  const groups = groupBlocks(notes.blocks, notes.sections, i18n.language === "vi");
   const missed = uncoveredMarks(notes.marks);
   const marked = missed.length > 0 && (
     <section aria-labelledby="sec-marked" className="px-4 pt-4">
@@ -131,7 +131,7 @@ export function NotesPanel({
             id={`sec-${g.key}`}
             className="text-ios-footnote m-0 mb-2 flex items-center gap-1.5 font-semibold tracking-[0.07em] text-muted uppercase"
           >
-            {t(`mobile.detail.section.${g.key}`)}
+            {g.title ?? t(`mobile.detail.section.${g.key as SectionKey}`)}
             {g.blocks.some((b) => noteKind(b) === "ai") && (
               <Icon name="auto_awesome" size={14} className="size-3.5" />
             )}

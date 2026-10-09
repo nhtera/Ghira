@@ -240,6 +240,9 @@ pub struct CloudPreview {
     pub excerpt_before: Option<String>,
     /// The same text as sent (placeholders for what is hidden).
     pub excerpt_after: Option<String>,
+    /// The notes use the built-in General template because the one asked for
+    /// is one of yours: its instructions never leave this device.
+    pub template_fallback: bool,
 }
 
 /// An answer to "Ask this meeting".
@@ -446,11 +449,17 @@ pub async fn cloud_preview(
         let store = c.store()?;
         let provider =
             CloudProvider::preset(&ask.provider, &ask.model).map_err(|e| e.to_string())?;
+        let mut template_fallback = false;
         let task = match ask.task {
             CloudTask::Notes { template, language } => {
-                let id = template
+                let mut id = template
                     .or(store.get_meeting(&meeting).map_err(err)?.template)
                     .unwrap_or_else(|| "general".into());
+                // Your own templates' instructions never leave the device: General is sent.
+                if ghi_core::user_templates::gid_of(&id).is_some() {
+                    id = "general".into();
+                    template_fallback = true;
+                }
                 Task::Notes {
                     template: ghi_llm::template::builtin(&id).map_err(|e| e.to_string())?,
                     lang: out_lang(language, &store, &meeting)?,
@@ -507,6 +516,7 @@ pub async fn cloud_preview(
                     redactions,
                     excerpt_before,
                     excerpt_after,
+                    template_fallback,
                 }))
             }
         }

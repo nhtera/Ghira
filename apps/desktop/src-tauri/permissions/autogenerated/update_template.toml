@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-template"
+description = "Enables the update_template command without any pre-configured scope."
+commands.allow = ["update_template"]
+
+[[permission]]
+identifier = "deny-update-template"
+description = "Denies the update_template command without any pre-configured scope."
+commands.deny = ["update_template"]

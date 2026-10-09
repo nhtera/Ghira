@@ -67,10 +67,10 @@ describe("groupBlocks", () => {
     ]);
     expect(g.map((x) => [x.key, x.blocks.length])).toEqual([
       ["tldr", 1],
+      ["section:risks", 1],
       ["decision", 1],
       ["answer", 1],
       ["note", 2],
-      ["other", 1],
     ]);
   });
 });
@@ -180,5 +180,33 @@ describe("marks", () => {
     const by = marksBySegment(marks);
     expect([...by.keys()]).toEqual(["s2"]);
     expect(by.get("s2")).toHaveLength(2);
+  });
+});
+
+describe("groupBlocks: a template's own sections", () => {
+  const sections = [
+    { id: "went_well", titleEn: "Went well", titleVi: "Tốt" },
+    { id: "risks", titleEn: "Risks", titleVi: "Rủi ro" },
+  ];
+
+  it("come after the summary, in the template's order, titled from the template", () => {
+    const g = groupBlocks([block("decision"), block("section:risks"), block("tldr"), block("section:went_well")], sections, false);
+    expect(g.map((x) => [x.key, x.title])).toEqual([
+      ["tldr", undefined],
+      ["section:went_well", "Went well"],
+      ["section:risks", "Risks"],
+      ["decision", undefined],
+    ]);
+    expect(groupBlocks([block("section:risks")], sections, true)[0]!.title).toBe("Rủi ro");
+  });
+
+  it("a deleted or unknown template's sections still show, titled from the id", () => {
+    const g = groupBlocks([block("section:from_computer"), block("section:from_computer"), block("note", "user")], [], false);
+    expect(g.map((x) => [x.key, x.title, x.blocks.length])).toEqual([
+      ["section:from_computer", "From computer", 2],
+      ["note", undefined, 1],
+    ]);
+    // not lumped into "More" any more
+    expect(g.some((x) => x.key === "other")).toBe(false);
   });
 });

@@ -6,7 +6,7 @@
 //! the model must follow is generated from the template ([`crate::schema`]),
 //! so a custom template is just another TOML file.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{LlmError, Result};
 
@@ -25,9 +25,14 @@ const BUILTIN: &[(&str, &str)] = &[
 ];
 
 /// Most sections a template may add (keeps the schema small for local models).
-const MAX_SECTIONS: usize = 6;
+pub const MAX_SECTIONS: usize = 8;
+/// Caps of a template made in the editor (characters).
+pub const MAX_NAME: usize = 60;
+pub const MAX_GUIDANCE: usize = 400;
+pub const MAX_SECTION_TITLE: usize = 60;
+pub const MAX_INSTRUCTION: usize = 200;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Template {
     pub id: String,
@@ -38,7 +43,7 @@ pub struct Template {
     pub sections: Vec<SectionSpec>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SectionSpec {
     /// JSON key in the model output: lowercase ASCII letters, digits, `_`.
@@ -56,6 +61,98 @@ impl Template {
             toml::from_str(text).map_err(|e| LlmError::Invalid(format!("template: {e}")))?;
         t.check()?;
         Ok(t)
+    }
+
+    /// The template as TOML text (what [`Template::from_toml`] reads back).
+    pub fn to_toml(&self) -> String {
+        toml::to_string(self).expect("a template is plain strings")
+    }
+
+    /// A template made from the editor's form. `id` is the template's own
+    /// (`user_<n>`); `known` are the section ids already in use in it, which
+    /// a form section may keep (and which stay for good: ids are never
+    /// edited); `retired` are ids that were used once and were removed, never
+    /// given again (notes written under one would show under a new section).
+    /// New sections get an id made from their title (`went_well`; the id is
+    /// all that notes keep of a section if the template is deleted). The text is written in
+    /// `form.lang`; it fills both language fields.
+    pub fn from_editor(
+        id: &str,
+        form: &Editor,
+        known: &[String],
+        retired: &[String],
+    ) -> Result<Template> {
+        let bad = |what: String| Err(LlmError::Invalid(format!("template: {what}")));
+        let one_line = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        let name = one_line(&form.name);
+        if name.is_empty() || name.chars().count() > MAX_NAME {
+            return bad(format!("a name of 1 to {MAX_NAME} characters"));
+        }
+        let guidance = one_line(&form.guidance);
+        if guidance.chars().count() > MAX_GUIDANCE {
+            return bad(format!("guidance of at most {MAX_GUIDANCE} characters"));
+        }
+        if form.sections.len() > MAX_SECTIONS {
+            return bad(format!("at most {MAX_SECTIONS} sections"));
+        }
+        let mut taken: Vec<String> = known.iter().chain(retired).cloned().collect();
+        let mut sections: Vec<SectionSpec> = Vec::new();
+        for f in &form.sections {
+            let title = one_line(&f.title);
+            let instruction = one_line(&f.instruction);
+            if title.is_empty() || title.chars().count() > MAX_SECTION_TITLE {
+                return bad(format!("a section title of 1 to {MAX_SECTION_TITLE} characters"));
+            }
+            if instruction.is_empty() || instruction.chars().count() > MAX_INSTRUCTION {
+                return bad(format!("a section instruction of 1 to {MAX_INSTRUCTION} characters"));
+            }
+            let sid = match &f.id {
+                Some(k) if known.contains(k) && !sections.iter().any(|s| &s.id == k) => k.clone(),
+                // An id the template never had is not the form's to make up.
+                Some(k) => return bad(format!("unknown section id `{k}`")),
+                None => {
+                    let k = fresh_id(&title, &taken);
+                    taken.push(k.clone());
+                    k
+                }
+            };
+            sections.push(SectionSpec {
+                id: sid,
+                title_en: title.clone(),
+                title_vi: title,
+                instruction,
+            });
+        }
+        let t = Template {
+            id: id.to_string(),
+            name,
+            guidance_en: guidance.clone(),
+            guidance_vi: guidance,
+            sections,
+        };
+        t.check()?;
+        Ok(t)
+    }
+
+    /// The form to edit this template in, in the language its text is written in.
+    pub fn to_editor(&self, lang: OutLang) -> Editor {
+        Editor {
+            name: self.name.clone(),
+            lang,
+            guidance: self.guidance(lang).to_string(),
+            sections: self
+                .sections
+                .iter()
+                .map(|s| EditorSection {
+                    id: Some(s.id.clone()),
+                    title: match lang {
+                        OutLang::Vi => s.title_vi.clone(),
+                        OutLang::En => s.title_en.clone(),
+                    },
+                    instruction: s.instruction.clone(),
+                })
+                .collect(),
+        }
     }
 
     pub fn guidance(&self, lang: OutLang) -> &str {
@@ -82,6 +179,61 @@ impl Template {
             }
         }
         Ok(())
+    }
+}
+
+/// A template as the editor shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Editor {
+    pub name: String,
+    /// The language the text is written in.
+    pub lang: OutLang,
+    /// A line on what the meetings are, for the model (optional).
+    pub guidance: String,
+    pub sections: Vec<EditorSection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditorSection {
+    /// `None`: a new section (it gets its id when the template is made).
+    pub id: Option<String>,
+    pub title: String,
+    /// One line: what belongs in the section.
+    pub instruction: String,
+}
+
+/// An id for a new section from its title: folded to ASCII, `_` between
+/// words, at most 24 characters, not taken and not one of the common keys.
+fn fresh_id(title: &str, taken: &[String]) -> String {
+    let folded = ghi_text::fold(title);
+    let mut base = String::new();
+    for c in folded.chars() {
+        if c.is_ascii_alphanumeric() {
+            base.push(c.to_ascii_lowercase());
+        } else if !base.ends_with('_') && !base.is_empty() {
+            base.push('_');
+        }
+    }
+    let mut base: String = base.trim_end_matches('_').chars().take(24).collect();
+    if !base.starts_with(|c: char| c.is_ascii_lowercase()) {
+        base = format!("s_{base}").trim_end_matches('_').to_string();
+    }
+    let mut id = base.clone();
+    let mut n = 1;
+    while taken.contains(&id) || crate::schema::CORE_KEYS.contains(&id.as_str()) {
+        n += 1;
+        id = format!("{base}_{n}");
+    }
+    id
+}
+
+/// What to call a section whose template is gone: its id as words.
+pub fn humanize_id(id: &str) -> String {
+    let words = id.replace('_', " ");
+    let mut c = words.trim().chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().chain(c).collect(),
+        None => String::new(),
     }
 }
 
@@ -165,5 +317,126 @@ mod tests {
         ] {
             assert!(Template::from_toml(&bad).is_err(), "{bad}");
         }
+    }
+
+    fn form() -> Editor {
+        Editor {
+            name: "  Weekly  retro ".into(),
+            lang: OutLang::En,
+            guidance: "A team retro.".into(),
+            sections: vec![
+                EditorSection {
+                    id: None,
+                    title: "Went well".into(),
+                    instruction: "What worked,\n and who did it.".into(),
+                },
+                EditorSection {
+                    id: None,
+                    title: "Went badly".into(),
+                    instruction: "What did not.".into(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn a_form_becomes_a_template_that_round_trips_through_toml() {
+        let t = Template::from_editor("user_1", &form(), &[], &[]).unwrap();
+        assert_eq!(t.name, "Weekly retro");
+        assert_eq!(t.sections[0].id, "went_well");
+        assert_eq!(t.sections[1].id, "went_badly");
+        assert_eq!(t.sections[0].instruction, "What worked, and who did it.");
+        assert_eq!(t.sections[0].title_vi, "Went well");
+        assert_eq!(Template::from_toml(&t.to_toml()).unwrap(), t);
+        // and back to a form with the same words and the ids kept
+        let e = t.to_editor(OutLang::En);
+        assert_eq!(e.sections[1].id.as_deref(), Some("went_badly"));
+        assert_eq!(e.name, "Weekly retro");
+        let again = Template::from_editor("user_1", &e, &["went_well".into(), "went_badly".into()], &[]).unwrap();
+        assert_eq!(again, t);
+    }
+
+    #[test]
+    fn the_caps_are_enforced() {
+        let with = |f: &dyn Fn(&mut Editor)| {
+            let mut e = form();
+            f(&mut e);
+            Template::from_editor("user_1", &e, &[], &[])
+        };
+        assert!(with(&|e| e.name = " ".into()).is_err());
+        assert!(with(&|e| e.name = "x".repeat(MAX_NAME + 1)).is_err());
+        assert!(with(&|e| e.guidance = "x".repeat(MAX_GUIDANCE + 1)).is_err());
+        assert!(with(&|e| e.sections[0].title = String::new()).is_err());
+        assert!(with(&|e| e.sections[0].instruction = "x".repeat(MAX_INSTRUCTION + 1)).is_err());
+        assert!(with(&|e| e.sections[0].instruction = "x".repeat(MAX_INSTRUCTION)).is_ok());
+        let one = form().sections[0].clone();
+        assert!(with(&|e| e.sections = vec![one.clone(); MAX_SECTIONS]).is_ok());
+        assert!(with(&|e| e.sections = vec![one.clone(); MAX_SECTIONS + 1]).is_err());
+        // 200 characters count as characters, not bytes
+        assert!(with(&|e| e.sections[0].instruction = "đ".repeat(MAX_INSTRUCTION)).is_ok());
+    }
+
+    #[test]
+    fn section_ids_are_immutable_and_never_reused() {
+        let t = Template::from_editor("user_1", &form(), &[], &[]).unwrap();
+        let known: Vec<String> = t.sections.iter().map(|s| s.id.clone()).collect();
+        // Remove the first section, add a new one: the old id stays retired.
+        let mut e = t.to_editor(OutLang::En);
+        let removed = e.sections.remove(0);
+        e.sections.push(EditorSection {
+            id: None,
+            title: "Actions".into(),
+            instruction: "Follow-ups.".into(),
+        });
+        let retired = vec![removed.id.clone().unwrap()];
+        let t2 = Template::from_editor("user_1", &e, &known, &retired).unwrap();
+        let ids: Vec<&str> = t2.sections.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["went_badly", "actions"]);
+        // Renaming a section keeps its id.
+        e.sections[0].title = "Went badly (renamed)".into();
+        let t3 = Template::from_editor("user_1", &e, &known, &retired).unwrap();
+        assert_eq!(t3.sections[0].id, "went_badly");
+        assert_eq!(t3.sections[0].title_en, "Went badly (renamed)");
+        // A form cannot make up an id, or use one twice.
+        e.sections[1].id = Some("tldr".into());
+        assert!(Template::from_editor("user_1", &e, &known, &retired).is_err());
+        let mut dup = t.to_editor(OutLang::En);
+        dup.sections[1].id = dup.sections[0].id.clone();
+        assert!(Template::from_editor("user_1", &dup, &known, &[]).is_err());
+    }
+
+    #[test]
+    fn new_ids_come_from_the_title_and_are_unique_and_allowed() {
+        let mut f = form();
+        f.sections = ["Quyết định chính", "Quyết định chính", "TL;DR", "Đã làm!", "123 go"]
+            .iter()
+            .map(|t| EditorSection {
+                id: None,
+                title: t.to_string(),
+                instruction: "i".into(),
+            })
+            .collect();
+        f.sections.push(EditorSection {
+            id: None,
+            title: "Decisions".into(),
+            instruction: "i".into(),
+        });
+        let ids: Vec<String> = Template::from_editor("user_1", &f, &[], &[])
+            .unwrap()
+            .sections
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+        assert_eq!(ids, ["quyet_dinh_chinh", "quyet_dinh_chinh_2", "tl_dr", "da_lam", "s_123_go", "decisions_2"].map(String::from));
+        assert_eq!(humanize_id("went_well"), "Went well");
+    }
+
+    #[test]
+    fn a_vietnamese_template_edits_in_vietnamese() {
+        let mut f = form();
+        f.lang = OutLang::Vi;
+        f.name = "Họp tuần".into();
+        let t = Template::from_editor("user_2", &f, &[], &[]).unwrap();
+        assert_eq!(t.to_editor(OutLang::Vi).name, "Họp tuần");
     }
 }

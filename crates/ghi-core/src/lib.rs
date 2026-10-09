@@ -30,6 +30,7 @@ pub mod sensitive;
 pub mod session;
 pub mod source_check;
 pub mod speakers;
+pub mod user_templates;
 pub mod vocab;
 pub mod voice_job;
 pub mod voice_step;

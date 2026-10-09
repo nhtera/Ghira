@@ -34,6 +34,29 @@ export const isMine = (origin: NoteBlockView["origin"]) => origin !== "ai";
 export const enhancedOf = (b: NoteBlockView) =>
   b.kind.startsWith("enhanced:") ? b.kind.slice("enhanced:".length) : null;
 
+/** An id as words (`went_well` → "Went well"): the title of a section whose template is gone. */
+export const humanizeSectionId = (id: string) => {
+  const words = id.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+/**
+ * The template's sections, then any `section:<id>` the blocks hold that it
+ * does not list (the template was edited or deleted, or the notes came from
+ * another device): a section never disappears from the notes.
+ */
+export function sectionsWithFallback(notes: Pick<MeetingNotes, "sections" | "blocks">): TemplateSection[] {
+  const out = [...notes.sections];
+  for (const b of notes.blocks) {
+    const id = b.kind.startsWith("section:") ? b.kind.slice("section:".length) : null;
+    if (id && !out.some((s) => s.id === id)) {
+      const title = humanizeSectionId(id);
+      out.push({ id, titleEn: title, titleVi: title });
+    }
+  }
+  return out;
+}
+
 /** `onlyMine` hides what the app wrote and you did not touch. */
 export function layoutNotes(
   notes: MeetingNotes,
@@ -52,7 +75,7 @@ export function layoutNotes(
   }
   return {
     tldr: ofKind("tldr"),
-    sections: notes.sections
+    sections: sectionsWithFallback(notes)
       .map((section) => ({ section, blocks: ofKind(`section:${section.id}`) }))
       .filter((s) => s.blocks.length > 0),
     decisions: ofKind("decision"),

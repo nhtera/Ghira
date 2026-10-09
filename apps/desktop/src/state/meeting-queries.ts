@@ -59,4 +59,4 @@ export const useWaveform = (id: string, enabled = true) =>
   useQuery({ queryKey: meetingKeys.waveform(id), enabled, staleTime: Infinity, queryFn: (): Promise<Waveform> => unwrap(ipc.commands.waveformPeaks(id)) });
 
 export const useTemplates = () =>
-  useQuery({ queryKey: ["templates"], staleTime: Infinity, queryFn: (): Promise<TemplateInfo[]> => ipc.commands.listTemplates() });
+  useQuery({ queryKey: ["templates"], staleTime: Infinity, queryFn: (): Promise<TemplateInfo[]> => unwrap(ipc.commands.listTemplates()) });

@@ -32,6 +32,7 @@ mod settings_cmd;
 mod speakers_cmd;
 mod sync_cmd;
 mod sync_export_cmd;
+mod templates_cmd;
 mod system;
 mod tray;
 mod update_cmd;
@@ -355,6 +356,11 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             detail::set_action_owner,
             detail::delete_action_item,
             detail::list_templates,
+            templates_cmd::user_templates,
+            templates_cmd::create_template,
+            templates_cmd::update_template,
+            templates_cmd::delete_template,
+            templates_cmd::duplicate_template,
             detail::regenerate_notes,
             detail::retranscribe,
             settings_cmd::transcription_engine,
