@@ -9,6 +9,8 @@ export const MAX_SECTION_TITLE = 60;
 export const MAX_INSTRUCTION = 200;
 export const MAX_SECTIONS = 8;
 export const MAX_TEMPLATES = 20;
+/** The longest description the draft reads. */
+export const MAX_DESCRIPTION = 600;
 
 const len = (s: string) => Array.from(s.split(/\s+/).filter(Boolean).join(" ")).length;
 

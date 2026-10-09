@@ -12,6 +12,7 @@ const commands = vi.hoisted(() => ({
   updateTemplate: vi.fn(),
   deleteTemplate: vi.fn(),
   duplicateTemplate: vi.fn(),
+  draftTemplate: vi.fn(),
 }));
 vi.mock("../../ipc", () => ({ ipc: { commands } }));
 
@@ -171,6 +172,45 @@ describe("TemplatesSection", () => {
     expect((screen.getByRole("button", { name: "Duplicate Standup" }) as HTMLButtonElement).disabled).toBe(true);
     done({ status: "ok", data: null });
     await waitFor(() => expect((screen.getByRole("button", { name: "Edit Retro" }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it("drafts from a description into the editor, with nothing saved; Save then creates it", async () => {
+    const user = userEvent.setup();
+    commands.draftTemplate.mockImplementation((_d: string, language: string) =>
+      ok({ name: "Weekly retro", language, guidance: "A retro.", sections: [{ id: null, title: "Went well", instruction: "What worked." }, { id: null, title: "Went badly", instruction: "What did not." }] }),
+    );
+    commands.createTemplate.mockImplementation((f: TemplateForm) => ok({ id: "user:t9", form: f }));
+    renderSettings(<TemplatesSection />);
+    await user.click(await screen.findByRole("button", { name: "New template" }));
+    const editor = within(screen.getByTestId("template-editor"));
+    const draft = editor.getByRole("button", { name: "Draft" }) as HTMLButtonElement;
+    expect(draft.disabled).toBe(true);
+    await user.type(editor.getByRole("textbox", { name: "Describe your meetings" }), "A weekly team retro");
+    await user.click(draft);
+    expect(commands.draftTemplate).toHaveBeenCalledWith("A weekly team retro", "en");
+    await waitFor(() => expect((editor.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Weekly retro"));
+    expect(editor.getAllByTestId("template-section")).toHaveLength(2);
+    expect(editor.getByText("Draft ready. Review it, change what you like, then save.")).toBeTruthy();
+    // Drafting saved nothing.
+    expect(commands.createTemplate).not.toHaveBeenCalled();
+    await user.click(editor.getByRole("button", { name: "Save template" }));
+    await waitFor(() => expect(commands.createTemplate).toHaveBeenCalledTimes(1));
+    expect(commands.createTemplate.mock.calls[0]![0].sections.map((x: { id: string | null }) => x.id)).toEqual([null, null]);
+  });
+
+  it("a draft that has to wait says why in words and leaves the form alone; editing has no draft box", async () => {
+    const user = userEvent.setup();
+    commands.draftTemplate.mockImplementation(() => Promise.resolve({ status: "error" as const, error: "busyNotes" }));
+    renderSettings(<TemplatesSection />);
+    await user.click(await screen.findByRole("button", { name: "New template" }));
+    const editor = within(screen.getByTestId("template-editor"));
+    await user.type(editor.getByRole("textbox", { name: "Describe your meetings" }), "x");
+    await user.click(editor.getByRole("button", { name: "Draft" }));
+    expect(await editor.findByText("Notes are being written. Try again in a moment.")).toBeTruthy();
+    expect((editor.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
+    await user.click(editor.getByRole("button", { name: "Cancel" }));
+    await user.click(await screen.findByRole("button", { name: "Edit Retro" }));
+    expect(screen.queryByTestId("template-draft")).toBeNull();
   });
 
   it("a refused save stays in the editor and says why", async () => {

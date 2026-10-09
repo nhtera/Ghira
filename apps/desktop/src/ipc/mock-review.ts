@@ -487,6 +487,7 @@ type ReviewCommands = Pick<
   | "updateTemplate"
   | "deleteTemplate"
   | "duplicateTemplate"
+  | "draftTemplate"
   | "regenerateNotes"
   | "retranscribe"
   | "searchMeetings"
@@ -731,6 +732,32 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
       if (i < 0) return fail("this template is gone");
       userTpls.splice(i, 1);
       return ok(null);
+    },
+    // The local model's draft, as a form with no ids (`?askfail=busyNotes|noModel|busyRecording` is the core refusing like Ask).
+    draftTemplate: (description, language) => {
+      const code = new URLSearchParams(location.search).get("askfail");
+      if (code) return fail(code);
+      if (!description.trim()) return fail("describe the meetings first");
+      const name = description.trim().split(/\s+/).slice(0, 3).join(" ");
+      const vi = language === "vi";
+      return new Promise((resolve) =>
+        window.setTimeout(
+          () =>
+            resolve({
+              status: "ok",
+              data: {
+                name: name.charAt(0).toUpperCase() + name.slice(1),
+                language,
+                guidance: description.trim().slice(0, 120),
+                sections: [
+                  { id: null, title: vi ? "Điểm nổi bật" : "Highlights", instruction: vi ? "Những gì đáng chú ý nhất." : "What stood out the most." },
+                  { id: null, title: vi ? "Lo ngại" : "Concerns", instruction: vi ? "Điều khiến mọi người lo." : "What worries people." },
+                ],
+              },
+            }),
+          300,
+        ),
+      );
     },
     duplicateTemplate: (id, language) => {
       const src = userTpls.find((u) => u.id === id);

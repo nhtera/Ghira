@@ -249,6 +249,25 @@ pub fn enhance(s: &Shape, lines: usize) -> Value {
 }
 
 /// Ask this meeting: an answer with citations, or not discussed.
+/// A note template drafted from a description (the editor's shape; ids are
+/// made when it is saved). Local only: the grammar bounds the sections.
+pub fn template_draft() -> Value {
+    let section = object(&[("title", string()), ("instruction", string())]);
+    object(&[
+        ("name", string()),
+        ("guidance", string()),
+        (
+            "sections",
+            array(
+                section,
+                Some(1),
+                Some(crate::template::MAX_SECTIONS),
+                Dialect::Local,
+            ),
+        ),
+    ])
+}
+
 pub fn ask(s: &Shape) -> Value {
     object(&[
         ("discussed", json!({"type": "boolean"})),

@@ -362,6 +362,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             templates_cmd::update_template,
             templates_cmd::delete_template,
             templates_cmd::duplicate_template,
+            templates_cmd::draft_template,
             detail::regenerate_notes,
             detail::retranscribe,
             settings_cmd::transcription_engine,

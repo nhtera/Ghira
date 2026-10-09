@@ -61,6 +61,36 @@ test("create → regenerate with it → rename → delete: the sections stay in 
   await expect(page.locator("textarea", { hasText: "Notes for Went well" })).toBeVisible();
 });
 
+test("draft from a description fills the editor; nothing is saved until Save", async ({ page }) => {
+  await page.goto("/?platform=win#/meetings");
+  await toSettings(page);
+  await page.getByRole("button", { name: "New template" }).click();
+  const editor = page.getByTestId("template-editor");
+  await editor.getByRole("textbox", { name: "Describe your meetings" }).fill("weekly design critique with the product team");
+  await editor.getByRole("button", { name: "Draft" }).click();
+  await expect(editor.getByRole("textbox", { name: "Name" })).toHaveValue("Weekly design critique");
+  await expect(editor.getByTestId("template-section")).toHaveCount(2);
+  await editor.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByTestId("user-templates").getByRole("listitem")).toHaveCount(0);
+  // Again, and this time keep it.
+  await page.getByRole("button", { name: "New template" }).click();
+  await editor.getByRole("textbox", { name: "Describe your meetings" }).fill("weekly design critique");
+  await editor.getByRole("button", { name: "Draft" }).click();
+  await expect(editor.getByTestId("template-section")).toHaveCount(2);
+  await editor.getByRole("button", { name: "Save template" }).click();
+  await expect(page.getByTestId("user-templates").getByText("Weekly design critique")).toBeVisible();
+});
+
+test("a draft that must wait says so in words", async ({ page }) => {
+  await page.goto("/?platform=win&askfail=noModel#/meetings");
+  await toSettings(page);
+  await page.getByRole("button", { name: "New template" }).click();
+  const editor = page.getByTestId("template-editor");
+  await editor.getByRole("textbox", { name: "Describe your meetings" }).fill("anything");
+  await editor.getByRole("button", { name: "Draft" }).click();
+  await expect(editor.getByText(/The notes model isn.t installed yet/)).toBeVisible();
+});
+
 test("a built-in template duplicates into an editable copy; Save needs a complete form", async ({ page }) => {
   await page.goto("/?platform=win#/meetings");
   await toSettings(page);

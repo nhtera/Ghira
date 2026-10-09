@@ -201,6 +201,55 @@ pub(crate) fn duplicate_now(c: &Core, id: &str, language: &str) -> Result<Templa
     Ok(form)
 }
 
+/// A template form drafted from a description by `llm`. Nothing is saved.
+pub(crate) fn draft_with(
+    llm: &mut dyn ghi_llm::Llm,
+    description: &str,
+    language: &str,
+) -> Result<TemplateForm, String> {
+    let lang = lang_of(language)?;
+    let e = ghi_llm::draft::draft(llm, description, lang).map_err(|e| e.to_string())?;
+    Ok(TemplateForm {
+        name: e.name,
+        language: lang.code().into(),
+        guidance: e.guidance,
+        sections: e
+            .sections
+            .into_iter()
+            .map(|s| FormSection {
+                id: None,
+                title: s.title,
+                instruction: s.instruction,
+            })
+            .collect(),
+    })
+}
+
+/// "Draft from description": the local model, like Ask (refused while
+/// recording or while notes are being written, and while the app is locked).
+pub(crate) fn draft_now(c: &Core, description: &str, language: &str) -> Result<TemplateForm, String> {
+    lang_of(language)?;
+    // Refused while the app is locked, like every content command.
+    let store = c.store()?;
+    crate::cloud_cmd::local_model_free(c, &store)?;
+    let mut llm = (c.llm()?)(description.len())?;
+    let form = draft_with(llm.as_mut(), description, language);
+    drop(llm);
+    form
+}
+
+/// Drafts a template from a description with the local model. Never saved:
+/// the form is for the person to review.
+#[tauri::command]
+#[specta::specta]
+pub async fn draft_template(
+    core: CoreState<'_>,
+    description: String,
+    language: String,
+) -> Result<TemplateForm, String> {
+    blocking(&core, move |c| draft_now(c, &description, &language)).await
+}
+
 /// Your templates.
 #[tauri::command]
 #[specta::specta]
@@ -438,5 +487,64 @@ mod tests {
         assert!(duplicate_now(&c, "standup", "en").is_err());
         c.set_locked(false);
         assert_eq!(list_now(&c).unwrap().len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod draft_tests {
+    use super::*;
+    use ghi_llm::{Completion, EngineInfo, Llm, Request};
+
+    struct Say(String, std::sync::atomic::AtomicUsize);
+
+    impl Llm for Say {
+        fn engine(&self) -> EngineInfo {
+            EngineInfo {
+                name: "say".into(),
+                version: "1".into(),
+            }
+        }
+        fn context_tokens(&self) -> u32 {
+            8192
+        }
+        fn complete(&mut self, _: &Request) -> ghi_llm::Result<Completion> {
+            self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(Completion {
+                text: self.0.clone(),
+                tokens_in: 1,
+                tokens_out: 1,
+                truncated: false,
+            })
+        }
+    }
+
+    const REPLY: &str = r#"{"name":"Retro","guidance":"Weekly retros.","sections":[{"title":"Went well","instruction":"What worked."},{"title":"Went badly","instruction":"What did not."}]}"#;
+
+    #[test]
+    fn a_draft_is_a_form_with_no_ids_that_creates_cleanly_and_is_not_saved() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (c, _rx) = Core::for_test(tmp.path().join("data"));
+        let mut llm = Say(REPLY.into(), 0.into());
+        let form = draft_with(&mut llm, "A weekly retro", "en").unwrap();
+        assert_eq!(form.name, "Retro");
+        assert!(form.sections.iter().all(|s| s.id.is_none()));
+        // Drafting saves nothing; only creating does.
+        assert!(list_now(&c).unwrap().is_empty());
+        let made = create_now(&c, &form).unwrap();
+        assert_eq!(made.form.sections.len(), 2);
+        assert!(draft_with(&mut llm, "x", "fr").is_err());
+    }
+
+    #[test]
+    fn a_locked_app_refuses_before_any_model_is_opened() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (c, _rx) = Core::for_test(tmp.path().join("data"));
+        c.set_locked(true);
+        assert!(draft_now(&c, "A weekly retro", "en").is_err());
+        c.set_locked(false);
+        // Unlocked, but no model is set up in this core: refused in words, nothing drafted.
+        let e = draft_now(&c, "A weekly retro", "en").unwrap_err();
+        assert!(!e.is_empty());
+        assert!(list_now(&c).unwrap().is_empty());
     }
 }

@@ -9,7 +9,7 @@ import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TemplateForm } from "../../bindings";
 import { inputCls } from "./parts";
-import { MAX_GUIDANCE, MAX_INSTRUCTION, MAX_NAME, MAX_SECTIONS, MAX_SECTION_TITLE, formIssue } from "./template-form";
+import { MAX_DESCRIPTION, MAX_GUIDANCE, MAX_INSTRUCTION, MAX_NAME, MAX_SECTIONS, MAX_SECTION_TITLE, formIssue } from "./template-form";
 
 export function TemplateEditor({
   initial,
@@ -17,12 +17,15 @@ export function TemplateEditor({
   saving,
   onSave,
   onCancel,
+  onDraft,
 }: {
   initial: TemplateForm;
   isNew: boolean;
   saving: boolean;
   onSave: (form: TemplateForm) => void;
   onCancel: () => void;
+  /** Asks the local model for a draft of a new template; the form is filled in, never saved. */
+  onDraft?: (description: string, language: string) => Promise<{ form: TemplateForm } | { error: string } | null>;
 }) {
   const { t } = useTranslation();
   const [form, setForm] = useState(initial);
@@ -32,12 +35,30 @@ export function TemplateEditor({
   // The reason Save is off is only said once the person has started typing.
   const [touched, setTouched] = useState(false);
   const uid = useId();
+  const [description, setDescription] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  // What the last draft attempt said: "drafted", or a waiting state (busy, no model) in words.
+  const [draftNote, setDraftNote] = useState<string | null>(null);
   const issue = formIssue(form);
   const set = (p: Partial<TemplateForm>) => {
     setTouched(true);
     setForm((f) => ({ ...f, ...p }));
   };
   const setSection = (i: number, p: Partial<TemplateForm["sections"][number]>) => set({ sections: form.sections.map((s, k) => (k === i ? { ...s, ...p } : s)) });
+  const draft = async () => {
+    if (!onDraft || drafting || !description.trim()) return;
+    setDrafting(true);
+    setDraftNote(null);
+    const r = await onDraft(description, form.language);
+    setDrafting(false);
+    if (!r) return;
+    if ("error" in r) return setDraftNote(r.error);
+    nextKey.current += r.form.sections.length;
+    setKeys(r.form.sections.map((_, i) => nextKey.current - r.form.sections.length + i));
+    setTouched(true);
+    setForm(r.form);
+    setDraftNote(t("settings.templates.editor.drafted"));
+  };
   const addSection = () => {
     setKeys((k) => [...k, nextKey.current++]);
     set({ sections: [...form.sections, { id: null, title: "", instruction: "" }] });
@@ -58,6 +79,33 @@ export function TemplateEditor({
       }}
     >
       <h3 className="m-0 text-[15px] font-semibold">{t(isNew ? "settings.templates.editor.titleNew" : "settings.templates.editor.titleEdit")}</h3>
+      {isNew && onDraft && (
+        <div data-testid="template-draft" className="flex flex-col gap-1.5 rounded-panel border border-line2 p-3">
+          <label htmlFor={`${uid}-draft`} className="text-[13px] font-medium">
+            {t("settings.templates.editor.draftLabel")}
+          </label>
+          <textarea
+            id={`${uid}-draft`}
+            value={description}
+            rows={2}
+            maxLength={MAX_DESCRIPTION}
+            aria-describedby={`${uid}-dh`}
+            onChange={(e) => setDescription(e.target.value)}
+            className="min-w-0 resize-none rounded-ctl border border-line2 bg-surface p-2 text-[13.5px] text-ink focus-visible:outline-2 focus-visible:outline-accent"
+          />
+          <span id={`${uid}-dh`} className="text-[12px] text-muted">
+            {t("settings.templates.editor.draftHint")}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" icon="auto_awesome" disabled={drafting || !description.trim()} onClick={() => void draft()}>
+              {t("settings.templates.editor.draftButton")}
+            </Button>
+            <span role="status" className="text-[12.5px] text-muted">
+              {drafting ? t("settings.templates.editor.drafting") : draftNote}
+            </span>
+          </div>
+        </div>
+      )}
       <div className="flex flex-col gap-1">
         <label htmlFor={`${uid}-name`} className="text-[13px] font-medium">
           {t("settings.templates.editor.name")}

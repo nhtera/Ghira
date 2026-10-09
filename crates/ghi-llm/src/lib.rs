@@ -18,6 +18,7 @@
 
 pub mod ask;
 pub mod cloud;
+pub mod draft;
 pub mod embed;
 pub mod enhance;
 pub mod local;

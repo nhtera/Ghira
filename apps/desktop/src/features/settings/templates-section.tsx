@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import type { TemplateForm, UserTemplateView } from "../../bindings";
 import { ipc } from "../../ipc";
 import { useTemplates } from "../../state/meeting-queries";
+import { busyCode } from "../ask/ask-error";
 import { templateName } from "../meeting/template-names";
 import { Card, Note, useFail } from "./parts";
 import { TemplateEditor } from "./template-editor";
@@ -66,6 +67,15 @@ export function TemplatesSection() {
     const name = Array.from(t("settings.templates.copyName", { name: r.data.name })).slice(0, MAX_NAME).join("");
     setEditing({ id: null, form: { ...r.data, name } });
   };
+  // The local model drafts a form from a description. A refusal that only means "wait" or "install the model" is said in words.
+  const draft = async (description: string, lang: string) => {
+    const r = await ipc.commands.draftTemplate(description, lang);
+    if (r.status === "ok") return { form: r.data };
+    const code = busyCode(r.error);
+    if (code) return { error: t(`ask.busy.${code}`) };
+    fail(r.error);
+    return null;
+  };
   const remove = async (id: string) => {
     setDeleting(null);
     setBusy(true);
@@ -82,7 +92,7 @@ export function TemplatesSection() {
     <div className="flex flex-col">
       <p className="m-0 mt-1 text-[12.5px] text-muted">{t("settings.templates.hint", { context: platform })}</p>
       {editing ? (
-        <TemplateEditor key={editing.id ?? "new"} initial={editing.form} isNew={editing.id == null} saving={saving} onSave={(f) => void save(f)} onCancel={() => setEditing(null)} />
+        <TemplateEditor key={editing.id ?? "new"} initial={editing.form} isNew={editing.id == null} saving={saving} onSave={(f) => void save(f)} onCancel={() => setEditing(null)} onDraft={draft} />
       ) : (
         <>
           <Card title={t("settings.templates.yours")}>

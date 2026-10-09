@@ -217,6 +217,11 @@ export const commands = {
 	deleteTemplate: (id: string) => typedError<null, string>(__TAURI_INVOKE("delete_template", { id })),
 	duplicateTemplate: (id: string, language: string) => typedError<TemplateForm, string>(__TAURI_INVOKE("duplicate_template", { id, language })),
 	/**
+	 *  Drafts a template from a description with the local model. Never saved:
+	 *  the form is for the person to review.
+	 */
+	draftTemplate: (description: string, language: string) => typedError<TemplateForm, string>(__TAURI_INVOKE("draft_template", { description, language })),
+	/**
 	 *  Rewrites the AI notes (template and language as chosen); what the user
 	 *  wrote, edited, pinned or ticked off stays [RT-7]. Returns whether it waits
 	 *  for the local model to be installed.

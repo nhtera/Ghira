@@ -85,6 +85,7 @@
     "allow-update-template",
     "allow-delete-template",
     "allow-duplicate-template",
+    "allow-draft-template",
     "allow-regenerate-notes",
     "allow-retranscribe",
     "allow-transcription-engine",

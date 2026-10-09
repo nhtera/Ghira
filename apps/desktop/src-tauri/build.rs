@@ -172,6 +172,7 @@ fn main() {
             "update_template",
             "delete_template",
             "duplicate_template",
+            "draft_template",
             "delete_action_item",
             "set_action_owner",
             "set_action_done",

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-draft-template"
+description = "Enables the draft_template command without any pre-configured scope."
+commands.allow = ["draft_template"]
+
+[[permission]]
+identifier = "deny-draft-template"
+description = "Denies the draft_template command without any pre-configured scope."
+commands.deny = ["draft_template"]

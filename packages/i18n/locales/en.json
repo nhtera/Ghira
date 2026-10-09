@@ -751,6 +751,12 @@
         "save": "Save template",
         "count": "{{used}} / {{max}}",
         "nameRequired": "Give the template a name.",
+        "draftTitle": "Draft from a description",
+        "draftHint": "Describe your meetings in a sentence or two. The notes model on this device drafts a template for you to review. Nothing is saved until you choose Save template.",
+        "draftLabel": "Describe your meetings",
+        "draftButton": "Draft",
+        "drafting": "Drafting…",
+        "drafted": "Draft ready. Review it, change what you like, then save.",
         "guidanceTooLong": "The description is too long: 400 characters at most.",
         "titleRequired": "Every section needs a title and a line on what goes in it."
       }
