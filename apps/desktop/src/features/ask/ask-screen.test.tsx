@@ -66,6 +66,7 @@ describe("Ask across meetings", () => {
     expect(await screen.findByText("Beta ships in November.")).toBeTruthy();
     expect(screen.getByText(/qwen3-4b · 2 meetings read/)).toBeTruthy();
     expect(screen.queryByTestId("ask-keyword-only")).toBeNull();
+    expect(screen.getByTestId("ask-commitment").textContent).toBe("AI suggestions are not commitments.");
     fireEvent.click(screen.getByRole("button", { name: "Open Product sync at 01:05" }));
     expect(navigate).toHaveBeenCalledWith({ to: "/meetings/$id/$tab", params: { id: "m1", tab: "transcript" }, search: { t: 65_000 } });
   });
@@ -93,6 +94,8 @@ describe("Ask across meetings", () => {
     await screen.findByText(/Searching 3 meetings/);
     ask("pricing tiers?");
     const card = await screen.findByTestId("ask-not-discussed");
+    // Nothing was answered, so there is nothing to call a suggestion.
+    expect(screen.queryByTestId("ask-commitment")).toBeNull();
     expect(card.textContent).toContain("pricing");
     fireEvent.click(within(card).getByRole("button"));
     expect(navigate).toHaveBeenCalledWith({ to: "/meetings", search: { q: "pricing" } });

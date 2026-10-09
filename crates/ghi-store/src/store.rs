@@ -1834,15 +1834,21 @@ impl Store {
             return Err(StoreError::Invalid("note kind".into()));
         }
         let mut conn = self.conn();
-        let id = id_of(&conn, "notes_blocks", note_gid)?;
         let tx = conn.transaction()?;
         let lamport = Store::alloc_lamport(&tx, 1)?;
-        tx.execute(
+        // The block is looked up by the update itself: none changed, none there.
+        let changed = tx.execute(
             "UPDATE notes_blocks SET kind = ?1, lamport = ?2,
                     provenance = CASE provenance WHEN 'ai' THEN 'ai_edited' ELSE provenance END
-             WHERE id = ?3",
-            params![kind, lamport, id],
+             WHERE gid = ?3",
+            params![kind, lamport, note_gid],
         )?;
+        if changed == 0 {
+            return Err(StoreError::NotFound {
+                kind: "note",
+                gid: note_gid.to_string(),
+            });
+        }
         tx.commit()?;
         Ok(())
     }

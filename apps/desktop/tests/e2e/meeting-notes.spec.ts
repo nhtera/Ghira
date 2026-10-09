@@ -122,25 +122,27 @@ test("items that cover a marked moment carry a star; the uncovered mark is liste
   await expect(page.getByTestId("waveform")).toHaveAttribute("data-marks", "3");
 });
 
-test("Decisions lists decided items, then Proposed ones with a chip and the footnote; the block menu moves one", async ({ page }) => {
+test("Decisions lists decided items, then Proposed ones with a chip and the footnote; the block menu moves one and keeps focus", async ({ page }) => {
   await open(page);
   const decisions = page.getByRole("region", { name: "Decisions" });
-  const proposed = page.getByTestId("proposed-decisions");
-  await expect(proposed.getByTestId("proposed-chip")).toHaveCount(1);
-  await expect(proposed.getByRole("textbox")).toHaveValue("Schedule a beta review with the client.");
-  await expect(proposed.getByText("AI suggestions are not commitments.")).toBeVisible();
+  await expect(decisions.getByTestId("proposed-chip")).toHaveCount(1);
+  await expect(decisions.getByTestId("proposal-footnote")).toHaveText("AI suggestions are not commitments.");
   // decided ones come first
   const order = await decisions.locator("textarea").evaluateAll((els) => els.map((e) => (e as HTMLTextAreaElement).value));
   expect(order.at(-1)).toBe("Schedule a beta review with the client.");
   // Decided -> Proposed
   const first = decisions.locator("[data-block]").first();
-  await first.getByRole("button", { name: "Decision options" }).click();
+  const gid = await first.getAttribute("data-block");
+  const menu = decisions.locator(`[data-block="${gid}"]`).getByRole("button", { name: "Decision options" });
+  await menu.click();
   await page.getByRole("menuitem", { name: "Mark as proposed" }).click();
-  await expect(proposed.getByTestId("proposed-chip")).toHaveCount(2);
-  await expect(proposed.getByText("Edited by you · kept on regenerate")).toHaveCount(1);
+  await expect(decisions.getByTestId("proposed-chip")).toHaveCount(2);
+  await expect(decisions.locator(`[data-block="${gid}"]`).getByTestId("proposed-chip")).toBeVisible();
+  // keyboard focus is back on that block's menu button, wherever the block went
+  await expect(menu).toBeFocused();
   // and back
-  await proposed.getByRole("button", { name: "Decision options" }).first().click();
+  await menu.click();
   await page.getByRole("menuitem", { name: "Mark as decided" }).click();
-  await expect(proposed.getByTestId("proposed-chip")).toHaveCount(1);
+  await expect(decisions.getByTestId("proposed-chip")).toHaveCount(1);
+  await expect(menu).toBeFocused();
 });
-

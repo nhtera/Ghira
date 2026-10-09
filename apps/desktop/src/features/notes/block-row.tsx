@@ -4,6 +4,7 @@
 // a jot with no match in the transcript. Same look as @ghi/ui NoteBlock, with
 // a textarea in place of the paragraph and the citations under it.
 import { Icon, Menu, cn } from "@ghi/ui";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { NoteBlockView } from "../../bindings";
 import { CitationGroup } from "../citation/citation-link";
@@ -71,6 +72,19 @@ export function BlockRow({
     void edit.editBlock(block.gid, v);
   };
   const proposed = block.kind === "proposal";
+  // After a move the menu is not where it was: put focus back on this block's menu button.
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (refocus.current) {
+      refocus.current = false;
+      menuButton.current?.focus();
+    }
+  }, [block.kind]);
+  const move = (toProposed: boolean) => {
+    refocus.current = true;
+    void edit.setDecisionStatus(block.gid, toProposed);
+  };
   // The app's own decisions can move between Decided and Proposed.
   const movable = block.origin !== "user" && (block.kind === "decision" || proposed);
   return (
@@ -133,14 +147,14 @@ export function BlockRow({
           <Menu
             label={t("notes.decisionMenu")}
             trigger={
-              <button type="button" aria-label={t("notes.decisionMenu")} className="grid size-6 place-items-center rounded-seg text-muted hover:bg-sunk hover:text-ink">
+              <button ref={menuButton} type="button" aria-label={t("notes.decisionMenu")} className="grid size-6 place-items-center rounded-seg text-muted hover:bg-sunk hover:text-ink">
                 <Icon name="more_horiz" size={16} />
               </button>
             }
             items={[
               proposed
-                ? { label: t("notes.markDecided"), icon: "check", onSelect: () => void edit.setDecisionStatus(block.gid, false) }
-                : { label: t("notes.markProposed"), icon: "help", onSelect: () => void edit.setDecisionStatus(block.gid, true) },
+                ? { label: t("notes.markDecided"), icon: "check", onSelect: () => move(false) }
+                : { label: t("notes.markProposed"), icon: "help", onSelect: () => move(true) },
             ]}
           />
         )}

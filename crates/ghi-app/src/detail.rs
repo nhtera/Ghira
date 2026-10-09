@@ -1602,6 +1602,11 @@ mod tests {
         assert!(set_decision_status_now(&store, &m, &mine, true).is_err());
         assert!(set_decision_status_now(&store, &m, &tldr, true).is_err());
         assert!(set_decision_status_now(&store, "other-meeting", &dec, true).is_err());
+        // A block that is not there is "not found" (and nothing is written).
+        assert!(matches!(
+            store.set_note_block_kind("no-such-block", "proposal"),
+            Err(ghi_store::StoreError::NotFound { .. })
+        ));
         assert_eq!(kind_of(&mine).0, "decision");
         assert_eq!(kind_of(&tldr).0, "tldr");
     }

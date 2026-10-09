@@ -4,7 +4,7 @@
 // notes only" hides what the app wrote and you did not touch.
 import { APP_NAME, formatClock } from "@ghi/i18n";
 import { Icon } from "@ghi/ui";
-import { useId, useMemo, type ReactNode } from "react";
+import { isValidElement, useId, useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingDetail } from "../../bindings";
 import { useMeetingNotes, useTemplates } from "../../state/meeting-queries";
@@ -33,7 +33,7 @@ function Section({ title, ai, children }: { title: string; ai?: boolean; childre
 }
 
 function Bullets({ children }: { children: ReactNode[] }) {
-  return <ul className="m-0 grid list-disc gap-1.5 pl-5 marker:text-faint">{children.map((c, i) => <li key={i}>{c}</li>)}</ul>;
+  return <ul className="m-0 grid list-disc gap-1.5 pl-5 marker:text-faint">{children.map((c, i) => <li key={isValidElement(c) && c.key != null ? c.key : i}>{c}</li>)}</ul>;
 }
 
 export function NotesTab({
@@ -144,12 +144,12 @@ export function NotesTab({
         ))}
         {(layout.decisions.length > 0 || layout.proposals.length > 0) && (
           <Section ai title={t("notes.sections.decisions")}>
-            {layout.decisions.length > 0 && blocks(layout.decisions, t("notes.blockLabel"))}
+            {/* One keyed list: a decision moved to Proposed (or back) keeps its row, so keyboard focus stays on it. */}
+            {blocks([...layout.decisions, ...layout.proposals], t("notes.blockLabel"))}
             {layout.proposals.length > 0 && (
-              <div data-testid="proposed-decisions" className="flex flex-col gap-1.5">
-                {blocks(layout.proposals, t("notes.blockLabel"))}
-                <p className="m-0 font-sans text-[12px] text-muted">{t("notes.proposalFootnote")}</p>
-              </div>
+              <p data-testid="proposal-footnote" className="m-0 font-sans text-[12px] text-muted">
+                {t("notes.proposalFootnote")}
+              </p>
             )}
           </Section>
         )}

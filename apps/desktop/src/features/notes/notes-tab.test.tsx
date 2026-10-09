@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -157,56 +157,74 @@ describe("NotesTab", () => {
     expect(screen.queryByTestId("saved-answers")).toBeNull();
   });
 
+  const row = (gid: string) => document.querySelector<HTMLElement>(`[data-block="${gid}"]`)!;
+
   it("lists decided items, then the proposed ones with a chip and the commitment footnote", async () => {
-    notes.blocks.push(block("d1", "decision", "ai", "Ship on Friday.", [cite]), block("p1", "proposal", "ai", "Maybe a dark theme.", [cite]));
+    notes.blocks.push(block("p1", "proposal", "ai", "Maybe a dark theme.", [cite]), block("d1", "decision", "ai", "Ship on Friday.", [cite]));
     await open();
-    const section = screen.getByRole("region", { name: "Decisions" });
-    const proposed = within(screen.getByTestId("proposed-decisions"));
-    expect(within(section).getByDisplayValue("Ship on Friday.")).toBeTruthy();
-    expect(proposed.getByDisplayValue("Maybe a dark theme.")).toBeTruthy();
-    expect(proposed.getByTestId("proposed-chip").textContent).toBe("Proposed");
-    expect(proposed.getByText("AI suggestions are not commitments.")).toBeTruthy();
-    // the decided one has no chip, and is not inside the proposed group
+    const section = within(screen.getByRole("region", { name: "Decisions" }));
+    // decided first, whatever the order they came in
+    const values = section.getAllByRole("textbox").map((x) => (x as HTMLTextAreaElement).value);
+    expect(values).toEqual(["Ship on Friday.", "Maybe a dark theme."]);
+    expect(within(row("p1")).getByTestId("proposed-chip").textContent).toBe("Proposed");
+    expect(within(row("d1")).queryByTestId("proposed-chip")).toBeNull();
     expect(screen.getAllByTestId("proposed-chip")).toHaveLength(1);
-    expect(proposed.queryByDisplayValue("Ship on Friday.")).toBeNull();
+    expect(section.getByTestId("proposal-footnote").textContent).toBe("AI suggestions are not commitments.");
   });
 
   it("only proposals: the Decisions section still shows, with the footnote", async () => {
     notes.blocks.push(block("p1", "proposal", "ai", "Maybe a dark theme.", [cite]));
     await open();
     expect(screen.getByRole("region", { name: "Decisions" })).toBeTruthy();
-    expect(screen.getByText("AI suggestions are not commitments.")).toBeTruthy();
+    expect(screen.getByTestId("proposal-footnote")).toBeTruthy();
   });
 
-  it("the block menu moves a decision to Proposed and back, and the notes follow at once", async () => {
-    const user = userEvent.setup();
-    commands.setDecisionStatus.mockImplementation(() => ok(null));
+  it("no footnote without proposals", async () => {
     notes.blocks.push(block("d1", "decision", "ai", "Ship on Friday.", [cite]));
     await open();
-    expect(screen.queryByTestId("proposed-decisions")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Decision options" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Mark as proposed" }));
-    expect(commands.setDecisionStatus).toHaveBeenCalledWith("m1", "d1", true);
-    const proposed = await screen.findByTestId("proposed-decisions");
-    expect(within(proposed).getByDisplayValue("Ship on Friday.")).toBeTruthy();
-    // and back: the chip's block offers "Mark as decided"
-    await user.click(screen.getByRole("button", { name: "Decision options" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Mark as decided" }));
-    expect(commands.setDecisionStatus).toHaveBeenLastCalledWith("m1", "d1", false);
-    await waitFor(() => expect(screen.queryByTestId("proposed-decisions")).toBeNull());
+    expect(screen.queryByTestId("proposal-footnote")).toBeNull();
   });
 
-  it("a refused move puts the decision back and offers the menu only on the app's decisions", async () => {
+  it("the block menu moves a decision to Proposed and back, and keyboard focus stays on its menu", async () => {
     const user = userEvent.setup();
-    commands.setDecisionStatus.mockImplementation(() => Promise.resolve({ status: "error" as const, error: "only a decision the app wrote can be moved" }));
+    commands.setDecisionStatus.mockImplementation(() => ok(null));
+    notes.blocks.push(block("d1", "decision", "ai", "Ship on Friday.", [cite]), block("p1", "proposal", "ai", "Maybe a dark theme.", [cite]));
+    await open();
+    const menu = () => within(row("d1")).getByRole("button", { name: "Decision options" });
+    const before = row("d1");
+    await user.click(menu());
+    await user.click(await screen.findByRole("menuitem", { name: "Mark as proposed" }));
+    expect(commands.setDecisionStatus).toHaveBeenCalledWith("m1", "d1", true);
+    await waitFor(() => expect(within(row("d1")).getByTestId("proposed-chip")).toBeTruthy());
+    // it is the same row (one keyed list), now listed with the proposals
+    expect(row("d1")).toBe(before);
+    expect(within(screen.getByRole("region", { name: "Decisions" })).getAllByRole("textbox").map((x) => (x as HTMLTextAreaElement).value)).toEqual(["Ship on Friday.", "Maybe a dark theme."]);
+    await waitFor(() => expect(document.activeElement).toBe(menu()));
+    // and back
+    await user.click(menu());
+    await user.click(await screen.findByRole("menuitem", { name: "Mark as decided" }));
+    expect(commands.setDecisionStatus).toHaveBeenLastCalledWith("m1", "d1", false);
+    await waitFor(() => expect(within(row("d1")).queryByTestId("proposed-chip")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(menu()));
+  });
+
+  it("a refused move shows at once, then puts the decision back and says why; only the app's decisions have a menu", async () => {
+    const user = userEvent.setup();
+    let refuse!: (v: unknown) => void;
+    commands.setDecisionStatus.mockReturnValue(new Promise((r) => (refuse = r)));
     notes.blocks.push(block("d1", "decision", "ai", "Ship on Friday.", [cite]), block("d2", "decision", "user", "My own decision"));
     await open();
     // one menu: the user's own tagged decision has none
     expect(screen.getAllByRole("button", { name: "Decision options" })).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "Decision options" }));
     await user.click(await screen.findByRole("menuitem", { name: "Mark as proposed" }));
-    await waitFor(() => expect(commands.setDecisionStatus).toHaveBeenCalled());
-    await waitFor(() => expect(screen.queryByTestId("proposed-decisions")).toBeNull());
+    // optimistic: the chip is there while the core has not answered
+    expect(within(row("d1")).getByTestId("proposed-chip")).toBeTruthy();
+    expect(screen.getByTestId("proposal-footnote")).toBeTruthy();
+    await act(async () => refuse({ status: "error", error: "only a decision the app wrote can be moved" }));
+    await waitFor(() => expect(within(row("d1")).queryByTestId("proposed-chip")).toBeNull());
+    expect(screen.queryByTestId("proposal-footnote")).toBeNull();
+    expect((await screen.findAllByText(/only a decision the app wrote can be moved/)).length).toBeGreaterThan(0);
   });
 
   it("stars the items that cover a marked moment and lists only the uncovered marks", async () => {
