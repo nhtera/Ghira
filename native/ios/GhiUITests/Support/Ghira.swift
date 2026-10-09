@@ -82,9 +82,11 @@ enum Ghira {
             faceID(match: true)
         }
         let immediately = app.buttons["Only when reopened Selected"]
+        // The choices show once the Face ID save is done (slow on a CI machine).
+        let option = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Only when reopened")).firstMatch
         for _ in 0..<5 where !immediately.exists {
             _ = waitUntil(2) { immediately.exists }
-            app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Only when reopened")).firstMatch.tap()
+            if !immediately.exists && option.waitForExistence(timeout: 10) { option.tap() }
         }
         XCTAssertTrue(immediately.waitForExistence(timeout: 5), "lock delay not set\n" + app.debugDescription)
     }
