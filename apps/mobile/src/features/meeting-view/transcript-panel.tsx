@@ -83,8 +83,8 @@ export function TranscriptPanel({
     if (listRef.current) setMargin(listRef.current.offsetTop);
   }, [segments.length]);
 
-  // eslint-disable-next-line react-hooks/incompatible-library -- the virtualizer is only used in this component
   const marksOf = useMemo(() => marksBySegment(marks), [marks]);
+  // eslint-disable-next-line react-hooks/incompatible-library -- the virtualizer is only used in this component
   const virtual = useVirtualizer({
     count: segments.length,
     getScrollElement: () => scroller.current,

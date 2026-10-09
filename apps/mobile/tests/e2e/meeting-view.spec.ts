@@ -25,6 +25,15 @@ test.describe("meeting view", () => {
     await expect(page.getByTestId("mark")).toHaveCount(2);
   });
 
+  test("a phone recording without notes still lists its marked moment", async ({ page }) => {
+    await openMeetings(page, "/meetings/m-nonotes");
+    await expect(page.locator('[data-state="no-notes"]')).toBeVisible();
+    const moments = page.getByTestId("marked-moments");
+    await expect(page.getByRole("heading", { name: "Moments you marked" })).toBeVisible();
+    await expect(moments).toContainText("Marked");
+    await expect(moments).toContainText("Ngân sách dự kiến");
+  });
+
   test("a saved Ask answer has its own section with its source", async ({ page }) => {
     await openMeetings(page, "/meetings/m-notes");
     await expect(page.getByRole("heading", { name: "Saved from Ask" })).toBeVisible();

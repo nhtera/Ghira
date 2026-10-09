@@ -248,6 +248,7 @@
       "decision": "Quyết định",
       "action": "Việc cần làm",
       "question": "Câu hỏi",
+      "star": "Đã đánh dấu",
       "tagged": "Đã gắn nhãn {{tag}}. Sẽ đưa vào ghi chú."
     },
     "sections": {

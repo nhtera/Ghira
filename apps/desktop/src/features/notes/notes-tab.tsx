@@ -186,7 +186,7 @@ export function NotesTab({
             <ul data-testid="marked-moments" className="m-0 flex list-none flex-col gap-1.5 p-0">
               {missed.map((m, i) => {
                 const time = formatClock(m.tMs ?? 0, { pad: true });
-                const tag = m.tag === "decision" || m.tag === "action" || m.tag === "question" ? t(`notes.tags.${m.tag}`) : t("live.markedToast", { time });
+                const tag = t(`notes.tags.${m.tag === "decision" || m.tag === "action" || m.tag === "question" ? m.tag : "star"}`);
                 return (
                   <li key={i} className="flex items-start gap-2 text-body">
                     {detail.audioAvailable ? (

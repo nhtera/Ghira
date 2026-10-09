@@ -85,7 +85,7 @@ export function BlockRow({
         autoFocus={autoFocus}
         keepOnEmpty={block.origin !== "user"}
         trailing={
-          (block.citations.length > 0 || kind === "edited" || kind === "ai" || kind === "missing") && (
+          (block.citations.length > 0 || kind === "edited") && (
             <>
               {block.pinned && (
                 <span title={t("notes.pinned")} className="ml-1.5 inline-flex items-center align-[2px] text-muted">

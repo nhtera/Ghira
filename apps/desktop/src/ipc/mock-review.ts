@@ -182,7 +182,9 @@ function build(lang: "en" | "vi"): Detail {
 /** The core's rule, in miniature: a mark is covered by every AI block or action whose cited time overlaps its line. */
 function momentsOf(d: Detail): MarkedMoment[] {
   const overlaps = (a0: number, a1: number, b0: number, b1: number) => a0 < Math.max(b1, b0 + 1) && b0 < Math.max(a1, a0 + 1);
-  const items = [...d.notes.blocks.filter((b) => b.origin !== "user"), ...d.notes.actionItems];
+  // Only note sentences cover (not topics, your own notes or kinds not drawn yet), as in the core.
+  const covers = (k: string) => /^(tldr|decision|question|quote|answer|section:.*|enhanced:.*)$/.test(k);
+  const items = [...d.notes.blocks.filter((b) => b.origin !== "user" && covers(b.kind)), ...d.notes.actionItems];
   return d.transcript.marks.map((m) => {
     const seg = d.transcript.segments.find((s) => s.gid === m.segment);
     return {

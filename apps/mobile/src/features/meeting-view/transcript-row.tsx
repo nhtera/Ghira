@@ -104,11 +104,9 @@ export function TranscriptRow({
               className="text-ios-caption1 inline-flex items-center gap-0.5 text-muted"
             >
               <Icon name="star" size={13} className="text-warn" />
-              {m.tag === "decision" || m.tag === "action" || m.tag === "question"
-                ? t(`notes.tags.${m.tag}`)
-                : t("live.markedToast", {
-                    time: formatClock(m.tMs ?? 0, { pad: true }),
-                  })}
+              {t(
+                `notes.tags.${m.tag === "decision" || m.tag === "action" || m.tag === "question" ? m.tag : "star"}`,
+              )}
             </span>
           ))}
           {edited && (

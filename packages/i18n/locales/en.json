@@ -260,6 +260,7 @@
       "decision": "Decision",
       "action": "Action",
       "question": "Question",
+      "star": "Marked",
       "tagged": "Tagged as {{tag}}. It goes into the notes."
     },
     "sections": {

@@ -305,6 +305,15 @@ fn sections_of(template: Option<&str>) -> Vec<TemplateSection> {
         .unwrap_or_default()
 }
 
+/// Whether a block of this kind covers a mark. Only what the Notes tab draws
+/// as a note sentence (where the star shows): topics are a list of times and
+/// kinds this version does not draw would hide the mark from "Moments you marked".
+pub fn covers_marks(kind: &str) -> bool {
+    matches!(kind, "tldr" | "decision" | "question" | "quote" | "answer")
+        || kind.starts_with("section:")
+        || kind.starts_with("enhanced:")
+}
+
 /// The marks with the line they fall on and what covers them.
 /// `blocks` and `actions` are (gid, cited anchors); a user's own block does
 /// not count as covering.
@@ -348,7 +357,7 @@ fn notes_of(store: &Store, meeting: &str) -> Result<MeetingNotes, String> {
     } else {
         let blocks: Vec<(&str, &[Anchor])> = raw_blocks
             .iter()
-            .filter(|b| b.provenance != Provenance::User)
+            .filter(|b| b.provenance != Provenance::User && covers_marks(&b.kind))
             .map(|b| (b.gid.as_str(), b.anchors.as_slice()))
             .collect();
         let actions: Vec<(&str, &[Anchor])> = raw_actions
@@ -1289,6 +1298,86 @@ mod tests {
         assert_eq!(m[0].segment, None);
         assert_eq!(m[0].text, None);
         assert!(m[0].covered_by.is_empty());
+    }
+
+    #[test]
+    fn notes_of_counts_ai_blocks_and_actions_but_not_your_notes_or_topics() {
+        use ghi_store::store::{MarkTag, NewMeeting, NewSegment};
+        let tmp = tempfile::tempdir().unwrap();
+        let (core, _rx) = crate::core::Core::for_test(tmp.path().join("data"));
+        let store = core.store().unwrap();
+        let m = store
+            .create_meeting(NewMeeting {
+                title: "x".into(),
+                ..Default::default()
+            })
+            .unwrap()
+            .gid;
+        let line = |t0: i64, text: &str| NewSegment {
+            t0_ms: t0,
+            t1_ms: t0 + 4000,
+            text: text.into(),
+            ..Default::default()
+        };
+        store
+            .add_segments(
+                &m,
+                vec![
+                    line(0, "one"),
+                    line(10_000, "two"),
+                    line(20_000, "three"),
+                    line(30_000, "four"),
+                    line(40_000, "five"),
+                ],
+            )
+            .unwrap();
+        let anchor = |t0: i64| Anchor {
+            meeting_gid: m.clone(),
+            t0_ms: t0,
+            t1_ms: t0 + 4000,
+            transcript_version: 1,
+        };
+        let block = |kind: &str, prov: Provenance, t0: i64| NewNoteBlock {
+            kind: kind.into(),
+            provenance: prov,
+            body: "b".into(),
+            anchors: vec![anchor(t0)],
+            pinned: false,
+        };
+        let ai = store.add_note_block(&m, block("decision", Provenance::Ai, 0)).unwrap();
+        // Your own note and a topic (one cites many lines) cover nothing.
+        store.add_note_block(&m, block("note", Provenance::User, 10_000)).unwrap();
+        store.add_note_block(&m, block("topic", Provenance::Ai, 20_000)).unwrap();
+        let act = store
+            .add_action_item(
+                &m,
+                NewActionItem {
+                    text: "do it".into(),
+                    anchors: vec![anchor(30_000)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        for t in [1000, 11_000, 21_000, 31_000, 41_000] {
+            store.add_mark(&m, t, MarkTag::Star).unwrap();
+        }
+        let notes = notes_of(&store, &m).unwrap();
+        let by = |t: f64| notes.marks.iter().find(|k| k.t_ms == t).unwrap();
+        assert_eq!(by(1000.0).covered_by, [ai.gid]);
+        assert!(by(11_000.0).covered_by.is_empty(), "your own note");
+        assert!(by(21_000.0).covered_by.is_empty(), "a topic");
+        assert_eq!(by(31_000.0).covered_by, [act.gid]);
+        assert!(by(41_000.0).covered_by.is_empty(), "nothing cites it");
+    }
+
+    #[test]
+    fn only_drawn_sentence_kinds_cover_marks() {
+        for k in ["tldr", "decision", "question", "quote", "answer", "section:risks", "enhanced:b1"] {
+            assert!(covers_marks(k), "{k}");
+        }
+        for k in ["topic", "note", "proposal", "future"] {
+            assert!(!covers_marks(k), "{k}");
+        }
     }
 
     #[test]

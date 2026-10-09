@@ -36,8 +36,53 @@ export function NotesPanel({
   const cloudOffered = useCloudOffered();
   const groups = groupBlocks(notes.blocks);
   const missed = uncoveredMarks(notes.marks);
+  const marked = missed.length > 0 && (
+    <section aria-labelledby="sec-marked" className="px-4 pt-4">
+      <h2
+        id="sec-marked"
+        className="text-ios-footnote m-0 mb-2 font-semibold tracking-[0.07em] text-muted uppercase"
+      >
+        {t("notes.sections.marked")}
+      </h2>
+      <ul
+        data-testid="marked-moments"
+        className="m-0 flex list-none flex-col gap-2 p-0"
+      >
+        {missed.map((m, i) => {
+          const time = formatClock(m.tMs ?? 0, { pad: true });
+          const tag = t(
+            `notes.tags.${m.tag === "decision" || m.tag === "action" || m.tag === "question" ? m.tag : "star"}`,
+          );
+          return (
+            <li key={i} className="flex flex-col gap-0.5">
+              <span className="text-ios-footnote inline-flex items-center gap-1.5 text-muted">
+                <Icon name="star" size={14} className="size-3.5 text-warn" />
+                {tag}
+                {onPlayAt ? (
+                  <button
+                    type="button"
+                    onClick={() => onPlayAt(m.tMs ?? 0)}
+                    aria-label={t("mobile.detail.playFrom", { time })}
+                    className="min-h-ios-target font-mono text-accent tabular-nums"
+                  >
+                    {time}
+                  </button>
+                ) : (
+                  <span className="font-mono tabular-nums">{time}</span>
+                )}
+              </span>
+              {m.text && (
+                <span className="text-ios-body font-serif">{m.text}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
   if (groups.length === 0) {
     return (
+      <>
       <div
         data-state="no-notes"
         className="flex flex-col items-center gap-3 px-6 py-10 text-center"
@@ -60,6 +105,8 @@ export function NotesPanel({
           </Button>
         )}
       </div>
+      {marked}
+      </>
     );
   }
   return (
@@ -105,51 +152,7 @@ export function NotesPanel({
           </div>
         </section>
       ))}
-      {missed.length > 0 && (
-        <section aria-labelledby="sec-marked" className="px-4 pt-4">
-          <h2
-            id="sec-marked"
-            className="text-ios-footnote m-0 mb-2 font-semibold tracking-[0.07em] text-muted uppercase"
-          >
-            {t("notes.sections.marked")}
-          </h2>
-          <ul
-            data-testid="marked-moments"
-            className="m-0 flex list-none flex-col gap-2 p-0"
-          >
-            {missed.map((m, i) => {
-              const time = formatClock(m.tMs ?? 0, { pad: true });
-              const tag =
-                m.tag === "decision" || m.tag === "action" || m.tag === "question"
-                  ? t(`notes.tags.${m.tag}`)
-                  : t("live.markedToast", { time });
-              return (
-                <li key={i} className="flex flex-col gap-0.5">
-                  <span className="text-ios-footnote inline-flex items-center gap-1.5 text-muted">
-                    <Icon name="star" size={14} className="size-3.5 text-warn" />
-                    {tag}
-                    {onPlayAt ? (
-                      <button
-                        type="button"
-                        onClick={() => onPlayAt(m.tMs ?? 0)}
-                        aria-label={t("mobile.detail.playFrom", { time })}
-                        className="min-h-ios-target font-mono text-accent tabular-nums"
-                      >
-                        {time}
-                      </button>
-                    ) : (
-                      <span className="font-mono tabular-nums">{time}</span>
-                    )}
-                  </span>
-                  {m.text && (
-                    <span className="text-ios-body font-serif">{m.text}</span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
+      {marked}
       {cloudOffered && (
         <ListSection className="mt-6">
           <ListRow

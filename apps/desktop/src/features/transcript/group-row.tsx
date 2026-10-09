@@ -100,8 +100,7 @@ export function OverlapTag({ hint = true }: { hint?: boolean }) {
 
 function MarkTag({ mark }: { mark: MarkView }) {
   const { t } = useTranslation();
-  const time = formatClock(mark.tMs ?? 0, { pad: true });
-  const text = mark.tag === "decision" || mark.tag === "action" || mark.tag === "question" ? t(`notes.tags.${mark.tag}`) : t("live.markedToast", { time });
+  const text = t(`notes.tags.${mark.tag === "decision" || mark.tag === "action" || mark.tag === "question" ? mark.tag : "star"}`);
   return (
     <span data-testid="mark" className="inline-flex items-center gap-0.5 text-[11px] text-muted">
       <Icon name="star" size={14} className="text-warn" />

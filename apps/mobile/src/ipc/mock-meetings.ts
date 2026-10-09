@@ -175,7 +175,17 @@ function build(
       speakers,
       job: o.job ?? null,
     },
-    notes: o.notes ?? { blocks: [], actionItems: [], sections: [], marks: [] },
+    // Without notes, every mark is still uncovered.
+    notes: o.notes ?? {
+      blocks: [],
+      actionItems: [],
+      sections: [],
+      marks: (o.transcript?.marks ?? []).map((m) => ({
+        ...m,
+        text: o.transcript?.segments.find((s) => s.gid === m.segment)?.text ?? null,
+        coveredBy: [],
+      })),
+    },
     transcript: o.transcript ?? {
       version: 2,
       segments: [],
@@ -206,7 +216,8 @@ function defaults(): MockMeeting[] {
       speakers: spk,
       transcript: {
         version: 2,
-        marks: [],
+        // Recorded here: no notes yet, but a marked moment is still listed.
+        marks: [{ tMs: 13_000, tag: "star", segment: "s2" }],
         topics: [],
         segments: [
           segment(
