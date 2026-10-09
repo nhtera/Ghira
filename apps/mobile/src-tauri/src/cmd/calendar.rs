@@ -397,7 +397,9 @@ mod tests {
         assert!(cache().is_none());
     }
 
-    /// Off an iPhone nothing is readable and nothing happens.
+    /// Off an iPhone nothing is readable and nothing happens (the Simulator
+    /// test run is iOS: its calendar is the stubbed one, not asked yet).
+    #[cfg(not(target_os = "ios"))]
     #[test]
     fn off_ios_there_is_no_calendar() {
         assert_eq!(platform::calendar_access(), CalendarAccess::Unavailable);

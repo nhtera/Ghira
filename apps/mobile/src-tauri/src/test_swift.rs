@@ -112,6 +112,20 @@ pub extern "C" fn ghi_swift_qr_scan_stop() {}
 pub extern "C" fn ghi_swift_browse_start() {}
 #[unsafe(no_mangle)]
 pub extern "C" fn ghi_swift_browse_stop() {}
+/// Calendar: not asked yet, so no events (as on a fresh phone).
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_swift_calendar_access() -> i32 {
+    0
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_swift_request_calendar_access() {}
+#[unsafe(no_mangle)]
+pub extern "C" fn ghi_swift_calendar_events(_from_ms: i64, _to_ms: i64) -> *mut c_char {
+    std::ptr::null_mut()
+}
+/// Only ever handed what `ghi_swift_calendar_events` returned: NULL here.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ghi_swift_string_free(_s: *mut c_char) {}
 
 /// References every stub so the linker keeps them (the platform layer's own
 /// references are to external symbols it resolves at link time).
@@ -147,6 +161,10 @@ pub fn keep() -> usize {
         ghi_swift_qr_scan_stop as *const () as usize,
         ghi_swift_browse_start as *const () as usize,
         ghi_swift_browse_stop as *const () as usize,
+        ghi_swift_calendar_access as *const () as usize,
+        ghi_swift_request_calendar_access as *const () as usize,
+        ghi_swift_calendar_events as *const () as usize,
+        ghi_swift_string_free as *const () as usize,
     ]
     .iter()
     .sum()
