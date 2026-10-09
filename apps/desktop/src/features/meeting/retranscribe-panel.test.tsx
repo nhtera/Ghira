@@ -44,7 +44,8 @@ describe("RetranscribePanel", () => {
     renderLive(<RetranscribePanel detail={detail(null)} onClose={onClose} />);
     await userEvent.click(screen.getByRole("button", { name: "Transcribe again" }));
     expect(commands.retranscribe).toHaveBeenCalledWith("m1", "auto");
-    expect(await screen.findByText(/still being processed/)).toBeTruthy();
+    // The toast is announced by a second, screen-reader-only copy (role=status) for a moment: look at the visible one.
+    expect(await screen.findByText(/still being processed/, { ignore: "[role=status]" })).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
     await userEvent.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalled();

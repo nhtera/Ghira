@@ -110,7 +110,7 @@ test("Export for another device asks for a repeated passphrase and says what was
   await dialog.getByLabel("Repeat the passphrase").fill("correct horse");
   await expect(save).toBeEnabled();
   await save.click();
-  await expect(page.getByText("Saved Ghira transfer 2026-10-06.ghix with 3 meetings")).toBeVisible();
+  await expect(page.getByText("Saved Ghira transfer 2026-10-06.ghix with 3 meetings", { exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(opener).toBeFocused();
 });
@@ -125,8 +125,8 @@ test("Import from another device words a wrong passphrase, then imports and says
   await expect(dialog.getByText(/doesn’t open this file/)).toBeVisible();
   await mock(page, "syncTransferNext", "refused");
   await dialog.getByRole("button", { name: "Choose file…" }).click();
-  await expect(page.getByText("Imported 3 meetings from Ghira transfer 2026-10-06.ghix")).toBeVisible();
-  await expect(page.getByText("1 meeting in the file was deleted here earlier, so it was left out.")).toBeVisible();
+  await expect(page.getByText("Imported 3 meetings from Ghira transfer 2026-10-06.ghix", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 meeting in the file was deleted here earlier, so it was left out.", { exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
