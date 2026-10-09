@@ -172,7 +172,7 @@ function build(lang: "en" | "vi"): Detail {
     .sort((a, b) => (a.tMs ?? 0) - (b.tMs ?? 0));
   return {
     speakers,
-    notes: { blocks, actionItems, sections: [], marks: [] },
+    notes: { blocks, actionItems, sections: [], marks: [], linked: 0 },
     transcript: {
       version: 2,
       segments: segs,
@@ -198,6 +198,12 @@ function momentsOf(d: Detail): MarkedMoment[] {
       coveredBy: seg ? items.filter((x) => x.citations.some((c) => overlaps(c.t0Ms ?? 0, c.t1Ms ?? 0, seg.t0Ms ?? 0, seg.t1Ms ?? 0))).map((x) => x.gid) : [],
     };
   });
+}
+
+/** "Sources linked": the app's own note sentences and actions that cite at least one moment (not topics, not yours). */
+function linkedOf(d: Detail): number {
+  const sentence = (k: string) => /^(tldr|decision|proposal|question|quote|answer|section:.*|enhanced:.*)$/.test(k);
+  return d.notes.blocks.filter((b) => b.origin !== "user" && sentence(b.kind) && b.citations.length > 0).length + d.notes.actionItems.filter((a) => a.origin !== "user" && a.citations.length > 0).length;
 }
 
 function detailOf(meeting: string): Detail {
@@ -578,7 +584,7 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
       });
       return ok(null);
     },
-    meetingNotes: (m) => withDetail(m, (d) => structuredClone({ ...d.notes, sections: sectionsFor(row(m)?.template, d.notes.blocks), marks: momentsOf(d) })),
+    meetingNotes: (m) => withDetail(m, (d) => structuredClone({ ...d.notes, sections: sectionsFor(row(m)?.template, d.notes.blocks), marks: momentsOf(d), linked: linkedOf(d) })),
     meetingTranscript: (m) => withDetail(m, (d) => structuredClone(d.transcript)),
     updateSegmentText: (m, s, text) =>
       withDetail(m, (d) => {
@@ -791,6 +797,7 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         actionItems: [...d.notes.actionItems.filter((a) => a.origin !== "ai" || a.done), ...fresh.notes.actionItems.filter((a) => a.origin === "ai")],
         sections: [],
         marks: [],
+        linked: 0,
       };
       host.process(m);
       return ok(false);

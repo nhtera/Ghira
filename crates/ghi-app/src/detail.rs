@@ -166,6 +166,10 @@ pub struct MeetingNotes {
     /// The moments the user marked while recording, each with what in these
     /// notes covers it (computed on read; nothing is stored).
     pub marks: Vec<MarkedMoment>,
+    /// How many of the app's own note sentences and action items cite at
+    /// least one moment ("Sources linked 43"). A count of links, not a claim
+    /// that each source proves its sentence.
+    pub linked: u32,
 }
 
 /// A mark and what covers it: AI blocks and action items whose cited time
@@ -325,6 +329,22 @@ pub fn sections_for(
         .collect()
 }
 
+/// The app's own note sentences and action items that cite at least one moment.
+pub fn linked_sources(
+    blocks: &[ghi_store::store::NoteBlock],
+    actions: &[ghi_store::store::ActionItem],
+) -> u32 {
+    let sentences = blocks
+        .iter()
+        .filter(|b| b.provenance != Provenance::User && covers_marks(&b.kind) && !b.anchors.is_empty())
+        .count();
+    let items = actions
+        .iter()
+        .filter(|a| a.provenance != Provenance::User && !a.anchors.is_empty())
+        .count();
+    (sentences + items) as u32
+}
+
 /// Whether a block of this kind covers a mark. Only what the Notes tab draws
 /// as a note sentence (where the star shows): topics are a list of times and
 /// kinds this version does not draw would hide the mark from "Moments you marked".
@@ -372,6 +392,7 @@ fn notes_of(store: &Store, meeting: &str) -> Result<MeetingNotes, String> {
     let raw_blocks = store.note_blocks(meeting).map_err(err)?;
     let sections = sections_for(store, m.template.as_deref(), &raw_blocks);
     let raw_actions = store.action_items(meeting).map_err(err)?;
+    let linked = linked_sources(&raw_blocks, &raw_actions);
     let mark_rows = store.marks(meeting).map_err(err)?;
     let moments = if mark_rows.is_empty() {
         Vec::new()
@@ -415,6 +436,7 @@ fn notes_of(store: &Store, meeting: &str) -> Result<MeetingNotes, String> {
         action_items,
         sections,
         marks: moments,
+        linked,
     })
 }
 
@@ -1447,6 +1469,56 @@ mod tests {
         assert!(by(21_000.0).covered_by.is_empty(), "a topic");
         assert_eq!(by(31_000.0).covered_by, [act.gid]);
         assert!(by(41_000.0).covered_by.is_empty(), "nothing cites it");
+    }
+
+    #[test]
+    fn sources_linked_counts_the_apps_own_cited_sentences_and_actions_only() {
+        let (_t, core, m) = core_and_meeting();
+        let store = core.store().unwrap();
+        store
+            .add_segments(
+                &m,
+                vec![ghi_store::store::NewSegment {
+                    t0_ms: 0,
+                    t1_ms: 4000,
+                    text: "x".into(),
+                    ..Default::default()
+                }],
+            )
+            .unwrap();
+        let anchor = Anchor {
+            meeting_gid: m.clone(),
+            t0_ms: 0,
+            t1_ms: 4000,
+            transcript_version: 1,
+        };
+        let block = |kind: &str, prov: Provenance, cited: bool| NewNoteBlock {
+            kind: kind.into(),
+            provenance: prov,
+            body: "b".into(),
+            anchors: if cited { vec![anchor.clone()] } else { vec![] },
+            pinned: false,
+        };
+        let action = |prov: Provenance, cited: bool| NewActionItem {
+            text: "do it".into(),
+            anchors: if cited { vec![anchor.clone()] } else { vec![] },
+            provenance: prov,
+            ..Default::default()
+        };
+        assert_eq!(notes_of(&store, &m).unwrap().linked, 0, "no notes, no links");
+        for (kind, prov, cited) in [
+            ("decision", Provenance::Ai, true),
+            ("proposal", Provenance::AiEdited, true),
+            ("tldr", Provenance::Ai, false), // nothing cited: not linked
+            ("topic", Provenance::Ai, true), // a list of times, not a sentence
+            ("note", Provenance::User, true), // yours
+        ] {
+            store.add_note_block(&m, block(kind, prov, cited)).unwrap();
+        }
+        store.add_action_item(&m, action(Provenance::Ai, true)).unwrap();
+        store.add_action_item(&m, action(Provenance::Ai, false)).unwrap();
+        store.add_action_item(&m, action(Provenance::User, true)).unwrap();
+        assert_eq!(notes_of(&store, &m).unwrap().linked, 3);
     }
 
     #[test]

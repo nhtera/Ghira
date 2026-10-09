@@ -1028,6 +1028,12 @@ export type MeetingNotes = {
 	 *  notes covers it (computed on read; nothing is stored).
 	 */
 	marks: MarkedMoment[],
+	/**
+	 *  How many of the app's own note sentences and action items cite at
+	 *  least one moment ("Sources linked 43"). A count of links, not a claim
+	 *  that each source proves its sentence.
+	 */
+	linked: number,
 };
 
 export type MeetingRow = {

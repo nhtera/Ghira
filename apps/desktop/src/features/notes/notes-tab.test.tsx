@@ -79,6 +79,7 @@ const detail = {
 let notes: MeetingNotes;
 beforeEach(() => {
   notes = {
+    linked: 0,
     marks: [],
     sections: [],
     blocks: [
@@ -158,6 +159,17 @@ describe("NotesTab", () => {
   });
 
   const row = (gid: string) => document.querySelector<HTMLElement>(`[data-block="${gid}"]`)!;
+
+  it("says how many sources are linked, in honest words, and nothing when there are none", async () => {
+    notes.linked = 43;
+    await open();
+    expect(screen.getByTestId("sources-linked").textContent).toBe("Sources linked 43");
+    expect(screen.queryByText(/to check/i)).toBeNull();
+    cleanup();
+    notes.linked = 0;
+    await open();
+    expect(screen.queryByTestId("sources-linked")).toBeNull();
+  });
 
   it("lists decided items, then the proposed ones with a chip and the commitment footnote", async () => {
     notes.blocks.push(block("p1", "proposal", "ai", "Maybe a dark theme.", [cite]), block("d1", "decision", "ai", "Ship on Friday.", [cite]));

@@ -146,3 +146,9 @@ test("Decisions lists decided items, then Proposed ones with a chip and the foot
   await expect(decisions.getByTestId("proposed-chip")).toHaveCount(1);
   await expect(menu).toBeFocused();
 });
+
+test("the notes say how many sources are linked", async ({ page }) => {
+  await open(page);
+  await expect(page.getByTestId("sources-linked")).toHaveText(/^Sources linked [1-9]\d*$/);
+});
+

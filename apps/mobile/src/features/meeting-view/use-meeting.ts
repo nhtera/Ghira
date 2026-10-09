@@ -31,6 +31,7 @@ const NO_NOTES: MeetingNotes = {
   actionItems: [],
   sections: [],
   marks: [],
+  linked: 0,
 };
 const NO_TRANSCRIPT: MeetingTranscript = {
   version: null,

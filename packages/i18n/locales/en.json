@@ -275,6 +275,8 @@
     },
     "markedAt": "You marked this at {{time}}",
     "pinned": "Kept when the notes are rewritten",
+    "sourcesLinked": "Sources linked {{count}}",
+    "sourcesLinkedHint": "How many of the sentences and actions the app wrote link to a moment in the transcript. Open a source to check it.",
     "proposed": "Proposed",
     "proposalFootnote": "AI suggestions are not commitments.",
     "decisionMenu": "Decision options",

@@ -150,6 +150,11 @@ export function NotesPanel({
           <Icon name="auto_awesome" size={16} className="size-4" />
           {t("mobile.detail.writtenBy")}
         </span>
+        {notes.linked > 0 && (
+          <span data-testid="sources-linked" className="ms-auto">
+            {t("notes.sourcesLinked", { count: notes.linked })}
+          </span>
+        )}
       </p>
       {groups.map((g) => (
         <section

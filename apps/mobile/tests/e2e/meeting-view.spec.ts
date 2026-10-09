@@ -68,6 +68,11 @@ test.describe("meeting view", () => {
     expect(pcts.reduce((a, b) => a + b, 0)).toBe(100);
   });
 
+  test("the notes say how many sources are linked", async ({ page }) => {
+    await openMeetings(page, "/meetings/m-notes");
+    await expect(page.getByTestId("sources-linked")).toHaveText("Sources linked 6");
+  });
+
   test("a saved Ask answer has its own section with its source", async ({ page }) => {
     await openMeetings(page, "/meetings/m-notes");
     await expect(page.getByRole("heading", { name: "Saved from Ask" })).toBeVisible();

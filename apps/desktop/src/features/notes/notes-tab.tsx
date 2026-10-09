@@ -110,6 +110,11 @@ export function NotesTab({
             <Icon name="auto_awesome" size={14} />
             {t("notes.writtenByApp", { app: APP_NAME })}
           </span>
+          {notes.linked > 0 && (
+            <span data-testid="sources-linked" title={t("notes.sourcesLinkedHint")} className="ml-auto text-muted">
+              {t("notes.sourcesLinked", { count: notes.linked })}
+            </span>
+          )}
         </div>
 
         {onlyMine && !hasMine(notes) && (

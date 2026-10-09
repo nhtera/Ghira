@@ -25,6 +25,7 @@ const a = (gid: string, origin: ActionItemView["origin"]): ActionItemView => ({
 
 const notes: MeetingNotes = {
   marks: [],
+  linked: 0,
   sections: [
     { id: "requests", titleEn: "Client requests", titleVi: "Yêu cầu" },
     { id: "empty", titleEn: "Empty", titleVi: "Trống" },
@@ -86,6 +87,7 @@ describe("layoutNotes", () => {
 
 describe("sections never disappear", () => {
   const withBlocks = (sections: MeetingNotes["sections"], kinds: string[]): MeetingNotes => ({
+    linked: 0,
     sections,
     blocks: kinds.map((k, i) => b(`b${i}`, k, "ai")),
     actionItems: [],
@@ -116,6 +118,7 @@ describe("sections never disappear", () => {
 describe("proposals", () => {
   it("are their own list beside the decisions, and 'my notes only' keeps the ones you changed", () => {
     const n: MeetingNotes = {
+      linked: 0,
       sections: [],
       marks: [],
       actionItems: [],
