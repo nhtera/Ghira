@@ -26,6 +26,7 @@ import { CloudSheet } from "../cloud-sheet/cloud-sheet";
 import { AudioBar } from "../audio-bar/audio-bar";
 import { ExportSheet } from "../export/export-sheet";
 import { NotesTab } from "../notes/notes-tab";
+import { MindMapTab } from "../mindmap/mind-map-tab";
 import { TranscriptTab } from "../transcript/transcript-tab";
 import { useProcessing } from "../processing/processing-store";
 import { MeetingProcessing } from "../processing/meeting-processing";
@@ -34,7 +35,7 @@ import { MeetingHeader } from "./meeting-header";
 import { MeetingToolbar } from "./meeting-toolbar";
 import { inProgress } from "../library/meeting-status";
 
-export type DetailTab = "notes" | "transcript";
+export type DetailTab = "notes" | "transcript" | "map";
 
 function Notice({
   icon,
@@ -205,6 +206,7 @@ export function MeetingScreen({
   const tabs: { id: DetailTab; label: string }[] = [
     { id: "notes", label: t("notes.tab") },
     { id: "transcript", label: t("notes.transcriptTab") },
+    { id: "map", label: t("notes.mapTab") },
   ];
 
   return (
@@ -240,9 +242,12 @@ export function MeetingScreen({
                     onClick={() => goTab(x.id)}
                     onKeyDown={(e) => {
                       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                      const n = tabs.length;
                       const next =
                         tabs[
-                          (tabs.findIndex((y) => y.id === x.id) + 1) % tabs.length
+                          (tabs.findIndex((y) => y.id === x.id) +
+                            (e.key === "ArrowLeft" ? n - 1 : 1)) %
+                            n
                         ]!;
                       e.preventDefault();
                       goTab(next.id);
@@ -267,8 +272,10 @@ export function MeetingScreen({
             aria-labelledby={`tab-${tab}`}
             className="px-7 pt-5"
           >
-            <div className="max-w-[760px]">
-              {tab === "notes" ? (
+            <div className={tab === "map" ? "pb-6" : "max-w-[760px]"}>
+              {tab === "map" ? (
+                <MindMapTab meeting={id} detail={detail} />
+              ) : tab === "notes" ? (
                 <>
                   {((busy && detail.status !== "failed") || finished) && (
                     <MeetingProcessing meeting={id} waitingForModels={detail.job?.waitingForModels} job={detail.job} />

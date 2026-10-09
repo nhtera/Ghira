@@ -245,6 +245,7 @@
   "notes": {
     "tab": "Notes",
     "transcriptTab": "Transcript",
+    "mapTab": "Map",
     "onlyMine": "My notes only",
     "improveWithCloud": "Improve with cloud…",
     "engineLocal_mac": "On this Mac · {{model}}",
@@ -1643,6 +1644,25 @@
     "prev": "Previous source",
     "next": "Next source",
     "showInTranscript": "Show in transcript"
+  },
+  "mindmap": {
+    "label": "Mind map of the notes",
+    "tree": "Mind map outline",
+    "hint_mac": "Drag to pan, scroll to zoom (+ − 0 on the map). Click a note to play it, Cmd-click to show it in the transcript. Tab into the map to walk it with the arrow keys.",
+    "hint_win": "Drag to pan, scroll to zoom (+ − 0 on the map). Click a note to play it, Ctrl-click to show it in the transcript. Tab into the map to walk it with the arrow keys.",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "fit": "Fit",
+    "copyOutline": "Copy as outline",
+    "copied": "Outline copied",
+    "empty": "The map fills in once the notes are written.",
+    "proposed": "Proposed",
+    "marked": "Covers a moment you marked",
+    "sections": {
+      "proposed": "Proposed",
+      "marked": "Moments you marked",
+      "other": "Other"
+    }
   },
   "meter": {
     "silent": "No speech",

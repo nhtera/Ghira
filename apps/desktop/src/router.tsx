@@ -53,7 +53,7 @@ const meetingDetail = createRoute({
   getParentRoute: () => shell,
   path: "/meetings/$id/$tab",
   params: {
-    parse: (p) => ({ id: p.id, tab: p.tab === "transcript" ? ("transcript" as const) : ("notes" as const) }),
+    parse: (p) => ({ id: p.id, tab: p.tab === "transcript" ? ("transcript" as const) : p.tab === "map" ? ("map" as const) : ("notes" as const) }),
     stringify: (p) => ({ id: p.id, tab: p.tab }),
   },
   // `t`: open at this meeting time (a search hit), in ms.

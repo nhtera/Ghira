@@ -233,6 +233,7 @@
   "notes": {
     "tab": "Ghi chú",
     "transcriptTab": "Bản ghi",
+    "mapTab": "Sơ đồ",
     "onlyMine": "Chỉ ghi chú của tôi",
     "improveWithCloud": "Cải thiện bằng cloud…",
     "engineLocal_mac": "Trên máy này · {{model}}",
@@ -1591,6 +1592,25 @@
     "prev": "Nguồn trước",
     "next": "Nguồn sau",
     "showInTranscript": "Xem trong bản ghi"
+  },
+  "mindmap": {
+    "label": "Sơ đồ tư duy của ghi chú",
+    "tree": "Dàn ý của sơ đồ",
+    "hint_mac": "Kéo để di chuyển, cuộn để thu phóng (+ − 0 trên sơ đồ). Bấm vào một ghi chú để phát, Cmd-bấm để xem trong bản ghi. Dùng Tab vào sơ đồ rồi đi bằng phím mũi tên.",
+    "hint_win": "Kéo để di chuyển, cuộn để thu phóng (+ − 0 trên sơ đồ). Bấm vào một ghi chú để phát, Ctrl-bấm để xem trong bản ghi. Dùng Tab vào sơ đồ rồi đi bằng phím mũi tên.",
+    "zoomIn": "Phóng to",
+    "zoomOut": "Thu nhỏ",
+    "fit": "Vừa khung",
+    "copyOutline": "Sao chép dạng dàn ý",
+    "copied": "Đã sao chép dàn ý",
+    "empty": "Sơ đồ sẽ có khi ghi chú được viết xong.",
+    "proposed": "Đề xuất",
+    "marked": "Ứng với một thời điểm bạn đã đánh dấu",
+    "sections": {
+      "proposed": "Đề xuất",
+      "marked": "Thời điểm bạn đã đánh dấu",
+      "other": "Khác"
+    }
   },
   "meter": {
     "silent": "Không có tiếng nói",

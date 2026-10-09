@@ -125,6 +125,9 @@ function build(lang: "en" | "vi"): Detail {
   if (multi) multi.citations = cite(segs, [4, 6, 8]);
   ai("question", n.openQuestions);
   ai("quote", n.keyQuotes);
+  // Kinds the Notes tab has no section for yet: the Map shows a proposal under "Proposed" and anything unknown under "Other".
+  blocks.push({ gid: gid("blk"), kind: "proposal", origin: "ai", text: lang === "vi" ? "Hẹn buổi review beta với khách hàng." : "Schedule a beta review with the client.", pinned: false, citations: cite(segs, [6]) });
+  blocks.push({ gid: gid("blk"), kind: "future-kind", origin: "ai", text: lang === "vi" ? "Một khối thuộc loại mới." : "A block of a newer kind.", pinned: false, citations: cite(segs, [2]) });
   for (const [t, en, vi] of sample.topics as [number, string, string][]) {
     if (t * 1000 >= sample.durationSeconds * 1000) continue;
     const i = Math.max(0, starts.findIndex((s, k) => s <= t * 1000 && endOf(k) > t * 1000));
