@@ -17,6 +17,9 @@ export * from "./primitives/tooltip";
 export * from "./primitives/menu";
 export * from "./primitives/toast";
 export type { Story, StoryMeta } from "./story";
+// Pure helpers shared by both apps (no React, no app bindings: see lib/layering.test.ts).
+export * from "./lib/talk-share";
+export * from "./lib/notes-tree";
 export * from "./components/privacy-indicator";
 export * from "./components/record-control";
 export * from "./components/speaker-chip";

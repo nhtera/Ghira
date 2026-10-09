@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
 import { COL_GAP, NODE_MAX_W, measureNode, tidyLayout, wrapLines, type Layout } from "./layout";
-import type { MapNode } from "./tree";
+import type { MapNode } from "@ghi/ui";
 
 /** Small deterministic PRNG (mulberry32), so a failing tree can be replayed by its seed. */
 function rng(seed: number) {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { clip, escapeMd, notesToTree, treeToOutline, type NotesTreeInput, type TreeBlock } from "./tree";
+import { clip, escapeMd, notesToTree, treeToOutline, type NotesTreeInput, type TreeBlock } from "./notes-tree";
 
 const cite = (t0Ms: number | null, missing = false) => ({ t0Ms, t1Ms: t0Ms == null ? null : t0Ms + 2000, missing });
 const block = (gid: string, text: string, at: number | null = 1000): TreeBlock => ({ gid, text, citations: at == null ? [] : [cite(at)] });

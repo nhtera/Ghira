@@ -3,10 +3,9 @@
 // each speaker's talk time above the transcript, and a legend of avatar (color
 // + initial, never color alone), name, share and turns. A named legend entry
 // opens that speaker's panel.
-import { Avatar, cn } from "@ghi/ui";
+import { Avatar, cn, type ShareEntry } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
 import type { SpeakerLabel } from "./group-row";
-import type { ShareEntry } from "./logic";
 
 export function TalkShare({
   entries,

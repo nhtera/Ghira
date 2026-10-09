@@ -2,7 +2,7 @@
 // The Map tab: the notes of the meeting as a mind map. Built from the notes
 // that are already there (no model call): the same blocks the Notes tab shows,
 // each leaf playable. "Copy as outline" is the same tree as nested Markdown.
-import { useToast } from "@ghi/ui";
+import { notesToTree, treeToOutline, useToast, type MapNode, type NotesTreeInput } from "@ghi/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -13,7 +13,6 @@ import { findSpeaker, speakerDisplay } from "../meeting/speaker-display";
 import { layoutNotes } from "../notes/notes-model";
 import { showRequests } from "../transcript/show-requests";
 import { MindMap } from "./mind-map";
-import { notesToTree, treeToOutline, type MapNode, type NotesTreeInput } from "./tree";
 
 /** Block kinds the Notes tab places; anything else (not yours) goes to "Other". */
 const KNOWN = /^(tldr|decision|question|quote|topic|note|proposal|section:.*|enhanced:.*)$/;

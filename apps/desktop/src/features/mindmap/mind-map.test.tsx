@@ -2,9 +2,9 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeetingSpeaker } from "../../bindings";
+import { notesToTree, type TreeBlock } from "@ghi/ui";
 import { MindMap } from "./mind-map";
 import { extraBlocks } from "./mind-map-tab";
-import { notesToTree, type TreeBlock } from "./tree";
 
 afterEach(() => {
   cleanup();
