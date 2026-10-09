@@ -9,7 +9,7 @@ Notes should say how sure they are. Ghira sorts the decisions it finds into two 
 
 The **Decisions** section lists decided items first. Proposed items follow, each with a **Proposed** chip, and the line "AI suggestions are not commitments." Answers from **Ask** carry the same line.
 
-When Ghira is unsure it chooses **Proposed**. It is the safer way to be wrong: nothing is presented as agreed that was not.
+The local model sorts the decisions in a second, short step after it writes the notes. If that step cannot run (rare), everything is shown as **Decided**, so check what matters. With a cloud model the cloud model sorts them in the same request. Either way it can be wrong: it is a guide, not a record. **Mark as proposed** and **Mark as decided** (below) fix any item.
 
 ## Change your mind
 

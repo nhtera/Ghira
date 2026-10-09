@@ -86,7 +86,8 @@ fn texts(n: &Notes) -> Vec<&str> {
     v
 }
 
-fn check(t: &Transcript, n: &Notes) {
+/// The notes of any meeting: citations exist, text is plain, owners speak.
+fn check_plain(t: &Transcript, n: &Notes) {
     for cites in n.all_citations() {
         assert!(!cites.is_empty(), "an AI item without a citation");
         for id in cites {
@@ -109,6 +110,11 @@ fn check(t: &Transcript, n: &Notes) {
         }
     }
     assert!(n.tldr.len() <= 5);
+}
+
+/// The notes of the golden meetings, which have decisions and tasks.
+fn check(t: &Transcript, n: &Notes) {
+    check_plain(t, n);
     assert!(!n.tldr.is_empty(), "no TL;DR");
     assert!(!n.decisions.is_empty(), "no decisions");
     assert!(!n.action_items.is_empty(), "no action items");
@@ -359,7 +365,7 @@ fn golden_decided_and_proposed() {
             assert!(ok * 10 >= total * 8, "{label}: {ok} of {total} right");
             assert!(!n.proposals.is_empty(), "{label}: nothing proposed");
             assert!(!n.decisions.is_empty(), "{label}: nothing decided");
-            check(&t, n);
+            check_plain(&t, n);
         }
     }
 }

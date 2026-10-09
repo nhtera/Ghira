@@ -578,6 +578,32 @@ mod tests {
         assert_eq!(again.preview.sha256, p.preview.sha256);
     }
 
+    /// The cloud model sorts decided from proposed in the one request, so the
+    /// exact bytes the user previews hold the rule and the status field.
+    #[test]
+    fn the_preview_asks_the_cloud_model_for_each_decisions_status() {
+        let (_tmp, store) = store();
+        let m = meeting(&store);
+        let Planned::Send(p) = plan(
+            &store,
+            &m,
+            CloudProvider::preset("openai", "gpt-4.1-mini").unwrap(),
+            notes_task(),
+            true,
+            &[],
+            &Prices::builtin(),
+        )
+        .unwrap() else {
+            panic!("a request")
+        };
+        let body = String::from_utf8_lossy(&p.prepared.body).to_string();
+        for text in [&p.preview.payload, &body] {
+            assert!(text.contains("only suggested"), "the rule is shown: {text}");
+            assert!(text.contains("proposed"), "{text}");
+        }
+        assert!(body.contains("\"status\""), "{body}");
+    }
+
     #[test]
     fn the_preview_holds_no_marks_block() {
         let (_tmp, store) = store();

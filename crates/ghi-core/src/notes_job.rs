@@ -453,7 +453,9 @@ impl JobHandler for NotesJob {
             let bytes: usize = segs.iter().map(|s| s.text.len()).sum::<usize>()
                 + opts.pinned.iter().map(String::len).sum::<usize>()
                 + opts.template_bytes()
-                + opts.spellings().iter().map(String::len).sum::<usize>();
+                + opts.spellings().iter().map(String::len).sum::<usize>()
+                // The marks block: at most 24 entries of about 20 bytes.
+                + opts.marks.len().min(ghi_llm::notes::MAX_MARKS) * 20;
             let mut llm = (self.llm)(bytes)?;
             // The model's own progress, as the meeting's: reading the
             // transcript to 40 %, writing to 80 % (about 1,800 tokens
@@ -531,6 +533,19 @@ impl JobHandler for NotesJob {
             };
             let model = llm.engine().name;
             drop(llm); // frees the model before anything else loads
+            // What the run noticed, without any content: a status pass that
+            // failed or skipped decisions, lists that came back full.
+            let d = &run.diagnostics;
+            if d.status_failed + d.status_skipped + d.capped_lists > 0 {
+                log::info!(
+                    "notes diagnostics: status pass failed {}, decisions left unsorted {}, \
+                     lists at their cap {}, retries {}",
+                    d.status_failed,
+                    d.status_skipped,
+                    d.capped_lists,
+                    d.retries
+                );
+            }
             // The last look before the commit: a recording or a lost lease
             // ends the run here (the lease's own margin included).
             if ctx.preempted() {

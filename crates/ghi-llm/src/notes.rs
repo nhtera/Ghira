@@ -243,8 +243,8 @@ impl Options {
     fn template_task(&self) -> (String, String) {
         let general = crate::template::builtin("general").expect("general is built in");
         (
-            prompt::notes_task(&self.template, self.lang, &[], &[], &[]),
-            prompt::notes_task(&general, self.lang, &[], &[], &[]),
+            prompt::notes_task(&self.template, self.lang, &[], &[], &[], false),
+            prompt::notes_task(&general, self.lang, &[], &[], &[], false),
         )
     }
 
@@ -292,12 +292,7 @@ fn generate_notes(llm: &mut dyn Llm, t: &Transcript, opts: &Options) -> Result<R
     let mut diag = Diagnostics::default();
     let all: Vec<&Segment> = t.segments().iter().collect();
     // Pinned notes are in every prompt too.
-    let budget = transcript_budget(llm, output_room(opts))
-        .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
-        .saturating_sub(opts.marks_tokens())
-        .saturating_sub(opts.template_tokens())
-        .saturating_sub(opts.spellings_tokens())
-        .max(512);
+    let budget = call_budget(llm, opts, opts.max_output_tokens);
     let rendered = render(t, &aliases, &all);
     // The estimate is high; count exactly before falling back to map-reduce.
     let fits = estimate_tokens(&rendered) <= budget || llm.count_tokens(&rendered)? <= budget;
@@ -380,12 +375,7 @@ fn generate_steps_notes(
     }
     let aliases = Aliases::new(t);
     let mut diag = Diagnostics::default();
-    let budget = transcript_budget(llm, output_room(opts))
-        .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
-        .saturating_sub(opts.marks_tokens())
-        .saturating_sub(opts.template_tokens())
-        .saturating_sub(opts.spellings_tokens())
-        .max(512);
+    let budget = call_budget(llm, opts, opts.max_output_tokens);
     let mut st = match saved {
         Some(s) if s.fingerprint == fingerprint(t) && s.done <= s.parts.len() => s,
         _ => Steps {
@@ -414,7 +404,7 @@ fn generate_steps_notes(
         }
     }
     let n = st.parts.len();
-    reduce(llm, t, &aliases, opts, budget, st.facts, n, diag)
+    reduce(llm, t, &aliases, opts, st.facts, n, diag)
 }
 
 /// Decisions the status pass looks at (the rest stay decided).
@@ -437,20 +427,35 @@ const STATUS_LINE_CHARS: usize = 240;
 /// decisions and label them listed fewer decisions (measured), so the two
 /// jobs are apart.
 pub fn classify_decisions(llm: &mut dyn Llm, t: &Transcript, opts: &Options, run: &mut Run) {
-    if run.notes.decisions.is_empty() {
-        return;
-    }
     let aliases = Aliases::new(t);
     let segs = t.segments();
+    // A decision on a line the user marked as a decision is decided: they said so.
+    let marked: HashSet<u64> = opts
+        .marks
+        .iter()
+        .filter(|m| m.kind == MarkKind::Decision)
+        .map(|m| m.id)
+        .collect();
+    // The decisions the pass looks at (indexes into `decisions`), with their
+    // text and lines.
+    let mut asked: Vec<usize> = Vec::new();
     let mut items: Vec<(String, String)> = Vec::new();
-    for d in run.notes.decisions.iter().take(MAX_STATUS_DECISIONS) {
+    for (i, d) in run.notes.decisions.iter().enumerate() {
+        if d.citations.iter().any(|c| marked.contains(c)) {
+            continue;
+        }
+        if items.len() == MAX_STATUS_DECISIONS {
+            run.diagnostics.status_skipped += 1;
+            continue;
+        }
         let mut idx: Vec<usize> = d.citations.iter().filter_map(|&c| t.index_of(c)).collect();
         idx.sort_unstable();
         idx.dedup();
+        // Leave room for the line after the last one cited.
+        idx.truncate(STATUS_LINES - STATUS_LINES_AFTER);
         if let Some(&last) = idx.last() {
             idx.extend((last + 1..segs.len()).take(STATUS_LINES_AFTER));
         }
-        idx.truncate(STATUS_LINES);
         let shown: Vec<Segment> = idx
             .iter()
             .map(|&i| {
@@ -460,7 +465,11 @@ pub fn classify_decisions(llm: &mut dyn Llm, t: &Transcript, opts: &Options, run
             })
             .collect();
         let refs: Vec<&Segment> = shown.iter().collect();
+        asked.push(i);
         items.push((d.text.clone(), render(t, &aliases, &refs)));
+    }
+    if items.is_empty() {
+        return;
     }
     // Keep the question within the context (the decisions are few and short).
     while items.len() > 1
@@ -468,6 +477,8 @@ pub fn classify_decisions(llm: &mut dyn Llm, t: &Transcript, opts: &Options, run
             > llm.context_tokens().saturating_sub(1500 + RETRY_RESERVE)
     {
         items.pop();
+        asked.pop();
+        run.diagnostics.status_skipped += 1;
     }
     let n = items.len();
     let req = Request {
@@ -500,16 +511,25 @@ pub fn classify_decisions(llm: &mut dyn Llm, t: &Transcript, opts: &Options, run
             .collect::<std::result::Result<Vec<bool>, String>>()
     });
     run.diagnostics.add(&diag);
+    // Any failure leaves the decisions decided. That includes a call stopped
+    // from outside (a recording started, the app left the screen): the notes
+    // just written are kept and saved; only the sorting is lost.
     let Ok(Outcome::Done(proposed)) = outcome else {
         run.diagnostics.status_failed += 1;
         return;
     };
+    let moved: HashSet<usize> = asked
+        .iter()
+        .zip(&proposed)
+        .filter(|(_, p)| **p)
+        .map(|(i, _)| *i)
+        .collect();
     let mut keep = Vec::new();
     for (i, d) in std::mem::take(&mut run.notes.decisions)
         .into_iter()
         .enumerate()
     {
-        if proposed.get(i).copied().unwrap_or(false) {
+        if moved.contains(&i) {
             run.notes.proposals.push(d);
         } else {
             keep.push(d);
@@ -525,26 +545,48 @@ fn transcript_budget(llm: &dyn Llm, max_output: u32) -> u32 {
         .max(512)
 }
 
+/// Tokens of prompt around the transcript that the user's own texts and the
+/// options add: pinned notes, marks, the template's words, spellings.
+fn extras_tokens(opts: &Options) -> u32 {
+    estimate_tokens(&opts.pinned.join("\n"))
+        .saturating_add(opts.marks_tokens())
+        .saturating_add(opts.template_tokens())
+        .saturating_add(opts.spellings_tokens())
+}
+
+/// Tokens of transcript (or facts) one call that writes up to `max_output`
+/// tokens can take.
+fn call_budget(llm: &dyn Llm, opts: &Options, max_output: u32) -> u32 {
+    transcript_budget(llm, max_output)
+        .saturating_sub(extras_tokens(opts))
+        .max(512)
+}
+
 /// Output tokens the reduce step of a long meeting may write (full notes). A
-/// reduce over many parts' facts used to write past 2,048 and fail; its
-/// lists are bounded now ([`bound_reduce`]) and this covers the bound.
+/// reduce over many parts' facts used to write past 2,048 and fail. Its
+/// lists are bounded ([`bound_reduce`]): at most 58 items plus 8 per template
+/// section, each at most 160 characters and 4 citations. Typical notes use
+/// 1.5k to 2.5k tokens; the worst case (every list full, in a language that
+/// costs 3 tokens a word) is about 4.4k, a little over this, so a cut-off
+/// reply is still retried with fewer facts. Only the reduce gets this much;
+/// every other call keeps `Options::max_output_tokens`.
 const REDUCE_OUTPUT_TOKENS: u32 = 4096;
 /// Item caps of the reduce step's lists (a template section gets
 /// [`REDUCE_SECTION_CAP`]), citations per item, and characters per text.
 const REDUCE_CAPS: &[(&str, usize)] = &[
     ("tldr", schema::MAX_TLDR),
     ("decisions", 12),
-    ("action_items", 15),
+    ("action_items", 20),
     ("open_questions", 8),
     ("key_quotes", schema::MAX_QUOTES),
     ("topics", 8),
 ];
 const REDUCE_SECTION_CAP: usize = 8;
 const REDUCE_CITES: usize = 4;
-const REDUCE_TEXT_CHARS: usize = 240;
+const REDUCE_TEXT_CHARS: usize = 160;
 
-/// Tokens a notes call may write, which the transcript budget leaves room
-/// for: the reduce step's, unless the notes are compact.
+/// Tokens the reduce step may write: the full notes' room, or the compact
+/// notes' own.
 fn output_room(opts: &Options) -> u32 {
     if opts.compact {
         opts.max_output_tokens
@@ -553,13 +595,35 @@ fn output_room(opts: &Options) -> u32 {
     }
 }
 
+/// Counts the lists of a reduce reply that came back full: a full list may
+/// have had more to say.
+fn count_capped(notes: &Notes, diag: &mut Diagnostics) {
+    let lens = [
+        ("tldr", notes.tldr.len()),
+        ("decisions", notes.decisions.len() + notes.proposals.len()),
+        ("action_items", notes.action_items.len()),
+        ("open_questions", notes.open_questions.len()),
+        ("key_quotes", notes.key_quotes.len()),
+        ("topics", notes.topics.len()),
+    ];
+    for (key, len) in lens {
+        let cap = REDUCE_CAPS
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map_or(0, |c| c.1);
+        diag.capped_lists += u32::from(cap > 0 && len >= cap);
+    }
+    diag.capped_lists += notes
+        .sections
+        .iter()
+        .filter(|s| s.items.len() >= REDUCE_SECTION_CAP)
+        .count() as u32;
+}
+
 /// Bounds a local notes schema for the reduce step: fewer items per list,
 /// fewer citations and shorter texts, so the reply fits [`REDUCE_OUTPUT_TOKENS`]
-/// however many facts it summarises. Cloud schemas are returned as they are.
-fn bound_reduce(mut schema: serde_json::Value, d: Dialect) -> serde_json::Value {
-    if d != Dialect::Local {
-        return schema;
-    }
+/// however many facts it summarises. Local schemas only.
+fn bound_reduce(mut schema: serde_json::Value) -> serde_json::Value {
     let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) else {
         return schema;
     };
@@ -636,7 +700,14 @@ pub fn request(
     };
     let user = format!(
         "{}\n{}",
-        prompt::notes_task(&opts.template, opts.lang, &opts.pinned, &marks, &spellings),
+        prompt::notes_task(
+            &opts.template,
+            opts.lang,
+            &opts.pinned,
+            &marks,
+            &spellings,
+            dialect == Dialect::Cloud
+        ),
         prompt::transcript_block(opts.lang, &render(t, aliases, segments))
     );
     let req = Request {
@@ -662,7 +733,12 @@ pub fn parse(
 ) -> Result<Notes> {
     let allowed = |id: u64| t.get(id).is_some();
     crate::validate::extract_json(reply)
-        .and_then(|v| parse_notes(&v, &Ctx::new(t, aliases, opts, &allowed), diag))
+        .and_then(|v| {
+            // A cloud reply carries each decision's status (see `request`).
+            let mut ctx = Ctx::new(t, aliases, opts, &allowed);
+            ctx.statuses = true;
+            parse_notes(&v, &ctx, diag)
+        })
         .map_err(LlmError::InvalidOutput)
 }
 
@@ -672,6 +748,9 @@ struct Ctx<'a> {
     template: &'a Template,
     lang: OutLang,
     cites: Cites<'a>,
+    /// Decisions carry a status (a cloud reply); locally the status is a
+    /// separate pass and the decisions have none.
+    statuses: bool,
 }
 
 impl<'a> Ctx<'a> {
@@ -687,6 +766,7 @@ impl<'a> Ctx<'a> {
             template: &opts.template,
             lang: opts.lang,
             cites: Cites::new(allowed),
+            statuses: false,
         }
     }
 
@@ -744,6 +824,14 @@ impl<'a> Ctx<'a> {
 #[serde(deny_unknown_fields)]
 struct RawItem {
     text: String,
+    cite: Vec<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawDecision {
+    text: String,
+    status: String,
     cite: Vec<i64>,
 }
 
@@ -848,7 +936,22 @@ fn parse_notes(v: &Value, ctx: &Ctx, d: &mut Diagnostics) -> std::result::Result
     };
 
     let tldr = cap(items("tldr", d)?, MAX_TLDR, d);
-    let decisions = cap(items("decisions", d)?, usize::MAX, d);
+    let (decisions, proposals) = if ctx.statuses {
+        let (mut decided, mut proposed) = (Vec::new(), Vec::new());
+        for r in field::<Vec<RawDecision>>(obj, "decisions")? {
+            let list = match r.status.as_str() {
+                "decided" => &mut decided,
+                "proposed" => &mut proposed,
+                other => return Err(format!("`decisions`: unknown status `{other}`")),
+            };
+            if let Some((text, citations)) = ctx.anchored(&r.text, &r.cite, d) {
+                list.push(Item { text, citations });
+            }
+        }
+        (cap(decided, usize::MAX, d), cap(proposed, usize::MAX, d))
+    } else {
+        (cap(items("decisions", d)?, usize::MAX, d), Vec::new())
+    };
     let open_questions = cap(items("open_questions", d)?, usize::MAX, d);
 
     let mut action_items = Vec::new();
@@ -924,7 +1027,7 @@ fn parse_notes(v: &Value, ctx: &Ctx, d: &mut Diagnostics) -> std::result::Result
         lang: ctx.lang.code().to_string(),
         tldr,
         decisions,
-        proposals: Vec::new(),
+        proposals,
         action_items,
         open_questions,
         key_quotes,
@@ -998,7 +1101,7 @@ fn map_reduce(
         }
     }
     let n = parts.len();
-    reduce(llm, t, aliases, opts, budget, facts, n, diag)
+    reduce(llm, t, aliases, opts, facts, n, diag)
 }
 
 /// The reduce step over the map steps' facts (`n` parts).
@@ -1008,11 +1111,13 @@ fn reduce(
     t: &Transcript,
     aliases: &Aliases,
     opts: &Options,
-    budget: u32,
     mut facts: Vec<Fact>,
     n: usize,
     mut diag: Diagnostics,
 ) -> Result<Run> {
+    // The facts and the notes written from them share the context, with the
+    // reduce's room to write.
+    let budget = call_budget(llm, opts, output_room(opts));
     // Reduce: the facts, in transcript order, with the lines they cite. The
     // lines the user marked are in it too: a marked line no fact cites gets a
     // fact of its own with the line's text (the model may only cite what it
@@ -1046,7 +1151,8 @@ fn reduce(
                 opts.lang,
                 &opts.pinned,
                 &marks,
-                &opts.spellings()
+                &opts.spellings(),
+                false
             ),
             prompt::reduce_block(opts.lang, &lines)
         );
@@ -1059,7 +1165,7 @@ fn reduce(
             schema: Some(if opts.compact {
                 schema
             } else {
-                bound_reduce(schema, Dialect::Local)
+                bound_reduce(schema)
             }),
             max_tokens,
             temperature: 0.3,
@@ -1069,6 +1175,7 @@ fn reduce(
             parse_notes(v, &Ctx::new(t, aliases, opts, &allowed), d)
         })? {
             Outcome::Done(notes) => {
+                count_capped(&notes, &mut diag);
                 return Ok(Run {
                     notes,
                     engine: llm.engine(),
@@ -1509,7 +1616,7 @@ pub(crate) mod tests {
                 r#"{"decisions":[{"text":"Ship it","cite":[0]}],"tldr":[{"text":"Not mapped","cite":[5]}]}"#,
             ),
         ]);
-        llm.context = 8548;
+        llm.context = 6500;
         let run = generate(
             &mut llm,
             &t,
@@ -1775,7 +1882,7 @@ pub(crate) mod tests {
         let all: Vec<&Segment> = t.segments().iter().collect();
         let rendered = estimate_tokens(&render(&t, &Aliases::new(&t), &all));
         // The room left for the transcript is exactly what it needs, plus a little.
-        let overhead = REDUCE_OUTPUT_TOKENS + PROMPT_OVERHEAD + RETRY_RESERVE;
+        let overhead = 2048 + PROMPT_OVERHEAD + RETRY_RESERVE;
         let context = rendered + overhead + 10;
         let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
         let plain = generate(&mut Auto(context), &t, &o).unwrap();
@@ -1978,7 +2085,7 @@ pub(crate) mod tests {
         let t = Transcript::new(segs).unwrap();
         let all: Vec<&Segment> = t.segments().iter().collect();
         let rendered = estimate_tokens(&render(&t, &Aliases::new(&t), &all));
-        let overhead = REDUCE_OUTPUT_TOKENS + PROMPT_OVERHEAD + RETRY_RESERVE;
+        let overhead = 2048 + PROMPT_OVERHEAD + RETRY_RESERVE;
         let context = rendered + overhead + 10;
         let general = Options::new(crate::template::builtin("general").unwrap(), OutLang::Vi);
         assert_eq!(general.template_tokens(), 0);
@@ -2125,7 +2232,6 @@ pub(crate) mod tests {
             r#"{"decisions":[{"text":"Early","cite":[3]}],"tldr":[{"text":"Late","cite":[55]},{"text":"Unmarked","cite":[30]}]}"#,
         );
         let mut llm = Scripted::new(&[&f1, &f2, &f3, &reduce]);
-        llm.context = 18_432; // 16k of room for the transcript, as before the reduce was given 4k to write
         let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
         o.marks = vec![
             hint(3, MarkKind::Decision, 90_000),
@@ -2197,7 +2303,7 @@ pub(crate) mod tests {
             &reply(r#"{"tldr":[{"text":"ok","cite":[0]}]}"#),
         ]);
         llm.replies[2].1 = true; // the first reduce reply is cut off
-        llm.context = 8548;
+        llm.context = 6500;
         let o = Options::new(template::builtin("general").unwrap(), OutLang::En);
         let run = generate(&mut llm, &t, &o).unwrap();
         assert_eq!(run.strategy, Strategy::MapReduce { parts: 2 });
@@ -2211,11 +2317,11 @@ pub(crate) mod tests {
         assert_eq!(first.max_tokens, REDUCE_OUTPUT_TOKENS);
         let p = &first.schema.as_ref().unwrap()["properties"];
         assert_eq!(p["decisions"]["maxItems"], 12);
-        assert_eq!(p["action_items"]["maxItems"], 15);
+        assert_eq!(p["action_items"]["maxItems"], 20);
         assert_eq!(p["tldr"]["maxItems"], 5);
         assert_eq!(
             p["decisions"]["items"]["properties"]["text"]["maxLength"],
-            240
+            160
         );
         assert_eq!(p["decisions"]["items"]["properties"]["cite"]["maxItems"], 4);
         // The map steps are not bounded this way.
@@ -2233,7 +2339,7 @@ pub(crate) mod tests {
         for r in &mut cut.replies[2..] {
             r.1 = true;
         }
-        cut.context = 8548;
+        cut.context = 6500;
         assert!(generate(&mut cut, &t, &o).is_err());
     }
 
@@ -2351,7 +2457,7 @@ pub(crate) mod tests {
             ),
             r#"{"statuses":["decided","proposed"]}"#,
         ]);
-        llm.context = 8548;
+        llm.context = 6500;
         let o = Options::new(template::builtin("general").unwrap(), OutLang::En);
         let run = generate(&mut llm, &t, &o).unwrap();
         assert_eq!(run.strategy, Strategy::MapReduce { parts: 2 });
@@ -2362,5 +2468,144 @@ pub(crate) mod tests {
         old.as_object_mut().unwrap().remove("proposals");
         let back: Notes = serde_json::from_value(old).unwrap();
         assert!(back.proposals.is_empty() && back.decisions.len() == 1);
+    }
+
+    /// A short Vietnamese meeting with a big user template and ten marks, in the
+    /// smallest context the app opens (8,192): still one call. The reduce's
+    /// 4,096-token room must not come out of the other calls' budget.
+    #[test]
+    fn a_short_meeting_with_a_big_template_and_marks_stays_single_pass_at_the_context_floor() {
+        let segs: Vec<_> = (0..20u64)
+            .map(|i| {
+                seg(
+                    i,
+                    i as f64 * 5.0,
+                    i as f64 * 5.0 + 4.0,
+                    "S1",
+                    &"họp kế hoạch bản beta ".repeat(8),
+                    "vi",
+                )
+            })
+            .collect();
+        let t = Transcript::new(segs).unwrap();
+        let mut o = Options::new(big_template(), OutLang::Vi);
+        o.marks = (0..10)
+            .map(|i| hint(i * 3, MarkKind::Decision, i as i64))
+            .collect();
+        let all: Vec<&Segment> = t.segments().iter().collect();
+        let rendered = estimate_tokens(&render(&t, &Aliases::new(&t), &all));
+        let budget = call_budget(&Auto(8192), &o, o.max_output_tokens);
+        assert!(
+            rendered < budget,
+            "the fixture must fit: {rendered} vs {budget}"
+        );
+        let keys: Vec<String> = o.template.sections.iter().map(|x| x.id.clone()).collect();
+        let run = generate(&mut AutoKeys(8192, keys), &t, &o).unwrap();
+        assert_eq!(run.strategy, Strategy::Single);
+        // The reduce alone is given more to write, and so fewer facts to read.
+        assert!(call_budget(&Auto(8192), &o, output_room(&o)) < budget);
+    }
+
+    #[test]
+    fn a_cloud_request_asks_for_statuses_and_its_reply_sorts_proposals() {
+        let t = meeting();
+        let a = Aliases::new(&t);
+        let all: Vec<&Segment> = t.segments().iter().collect();
+        let o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        let (cloud, _) = request(&t, &all, &a, &o, Dialect::Cloud);
+        let (local, _) = request(&t, &all, &a, &o, Dialect::Local);
+        assert!(
+            cloud.messages[1]
+                .content
+                .contains("\"proposed\" when it was only suggested")
+        );
+        assert!(
+            cloud
+                .schema
+                .as_ref()
+                .unwrap()
+                .to_string()
+                .contains(r#""enum":["decided","proposed"]"#)
+        );
+        assert!(!local.messages[1].content.contains("status"));
+        let mut d = Diagnostics::default();
+        let ok = reply(
+            r#"{"decisions":[{"text":"Chốt scope","status":"decided","cite":[0]},{"text":"Thử làm lịch","status":"proposed","cite":[1]}]}"#,
+        );
+        let n = parse(&ok, &t, &a, &o, &mut d).unwrap();
+        assert_eq!((n.decisions.len(), n.proposals.len()), (1, 1));
+        assert_eq!(n.proposals[0].text, "Thử làm lịch");
+        for bad in [
+            r#"{"decisions":[{"text":"x","cite":[0]}]}"#,
+            r#"{"decisions":[{"text":"x","status":"maybe","cite":[0]}]}"#,
+        ] {
+            assert!(parse(&reply(bad), &t, &a, &o, &mut d).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_status_pass_skips_marked_decisions_and_counts_what_it_leaves_out() {
+        let t = meeting();
+        let mut o = opts();
+        o.marks = vec![hint(0, MarkKind::Decision, 0), hint(2, MarkKind::Star, 5)];
+        let mut llm = Scripted::new(&[
+            &reply(
+                r#"{"decisions":[
+                    {"text":"Đã đánh dấu","cite":[0]},
+                    {"text":"Thử làm lịch","cite":[1]},
+                    {"text":"Sao","cite":[2]}]}"#,
+            ),
+            r#"{"statuses":["proposed","proposed"]}"#,
+        ]);
+        let run = generate(&mut llm, &t, &o).unwrap();
+        let texts = |v: &[Item]| v.iter().map(|i| i.text.clone()).collect::<Vec<_>>();
+        // The one the user marked as a decision is not asked about and stays decided.
+        assert_eq!(texts(&run.notes.decisions), ["Đã đánh dấu"]);
+        assert_eq!(texts(&run.notes.proposals), ["Thử làm lịch", "Sao"]);
+        let user = &llm.requests[1].messages[1].content;
+        assert!(
+            !user.contains("Đã đánh dấu") && user.contains("Mục 2"),
+            "{user}"
+        );
+        // More decisions than the pass takes: the rest stay decided, and it is counted.
+        let many: String = (0..MAX_STATUS_DECISIONS + 3)
+            .map(|i| format!(r#"{{"text":"d{i}","cite":[1]}}"#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut llm = Scripted::new(&[&reply(&format!(r#"{{"decisions":[{many}]}}"#))]);
+        let run = generate(&mut llm, &t, &opts()).unwrap();
+        assert_eq!(run.diagnostics.status_skipped, 3);
+        assert_eq!(run.notes.decisions.len(), MAX_STATUS_DECISIONS + 3);
+    }
+
+    #[test]
+    fn a_reduce_reply_with_a_full_list_is_counted() {
+        let mut segs = Vec::new();
+        for i in 0..40u64 {
+            let sp = if i % 2 == 0 { "S1" } else { "S2" };
+            segs.push(seg(
+                i,
+                i as f64 * 30.0,
+                i as f64 * 30.0 + 25.0,
+                sp,
+                &"word ".repeat(40),
+                "en",
+            ));
+        }
+        let t = Transcript::new(segs).unwrap();
+        let actions: String = (0..20)
+            .map(|i| format!(r#"{{"text":"task {i}","owner":null,"due":null,"cite":[0]}}"#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut llm = Scripted::new(&[
+            r#"{"facts":[{"kind":"action","text":"a","speaker":null,"owner":null,"due":null,"cite":[0]}]}"#,
+            r#"{"facts":[]}"#,
+            &reply(&format!(r#"{{"action_items":[{actions}]}}"#)),
+        ]);
+        llm.context = 6500;
+        let o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        let run = generate(&mut llm, &t, &o).unwrap();
+        assert_eq!(run.strategy, Strategy::MapReduce { parts: 2 });
+        assert_eq!(run.diagnostics.capped_lists, 1);
     }
 }

@@ -42,6 +42,11 @@ pub struct Diagnostics {
     pub unassigned_owners: u32,
     /// The status pass failed (or could not run): every decision stays decided.
     pub status_failed: u32,
+    /// Decisions the status pass did not look at (more than it takes, or cut
+    /// to fit the context): they stay decided.
+    pub status_skipped: u32,
+    /// Lists of a long meeting's notes that came back full (at their cap).
+    pub capped_lists: u32,
     /// Items cut because a list was longer than allowed.
     pub truncated_lists: u32,
     /// Repeated items removed (same text after folding, in the same list).
@@ -61,6 +66,8 @@ impl Diagnostics {
         self.weak_anchors += o.weak_anchors;
         self.unassigned_owners += o.unassigned_owners;
         self.status_failed += o.status_failed;
+        self.status_skipped += o.status_skipped;
+        self.capped_lists += o.capped_lists;
         self.truncated_lists += o.truncated_lists;
         self.duplicates += o.duplicates;
         self.snapped_cites += o.snapped_cites;
