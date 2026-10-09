@@ -144,9 +144,12 @@ jobs:
           cargo test --locked -p ghi-speech --features voice
       # Voice profiles in core and the CLI (matching, learning, `ghi voice`).
       - name: Voice profiles (core, CLI)
-        run: |
-          cargo clippy --locked -p ghi-core -p ghi-cli --features ghi-cli/voice --all-targets -- -D warnings
-          cargo test --locked -p ghi-core -p ghi-cli --features ghi-cli/voice
+        run: cargo clippy --locked -p ghi-core -p ghi-cli --features ghi-cli/voice --all-targets -- -D warnings
+      - name: Voice profiles tests
+        # Report-only on Windows, as the workspace tests above (Opus overflows
+        # the stack under MSVC until the Windows phase).
+        continue-on-error: ${{ runner.os == 'Windows' }}
+        run: cargo test --locked -p ghi-core -p ghi-cli --features ghi-cli/voice
       - name: NeMo-Speech.cpp build
         shell: bash
         env:
