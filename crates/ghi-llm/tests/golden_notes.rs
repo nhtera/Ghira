@@ -439,3 +439,172 @@ fn golden_decided_and_proposed() {
         }
     }
 }
+
+/// A longer, messier meeting: lines of small talk, suggestions that stay open,
+/// agreements (some hedged: "let's maybe go with X then" is agreed), and a
+/// suggestion that is agreed a line later.
+struct Messy {
+    lang: OutLang,
+    lines: &'static [&'static str],
+    /// Lines that make up one decision (or proposal), and whether it was agreed.
+    groups: &'static [(&'static [u64], bool)],
+}
+
+const MESSY: &[Messy] = &[
+    Messy {
+        lang: OutLang::En,
+        lines: &[
+            "Okay, let's start with the Q3 roadmap.",
+            "I think we should drop the legacy importer.",
+            "Hmm, maybe, but some customers still use it.",
+            "Fair. Okay, let's maybe go with deprecating it in Q4 then.",
+            "We could also try a public beta of the plugin API.",
+            "Not sure, let's see how the review goes first.",
+            "Agreed, the security review happens on the 12th.",
+            "Should we switch the CI to the new provider?",
+            "Let's revisit that next month.",
+            "Okay, so the launch date is October 30, final.",
+            "Maybe we could add a dark theme before launch.",
+            "Yes, go ahead and hire the two contractors.",
+            "Perhaps we should also run a customer survey.",
+            "Sounds good, the survey goes out after launch, agreed.",
+            "Quick note, lunch is at noon.",
+            "Thanks everyone, that is all.",
+        ],
+        groups: &[
+            (&[1, 2, 3], true),
+            (&[4, 5], false),
+            (&[6], true),
+            (&[7, 8], false),
+            (&[9], true),
+            (&[10], false),
+            (&[11], true),
+            (&[12, 13], true),
+        ],
+    },
+    Messy {
+        lang: OutLang::Vi,
+        lines: &[
+            "Được rồi, mình bắt đầu với lộ trình quý ba.",
+            "Em nghĩ mình nên bỏ công cụ nhập dữ liệu cũ.",
+            "Ừm, có thể, nhưng vẫn còn khách hàng dùng nó.",
+            "Cũng đúng. Vậy thôi, mình cứ ngừng hỗ trợ nó vào quý bốn nhé.",
+            "Mình cũng có thể thử mở bản beta công khai cho API plugin.",
+            "Chưa chắc, xem buổi đánh giá thế nào đã.",
+            "Đồng ý, buổi đánh giá bảo mật diễn ra vào ngày mười hai.",
+            "Mình có nên chuyển CI sang nhà cung cấp mới không?",
+            "Để tháng sau mình xem lại.",
+            "Rồi, vậy ngày ra mắt là ba mươi tháng mười, chốt luôn.",
+            "Có thể mình thêm giao diện tối trước khi ra mắt.",
+            "Vâng, cứ thuê hai bạn làm hợp đồng đi.",
+            "Hay là mình làm thêm một cuộc khảo sát khách hàng.",
+            "Được đấy, khảo sát gửi sau khi ra mắt, đồng ý.",
+            "Nhắc nhỏ, mười hai giờ ăn trưa.",
+            "Cảm ơn mọi người, hết rồi.",
+        ],
+        groups: &[
+            (&[1, 2, 3], true),
+            (&[4, 5], false),
+            (&[6], true),
+            (&[7, 8], false),
+            (&[9], true),
+            (&[10], false),
+            (&[11], true),
+            (&[12, 13], true),
+        ],
+    },
+];
+
+/// Recall and precision of decided / proposed per language and
+/// strategy (`--ignored`; a few minutes). An item is right when it cites a
+/// line of a group and its status is that group's.
+#[test]
+#[ignore = "measurement: minutes on the local model"]
+fn decision_status_recall_and_precision() {
+    let Some(mut llm) = model() else { return };
+    let mut total = [(0usize, 0usize, 0usize, 0usize); 2]; // per strategy: found, groups, right, listed
+    for set in MESSY {
+        for (si, (label, gap_s)) in [("single pass", 10.0), ("map-reduce", 120.0)]
+            .into_iter()
+            .enumerate()
+        {
+            let segs: Vec<Segment> = set
+                .lines
+                .iter()
+                .enumerate()
+                .map(|(i, text)| Segment {
+                    id: i as u64,
+                    t0_ms: (i as f64 * gap_s * 1000.0) as i64,
+                    t1_ms: (i as f64 * gap_s * 1000.0) as i64 + 4000,
+                    speaker: Some(format!("S{}", i % 3 + 1)),
+                    text: text.to_string(),
+                    lang: Some(set.lang.code().to_string()),
+                })
+                .collect();
+            let t = Transcript::new(segs).unwrap();
+            // Runs are repeatable (the same prompt gives the same notes), so once is enough.
+            for run_no in 1..=1 {
+                let mut o = Options::new(template::builtin("general").unwrap(), set.lang);
+                o.chunk_minutes = 5;
+                let run = match notes::generate_steps(&mut llm, &t, &o, None, &mut |_| {}) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        eprintln!("{:?} {label} #{run_no}: failed: {e}", set.lang);
+                        continue;
+                    }
+                };
+                let n = &run.notes;
+                let listed: Vec<(&notes::Item, bool)> = n
+                    .decisions
+                    .iter()
+                    .map(|i| (i, true))
+                    .chain(n.proposals.iter().map(|i| (i, false)))
+                    .collect();
+                let group_of = |i: &notes::Item| {
+                    set.groups
+                        .iter()
+                        .find(|(lines, _)| i.citations.iter().any(|c| lines.contains(c)))
+                };
+                let right = listed
+                    .iter()
+                    .filter(|(i, decided)| group_of(i).is_some_and(|(_, agreed)| agreed == decided))
+                    .count();
+                let found = set
+                    .groups
+                    .iter()
+                    .filter(|(lines, agreed)| {
+                        listed.iter().any(|(i, decided)| {
+                            decided == agreed && i.citations.iter().any(|c| lines.contains(c))
+                        })
+                    })
+                    .count();
+                eprintln!(
+                    "{:?} {label} #{run_no}: recall {found}/{}, precision {right}/{} ({} decided, {} proposed)",
+                    set.lang,
+                    set.groups.len(),
+                    listed.len(),
+                    n.decisions.len(),
+                    n.proposals.len()
+                );
+                let t = &mut total[si];
+                *t = (
+                    t.0 + found,
+                    t.1 + set.groups.len(),
+                    t.2 + right,
+                    t.3 + listed.len(),
+                );
+            }
+        }
+    }
+    for (label, t) in ["single pass", "map-reduce"].iter().zip(total) {
+        eprintln!(
+            "TOTAL {label}: recall {}/{} = {:.0}%, precision {}/{} = {:.0}%",
+            t.0,
+            t.1,
+            100.0 * t.0 as f64 / t.1.max(1) as f64,
+            t.2,
+            t.3,
+            100.0 * t.2 as f64 / t.3.max(1) as f64
+        );
+    }
+}
