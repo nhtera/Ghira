@@ -73,6 +73,7 @@ fn texts(n: &Notes) -> Vec<&str> {
     let mut v: Vec<&str> = Vec::new();
     v.extend(n.tldr.iter().map(|i| i.text.as_str()));
     v.extend(n.decisions.iter().map(|i| i.text.as_str()));
+    v.extend(n.proposals.iter().map(|i| i.text.as_str()));
     v.extend(n.action_items.iter().map(|a| a.text.as_str()));
     v.extend(n.open_questions.iter().map(|i| i.text.as_str()));
     v.extend(n.key_quotes.iter().map(|q| q.text.as_str()));
@@ -131,6 +132,7 @@ fn run_golden(llm: &mut LocalLlm, name: &str, lang: OutLang) {
         run.diagnostics,
         serde_json::to_string_pretty(&run.notes).unwrap()
     );
+    weak_rate(name, &run);
     check(&t, &run.notes);
 }
 
@@ -191,21 +193,26 @@ fn golden_meetings() {
     assert_eq!(ghi_net::connections_opened(), 0);
 }
 
-/// Digit runs ("135", "9:30" gives "9" and "30") in `s`.
-fn numbers(s: &str) -> Vec<String> {
-    // A speaker label ("S1") is a name, not a number.
+/// Digit runs ("135", "9:30" gives "9" and "30") in `s`, leaving out the
+/// transcript's own speaker labels (`labels`, e.g. "S1"): a name, not a number.
+fn numbers(s: &str, labels: &[&str]) -> Vec<String> {
     let no_labels: String = s
         .split_inclusive(char::is_whitespace)
-        .filter(|w| {
-            let w = w.trim_matches(|c: char| !c.is_alphanumeric());
-            !(w.len() > 1 && w.starts_with('S') && w[1..].chars().all(|c| c.is_ascii_digit()))
-        })
+        .filter(|w| !labels.contains(&w.trim_matches(|c: char| !c.is_alphanumeric())))
         .collect();
     no_labels
         .split(|c: char| !c.is_ascii_digit())
         .filter(|p| !p.is_empty())
         .map(String::from)
         .collect()
+}
+
+/// Weak-source items among all cited items of a run, printed for the record.
+fn weak_rate(label: &str, run: &notes::Run) -> f64 {
+    let items = run.notes.all_citations().count();
+    let weak = run.diagnostics.weak_anchors as usize;
+    eprintln!("{label}: {weak} of {items} items flagged to check");
+    weak as f64 / items.max(1) as f64
 }
 
 /// The consultation template on a synthetic call (no real patient data):
@@ -227,6 +234,7 @@ fn golden_consultation() {
         run.diagnostics,
         serde_json::to_string_pretty(&run.notes).unwrap()
     );
+    weak_rate("consultation", &run);
     let n = &run.notes;
     for cites in n.all_citations() {
         assert!(!cites.is_empty(), "an AI item without a citation");
@@ -242,10 +250,14 @@ fn golden_consultation() {
             .any(|s| s.id == "findings" && !s.items.is_empty()),
         "nothing under what was said"
     );
-    let said: std::collections::HashSet<String> =
-        t.segments().iter().flat_map(|s| numbers(&s.text)).collect();
+    let labels = t.speakers();
+    let said: std::collections::HashSet<String> = t
+        .segments()
+        .iter()
+        .flat_map(|s| numbers(&s.text, &labels))
+        .collect();
     for text in texts(n) {
-        for num in numbers(text) {
+        for num in numbers(text, &labels) {
             assert!(said.contains(&num), "invented number {num} in `{text}`");
         }
         let low = text.to_lowercase();
@@ -410,6 +422,7 @@ fn golden_decided_and_proposed() {
             o.chunk_minutes = 5;
             let started = Instant::now();
             let run = notes::generate_steps(&mut llm, &t, &o, None, &mut |_| {}).unwrap();
+            weak_rate(&format!("{:?} {label}", set.lang), &run);
             let n = &run.notes;
             // An item is right when it comes from the lines of its own status.
             let right = |items: &[notes::Item], from: &[u64]| {
@@ -553,6 +566,7 @@ fn decision_status_recall_and_precision() {
                         continue;
                     }
                 };
+                weak_rate(&format!("messy {:?} {label}", set.lang), &run);
                 let n = &run.notes;
                 let listed: Vec<(&notes::Item, bool)> = n
                     .decisions

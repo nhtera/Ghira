@@ -40,6 +40,9 @@ pub struct Diagnostics {
     pub weak_anchors: u32,
     /// Action items whose owner wasn't a speaker of the cited segments.
     pub unassigned_owners: u32,
+    /// Decisions the model gave no status; kept as proposed (never over-claim
+    /// a commitment).
+    pub missing_status: u32,
     /// Items cut because a list was longer than allowed.
     pub truncated_lists: u32,
     /// Repeated items removed (same text after folding, in the same list).
@@ -58,6 +61,7 @@ impl Diagnostics {
         self.dropped_cites += o.dropped_cites;
         self.weak_anchors += o.weak_anchors;
         self.unassigned_owners += o.unassigned_owners;
+        self.missing_status += o.missing_status;
         self.truncated_lists += o.truncated_lists;
         self.duplicates += o.duplicates;
         self.snapped_cites += o.snapped_cites;
@@ -193,7 +197,9 @@ pub fn snap<'s>(
     cites.retain(|c| seen.insert(*c));
 }
 
-/// True when `text` shares a content word with the cited segments.
+/// True when `text` shares a content word with the cited segments. The looser,
+/// older rule (any one word), still used by `enhance`; notes use the graded
+/// [`source_score`] instead.
 pub fn supported(text: &str, cited: &[&Segment]) -> bool {
     let words = content_words(text);
     cited
@@ -337,14 +343,20 @@ static STOP: LazyLock<HashSet<String>> =
     LazyLock::new(|| STOPWORDS.iter().map(|w| ghi_text::fold(w)).collect());
 
 /// The words a claim or a source line is compared by: folded (so Vietnamese
-/// matches with or without marks), stopwords removed, long words cut to a
-/// five-letter stem (so "decided" meets "decide").
+/// matches with or without marks) and stopwords removed. English words keep
+/// a five-letter stem ("decided" meets "decide") and need three letters.
+/// Vietnamese (any diacritic in the text) is made of short syllables, so they
+/// are kept whole and two letters are enough ("đi", "xe", "ba").
 pub fn claim_words(text: &str) -> HashSet<String> {
-    content_words(text)
+    let vi = ghi_text::has_diacritics(text);
+    let min = if vi { 2 } else { 3 };
+    ghi_text::tokens(&ghi_text::fold(text))
         .into_iter()
-        .filter(|w| !STOP.contains(w))
+        .map(|(_, t)| t)
+        .filter(|t| t.chars().count() >= min || t.chars().any(|c| c.is_ascii_digit()))
+        .filter(|t| !STOP.contains(t))
         .map(|w| {
-            if w.chars().count() > 5 {
+            if !vi && w.chars().count() > 5 {
                 w.chars().take(5).collect()
             } else {
                 w

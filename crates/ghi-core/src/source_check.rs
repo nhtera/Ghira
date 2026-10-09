@@ -8,9 +8,11 @@
 //! ([`ghi_llm::validate::source_score`]); a claim below
 //! [`ghi_llm::validate::WEAK_BELOW`] is weak. "Linked" is honest wording: a
 //! claim whose words match is linked to its source, not proven by it.
-//! Claims are scored only in the language of the transcript lines; a claim
-//! whose lines are in another language (or whose notes language is unknown)
-//! counts as linked but is never flagged.
+//! Each claim is scored only when it is written in the language of the lines
+//! it cites, which is worked out from the claim's own text (not from a
+//! stored setting: notes can arrive from another device, written in another
+//! language than this one would have chosen). A claim over lines in another
+//! language counts as linked but is never flagged.
 
 use std::collections::{HashMap, HashSet};
 
@@ -45,25 +47,38 @@ impl ClaimCheck {
 /// back from the anchor's end stops there).
 const LONGEST_SEGMENT_MS: i64 = 120_000;
 
-/// Checks every claim. `segments` are the current transcript in time order;
-/// `notes_lang` is the language the notes are written in (`en` / `vi`), or
-/// `None` when it was not recorded. The words of each line are worked out at
-/// most once per call.
-pub fn check_claims(
-    claims: &[Claim],
-    segments: &[Segment],
-    notes_lang: Option<&str>,
-) -> Vec<ClaimCheck> {
+/// The language (`en` / `vi`) a text is written in; `None` without letters.
+fn language(text: &str, fixed: Option<&str>) -> Option<String> {
+    crate::live::line_language(text, fixed)
+}
+
+/// The language most of `texts` are written in (for showing what language
+/// notes are in), or `None` when none has letters. Ties go to `en`.
+pub fn notes_language<'a>(texts: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let (mut vi, mut en) = (0usize, 0usize);
+    for t in texts {
+        match language(t, None).as_deref() {
+            Some("vi") => vi += 1,
+            Some(_) => en += 1,
+            None => {}
+        }
+    }
+    (vi + en > 0).then(|| if vi > en { "vi" } else { "en" }.to_string())
+}
+
+/// Checks every claim. `segments` are the current transcript in time order.
+/// The words of each line are worked out at most once per call.
+pub fn check_claims(claims: &[Claim], segments: &[Segment]) -> Vec<ClaimCheck> {
     let mut words: HashMap<usize, HashSet<String>> = HashMap::new();
     claims
         .iter()
         .map(|c| {
             let lines = lines_of(c.anchors, segments);
-            let same_lang = notes_lang.is_some_and(|l| {
-                lines
-                    .iter()
-                    .all(|&i| segments[i].lang.as_deref().is_none_or(|sl| sl == l))
-            });
+            let claim_lang = language(c.text, None);
+            let same_lang = claim_lang.is_some()
+                && lines.iter().all(|&i| {
+                    language(&segments[i].text, segments[i].lang.as_deref()) == claim_lang
+                });
             let score = if same_lang && !lines.is_empty() {
                 for &i in &lines {
                     words
@@ -182,7 +197,7 @@ mod tests {
                 anchors: &a_none,
             },
         ];
-        let c = check_claims(&claims, &segs, Some("vi"));
+        let c = check_claims(&claims, &segs);
         assert!(c[0].linked && !c[0].weak());
         assert!(c[1].linked && c[1].weak(), "{:?}", c[1]);
         // No line there any more: not linked, not flagged.
@@ -190,18 +205,43 @@ mod tests {
         assert_eq!(totals(&c), (2, 1));
     }
 
+    /// Notes made on another device, in another language than the lines
+    /// (an English summary of a Vietnamese meeting, synced here): linked,
+    /// never flagged. The same lines with a Vietnamese claim are scored.
     #[test]
-    fn other_language_or_unknown_language_is_linked_but_never_flagged() {
+    fn a_claim_in_another_language_than_its_lines_is_linked_but_never_flagged() {
         let segs = meeting();
         let a = [at(8100, 11_000)];
-        let claims = [Claim {
+        let en = [Claim {
             text: "Send the design document to the auditors",
             anchors: &a,
         }];
-        let en = check_claims(&claims, &segs, Some("en"));
-        assert!(en[0].linked && en[0].score.is_none());
-        let unknown = check_claims(&claims, &segs, None);
-        assert!(unknown[0].linked && !unknown[0].weak());
+        let c = check_claims(&en, &segs);
+        assert!(c[0].linked && c[0].score.is_none() && !c[0].weak());
+        let vi = [Claim {
+            text: "Gửi tài liệu thiết kế cho bên kiểm toán",
+            anchors: &a,
+        }];
+        assert!(check_claims(&vi, &segs)[0].weak(), "scored: wrong lines");
+        // A claim with no letters has nothing to compare.
+        let none = [Claim {
+            text: "12 : 30",
+            anchors: &a,
+        }];
+        assert!(check_claims(&none, &segs)[0].score.is_none());
+    }
+
+    #[test]
+    fn the_notes_language_is_read_from_the_notes_text() {
+        assert_eq!(
+            notes_language(["Chốt lịch beta", "Gửi tài liệu", "ship it"]).as_deref(),
+            Some("vi")
+        );
+        assert_eq!(
+            notes_language(["Ship the beta", "Send the deck"]).as_deref(),
+            Some("en")
+        );
+        assert_eq!(notes_language(["12", ""]), None);
     }
 
     #[test]
@@ -212,7 +252,7 @@ mod tests {
             text: "Tài liệu thiết kế cho kiểm toán, hộp thư hỗ trợ bốn mươi yêu cầu",
             anchors: &a,
         }];
-        let c = check_claims(&claims, &segs, Some("vi"));
+        let c = check_claims(&claims, &segs);
         assert!(c[0].linked && !c[0].weak(), "{:?}", c[0]);
     }
 
@@ -255,7 +295,7 @@ mod tests {
             })
             .collect();
         let started = Instant::now();
-        let c = check_claims(&claims, &segs, Some("en"));
+        let c = check_claims(&claims, &segs);
         let took = started.elapsed();
         assert_eq!(c.len(), 150);
         assert!(c.iter().all(|c| c.linked));

@@ -367,8 +367,6 @@ pub type Chip = (String, i64, bool);
 
 /// Settings key prefix of the model that wrote a meeting's notes.
 const NOTES_MODEL_PREFIX: &str = "notes_model:";
-/// Settings key prefix of the language (`en` / `vi`) a meeting's notes are in.
-const NOTES_LANG_PREFIX: &str = "notes_lang:";
 /// Settings key prefix of the speaker count the user gave at import.
 const EXPECTED_SPEAKERS_PREFIX: &str = "expected_speakers:";
 
@@ -1235,30 +1233,6 @@ impl Store {
         }
     }
 
-    /// Records the language the meeting's current notes are written in
-    /// (`None` clears). A settings row keyed by the meeting, removed with it.
-    pub fn set_notes_lang(&self, meeting_gid: &str, lang: Option<&str>) -> Result<()> {
-        check_gid(meeting_gid)?;
-        let key = format!("{NOTES_LANG_PREFIX}{meeting_gid}");
-        match lang {
-            Some(l) => self.set_setting(&key, &serde_json::Value::String(l.to_string())),
-            None => {
-                self.conn()
-                    .execute("DELETE FROM settings WHERE key = ?1", [key])?;
-                Ok(())
-            }
-        }
-    }
-
-    /// The language the meeting's notes are written in, if recorded (notes
-    /// saved before it was kept have none).
-    pub fn notes_lang(&self, meeting_gid: &str) -> Result<Option<String>> {
-        check_gid(meeting_gid)?;
-        Ok(self
-            .get_setting(&format!("{NOTES_LANG_PREFIX}{meeting_gid}"))?
-            .and_then(|v| v.as_str().map(str::to_string)))
-    }
-
     /// Records how many people the user said spoke in an imported meeting (a
     /// hint kept with it; the diarizer has no speaker-count input yet).
     pub fn set_expected_speakers(&self, meeting_gid: &str, n: u32) -> Result<()> {
@@ -1827,26 +1801,6 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| StoreError::NotFound {
-    /// Changes a note block's kind (a decision becomes a proposal and back).
-    /// AI-written blocks become `ai_edited`; the text is untouched.
-    pub fn set_note_block_kind(&self, note_gid: &str, kind: &str) -> Result<()> {
-        if kind.is_empty() || kind.len() > 64 {
-            return Err(StoreError::Invalid("note kind".into()));
-        }
-        let mut conn = self.conn();
-        let id = id_of(&conn, "notes_blocks", note_gid)?;
-        let tx = conn.transaction()?;
-        let lamport = Store::alloc_lamport(&tx, 1)?;
-        tx.execute(
-            "UPDATE notes_blocks SET kind = ?1, lamport = ?2,
-                    provenance = CASE provenance WHEN 'ai' THEN 'ai_edited' ELSE provenance END
-             WHERE id = ?3",
-            params![kind, lamport, id],
-        )?;
-        tx.commit()?;
-        Ok(())
-    }
-
                 kind: "note",
                 gid: note_gid.to_string(),
             })?;
@@ -1869,6 +1823,26 @@ impl Store {
                 params![id, norm],
             )?;
         }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Changes a note block's kind (a decision becomes a proposal and back).
+    /// AI-written blocks become `ai_edited`; the text is untouched.
+    pub fn set_note_block_kind(&self, note_gid: &str, kind: &str) -> Result<()> {
+        if kind.is_empty() || kind.len() > 64 {
+            return Err(StoreError::Invalid("note kind".into()));
+        }
+        let mut conn = self.conn();
+        let id = id_of(&conn, "notes_blocks", note_gid)?;
+        let tx = conn.transaction()?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        tx.execute(
+            "UPDATE notes_blocks SET kind = ?1, lamport = ?2,
+                    provenance = CASE provenance WHEN 'ai' THEN 'ai_edited' ELSE provenance END
+             WHERE id = ?3",
+            params![kind, lamport, id],
+        )?;
         tx.commit()?;
         Ok(())
     }
@@ -2419,11 +2393,7 @@ impl Store {
             "DELETE FROM notes_fts WHERE rowid IN (SELECT id FROM notes_blocks WHERE meeting_id = ?1)",
             [m.id],
         )?;
-        for prefix in [
-            NOTES_MODEL_PREFIX,
-            NOTES_LANG_PREFIX,
-            EXPECTED_SPEAKERS_PREFIX,
-        ] {
+        for prefix in [NOTES_MODEL_PREFIX, EXPECTED_SPEAKERS_PREFIX] {
             tx.execute(
                 "DELETE FROM settings WHERE key = ?1",
                 [format!("{prefix}{gid}")],

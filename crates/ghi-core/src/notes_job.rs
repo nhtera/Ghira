@@ -302,7 +302,6 @@ pub(crate) fn save_notes_leased(
     })?;
     // Not worth failing the save over.
     let _ = store.set_notes_model(meeting, Some(model));
-    let _ = store.set_notes_lang(meeting, Some(&n.lang));
     Ok(saved)
 }
 
@@ -604,8 +603,6 @@ mod tests {
         let segs = store.segments(&m).unwrap();
         save_notes(&store, &m, &notes, &segs, "qwen3-4b").unwrap();
         assert_eq!(store.notes_model(&m).unwrap().as_deref(), Some("qwen3-4b"));
-        // The language the notes are written in is kept with them.
-        assert_eq!(store.notes_lang(&m).unwrap().as_deref(), Some("vi"));
         // A proposed decision is its own kind of block, apart from decisions.
         let blocks = store.note_blocks(&m).unwrap();
         let kinds: Vec<_> = blocks
