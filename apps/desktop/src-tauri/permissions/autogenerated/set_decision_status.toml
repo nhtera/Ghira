@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-decision-status"
+description = "Enables the set_decision_status command without any pre-configured scope."
+commands.allow = ["set_decision_status"]
+
+[[permission]]
+identifier = "deny-set-decision-status"
+description = "Denies the set_decision_status command without any pre-configured scope."
+commands.deny = ["set_decision_status"]

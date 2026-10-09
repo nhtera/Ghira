@@ -71,6 +71,7 @@
     "allow-update-segment-text",
     "allow-set-segment-speaker",
     "allow-update-note-block",
+    "allow-set-decision-status",
     "allow-add-note-block",
     "allow-delete-note-block",
     "allow-add-action-item",

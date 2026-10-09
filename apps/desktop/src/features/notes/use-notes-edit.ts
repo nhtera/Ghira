@@ -74,6 +74,19 @@ export function useNotesEdit(meeting: string) {
             ),
           () => ipc.commands.updateNoteBlock(meeting, gid, text),
         ),
+      /** Decided ↔ Proposed: the decision changes kind and is now the user's. */
+      setDecisionStatus: (gid: string, proposed: boolean) =>
+        run(
+          (n) =>
+            blocks(n, (l) =>
+              l.map((x) =>
+                x.gid === gid
+                  ? { ...x, kind: proposed ? "proposal" : "decision", origin: edited(x.origin) }
+                  : x,
+              ),
+            ),
+          () => ipc.commands.setDecisionStatus(meeting, gid, proposed),
+        ),
       /** The new block, or undefined on failure. */
       addBlock: async (text: string) => {
         const b = await run(null, () =>

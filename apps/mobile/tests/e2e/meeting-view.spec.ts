@@ -34,6 +34,18 @@ test.describe("meeting view", () => {
     await expect(moments).toContainText("Ngân sách dự kiến");
   });
 
+  test("a proposed decision is listed after the decided ones with a chip and the footnote", async ({ page }) => {
+    await openMeetings(page, "/meetings/m-notes");
+    const decisions = page.getByRole("region", { name: "Decisions" });
+    await expect(decisions.getByText("Scope for the beta: iPhone recorder only")).toBeVisible();
+    await expect(decisions.getByTestId("proposed-chip")).toHaveText("Proposed");
+    await expect(decisions.getByText("Maybe add Android support after the beta.")).toBeVisible();
+    await expect(decisions.getByTestId("proposal-footnote")).toHaveText("AI suggestions are not commitments.");
+    // decided first
+    const text = await decisions.innerText();
+    expect(text.indexOf("Scope for the beta")).toBeLessThan(text.indexOf("Maybe add Android"));
+  });
+
   test("a saved Ask answer has its own section with its source", async ({ page }) => {
     await openMeetings(page, "/meetings/m-notes");
     await expect(page.getByRole("heading", { name: "Saved from Ask" })).toBeVisible();

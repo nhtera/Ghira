@@ -3,7 +3,7 @@
 // the app wrote from the transcript, what you edited (kept on regenerate), or
 // a jot with no match in the transcript. Same look as @ghi/ui NoteBlock, with
 // a textarea in place of the paragraph and the citations under it.
-import { Icon, cn } from "@ghi/ui";
+import { Icon, Menu, cn } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
 import type { NoteBlockView } from "../../bindings";
 import { CitationGroup } from "../citation/citation-link";
@@ -70,6 +70,9 @@ export function BlockRow({
         : undefined;
     void edit.editBlock(block.gid, v);
   };
+  const proposed = block.kind === "proposal";
+  // The app's own decisions can move between Decided and Proposed.
+  const movable = block.origin !== "user" && (block.kind === "decision" || proposed);
   return (
     <div
       data-kind={kind}
@@ -115,11 +118,33 @@ export function BlockRow({
         )}
       />
       {/* The legend above the notes says what the two colors mean; edited and unmatched blocks still say it themselves. */}
-      {kind !== "edited" && (
-        <span className={cn((kind === "ai" || kind === "user") && "sr-only")}>
-          <Provenance kind={kind} />
-        </span>
-      )}
+      <div className="flex items-center gap-2">
+        {proposed && (
+          <span data-testid="proposed-chip" className="inline-flex h-5 items-center rounded-seg border border-dashed border-line2 px-1.5 font-sans text-[11.5px] font-semibold text-muted">
+            {t("notes.proposed")}
+          </span>
+        )}
+        {kind !== "edited" && (
+          <span className={cn((kind === "ai" || kind === "user") && "sr-only")}>
+            <Provenance kind={kind} />
+          </span>
+        )}
+        {movable && (
+          <Menu
+            label={t("notes.decisionMenu")}
+            trigger={
+              <button type="button" aria-label={t("notes.decisionMenu")} className="grid size-6 place-items-center rounded-seg text-muted hover:bg-sunk hover:text-ink">
+                <Icon name="more_horiz" size={16} />
+              </button>
+            }
+            items={[
+              proposed
+                ? { label: t("notes.markDecided"), icon: "check", onSelect: () => void edit.setDecisionStatus(block.gid, false) }
+                : { label: t("notes.markProposed"), icon: "help", onSelect: () => void edit.setDecisionStatus(block.gid, true) },
+            ]}
+          />
+        )}
+      </div>
     </div>
   );
 }

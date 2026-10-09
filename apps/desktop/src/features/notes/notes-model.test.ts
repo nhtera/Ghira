@@ -112,3 +112,18 @@ describe("sections never disappear", () => {
     expect(humanizeSectionId("")).toBe("");
   });
 });
+
+describe("proposals", () => {
+  it("are their own list beside the decisions, and 'my notes only' keeps the ones you changed", () => {
+    const n: MeetingNotes = {
+      sections: [],
+      marks: [],
+      actionItems: [],
+      blocks: [b("d", "decision", "ai"), b("p1", "proposal", "ai"), b("p2", "proposal", "aiEdited"), b("t", "tldr", "ai")],
+    };
+    const l = layoutNotes(n, false);
+    expect(l.decisions.map((x) => x.gid)).toEqual(["d"]);
+    expect(l.proposals.map((x) => x.gid)).toEqual(["p1", "p2"]);
+    expect(layoutNotes(n, true).proposals.map((x) => x.gid)).toEqual(["p2"]);
+  });
+});

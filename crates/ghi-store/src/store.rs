@@ -1827,6 +1827,26 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| StoreError::NotFound {
+    /// Changes a note block's kind (a decision becomes a proposal and back).
+    /// AI-written blocks become `ai_edited`; the text is untouched.
+    pub fn set_note_block_kind(&self, note_gid: &str, kind: &str) -> Result<()> {
+        if kind.is_empty() || kind.len() > 64 {
+            return Err(StoreError::Invalid("note kind".into()));
+        }
+        let mut conn = self.conn();
+        let id = id_of(&conn, "notes_blocks", note_gid)?;
+        let tx = conn.transaction()?;
+        let lamport = Store::alloc_lamport(&tx, 1)?;
+        tx.execute(
+            "UPDATE notes_blocks SET kind = ?1, lamport = ?2,
+                    provenance = CASE provenance WHEN 'ai' THEN 'ai_edited' ELSE provenance END
+             WHERE id = ?3",
+            params![kind, lamport, id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
                 kind: "note",
                 gid: note_gid.to_string(),
             })?;

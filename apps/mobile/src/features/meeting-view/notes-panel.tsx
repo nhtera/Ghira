@@ -137,17 +137,35 @@ export function NotesPanel({
             )}
           </h2>
           <div className="flex flex-col gap-4">
-            {g.blocks.map((b) => (
-              <NoteBlock
-                key={b.gid}
-                kind={noteKind(b)}
-                showProvenance={noteKind(b) !== "ai"}
-                text={b.text}
-                citations={b.citations.map((c, i) =>
-                  toNoteCitation(c, i, visited, `${b.gid}:${i}`),
+            {g.blocks.map((b, bi) => (
+              <div key={b.gid} className="flex flex-col gap-1.5">
+                {b.kind === "proposal" && (
+                  <span
+                    data-testid="proposed-chip"
+                    className="text-ios-caption1 inline-flex h-5 items-center self-start rounded-[5px] border border-dashed border-line2 px-1.5 font-semibold text-muted"
+                  >
+                    {t("notes.proposed")}
+                  </span>
                 )}
-                onCite={(i) => onCite(b.citations[i], `${b.gid}:${i}`)}
-              />
+                <NoteBlock
+                  kind={noteKind(b)}
+                  showProvenance={noteKind(b) !== "ai"}
+                  text={b.text}
+                  citations={b.citations.map((c, i) =>
+                    toNoteCitation(c, i, visited, `${b.gid}:${i}`),
+                  )}
+                  onCite={(i) => onCite(b.citations[i], `${b.gid}:${i}`)}
+                />
+                {b.kind === "proposal" &&
+                  g.blocks[bi + 1]?.kind !== "proposal" && (
+                    <p
+                      data-testid="proposal-footnote"
+                      className="text-ios-footnote m-0 text-muted"
+                    >
+                      {t("notes.proposalFootnote")}
+                    </p>
+                  )}
+              </div>
             ))}
           </div>
         </section>

@@ -19,6 +19,8 @@ export type NotesLayout = {
   tldr: NoteBlockView[];
   sections: { section: TemplateSection; blocks: NoteBlockView[] }[];
   decisions: NoteBlockView[];
+  /** Decisions nobody agreed to yet (block kind `proposal`). */
+  proposals: NoteBlockView[];
   actions: ActionItemView[];
   questions: NoteBlockView[];
   quotes: NoteBlockView[];
@@ -79,6 +81,7 @@ export function layoutNotes(
       .map((section) => ({ section, blocks: ofKind(`section:${section.id}`) }))
       .filter((s) => s.blocks.length > 0),
     decisions: ofKind("decision"),
+    proposals: ofKind("proposal"),
     actions: notes.actionItems.filter((a) => keep(a.origin)),
     questions: ofKind("question"),
     quotes: ofKind("quote"),

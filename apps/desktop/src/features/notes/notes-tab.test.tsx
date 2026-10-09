@@ -19,6 +19,7 @@ const commands = vi.hoisted(() => ({
   addActionItem: vi.fn(),
   deleteActionItem: vi.fn(),
   updateActionItem: vi.fn(),
+  setDecisionStatus: vi.fn(),
 }));
 vi.mock("../../ipc", () => ({ ipc: { commands } }));
 const navigate = vi.hoisted(() => vi.fn());
@@ -105,6 +106,7 @@ beforeEach(() => {
     "setActionOwner",
     "updateActionItem",
     "deleteActionItem",
+    "setDecisionStatus",
   ] as const)
     commands[k].mockImplementation(() => ok(null));
   commands.addNoteBlock.mockImplementation((_m: string, text: string) =>
@@ -153,6 +155,58 @@ describe("NotesTab", () => {
     await open();
     expect(screen.queryByText("Kept when the notes are rewritten")).toBeNull();
     expect(screen.queryByTestId("saved-answers")).toBeNull();
+  });
+
+  it("lists decided items, then the proposed ones with a chip and the commitment footnote", async () => {
+    notes.blocks.push(block("d1", "decision", "ai", "Ship on Friday.", [cite]), block("p1", "proposal", "ai", "Maybe a dark theme.", [cite]));
+    await open();
+    const section = screen.getByRole("region", { name: "Decisions" });
+    const proposed = within(screen.getByTestId("proposed-decisions"));
+    expect(within(section).getByDisplayValue("Ship on Friday.")).toBeTruthy();
+    expect(proposed.getByDisplayValue("Maybe a dark theme.")).toBeTruthy();
+    expect(proposed.getByTestId("proposed-chip").textContent).toBe("Proposed");
+    expect(proposed.getByText("AI suggestions are not commitments.")).toBeTruthy();
+    // the decided one has no chip, and is not inside the proposed group
+    expect(screen.getAllByTestId("proposed-chip")).toHaveLength(1);
+    expect(proposed.queryByDisplayValue("Ship on Friday.")).toBeNull();
+  });
+
+  it("only proposals: the Decisions section still shows, with the footnote", async () => {
+    notes.blocks.push(block("p1", "proposal", "ai", "Maybe a dark theme.", [cite]));
+    await open();
+    expect(screen.getByRole("region", { name: "Decisions" })).toBeTruthy();
+    expect(screen.getByText("AI suggestions are not commitments.")).toBeTruthy();
+  });
+
+  it("the block menu moves a decision to Proposed and back, and the notes follow at once", async () => {
+    const user = userEvent.setup();
+    commands.setDecisionStatus.mockImplementation(() => ok(null));
+    notes.blocks.push(block("d1", "decision", "ai", "Ship on Friday.", [cite]));
+    await open();
+    expect(screen.queryByTestId("proposed-decisions")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Decision options" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Mark as proposed" }));
+    expect(commands.setDecisionStatus).toHaveBeenCalledWith("m1", "d1", true);
+    const proposed = await screen.findByTestId("proposed-decisions");
+    expect(within(proposed).getByDisplayValue("Ship on Friday.")).toBeTruthy();
+    // and back: the chip's block offers "Mark as decided"
+    await user.click(screen.getByRole("button", { name: "Decision options" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Mark as decided" }));
+    expect(commands.setDecisionStatus).toHaveBeenLastCalledWith("m1", "d1", false);
+    await waitFor(() => expect(screen.queryByTestId("proposed-decisions")).toBeNull());
+  });
+
+  it("a refused move puts the decision back and offers the menu only on the app's decisions", async () => {
+    const user = userEvent.setup();
+    commands.setDecisionStatus.mockImplementation(() => Promise.resolve({ status: "error" as const, error: "only a decision the app wrote can be moved" }));
+    notes.blocks.push(block("d1", "decision", "ai", "Ship on Friday.", [cite]), block("d2", "decision", "user", "My own decision"));
+    await open();
+    // one menu: the user's own tagged decision has none
+    expect(screen.getAllByRole("button", { name: "Decision options" })).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Decision options" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Mark as proposed" }));
+    await waitFor(() => expect(commands.setDecisionStatus).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId("proposed-decisions")).toBeNull());
   });
 
   it("stars the items that cover a marked moment and lists only the uncovered marks", async () => {

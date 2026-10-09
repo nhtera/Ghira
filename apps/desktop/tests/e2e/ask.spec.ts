@@ -70,3 +70,11 @@ test("Save to notes puts the answer in Saved from Ask, pinned, with a working so
   await saved.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByTestId("saved-answers")).toHaveCount(0);
 });
+
+test("an answer carries the commitment line", async ({ page }) => {
+  const panel = await open(page);
+  await panel.getByRole("textbox", { name: "Question" }).fill("nhận diện");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByTestId("ask-commitment")).toHaveText("AI suggestions are not commitments.");
+});
+

@@ -51,6 +51,8 @@ export const SECTION_ORDER: SectionKey[] = [
 
 export function sectionOf(kind: string): SectionKey {
   if (kind.startsWith("enhanced:") || kind === "action") return "note";
+  // A proposed decision is listed under Decisions, after the decided ones.
+  if (kind === "proposal") return "decision";
   // A template's own section is grouped by its id (see `groupBlocks`), not as "More".
   return (SECTION_ORDER as string[]).includes(kind)
     ? (kind as SectionKey)
@@ -85,9 +87,10 @@ export function groupBlocks(
 ): BlockGroup[] {
   const fixed: BlockGroup[] = SECTION_ORDER.map((key) => ({
     key,
-    blocks: blocks.filter(
-      (b) => !b.kind.startsWith("section:") && sectionOf(b.kind) === key,
-    ),
+    blocks: blocks
+      .filter((b) => !b.kind.startsWith("section:") && sectionOf(b.kind) === key)
+      // Decided first, then the proposed ones (the sort is stable).
+      .sort((a, b) => Number(a.kind === "proposal") - Number(b.kind === "proposal")),
   })).filter((g) => g.blocks.length > 0);
   const ids: string[] = [];
   for (const b of blocks)

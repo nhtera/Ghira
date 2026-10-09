@@ -193,9 +193,8 @@ describe("MindMap", () => {
 
 describe("extraBlocks", () => {
   const blk = (kind: string, origin: "ai" | "user" = "ai") => ({ gid: kind, kind, origin, text: kind, pinned: false, citations: [] }) as never;
-  it("splits proposals from unknown kinds and ignores what the notes already place", () => {
+  it("keeps only kinds the Notes tab does not place (proposals are a section of their own now)", () => {
     const r = extraBlocks([blk("tldr"), blk("decision"), blk("section:risks"), blk("enhanced:x"), blk("note", "user"), blk("proposal"), blk("future-kind"), blk("mystery", "user")]);
-    expect(r.proposals.map((x) => x.kind)).toEqual(["proposal"]);
     expect(r.other.map((x) => x.kind)).toEqual(["future-kind"]);
   });
 });

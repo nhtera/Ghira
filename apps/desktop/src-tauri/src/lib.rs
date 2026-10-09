@@ -345,6 +345,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             detail::update_segment_text,
             detail::set_segment_speaker,
             detail::update_note_block,
+            detail::set_decision_status,
             diag_cmd::diagnostics_status,
             diag_cmd::reveal_diagnostics,
             diag_cmd::acknowledge_crash,

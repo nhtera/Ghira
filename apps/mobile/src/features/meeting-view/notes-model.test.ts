@@ -210,3 +210,13 @@ describe("groupBlocks: a template's own sections", () => {
     expect(g.some((x) => x.key === "other")).toBe(false);
   });
 });
+
+describe("groupBlocks: proposed decisions", () => {
+  it("are listed under Decisions, after the decided ones", () => {
+    const g = groupBlocks([block("proposal"), block("decision"), block("proposal"), block("tldr")]);
+    expect(g.map((x) => [x.key, x.blocks.map((b) => b.kind)])).toEqual([
+      ["tldr", ["tldr"]],
+      ["decision", ["decision", "proposal", "proposal"]],
+    ]);
+  });
+});

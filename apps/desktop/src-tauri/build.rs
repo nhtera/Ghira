@@ -180,6 +180,7 @@ fn main() {
             "delete_note_block",
             "add_note_block",
             "update_note_block",
+            "set_decision_status",
             "set_segment_speaker",
             "update_segment_text",
             "meeting_transcript",

@@ -147,6 +147,11 @@ function AnswerCard({
             ` · ${t("ask.meeting.cloudFailed", { reason: entry.cloudFailed })}`}
         </p>
       )}
+      {entry.state === "done" && a?.answered && (
+        <p data-testid="ask-commitment" className="text-small m-0 text-muted">
+          {t("notes.proposalFootnote")}
+        </p>
+      )}
     </li>
   );
 }

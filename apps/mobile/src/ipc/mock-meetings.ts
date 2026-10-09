@@ -353,6 +353,14 @@ function defaults(): MockMeeting[] {
             ],
           },
           {
+            gid: "n-proposal",
+            kind: "proposal",
+            origin: "ai",
+            text: "Maybe add Android support after the beta.",
+            pinned: false,
+            citations: [cite(300_000, "Noted, moving on to the next item.", { speakerGid: "sp-me" })],
+          },
+          {
             gid: "n3",
             kind: "question",
             origin: "ai",

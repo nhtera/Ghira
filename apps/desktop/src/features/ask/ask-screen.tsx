@@ -110,6 +110,11 @@ function AnswerCard({ entry, model, onOpen, onSearch }: { entry: Entry; model: s
           {t("ask.answeredLocal", { context: platform, model, count: a.sources.length })} · {entry.scopeLabel}
         </p>
       )}
+      {entry.state === "done" && a && a.sources.length > 0 && (
+        <p data-testid="ask-commitment" className="text-small m-0 text-muted">
+          {t("notes.proposalFootnote")}
+        </p>
+      )}
       {entry.state === "done" && a && !a.semantic && (
         <p data-testid="ask-keyword-only" className="text-small m-0 text-muted">
           {t("ask.keywordOnly")}

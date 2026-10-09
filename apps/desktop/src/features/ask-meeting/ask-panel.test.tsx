@@ -304,6 +304,13 @@ describe("AskPanel", () => {
     expect((screen.getByRole("button", { name: "Save to notes" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("an answer says AI suggestions are not commitments; not-discussed does not need to", async () => {
+    commands.askMeeting.mockReturnValue(ok(answered));
+    ask("Why NeMo?");
+    await screen.findByText("We chose NeMo for diarization.");
+    expect(screen.getByTestId("ask-commitment").textContent).toBe("AI suggestions are not commitments.");
+  });
+
   it("a not-discussed answer has nothing to save", async () => {
     commands.askMeeting.mockReturnValue(ok({ answered: false, text: "", citations: [], searched: ["x"], engine: "local", id: null }));
     ask("kubernetes?");

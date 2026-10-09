@@ -343,7 +343,7 @@ pub fn sections_for(
 /// as a note sentence (where the star shows): topics are a list of times and
 /// kinds this version does not draw would hide the mark from "Moments you marked".
 pub fn covers_marks(kind: &str) -> bool {
-    matches!(kind, "tldr" | "decision" | "question" | "quote" | "answer")
+    matches!(kind, "tldr" | "decision" | "proposal" | "question" | "quote" | "answer")
         || kind.starts_with("section:")
         || kind.starts_with("enhanced:")
 }
@@ -654,6 +654,48 @@ pub async fn update_note_block(
         let store = c.store()?;
         own_block(&store, &meeting, &block)?;
         store.update_note_block(&block, &cap(text)).map_err(err)
+    })
+    .await
+}
+
+/// Moves a decision between Decided and Proposed (kind `decision` ↔
+/// `proposal`; the text stays, an AI block becomes `ai_edited`). Only the
+/// app's decisions: not your own notes, not other kinds.
+pub fn set_decision_status_now(
+    store: &Store,
+    meeting: &str,
+    block: &str,
+    proposed: bool,
+) -> Result<(), String> {
+    own_block(store, meeting, block)?;
+    let b = store
+        .note_blocks(meeting)
+        .map_err(err)?
+        .into_iter()
+        .find(|b| b.gid == block)
+        .ok_or("this note is gone")?;
+    if b.provenance == Provenance::User || !matches!(b.kind.as_str(), "decision" | "proposal") {
+        return Err("only a decision the app wrote can be moved".into());
+    }
+    let kind = if proposed { "proposal" } else { "decision" };
+    if b.kind == kind {
+        return Ok(());
+    }
+    store.set_note_block_kind(block, kind).map_err(err)
+}
+
+/// Marks a decision as Decided or Proposed (the block's menu).
+#[tauri::command]
+#[specta::specta]
+pub async fn set_decision_status(
+    core: CoreState<'_>,
+    meeting: String,
+    block: String,
+    proposed: bool,
+) -> Result<(), String> {
+    blocking(&core, move |c| {
+        let store = c.store()?;
+        set_decision_status_now(&store, &meeting, &block, proposed)
     })
     .await
 }
@@ -1423,10 +1465,10 @@ mod tests {
 
     #[test]
     fn only_drawn_sentence_kinds_cover_marks() {
-        for k in ["tldr", "decision", "question", "quote", "answer", "section:risks", "enhanced:b1"] {
+        for k in ["tldr", "decision", "proposal", "question", "quote", "answer", "section:risks", "enhanced:b1"] {
             assert!(covers_marks(k), "{k}");
         }
-        for k in ["topic", "note", "proposal", "future"] {
+        for k in ["topic", "note", "future"] {
             assert!(!covers_marks(k), "{k}");
         }
     }
@@ -1531,6 +1573,51 @@ mod tests {
         assert_eq!(store.get_meeting(&m).unwrap().template.as_deref(), Some(made.id.as_str()));
         let jobs = store.jobs_for_meeting(&m).unwrap();
         assert_eq!(jobs.len(), 1);
+    }
+
+    #[test]
+    fn a_decision_moves_between_decided_and_proposed_and_nothing_else_does() {
+        let (_t, core, m) = core_and_meeting();
+        let store = core.store().unwrap();
+        let mk = |kind: &str, prov: Provenance| {
+            store
+                .add_note_block(
+                    &m,
+                    NewNoteBlock {
+                        kind: kind.into(),
+                        provenance: prov,
+                        body: "Ship Friday".into(),
+                        anchors: vec![],
+                        pinned: false,
+                    },
+                )
+                .unwrap()
+                .gid
+        };
+        let dec = mk("decision", Provenance::Ai);
+        let kind_of = |g: &str| {
+            store
+                .note_blocks(&m)
+                .unwrap()
+                .into_iter()
+                .find(|b| b.gid == g)
+                .map(|b| (b.kind, b.provenance, b.body))
+                .unwrap()
+        };
+        set_decision_status_now(&store, &m, &dec, true).unwrap();
+        assert_eq!(kind_of(&dec), ("proposal".into(), Provenance::AiEdited, "Ship Friday".into()));
+        // Back again; asking for what it already is changes nothing.
+        set_decision_status_now(&store, &m, &dec, false).unwrap();
+        set_decision_status_now(&store, &m, &dec, false).unwrap();
+        assert_eq!(kind_of(&dec).0, "decision");
+        // Not your own tagged note, not a summary, not a block of another meeting.
+        let mine = mk("decision", Provenance::User);
+        let tldr = mk("tldr", Provenance::Ai);
+        assert!(set_decision_status_now(&store, &m, &mine, true).is_err());
+        assert!(set_decision_status_now(&store, &m, &tldr, true).is_err());
+        assert!(set_decision_status_now(&store, "other-meeting", &dec, true).is_err());
+        assert_eq!(kind_of(&mine).0, "decision");
+        assert_eq!(kind_of(&tldr).0, "tldr");
     }
 
     #[test]

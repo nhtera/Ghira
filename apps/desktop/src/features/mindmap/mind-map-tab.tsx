@@ -18,13 +18,9 @@ import { notesToTree, treeToOutline, type MapNode, type NotesTreeInput } from ".
 /** Block kinds the Notes tab places; anything else (not yours) goes to "Other". */
 const KNOWN = /^(tldr|decision|question|quote|topic|note|proposal|section:.*|enhanced:.*)$/;
 
-/** Blocks of a kind the layout has no section for; `proposal` is its own section. */
+/** Blocks of a kind the Notes tab has no section for: kept, in the map's "Other". */
 export function extraBlocks(blocks: readonly NoteBlockView[]) {
-  const live = blocks.filter((b) => b.origin !== "user");
-  return {
-    proposals: live.filter((b) => b.kind === "proposal"),
-    other: live.filter((b) => !KNOWN.test(b.kind)),
-  };
+  return { other: blocks.filter((b) => b.origin !== "user" && !KNOWN.test(b.kind)) };
 }
 
 export function MindMapTab({ meeting, detail }: { meeting: string; detail: MeetingDetail }) {
@@ -38,7 +34,7 @@ export function MindMapTab({ meeting, detail }: { meeting: string; detail: Meeti
   const root = useMemo(() => {
     if (!notes) return null;
     const l = layoutNotes(notes, false);
-    const { proposals, other } = extraBlocks(notes.blocks);
+    const { other } = extraBlocks(notes.blocks);
     const input: NotesTreeInput = {
       title: detail.title,
       titles: {
@@ -57,7 +53,7 @@ export function MindMapTab({ meeting, detail }: { meeting: string; detail: Meeti
       actions: l.actions,
       questions: l.questions,
       topics: l.topics,
-      proposals,
+      proposals: l.proposals,
       other,
       // The marks nothing covers, and the items that cover a mark (starred).
       marks: notes.marks.filter((k) => k.coveredBy.length === 0).map((k, i) => ({ gid: `mark-${i}`, tMs: k.tMs ?? 0, text: k.text ?? t(`notes.tags.${k.tag === "decision" || k.tag === "action" || k.tag === "question" ? k.tag : "star"}`) })),

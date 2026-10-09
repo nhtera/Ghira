@@ -193,6 +193,8 @@ export const commands = {
 	setSegmentSpeaker: (meeting: string, segment: string, speaker: string) => typedError<null, string>(__TAURI_INVOKE("set_segment_speaker", { meeting, segment, speaker })),
 	/**  Edits a note block (an AI block becomes the user's: `aiEdited`). */
 	updateNoteBlock: (meeting: string, block: string, text: string) => typedError<null, string>(__TAURI_INVOKE("update_note_block", { meeting, block, text })),
+	/**  Marks a decision as Decided or Proposed (the block's menu). */
+	setDecisionStatus: (meeting: string, block: string, proposed: boolean) => typedError<null, string>(__TAURI_INVOKE("set_decision_status", { meeting, block, proposed })),
 	diagnosticsStatus: () => __TAURI_INVOKE<DiagnosticsStatus>("diagnostics_status"),
 	/**  Opens the diagnostics folder in Finder. */
 	revealDiagnostics: () => typedError<null, string>(__TAURI_INVOKE("reveal_diagnostics")),

@@ -90,6 +90,7 @@ export function NotesTab({
     !layout.tldr.length &&
     !layout.sections.length &&
     !layout.decisions.length &&
+    !layout.proposals.length &&
     !layout.actions.length &&
     !layout.questions.length &&
     !layout.quotes.length &&
@@ -141,9 +142,15 @@ export function NotesTab({
             {blocks(list, t("notes.blockLabel"))}
           </Section>
         ))}
-        {layout.decisions.length > 0 && (
+        {(layout.decisions.length > 0 || layout.proposals.length > 0) && (
           <Section ai title={t("notes.sections.decisions")}>
-            {blocks(layout.decisions, t("notes.blockLabel"))}
+            {layout.decisions.length > 0 && blocks(layout.decisions, t("notes.blockLabel"))}
+            {layout.proposals.length > 0 && (
+              <div data-testid="proposed-decisions" className="flex flex-col gap-1.5">
+                {blocks(layout.proposals, t("notes.blockLabel"))}
+                <p className="m-0 font-sans text-[12px] text-muted">{t("notes.proposalFootnote")}</p>
+              </div>
+            )}
           </Section>
         )}
         {(layout.actions.length > 0 || !onlyMine) && (
