@@ -61,6 +61,25 @@ fn setup() -> Option<PathBuf> {
     Some(dir)
 }
 
+/// Keeps the notes job's diagnostics line (status pass failed or skipped,
+/// lists at their cap), which it logs only when one of them is not zero.
+struct Capture(std::sync::Mutex<Vec<String>>);
+
+impl log::Log for Capture {
+    fn enabled(&self, _: &log::Metadata) -> bool {
+        true
+    }
+    fn log(&self, r: &log::Record) {
+        let line = r.args().to_string();
+        if line.starts_with("notes diagnostics") {
+            self.0.lock().unwrap().push(line);
+        }
+    }
+    fn flush(&self) {}
+}
+
+static CAPTURE: Capture = Capture(std::sync::Mutex::new(Vec::new()));
+
 struct Run {
     label: &'static str,
     seconds: f64,
@@ -75,6 +94,8 @@ fn marks_on_a_long_meeting_through_the_notes_job() {
         return;
     };
     let Some(models) = setup() else { return };
+    log::set_logger(&CAPTURE).expect("no other logger in this test");
+    log::set_max_level(log::LevelFilter::Info);
     let doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let lines: Vec<NewSegment> = doc["segments"]
@@ -153,9 +174,15 @@ fn marks_on_a_long_meeting_through_the_notes_job() {
                 ready: always_ready(),
             })],
         );
+        CAPTURE.0.lock().unwrap().clear();
         let started = Instant::now();
         let (_, outcome) = runner.run_one().expect("a job ran");
         let seconds = started.elapsed().as_secs_f64();
+        let diag = match CAPTURE.0.lock().unwrap().first() {
+            Some(l) => l.clone(),
+            None => "notes diagnostics: status pass failed 0, decisions left unsorted 0, lists at their cap 0"
+                .to_string(),
+        };
         if !matches!(outcome, Ok(Outcome::Done)) {
             runs.push(Run {
                 label,
@@ -198,7 +225,7 @@ fn marks_on_a_long_meeting_through_the_notes_job() {
             seconds,
             summary: format!(
                 "blocks {kinds:?}, action items {}; marks on a line {} of {}; \
-                 marked line cited {cited}; UI coverage (time overlap) {ui_covered}",
+                 marked line cited {cited}; UI coverage (time overlap) {ui_covered}; {diag}",
                 actions.len(),
                 on_lines.iter().filter(|l| l.segment.is_some()).count(),
                 on_lines.len(),

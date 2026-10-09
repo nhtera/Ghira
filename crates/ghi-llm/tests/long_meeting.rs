@@ -117,7 +117,11 @@ fn marks_on_a_long_meeting() {
         )
     };
     let mut report = Vec::new();
+    let only_plain = std::env::var_os("GHI_LONG_NO_MARKS_ONLY").is_some();
     for (label, with) in [("no marks", false), ("marks", true)] {
+        if with && only_plain {
+            continue;
+        }
         let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
         if with {
             o.marks = marks.clone();
@@ -134,6 +138,25 @@ fn marks_on_a_long_meeting() {
             }
         };
         let wall = started.elapsed().as_secs_f64();
+        // Each listed decision with its lines and the verdict of the status pass.
+        for (verdict, items) in [
+            ("decided", &run.notes.decisions),
+            ("proposed", &run.notes.proposals),
+        ] {
+            for i in items {
+                eprintln!("DECISION [{verdict}] {} cites {:?}", i.text, i.citations);
+                for c in &i.citations {
+                    if let Some(x) = t.get(*c) {
+                        eprintln!("    s{c}: {}", x.text);
+                    }
+                }
+                if let Some(last) = i.citations.iter().filter_map(|c| t.index_of(*c)).max()
+                    && let Some(next) = t.segments().get(last + 1)
+                {
+                    eprintln!("    next s{}: {}", next.id, next.text);
+                }
+            }
+        }
         let cited: std::collections::HashSet<u64> =
             run.notes.all_citations().flatten().copied().collect();
         let hit = marks.iter().filter(|m| cited.contains(&m.id)).count();
