@@ -111,6 +111,13 @@ enum Ghira {
         for _ in 0..<20 {
             // The last step's "Start recording" lands on a running recording.
             if recordButton(app).waitForExistence(timeout: 3) || stopButton(app).exists { return }
+            // The pairing step opens the camera over the page: close it to
+            // reach its "Not now".
+            let qrCancel = app.buttons["ghira.qr-cancel"]
+            if qrCancel.exists {
+                qrCancel.tap()
+                continue
+            }
             var tapped = false
             for name in forward where app.buttons[name].exists {
                 app.buttons[name].tap()
