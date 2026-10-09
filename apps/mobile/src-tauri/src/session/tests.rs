@@ -415,13 +415,16 @@ fn locked_holds_the_engine_and_unlocking_catches_up() {
     assert!(life.entered_background());
     assert_eq!(r.recorder.snapshot().phase, RecordPhase::Locked);
     feed(8);
-    thread::sleep(Duration::from_millis(300));
+    // Waits for the audio to queue up (a fixed sleep was too short on a
+    // loaded CI simulator), then checks none of it was transcribed.
+    wait_for("the locked audio to queue up", || {
+        r.recorder.snapshot().backlog_s > 4.0
+    });
     assert_eq!(
         r.store.segments(&id).unwrap().len(),
         0,
         "nothing transcribed while locked"
     );
-    assert!(r.recorder.snapshot().backlog_s > 4.0);
     // Back in the foreground: the backlog drains into lines.
     life.become_active();
     wait_for("catch-up lines", || {
