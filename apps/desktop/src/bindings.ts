@@ -1252,8 +1252,29 @@ export type MailDraft = {
 
 export type MarkView = {
 	tMs: number | null,
-	/**  `mark`, `decision`, `action`, `question`. */
+	/**  `star`, `decision`, `action`, `question`. */
 	tag: string,
+	/**
+	 *  The gid of the line it falls on (none: in silence). The same rule as
+	 *  the notes prompt and the coverage use ([`marks::mark_lines`]).
+	 */
+	segment: string | null,
+};
+
+/**
+ *  A mark and what covers it: AI blocks and action items whose cited time
+ *  overlaps the line it falls on. Empty `covered_by`: nothing covers it yet.
+ */
+export type MarkedMoment = {
+	tMs: number | null,
+	/**  `star`, `decision`, `action`, `question`. */
+	tag: string,
+	/**  The line it falls on (none: in silence, the time only). */
+	segment: string | null,
+	/**  The words of that line, shortened. */
+	text: string | null,
+	/**  gids of the note blocks and action items that cover it. */
+	coveredBy: string[],
 };
 
 export type MeProfile = {
@@ -1346,6 +1367,11 @@ export type MeetingNotes = {
 	actionItems: ActionItemView[],
 	/**  The meeting template's own sections (for `section:<id>` blocks). */
 	sections: TemplateSection[],
+	/**
+	 *  The moments the user marked while recording, each with what in these
+	 *  notes covers it (computed on read; nothing is stored).
+	 */
+	marks: MarkedMoment[],
 };
 
 export type MeetingRef = {

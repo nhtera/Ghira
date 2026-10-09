@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import type { Citation, MeetingSpeaker, SegmentView } from "../../bindings";
+import type { Citation, MarkedMoment, MarkView, MeetingSpeaker, SegmentView } from "../../bindings";
 import {
+  marksBySegment,
+  uncoveredMarks,
   activeSegment,
   activeWord,
   groupBlocks,
@@ -156,5 +158,25 @@ describe("transcript timing", () => {
     expect(segmentNear(all, 21_000)).toBe(1);
     expect(segmentNear(all, 8000)).toBe(0);
     expect(segmentNear([], 1)).toBe(-1);
+  });
+});
+
+describe("marks", () => {
+  const moment = (coveredBy: string[]): MarkedMoment => ({ tMs: 1000, tag: "star", segment: "s1", text: "x", coveredBy });
+
+  it("lists only the marks nothing covers", () => {
+    expect(uncoveredMarks([moment(["n1"]), moment([]), moment(["a1", "n2"])])).toHaveLength(1);
+    expect(uncoveredMarks([])).toEqual([]);
+  });
+
+  it("groups marks by the line the core put them on and drops marks in silence", () => {
+    const marks: MarkView[] = [
+      { tMs: 1000, tag: "decision", segment: "s2" },
+      { tMs: 2000, tag: "star", segment: "s2" },
+      { tMs: 9000, tag: "star", segment: null },
+    ];
+    const by = marksBySegment(marks);
+    expect([...by.keys()]).toEqual(["s2"]);
+    expect(by.get("s2")).toHaveLength(2);
   });
 });

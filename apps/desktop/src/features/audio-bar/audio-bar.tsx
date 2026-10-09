@@ -39,6 +39,7 @@ export function AudioBar({ meeting, detail }: { meeting: string; detail: Meeting
   const transcript = useMeetingTranscript(meeting);
   const wave = useWaveform(meeting, available);
   const segments = useMemo(() => transcript.data?.segments ?? [], [transcript.data]);
+  const markTimes = useMemo(() => (transcript.data?.marks ?? []).map((m) => m.tMs ?? 0), [transcript.data]);
   const spans = useMemo(() => segments.filter((s) => s.t0Ms != null && s.t1Ms != null).map((s) => ({ t0Ms: s.t0Ms!, t1Ms: s.t1Ms! })), [segments]);
   const spansRef = useRef(spans);
   spansRef.current = spans;
@@ -137,7 +138,7 @@ export function AudioBar({ meeting, detail }: { meeting: string; detail: Meeting
       ) : loading || wave.isPending ? (
         <div data-testid="waveform-loading" role="status" aria-label={t("audio.computing")} className="h-[38px] flex-1 animate-pulse rounded-seg bg-sunk motion-reduce:animate-none" />
       ) : (
-        <WaveformSlider data={wave.data} segments={segments} speakers={detail.speakers} durationMs={durationMs} seekTo={jump} />
+        <WaveformSlider data={wave.data} segments={segments} speakers={detail.speakers} durationMs={durationMs} seekTo={jump} marks={markTimes} />
       )}
       <Menu
         label={t("audio.speed")}

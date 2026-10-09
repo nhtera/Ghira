@@ -7,17 +7,19 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type RefObject,
 } from "react";
 import { useTranslation } from "react-i18next";
-import type { MeetingSpeaker, SegmentView } from "../../bindings";
+import type { MarkView, MeetingSpeaker, SegmentView } from "../../bindings";
 import { LOCKED_EVENT } from "../app-lock/events";
 import { useWindowEvent } from "./use-window-event";
 import { TranscriptRow } from "./transcript-row";
 import {
   activeSegment,
+  marksBySegment,
   activeWord,
   segmentNear,
   segmentWords,
@@ -27,6 +29,8 @@ import {
 
 export type TranscriptPanelProps = {
   segments: SegmentView[];
+  /** Moments marked while recording (read-only). */
+  marks?: MarkView[];
   speakers: MeetingSpeaker[];
   scroller: RefObject<HTMLElement | null>;
   /** Audio position while playing or paused mid-way. */
@@ -48,6 +52,7 @@ const ESTIMATE = 96;
 
 export function TranscriptPanel({
   segments,
+  marks = [],
   speakers,
   scroller,
   timeMs,
@@ -79,6 +84,7 @@ export function TranscriptPanel({
   }, [segments.length]);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- the virtualizer is only used in this component
+  const marksOf = useMemo(() => marksBySegment(marks), [marks]);
   const virtual = useVirtualizer({
     count: segments.length,
     getScrollElement: () => scroller.current,
@@ -194,6 +200,7 @@ export function TranscriptPanel({
                   words={segmentWords(s)}
                   edited={s.edited}
                   overlap={s.overlap}
+                  marks={marksOf.get(s.gid)}
                   playing={v.index === active}
                   activeWordIndex={
                     v.index === active ? activeWord(s, timeMs) : undefined

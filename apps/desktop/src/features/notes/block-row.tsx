@@ -7,6 +7,7 @@ import { Icon, cn } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
 import type { NoteBlockView } from "../../bindings";
 import { CitationGroup } from "../citation/citation-link";
+import { MarkStar } from "./mark-star";
 import { AutoTextarea } from "./auto-textarea";
 import { useNotesContext } from "./notes-context";
 
@@ -83,8 +84,9 @@ export function BlockRow({
         autoFocus={autoFocus}
         keepOnEmpty={block.origin !== "user"}
         trailing={
-          (block.citations.length > 0 || kind === "edited") && (
+          (block.citations.length > 0 || kind === "edited" || kind === "ai" || kind === "missing") && (
             <>
+              <MarkStar gid={block.gid} />
               {block.citations.length > 0 && (
                 <span className="ml-1.5 align-[2px]">
                   <CitationGroup citations={block.citations} speakers={speakers} audioAvailable={audioAvailable} meeting={meeting} />

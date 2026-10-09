@@ -78,6 +78,7 @@ const detail = {
 let notes: MeetingNotes;
 beforeEach(() => {
   notes = {
+    marks: [],
     sections: [],
     blocks: [
       block("t1", "tldr", "ai", "The beta ships on the 12th.", [cite]),
@@ -134,6 +135,38 @@ const open = async () => {
 };
 
 describe("NotesTab", () => {
+  it("stars the items that cover a marked moment and lists only the uncovered marks", async () => {
+    notes.marks = [
+      { tMs: 724_000, tag: "decision", segment: "g1", text: "we ship on the 12th", coveredBy: ["t1", "a1"] },
+      { tMs: 1_800_000, tag: "question", segment: "g9", text: "what about the budget", coveredBy: [] },
+      { tMs: 2_000_000, tag: "star", segment: null, text: null, coveredBy: [] },
+    ];
+    await open();
+    const stars = screen.getAllByTestId("mark-star");
+    expect(stars).toHaveLength(2);
+    expect(stars[0]!.getAttribute("title")).toBe("You marked this at 12:04");
+    const section = within(screen.getByTestId("marked-moments"));
+    expect(section.getAllByRole("listitem")).toHaveLength(2);
+    expect(section.getByText("what about the budget")).toBeTruthy();
+    expect(section.queryByText("we ship on the 12th")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Moments you marked" })).toBeTruthy();
+    // play from a mark
+    const seek = vi.spyOn(usePlayer.getState(), "seek").mockImplementation(() => undefined);
+    fireEvent.click(section.getByRole("button", { name: "Play from 30:00" }));
+    expect(seek).toHaveBeenCalledWith(1_800_000, true);
+  });
+
+  it("has no star and no Moments section without marks, or when every mark is covered", async () => {
+    await open();
+    expect(screen.queryByTestId("mark-star")).toBeNull();
+    expect(screen.queryByTestId("marked-moments")).toBeNull();
+    cleanup();
+    notes.marks = [{ tMs: 1000, tag: "star", segment: "g1", text: "x", coveredBy: ["t1"] }];
+    await open();
+    expect(screen.getAllByTestId("mark-star")).toHaveLength(1);
+    expect(screen.queryByTestId("marked-moments")).toBeNull();
+  });
+
   it("shows the app's text as written by the app, and yours as yours", async () => {
     await open();
     expect(

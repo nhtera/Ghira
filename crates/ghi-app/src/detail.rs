@@ -10,7 +10,8 @@
 
 use ghi_store::anchors::Anchor;
 use ghi_store::search::{HitKind, SearchFilter, SearchQuery};
-use ghi_store::store::{Item, NewActionItem, NewNoteBlock, Provenance, Segment, Store};
+use ghi_core::marks::{self, Cover};
+use ghi_store::store::{Item, Mark, NewActionItem, NewNoteBlock, Provenance, Segment, Store};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -162,6 +163,25 @@ pub struct MeetingNotes {
     pub action_items: Vec<ActionItemView>,
     /// The meeting template's own sections (for `section:<id>` blocks).
     pub sections: Vec<TemplateSection>,
+    /// The moments the user marked while recording, each with what in these
+    /// notes covers it (computed on read; nothing is stored).
+    pub marks: Vec<MarkedMoment>,
+}
+
+/// A mark and what covers it: AI blocks and action items whose cited time
+/// overlaps the line it falls on. Empty `covered_by`: nothing covers it yet.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkedMoment {
+    pub t_ms: f64,
+    /// `star`, `decision`, `action`, `question`.
+    pub tag: String,
+    /// The line it falls on (none: in silence, the time only).
+    pub segment: Option<String>,
+    /// The words of that line, shortened.
+    pub text: Option<String>,
+    /// gids of the note blocks and action items that cover it.
+    pub covered_by: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -196,8 +216,11 @@ pub struct SegmentView {
 #[serde(rename_all = "camelCase")]
 pub struct MarkView {
     pub t_ms: f64,
-    /// `mark`, `decision`, `action`, `question`.
+    /// `star`, `decision`, `action`, `question`.
     pub tag: String,
+    /// The gid of the line it falls on (none: in silence). The same rule as
+    /// the notes prompt and the coverage use ([`marks::mark_lines`]).
+    pub segment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -282,13 +305,59 @@ fn sections_of(template: Option<&str>) -> Vec<TemplateSection> {
         .unwrap_or_default()
 }
 
+/// The marks with the line they fall on and what covers them.
+/// `blocks` and `actions` are (gid, cited anchors); a user's own block does
+/// not count as covering.
+pub fn marked_moments(
+    marks_in: &[Mark],
+    segs: &[Segment],
+    blocks: &[(&str, &[Anchor])],
+    actions: &[(&str, &[Anchor])],
+) -> Vec<MarkedMoment> {
+    let lines = marks::mark_lines(marks_in, segs);
+    let b: Vec<&[Anchor]> = blocks.iter().map(|x| x.1).collect();
+    let a: Vec<&[Anchor]> = actions.iter().map(|x| x.1).collect();
+    marks::coverage(&lines, &b, &a)
+        .into_iter()
+        .map(|c| MarkedMoment {
+            t_ms: c.mark.t_ms as f64,
+            tag: c.mark.tag.as_str().to_string(),
+            segment: c.mark.segment.map(|i| segs[i].gid.clone()),
+            text: c.mark.segment.map(|i| shorten(&segs[i].text, QUOTE_CHARS)),
+            covered_by: c
+                .covered_by
+                .iter()
+                .map(|v| match *v {
+                    Cover::Block(i) => blocks[i].0.to_string(),
+                    Cover::Action(i) => actions[i].0.to_string(),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 fn notes_of(store: &Store, meeting: &str) -> Result<MeetingNotes, String> {
     let m = store.get_meeting(meeting).map_err(err)?;
     let segs = store.segments(meeting).map_err(err)?;
     let v = m.transcript_version;
-    let blocks = store
-        .note_blocks(meeting)
-        .map_err(err)?
+    let raw_blocks = store.note_blocks(meeting).map_err(err)?;
+    let raw_actions = store.action_items(meeting).map_err(err)?;
+    let mark_rows = store.marks(meeting).map_err(err)?;
+    let moments = if mark_rows.is_empty() {
+        Vec::new()
+    } else {
+        let blocks: Vec<(&str, &[Anchor])> = raw_blocks
+            .iter()
+            .filter(|b| b.provenance != Provenance::User)
+            .map(|b| (b.gid.as_str(), b.anchors.as_slice()))
+            .collect();
+        let actions: Vec<(&str, &[Anchor])> = raw_actions
+            .iter()
+            .map(|a| (a.gid.as_str(), a.anchors.as_slice()))
+            .collect();
+        marked_moments(&mark_rows, &segs, &blocks, &actions)
+    };
+    let blocks = raw_blocks
         .into_iter()
         .map(|b| NoteBlockView {
             citations: b.anchors.iter().map(|a| citation(a, &segs, v)).collect(),
@@ -299,9 +368,7 @@ fn notes_of(store: &Store, meeting: &str) -> Result<MeetingNotes, String> {
             pinned: b.pinned,
         })
         .collect();
-    let action_items = store
-        .action_items(meeting)
-        .map_err(err)?
+    let action_items = raw_actions
         .into_iter()
         .map(|a| ActionItemView {
             citations: a.anchors.iter().map(|x| citation(x, &segs, v)).collect(),
@@ -317,6 +384,7 @@ fn notes_of(store: &Store, meeting: &str) -> Result<MeetingNotes, String> {
         blocks,
         action_items,
         sections: sections_of(m.template.as_deref()),
+        marks: moments,
     })
 }
 
@@ -384,6 +452,15 @@ pub async fn meeting_transcript(
         let store = c.store()?;
         let m = store.get_meeting(&meeting).map_err(err)?;
         let segs = store.segments(&meeting).map_err(err)?;
+        let mark_rows = store.marks(&meeting).map_err(err)?;
+        let marks = marks::mark_lines(&mark_rows, &segs)
+            .into_iter()
+            .map(|k| MarkView {
+                t_ms: k.t_ms as f64,
+                tag: k.tag.as_str().to_string(),
+                segment: k.segment.map(|i| segs[i].gid.clone()),
+            })
+            .collect();
         let mut all_words = store.meeting_words(&meeting).map_err(err)?;
         let mut segments = Vec::with_capacity(segs.len());
         for s in segs {
@@ -413,15 +490,6 @@ pub async fn meeting_transcript(
                 words,
             });
         }
-        let marks = store
-            .marks(&meeting)
-            .map_err(err)?
-            .into_iter()
-            .map(|k| MarkView {
-                t_ms: k.t_ms as f64,
-                tag: k.tag.as_str().to_string(),
-            })
-            .collect();
         let mut topics: Vec<TopicView> = store
             .note_blocks(&meeting)
             .map_err(err)?
@@ -1177,6 +1245,50 @@ mod tests {
             assert!(store.jobs_for_meeting(&m).unwrap().is_empty());
             assert_eq!(store.get_meeting(&m).unwrap().lang.as_deref(), Some("en"));
         }
+    }
+
+    fn mark(t: i64, tag: ghi_store::store::MarkTag) -> Mark {
+        Mark {
+            gid: format!("k{t}"),
+            t_ms: t,
+            tag,
+        }
+    }
+
+    #[test]
+    fn three_marks_two_covered_one_is_left_for_moments_you_marked() {
+        use ghi_store::store::MarkTag;
+        let segs = [
+            seg(0, 4000, "alpha"),
+            seg(4000, 8000, "beta"),
+            seg(60_000, 64_000, "gamma"),
+        ];
+        let marks = [
+            mark(1000, MarkTag::Decision),
+            mark(5000, MarkTag::Star),
+            mark(62_000, MarkTag::Question),
+        ];
+        let b1 = [anchor(0, 4000, 2)];
+        let a1 = [anchor(4500, 5500, 2)];
+        let m = marked_moments(&marks, &segs, &[("blk1", &b1)], &[("act1", &a1)]);
+        assert_eq!(m.len(), 3);
+        assert_eq!(m[0].covered_by, ["blk1"]);
+        assert_eq!(m[0].tag, "decision");
+        assert_eq!(m[0].segment.as_deref(), Some("s0"));
+        assert_eq!(m[1].covered_by, ["act1"]);
+        assert!(m[2].covered_by.is_empty());
+        assert_eq!(m[2].text.as_deref(), Some("gamma"));
+        assert_eq!(m.iter().filter(|x| x.covered_by.is_empty()).count(), 1);
+    }
+
+    #[test]
+    fn a_mark_in_silence_has_no_line_and_stays_uncovered() {
+        use ghi_store::store::MarkTag;
+        let segs = [seg(0, 4000, "alpha")];
+        let m = marked_moments(&[mark(90_000, MarkTag::Star)], &segs, &[], &[]);
+        assert_eq!(m[0].segment, None);
+        assert_eq!(m[0].text, None);
+        assert!(m[0].covered_by.is_empty());
     }
 
     #[test]

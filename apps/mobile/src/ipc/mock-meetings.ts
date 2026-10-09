@@ -175,7 +175,7 @@ function build(
       speakers,
       job: o.job ?? null,
     },
-    notes: o.notes ?? { blocks: [], actionItems: [], sections: [] },
+    notes: o.notes ?? { blocks: [], actionItems: [], sections: [], marks: [] },
     transcript: o.transcript ?? {
       version: 2,
       segments: [],
@@ -265,7 +265,11 @@ function defaults(): MockMeeting[] {
       speakers: spk,
       transcript: {
         version: 2,
-        marks: [],
+        // A decision mark on the first line (the notes cover it) and a question on the third (nothing does).
+        marks: [
+          { tMs: 91_000, tag: "decision", segment: "t1" },
+          { tMs: 106_000, tag: "question", segment: "t3" },
+        ],
         topics: [],
         segments: [
           segment(
@@ -304,6 +308,10 @@ function defaults(): MockMeeting[] {
       },
       notes: {
         sections: [],
+        marks: [
+          { tMs: 91_000, tag: "decision", segment: "t1", text: "We can ship the beta on the fifteenth if QA signs off by Friday.", coveredBy: ["n1"] },
+          { tMs: 106_000, tag: "question", segment: "t3", text: "I will send the revised budget in đồng and dollars before the review.", coveredBy: [] },
+        ],
         blocks: [
           {
             gid: "n1",

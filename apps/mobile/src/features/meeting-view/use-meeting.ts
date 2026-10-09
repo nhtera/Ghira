@@ -26,7 +26,12 @@ export type MeetingData = {
   chip?: MeetingChip;
 };
 
-const NO_NOTES: MeetingNotes = { blocks: [], actionItems: [], sections: [] };
+const NO_NOTES: MeetingNotes = {
+  blocks: [],
+  actionItems: [],
+  sections: [],
+  marks: [],
+};
 const NO_TRANSCRIPT: MeetingTranscript = {
   version: null,
   segments: [],

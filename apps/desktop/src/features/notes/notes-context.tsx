@@ -2,13 +2,15 @@
 // What every block of one meeting's notes needs: the meeting, its speakers,
 // whether audio is left (for citation chips) and the edit commands.
 import { createContext, useContext } from "react";
-import type { MeetingSpeaker } from "../../bindings";
+import type { MarkedMoment, MeetingSpeaker } from "../../bindings";
 import type { NotesEdit } from "./use-notes-edit";
 
 export type NotesContextValue = {
   meeting: string;
   speakers: readonly MeetingSpeaker[];
   audioAvailable: boolean;
+  /** The moments marked while recording, with what covers each. */
+  marks?: readonly MarkedMoment[];
   edit: NotesEdit;
 };
 

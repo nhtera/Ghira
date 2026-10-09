@@ -16,7 +16,7 @@ import { TopicOutline, TopicRail, showTopicRail } from "../topic-rail";
 import { FindBar } from "./find-bar";
 import { GroupRow, OverlapTag, type SpeakerLabel } from "./group-row";
 import type { LineRange } from "./line-text";
-import { buildRows, type GroupData, findMatches, marksOf, rowIndexBySegment, segmentAt, talkShare } from "./logic";
+import { buildRows, type GroupData, findMatches, marksBySegment, rowIndexBySegment, segmentAt, talkShare } from "./logic";
 import { showRequests } from "./show-requests";
 import { TalkShare } from "./talk-share";
 import { useLineActions } from "./use-line-actions";
@@ -41,7 +41,7 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
   const topics = useMemo(() => transcript.data?.topics ?? [], [transcript.data]);
   const rows = useMemo(() => buildRows(segments, topics), [segments, topics]);
   const rowOf = useMemo(() => rowIndexBySegment(rows, segments.length), [rows, segments.length]);
-  const marks = useMemo(() => marksOf(segments, transcript.data?.marks ?? []), [segments, transcript.data]);
+  const marks = useMemo(() => marksBySegment(segments, transcript.data?.marks ?? []), [segments, transcript.data]);
   const ready = usePlayer((s) => s.meeting === meeting && !!s.src);
   const share = useMemo(() => talkShare(segments, detail.speakers), [segments, detail.speakers]);
   // Only people count as speakers (not video or music).

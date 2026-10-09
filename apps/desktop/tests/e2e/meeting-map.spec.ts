@@ -29,6 +29,13 @@ test("the map is the notes: sections, a Proposed chip, and a future kind under O
   await expect(page.locator("[data-node]").filter({ hasText: /Live speaker rename ships in the beta/ })).toHaveCount(1);
 });
 
+test("the map stars items that cover a mark and lists the uncovered one", async ({ page }) => {
+  await openMap(page);
+  await expect(section(page, "marked")).toBeAttached();
+  await expect(page.locator("[data-node]").filter({ hasText: /Live speaker rename ships/ })).toHaveCount(1);
+  await expect(tree(page).getByRole("treeitem", { name: /Live speaker rename ships.*Covers a moment you marked/ })).toHaveCount(1);
+});
+
 test("a leaf click plays its first citation; Ctrl-click shows it in the transcript", async ({ page }) => {
   await openMap(page);
   const before = await playerMs(page);

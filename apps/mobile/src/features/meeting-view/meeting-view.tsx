@@ -218,6 +218,11 @@ export function MeetingView({
                 notes={m.notes}
                 visited={visited}
                 onCite={cite}
+                onPlayAt={
+                  detail.audioAvailable
+                    ? (ms) => void audio.playFrom(ms)
+                    : undefined
+                }
               />
               <div className="mx-4 mt-2 mb-4 flex flex-col gap-3 rounded-(--ios-radius-group) bg-surface2 p-3">
                 <div className="flex items-center justify-between gap-3">
@@ -270,6 +275,7 @@ export function MeetingView({
               key={String(sync.leaseOpen)}
               readOnly={sync.leaseOpen}
               segments={m.transcript.segments}
+              marks={m.transcript.marks}
               speakers={detail.speakers}
               scroller={scroller}
               timeMs={audio.timeMs}

@@ -14,6 +14,17 @@ test.describe("meeting view", () => {
     await recordPlatform(page);
   });
 
+  test("marks: the notes list the uncovered moment, the transcript shows both", async ({ page }) => {
+    await openMeetings(page, "/meetings/m-notes");
+    const moments = page.getByTestId("marked-moments");
+    await expect(page.getByRole("heading", { name: "Moments you marked" })).toBeVisible();
+    await expect(moments.getByRole("listitem")).toHaveCount(1);
+    await expect(moments).toContainText("Question");
+    await expect(moments).toContainText("I will send the revised budget");
+    await page.getByRole("tab", { name: "Transcript" }).click();
+    await expect(page.getByTestId("mark")).toHaveCount(2);
+  });
+
   test("tabs: notes with provenance, actions, transcript", async ({ page }) => {
     await openMeetings(page, "/meetings/m-notes");
     await expect(

@@ -106,3 +106,19 @@ test("a decision with three sources is one chip with +2; the preview steps and s
   await expect(page.locator("[data-seg][data-pulse=true]")).toHaveCount(0, { timeout: 3000 });
 });
 
+test("items that cover a marked moment carry a star; the uncovered mark is listed to play", async ({ page }) => {
+  await open(page);
+  const stars = page.getByTestId("mark-star");
+  await expect(stars.first()).toBeVisible();
+  await expect(stars.first()).toHaveAttribute("title", /^You marked this at \d\d:\d\d( · You marked this at \d\d:\d\d)*$/);
+  const moments = page.getByTestId("marked-moments");
+  await expect(page.getByRole("heading", { name: "Moments you marked" })).toBeVisible();
+  await expect(moments.getByRole("listitem")).toHaveCount(1);
+  await expect(moments).toContainText("Question");
+  const before = await playerMs(page);
+  await moments.getByRole("button", { name: /^Play from/ }).click();
+  await expect.poll(() => playerMs(page)).not.toBe(before);
+  // The waveform has a tick for each of the three marks.
+  await expect(page.getByTestId("waveform")).toHaveAttribute("data-marks", "3");
+});
+

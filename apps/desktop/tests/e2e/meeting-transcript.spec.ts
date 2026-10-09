@@ -136,3 +136,12 @@ test("axe: talk share bar, Outline row (narrow) and an open citation preview wit
   await scan('[role="group"][aria-label="Quote preview"]');
 });
 
+test("marked moments show on the lines the core put them on", async ({ page }) => {
+  await openTranscript(page);
+  const marks = page.getByTestId("mark");
+  await expect(marks).toHaveCount(3);
+  await expect(marks.nth(0)).toContainText("Decision");
+  await expect(marks.nth(1)).toContainText("Question");
+  await expect(marks.nth(2)).toContainText("Marked");
+});
+

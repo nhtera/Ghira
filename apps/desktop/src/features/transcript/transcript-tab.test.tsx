@@ -58,7 +58,7 @@ const seg = (i: number, spk: string, text: string, over: Partial<SegmentView> = 
 const data: MeetingTranscript = {
   version: 2,
   segments: [seg(0, "a", "Xin chào cả nhà"), seg(1, "a", "Mô hình nhận diện tốt"), seg(2, "b", "Nhận diện người nói chưa ổn")],
-  marks: [{ tMs: 21_000, tag: "decision" }],
+  marks: [{ tMs: 21_000, tag: "decision", segment: "s2" }],
   topics: [{ title: "Opening", tMs: 0 }],
 };
 

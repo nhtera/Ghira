@@ -15,12 +15,12 @@ const GAP = 1;
 const HEIGHT = 38;
 const STEP_MS = 5000;
 
-type Colors = { slots: string[]; idle: string; accent: string };
+type Colors = { slots: string[]; idle: string; accent: string; mark: string };
 
 function readColors(el: Element): Colors {
   const css = getComputedStyle(el);
   const v = (n: string, fallback: string) => css.getPropertyValue(n).trim() || fallback;
-  return { slots: [v("--muted", "#888"), ...Array.from({ length: 8 }, (_, i) => v(`--s${i + 1}`, "#888"))], idle: v("--line2", "#ccc"), accent: v("--accent", "#0a0") };
+  return { slots: [v("--muted", "#888"), ...Array.from({ length: 8 }, (_, i) => v(`--s${i + 1}`, "#888"))], idle: v("--line2", "#ccc"), accent: v("--accent", "#0a0"), mark: v("--warn", "#c60") };
 }
 
 /** Re-reads the colors when the theme changes (attribute on <html>, or the OS scheme). */
@@ -46,6 +46,7 @@ export function WaveformSlider({
   speakers,
   durationMs,
   seekTo,
+  marks = [],
 }: {
   data: WaveformData | undefined;
   segments: readonly SegmentView[];
@@ -53,6 +54,8 @@ export function WaveformSlider({
   durationMs: number;
   /** Seek to a time, keeping play/pause as it is. */
   seekTo: (ms: number) => void;
+  /** Times of the moments marked while recording: a tick each. */
+  marks?: readonly number[];
 }) {
   const { t } = useTranslation();
   const currentMs = usePlayer((s) => s.currentMs);
@@ -99,10 +102,19 @@ export function WaveformSlider({
       ctx.fillRect(i * (BAR + GAP), (HEIGHT - h) / 2, BAR, h);
     }
     ctx.globalAlpha = 1;
+    // A tick with a head for each marked moment (shape as well as color).
+    ctx.fillStyle = colors.mark;
+    for (const m of marks) {
+      const x = Math.min(width - 2, Math.max(0, (m / Math.max(1, durationMs)) * width));
+      ctx.fillRect(x, 0, 2, HEIGHT);
+      ctx.beginPath();
+      ctx.arc(x + 1, 4, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.fillStyle = colors.accent;
     ctx.fillRect(Math.min(width - 2, (played / Math.max(1, cols)) * width), 0, 2, HEIGHT);
     // `theme` re-runs the draw after a theme switch.
-  }, [heights, slots, width, cols, currentMs, durationMs, theme]);
+  }, [heights, slots, width, cols, currentMs, durationMs, theme, marks]);
 
   const at = (e: PointerEvent) => timeAt(e.clientX - (box.current?.getBoundingClientRect().left ?? 0), box.current?.clientWidth ?? 0, durationMs);
   const onKey = (e: KeyboardEvent) => {
@@ -133,6 +145,7 @@ export function WaveformSlider({
       onPointerUp={() => (dragging.current = false)}
       onPointerCancel={() => (dragging.current = false)}
       data-testid="waveform"
+      data-marks={marks.length}
       className="relative h-[38px] min-w-0 flex-1 cursor-pointer touch-none rounded-seg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
     >
       <canvas ref={canvas} aria-hidden="true" style={{ width: "100%", height: HEIGHT }} className="block" />

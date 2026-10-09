@@ -14,7 +14,7 @@ import { templateName } from "../meeting/template-names";
 import { ActionItems } from "./action-rows";
 import { BlockRow } from "./block-row";
 import { NotesContext } from "./notes-context";
-import { hasMine, layoutNotes } from "./notes-model";
+import { hasMine, layoutNotes, uncoveredMarks } from "./notes-model";
 import { useNotesEdit } from "./use-notes-edit";
 import { YourNotes } from "./your-notes";
 
@@ -59,11 +59,13 @@ export function NotesTab({
       meeting,
       speakers: detail.speakers,
       audioAvailable: detail.audioAvailable,
+      marks: notes?.marks,
       edit,
     }),
-    [meeting, detail.speakers, detail.audioAvailable, edit],
+    [meeting, detail.speakers, detail.audioAvailable, notes?.marks, edit],
   );
   const vi = i18n.language === "vi";
+  const missed = useMemo(() => uncoveredMarks(notes?.marks ?? []), [notes?.marks]);
 
   if (q.isPending)
     return (
@@ -155,6 +157,37 @@ export function NotesTab({
         {layout.quotes.length > 0 && (
           <Section ai title={t("notes.sections.keyQuotes")}>
             {blocks(layout.quotes, t("notes.blockLabel"))}
+          </Section>
+        )}
+        {missed.length > 0 && (
+          <Section title={t("notes.sections.marked")}>
+            <ul data-testid="marked-moments" className="m-0 flex list-none flex-col gap-1.5 p-0">
+              {missed.map((m, i) => {
+                const time = formatClock(m.tMs ?? 0, { pad: true });
+                const tag = m.tag === "decision" || m.tag === "action" || m.tag === "question" ? t(`notes.tags.${m.tag}`) : t("live.markedToast", { time });
+                return (
+                  <li key={i} className="flex items-start gap-2 text-body">
+                    {detail.audioAvailable ? (
+                      <button
+                        type="button"
+                        onClick={() => usePlayer.getState().seek(m.tMs ?? 0, true)}
+                        aria-label={t("detail.playFrom", { time })}
+                        className="text-mono h-6 shrink-0 rounded-seg border border-line2 px-1.5 text-[12px] text-muted hover:text-accent"
+                      >
+                        {time}
+                      </button>
+                    ) : (
+                      <span className="text-mono h-6 shrink-0 px-1.5 text-[12px] text-muted">{time}</span>
+                    )}
+                    <span className="inline-flex shrink-0 items-center gap-0.5 text-[12px] text-muted">
+                      <Icon name="star" size={14} className="text-warn" />
+                      {tag}
+                    </span>
+                    {m.text && <span>{m.text}</span>}
+                  </li>
+                );
+              })}
+            </ul>
           </Section>
         )}
         {(layout.mine.length > 0 || !onlyMine) && (

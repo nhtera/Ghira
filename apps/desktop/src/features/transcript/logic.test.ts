@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
 import type { SegmentView } from "../../bindings";
-import { buildRows, stackRuns, findMatches, findRanges, fold, lineWords, marksOf, rowIndexBySegment, segmentAt, talkShare, wordIndexAt, MAX_LINES_PER_GROUP } from "./logic";
+import { buildRows, stackRuns, findMatches, findRanges, fold, lineWords, marksBySegment, rowIndexBySegment, segmentAt, talkShare, wordIndexAt, MAX_LINES_PER_GROUP } from "./logic";
 
 const seg = (i: number, speaker: string | null, over: Partial<SegmentView> = {}): SegmentView => ({
   gid: `s${i}`,
@@ -86,9 +86,15 @@ describe("rows", () => {
     expect(rows.map((r) => (r.kind === "group" ? r.segs.length : 0))).toEqual([MAX_LINES_PER_GROUP, 2]);
   });
 
-  it("attaches a mark to the line it falls in", () => {
-    const m = marksOf([seg(0, "a"), seg(1, "a")], [{ tMs: 12_000, tag: "decision" }]);
+  it("puts a mark on the line the core assigned it to, and none on a mark in silence", () => {
+    const segs = [seg(0, "a"), seg(1, "a")];
+    const m = marksBySegment(segs, [
+      { tMs: 12_000, tag: "decision", segment: segs[1]!.gid },
+      { tMs: 99_000, tag: "star", segment: null },
+      { tMs: 5_000, tag: "star", segment: "gone" },
+    ]);
     expect([...m.keys()]).toEqual([1]);
+    expect(m.get(1)).toHaveLength(1);
   });
 });
 

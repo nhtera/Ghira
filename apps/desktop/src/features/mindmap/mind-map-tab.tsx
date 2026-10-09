@@ -2,6 +2,7 @@
 // The Map tab: the notes of the meeting as a mind map. Built from the notes
 // that are already there (no model call): the same blocks the Notes tab shows,
 // each leaf playable. "Copy as outline" is the same tree as nested Markdown.
+import { formatClock } from "@ghi/i18n";
 import { useToast } from "@ghi/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
@@ -59,6 +60,9 @@ export function MindMapTab({ meeting, detail }: { meeting: string; detail: Meeti
       topics: l.topics,
       proposals,
       other,
+      // The marks nothing covers, and the items that cover a mark (starred).
+      marks: notes.marks.filter((k) => k.coveredBy.length === 0).map((k, i) => ({ gid: `mark-${i}`, tMs: k.tMs ?? 0, text: k.text ?? t(`notes.tags.${k.tag}`, { defaultValue: formatClock(k.tMs ?? 0, { pad: true }) }) })),
+      covered: new Set(notes.marks.flatMap((k) => k.coveredBy)),
     };
     return notesToTree(input);
   }, [notes, detail.title, vi, t]);

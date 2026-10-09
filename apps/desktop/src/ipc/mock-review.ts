@@ -10,6 +10,7 @@ import type {
   Citation,
   ImportStaged,
   ImportUpdate,
+  MarkedMoment,
   MeetingDetail,
   MeetingNotes,
   MeetingRow,
@@ -49,6 +50,13 @@ type Detail = { speakers: MeetingSpeaker[]; notes: MeetingNotes; transcript: Mee
 const details = new Map<string, Detail>();
 let seq = 0;
 const gid = (p: string) => `${p}-${++seq}`;
+
+/** Marks of the sample: lines 4 (a decision) and 6 (a star) are covered by the notes, line 5 (a question) is not. */
+const MARK_SPECS = [
+  { line: 4, tag: "decision" },
+  { line: 5, tag: "question" },
+  { line: 6, tag: "star" },
+];
 
 const starts = sample.lineStartSeconds.map((s) => s * 1000);
 const endOf = (i: number) => starts[i + 1] ?? sample.durationSeconds * 1000;
@@ -161,14 +169,30 @@ function build(lang: "en" | "vi"): Detail {
     .sort((a, b) => (a.tMs ?? 0) - (b.tMs ?? 0));
   return {
     speakers,
-    notes: { blocks, actionItems, sections: [] },
+    notes: { blocks, actionItems, sections: [], marks: [] },
     transcript: {
       version: 2,
       segments: segs,
-      marks: [{ tMs: starts[4] ?? 0, tag: "decision" }],
+      marks: MARK_SPECS.map((m) => ({ tMs: (starts[m.line] ?? 0) + 1500, tag: m.tag, segment: segs[m.line]?.gid ?? null })),
       topics,
     },
   };
+}
+
+/** The core's rule, in miniature: a mark is covered by every AI block or action whose cited time overlaps its line. */
+function momentsOf(d: Detail): MarkedMoment[] {
+  const overlaps = (a0: number, a1: number, b0: number, b1: number) => a0 < Math.max(b1, b0 + 1) && b0 < Math.max(a1, a0 + 1);
+  const items = [...d.notes.blocks.filter((b) => b.origin !== "user"), ...d.notes.actionItems];
+  return d.transcript.marks.map((m) => {
+    const seg = d.transcript.segments.find((s) => s.gid === m.segment);
+    return {
+      tMs: m.tMs,
+      tag: m.tag,
+      segment: m.segment,
+      text: seg?.text ?? null,
+      coveredBy: seg ? items.filter((x) => x.citations.some((c) => overlaps(c.t0Ms ?? 0, c.t1Ms ?? 0, seg.t0Ms ?? 0, seg.t1Ms ?? 0))).map((x) => x.gid) : [],
+    };
+  });
 }
 
 function detailOf(meeting: string): Detail {
@@ -460,7 +484,7 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
       };
       return ok(detail);
     },
-    meetingNotes: (m) => withDetail(m, (d) => structuredClone(d.notes)),
+    meetingNotes: (m) => withDetail(m, (d) => structuredClone({ ...d.notes, marks: momentsOf(d) })),
     meetingTranscript: (m) => withDetail(m, (d) => structuredClone(d.transcript)),
     updateSegmentText: (m, s, text) =>
       withDetail(m, (d) => {
@@ -596,6 +620,7 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         blocks: [...fresh.notes.blocks.filter((b) => b.origin === "ai" && !b.kind.startsWith("enhanced:")), ...keep],
         actionItems: [...d.notes.actionItems.filter((a) => a.origin !== "ai" || a.done), ...fresh.notes.actionItems.filter((a) => a.origin === "ai")],
         sections: TEMPLATES.find((t) => t.id === template)?.sections ?? [],
+        marks: [],
       };
       host.process(m);
       return ok(false);

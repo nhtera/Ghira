@@ -13,6 +13,7 @@ import {
   type TranscriptWord,
 } from "@ghi/ui";
 import { Fragment } from "react";
+import type { MarkView } from "../../bindings";
 import { useTranslation } from "react-i18next";
 
 export type TranscriptRowProps = {
@@ -21,6 +22,8 @@ export type TranscriptRowProps = {
   words: TranscriptWord[];
   edited: boolean;
   overlap: boolean;
+  /** Moments marked while recording that fall on this line. */
+  marks?: readonly MarkView[];
   playing: boolean;
   activeWordIndex?: number;
   selected: boolean;
@@ -33,6 +36,7 @@ export function TranscriptRow({
   words,
   edited,
   overlap,
+  marks = [],
   playing,
   activeWordIndex,
   selected,
@@ -93,6 +97,20 @@ export function TranscriptRow({
               {t("transcript.overlap")}
             </span>
           )}
+          {marks.map((m, i) => (
+            <span
+              key={i}
+              data-testid="mark"
+              className="text-ios-caption1 inline-flex items-center gap-0.5 text-muted"
+            >
+              <Icon name="star" size={13} className="text-warn" />
+              {m.tag === "decision" || m.tag === "action" || m.tag === "question"
+                ? t(`notes.tags.${m.tag}`)
+                : t("live.markedToast", {
+                    time: formatClock(m.tMs ?? 0, { pad: true }),
+                  })}
+            </span>
+          ))}
           {edited && (
             <span className="text-ios-caption1 inline-flex items-center gap-0.5 text-muted">
               <Icon name="edit" size={13} />

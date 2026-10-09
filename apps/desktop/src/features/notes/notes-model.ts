@@ -4,6 +4,7 @@
 // items, Open questions, Key quotes, Your notes, Topics.
 import type {
   ActionItemView,
+  MarkedMoment,
   MeetingNotes,
   NoteBlockView,
   TemplateSection,
@@ -70,3 +71,10 @@ export const hasMine = (notes: MeetingNotes) =>
   notes.blocks.some(
     (b) => b.origin === "user" || (b.origin === "aiEdited" && !enhancedOf(b)),
   ) || notes.actionItems.some((a) => isMine(a.origin));
+
+/** The marks (moments the user marked while recording) a block or action item covers, in time order. */
+export const marksCovering = (marks: readonly MarkedMoment[], gid: string) =>
+  marks.filter((m) => m.coveredBy.includes(gid)).sort((a, b) => (a.tMs ?? 0) - (b.tMs ?? 0));
+
+/** Marks nothing in the notes covers: the "Moments you marked" section. */
+export const uncoveredMarks = (marks: readonly MarkedMoment[]) => marks.filter((m) => m.coveredBy.length === 0);

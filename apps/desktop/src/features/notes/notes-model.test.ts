@@ -24,6 +24,7 @@ const a = (gid: string, origin: ActionItemView["origin"]): ActionItemView => ({
 });
 
 const notes: MeetingNotes = {
+  marks: [],
   sections: [
     { id: "requests", titleEn: "Client requests", titleVi: "Yêu cầu" },
     { id: "empty", titleEn: "Empty", titleVi: "Trống" },

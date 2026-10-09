@@ -4,6 +4,7 @@
 import { Avatar, Icon, Menu, cn, type MenuItem } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
 import type { ActionItemView } from "../../bindings";
+import { MarkStar } from "./mark-star";
 import { CitationGroup } from "../citation/citation-link";
 import { findSpeaker, speakerDisplay } from "../meeting/speaker-display";
 import { AutoTextarea } from "./auto-textarea";
@@ -103,11 +104,14 @@ function ActionRow({ item }: { item: ActionItemView }) {
               keepOnEmpty
               label={t("notes.actionLabel")}
               trailing={
-                item.citations.length > 0 && (
-                  <span className="ml-1.5 align-[2px]">
-                    <CitationGroup citations={item.citations} speakers={speakers} audioAvailable={audioAvailable} meeting={meeting} />
-                  </span>
-                )
+                <>
+                  <MarkStar gid={item.gid} />
+                  {item.citations.length > 0 && (
+                    <span className="ml-1.5 align-[2px]">
+                      <CitationGroup citations={item.citations} speakers={speakers} audioAvailable={audioAvailable} meeting={meeting} />
+                    </span>
+                  )}
+                </>
               }
               onCommit={(text) =>
                 text.trim() &&

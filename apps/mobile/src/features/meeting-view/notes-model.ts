@@ -9,6 +9,8 @@ import type {
 } from "@ghi/ui";
 import type {
   Citation,
+  MarkedMoment,
+  MarkView,
   MeetingSpeaker,
   NoteBlockView,
   SegmentView,
@@ -150,4 +152,18 @@ export function segmentNear(segments: SegmentView[], ms: number): number {
     }
   });
   return best;
+}
+
+/** Marks nothing in the notes covers: "Moments you marked". */
+export const uncoveredMarks = (marks: readonly MarkedMoment[]) =>
+  marks.filter((m) => m.coveredBy.length === 0);
+
+/** The marks of each transcript line, by segment gid (the core picks the line; a mark in silence has none). */
+export function marksBySegment(
+  marks: readonly MarkView[],
+): Map<string, MarkView[]> {
+  const by = new Map<string, MarkView[]>();
+  for (const m of marks)
+    if (m.segment !== null) by.set(m.segment, [...(by.get(m.segment) ?? []), m]);
+  return by;
 }

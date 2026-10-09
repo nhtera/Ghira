@@ -209,16 +209,17 @@ export function rowIndexBySegment(rows: readonly Row[], count: number): number[]
   return by;
 }
 
-/** The marks that fall in a line (a mark belongs to the last line starting at or before it). */
-export function marksOf(segments: readonly SegmentView[], marks: readonly MarkView[]): Map<number, MarkView[]> {
+/**
+ * The marks of each line, by the line index. The core decides which line a
+ * mark falls on (the last line starting at or before it, within 10 s); a mark
+ * in silence has no line and is not drawn on a row.
+ */
+export function marksBySegment(segments: readonly Pick<SegmentView, "gid">[], marks: readonly MarkView[]): Map<number, MarkView[]> {
+  const index = new Map(segments.map((s, i) => [s.gid, i]));
   const by = new Map<number, MarkView[]>();
   for (const m of marks) {
-    if (m.tMs == null) continue;
-    let at = -1;
-    segments.forEach((s, i) => {
-      if ((s.t0Ms ?? 0) <= m.tMs!) at = i;
-    });
-    if (at >= 0) by.set(at, [...(by.get(at) ?? []), m]);
+    const at = m.segment == null ? undefined : index.get(m.segment);
+    if (at !== undefined) by.set(at, [...(by.get(at) ?? []), m]);
   }
   return by;
 }
