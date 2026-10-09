@@ -1,26 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
-// The helpers in lib/ are shared by both apps, so they stay pure: no React, no
-// app bindings, nothing from apps/*, no Tauri, no i18n runtime. A file that
-// grows such an import fails here.
+// The helpers in lib/ are shared by both apps, so they stay pure. The rule is an allowlist:
+// a file in lib/ (any depth, .ts or .tsx) imports only its siblings by a relative `./` path,
+// never a package (React, Tauri, i18n, an app's bindings) and never a path that climbs out.
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const dir = dirname(fileURLToPath(import.meta.url));
-const files = readdirSync(dir).filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"));
 
-const FORBIDDEN = [
-  /^react(\/|$)/,
-  /^react-dom(\/|$)/,
-  /^@tauri-apps\//,
-  /^@tanstack\//,
-  /^react-i18next$/,
-  /^i18next$/,
-  /bindings/,
-  /(^|\/)apps\//,
-  /^@ghi\/(desktop|mobile)(\/|$)/,
-];
+function sources(root: string): string[] {
+  return readdirSync(root, { withFileTypes: true }).flatMap((e) => {
+    const p = join(root, e.name);
+    if (e.isDirectory()) return sources(p);
+    return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [p] : [];
+  });
+}
 
 /** Every module specifier a file imports or re-exports from (static, dynamic, require). */
 export function importsOf(source: string): string[] {
@@ -30,19 +25,34 @@ export function importsOf(source: string): string[] {
   return out;
 }
 
-describe("lib/ stays React-free and binding-free", () => {
+/** What is not allowed: anything but a `./` sibling that stays inside the folder. */
+export function outsiders(specs: string[]): string[] {
+  return specs.filter((s) => !s.startsWith("./") || s.split("/").includes(".."));
+}
+
+describe("lib/ stays pure: siblings only", () => {
+  const files = sources(dir);
+
   it("has files to check", () => {
-    expect(files).toEqual(expect.arrayContaining(["notes-tree.ts", "talk-share.ts"]));
+    expect(files.map((f) => relative(dir, f))).toEqual(expect.arrayContaining(["notes-tree.ts", "talk-share.ts"]));
   });
 
   for (const f of files)
-    it(`${f} imports nothing from React, the apps or their bindings`, () => {
-      const bad = importsOf(readFileSync(join(dir, f), "utf8")).filter((spec) => FORBIDDEN.some((r) => r.test(spec)));
-      expect(bad).toEqual([]);
+    it(`${relative(dir, f)} imports only its siblings`, () => {
+      expect(outsiders(importsOf(readFileSync(f, "utf8")))).toEqual([]);
     });
 
   it("the check itself catches what it should", () => {
-    const src = `import { useState } from "react";\nimport type { MeetingNotes } from "../../bindings";\nexport * from "../../../apps/desktop/x";\nconst a = await import("react-dom");\nimport { ok } from "./talk-share";`;
-    expect(importsOf(src).filter((s) => FORBIDDEN.some((r) => r.test(s)))).toEqual(["react", "../../bindings", "../../../apps/desktop/x", "react-dom"]);
+    const bad = [
+      `import { useState } from "react";`,
+      `import type { MeetingNotes } from "../../bindings";`,
+      `export * from "../../../apps/desktop/x";`,
+      `const a = await import("react-dom");`,
+      `import "@tauri-apps/api/core";`,
+      `import x from "./../escape";`,
+      `const r = require("i18next");`,
+    ];
+    for (const line of bad) expect(outsiders(importsOf(line)), line).toHaveLength(1);
+    expect(outsiders(importsOf(`import { ok } from "./talk-share";\nexport * from "./sub/x";`))).toEqual([]);
   });
 });
