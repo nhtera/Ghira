@@ -58,6 +58,7 @@ export function BlockRow({
   onBackspaceEmpty,
   className,
 }: BlockRowProps) {
+  const { t } = useTranslation();
   const { meeting, speakers, audioAvailable, edit } = useNotesContext();
   const commit = (text: string) => {
     const v = text.trim();
@@ -86,6 +87,12 @@ export function BlockRow({
         trailing={
           (block.citations.length > 0 || kind === "edited" || kind === "ai" || kind === "missing") && (
             <>
+              {block.pinned && (
+                <span title={t("notes.pinned")} className="ml-1.5 inline-flex items-center align-[2px] text-muted">
+                  <Icon name="push_pin" size={13} />
+                  <span className="sr-only">{t("notes.pinned")}</span>
+                </span>
+              )}
               <MarkStar gid={block.gid} />
               {block.citations.length > 0 && (
                 <span className="ml-1.5 align-[2px]">

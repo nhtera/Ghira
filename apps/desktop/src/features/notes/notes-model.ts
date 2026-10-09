@@ -24,6 +24,8 @@ export type NotesLayout = {
   quotes: NoteBlockView[];
   mine: UserNote[];
   topics: NoteBlockView[];
+  /** Answers saved from Ask (block kind `answer`, pinned). */
+  answers: NoteBlockView[];
 };
 
 /** Yours: typed by you, or AI text you edited (kept by Regenerate). */
@@ -64,6 +66,7 @@ export function layoutNotes(
         return { block, enhanced: e && keep(e.origin) ? e : null };
       }),
     topics: ofKind("topic"),
+    answers: ofKind("answer"),
   };
 }
 

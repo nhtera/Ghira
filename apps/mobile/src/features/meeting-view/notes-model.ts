@@ -29,13 +29,21 @@ export function noteKind(
 }
 
 export type SectionKey =
-  "tldr" | "decision" | "question" | "topic" | "quote" | "note" | "other";
+  | "tldr"
+  | "decision"
+  | "question"
+  | "topic"
+  | "quote"
+  | "answer"
+  | "note"
+  | "other";
 export const SECTION_ORDER: SectionKey[] = [
   "tldr",
   "decision",
   "question",
   "topic",
   "quote",
+  "answer",
   "note",
   "other",
 ];

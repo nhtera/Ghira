@@ -25,6 +25,12 @@ test.describe("meeting view", () => {
     await expect(page.getByTestId("mark")).toHaveCount(2);
   });
 
+  test("a saved Ask answer has its own section with its source", async ({ page }) => {
+    await openMeetings(page, "/meetings/m-notes");
+    await expect(page.getByRole("heading", { name: "Saved from Ask" })).toBeVisible();
+    await expect(page.getByText("A: On 15 October if QA signs off by Friday.")).toBeVisible();
+  });
+
   test("tabs: notes with provenance, actions, transcript", async ({ page }) => {
     await openMeetings(page, "/meetings/m-notes");
     await expect(

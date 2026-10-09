@@ -42,6 +42,7 @@
       "save": "Save",
       "saveFailed": "Couldn’t save this line. Try again.",
       "section": {
+        "answer": "Saved from Ask",
         "decision": "Decisions",
         "note": "Your notes",
         "other": "More",

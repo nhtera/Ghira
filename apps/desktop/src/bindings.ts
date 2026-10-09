@@ -325,6 +325,8 @@ export const commands = {
 	cloudRequestLog: (limit: number) => typedError<CloudLogEntry[], string>(__TAURI_INVOKE("cloud_request_log", { limit })),
 	/**  Ask this meeting, answered on this device by the local model. */
 	askMeeting: (meeting: string, question: string, language: NotesLanguage) => typedError<AskAnswer, string>(__TAURI_INVOKE("ask_meeting", { meeting, question, language })),
+	/**  "Save to notes" on an Ask answer, by the id the answer came with. */
+	saveAnswer: (meeting: string, answerId: string) => typedError<null, string>(__TAURI_INVOKE("save_answer", { meeting, answerId })),
 	vocabulary: () => typedError<Vocabulary, string>(__TAURI_INVOKE("vocabulary")),
 	/**  Replaces the user's terms (trimmed, deduplicated, at most 200). */
 	setVocabulary: (terms: string[]) => typedError<Vocabulary, string>(__TAURI_INVOKE("set_vocabulary", { terms })),
@@ -771,6 +773,11 @@ export type AskAnswer = {
 	searched: string[],
 	/**  `local` or the cloud provider. */
 	engine: string,
+	/**
+	 *  What to pass to `save_answer`: the core keeps the answer under it for
+	 *  a while (none for "not discussed"). The webview never sends the text.
+	 */
+	id: string | null,
 };
 
 /**  Where to look (empty lists: everywhere / everyone). */

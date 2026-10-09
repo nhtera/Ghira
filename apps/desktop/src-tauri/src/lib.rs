@@ -387,6 +387,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cloud_cmd::set_meeting_cloud_locked,
             cloud_cmd::cloud_request_log,
             cloud_cmd::ask_meeting,
+            cloud_cmd::save_answer,
             settings_cmd::vocabulary,
             settings_cmd::set_vocabulary,
             settings_cmd::set_vocabulary_packs,

@@ -3,8 +3,9 @@
 // from the on-device model by default, or from a cloud provider through the
 // same preview-and-send sheet. Each answer links to the moments it came from.
 // Only the last few questions are kept, in component state.
-import { Button, Icon, Segmented, usePlatform } from "@ghi/ui";
-import { useEffect, useRef, useState } from "react";
+import { Button, Icon, Segmented, useToast, usePlatform } from "@ghi/ui";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AskAnswer, MeetingDetail } from "../../bindings";
 import { ipc } from "../../ipc";
@@ -13,9 +14,11 @@ import { CitationGroup } from "../citation/citation-link";
 import { useCloudOffered } from "../cloud-sheet/cloud-offered";
 import { CloudSheet } from "../cloud-sheet/cloud-sheet";
 import { providerName } from "../cloud-sheet/provider-names";
+import { invalidateMeeting, useMeetingNotes } from "../../state/meeting-queries";
+import { STARTER_MAX, openQuestionStarters } from "./starters";
 
 const KEEP = 5;
-const STARTERS = ["decided", "actions", "themes"] as const;
+const STATIC_STARTERS = ["decided", "actions", "themes"] as const;
 
 type Entry = {
   id: number;
@@ -57,6 +60,20 @@ function AnswerCard({
 }) {
   const { t } = useTranslation();
   const a = entry.answer;
+  const { show } = useToast();
+  const client = useQueryClient();
+  const [saved, setSaved] = useState(false);
+  const save = async () => {
+    if (!a?.id) return;
+    const r = await ipc.commands.saveAnswer(meeting, a.id);
+    if (r.status === "ok") {
+      setSaved(true);
+      void invalidateMeeting(client, meeting);
+      return show({ tone: "success", title: t("ask.meeting.saved") });
+    }
+    const why = r.error === "answerExpired" ? t("ask.meeting.saveExpired") : r.error === "answerLimit" ? t("ask.meeting.saveLimit") : t("system.commandFailed", { message: r.error });
+    show({ tone: "warning", title: why });
+  };
   return (
     <li data-testid="ask-entry" className="flex flex-col gap-2">
       <p className="text-body m-0 self-end rounded-panel bg-sunk px-3 py-1.5 font-semibold">
@@ -106,6 +123,11 @@ function AnswerCard({
               />
             </div>
           )}
+          {a.id && (
+            <Button size="sm" variant="ghost" icon={saved ? "check" : "bookmark"} disabled={saved} onClick={() => void save()} className="self-start">
+              {saved ? t("ask.meeting.saved") : t("ask.meeting.save")}
+            </Button>
+          )}
         </div>
       )}
       {entry.state === "done" && a && (
@@ -145,6 +167,13 @@ export function AskPanel({
   const nextId = useRef(0);
   const logEnd = useRef<HTMLDivElement>(null);
   const thinking = entries.some((e) => e.state === "thinking");
+  // The meeting's own open questions first, the static ones to make up three.
+  const notes = useMeetingNotes(meeting);
+  const starters = useMemo(() => {
+    const own = openQuestionStarters(notes.data?.blocks ?? []);
+    const fixed = STATIC_STARTERS.slice(0, Math.max(0, STARTER_MAX - own.length)).map((k) => t(`ask.meeting.suggestions.${k}`));
+    return [...own, ...fixed];
+  }, [notes.data, t]);
 
   useEffect(() => {
     logEnd.current?.scrollIntoView?.({ block: "end" });
@@ -204,10 +233,10 @@ export function AskPanel({
           <div className="flex flex-col gap-2">
             <p className="text-small m-0 text-muted">{t("ask.meeting.hint")}</p>
             <ul aria-label={t("ask.meeting.suggestions.label")} className="m-0 flex list-none flex-col items-start gap-1.5 p-0">
-              {STARTERS.map((k) => (
-                <li key={k}>
-                  <Button size="sm" disabled={thinking} onClick={() => submit(t(`ask.meeting.suggestions.${k}`))} className="h-auto min-h-8 py-1 text-left whitespace-normal">
-                    {t(`ask.meeting.suggestions.${k}`)}
+              {starters.map((q) => (
+                <li key={q}>
+                  <Button size="sm" disabled={thinking} onClick={() => submit(q)} className="h-auto min-h-8 py-1 text-left whitespace-normal">
+                    {q}
                   </Button>
                 </li>
               ))}

@@ -54,19 +54,33 @@ const fold = (s: string) =>
     .replace(/[đĐ]/g, "d")
     .toLowerCase();
 
+/** Answers waiting to be saved to the notes, by id (the core keeps them; the webview only names one). */
+const answerDrafts = new Map<string, { meeting: string; question: string; text: string; t0Ms: number | null; t1Ms: number | null }>();
+let answerSeq = 0;
+/** What `saveAnswer` (mock-review) turns into a note block; one use per id. */
+export function takeAnswerDraft(meeting: string, id: string) {
+  const d = answerDrafts.get(id);
+  if (!d || d.meeting !== meeting) return null;
+  answerDrafts.delete(id);
+  return d;
+}
+
 function answer(host: AiHost, meeting: string, question: string, engine: string): AskAnswer {
   const t = host.transcript(meeting);
   const words = fold(question)
     .split(/\W+/)
     .filter((w) => w.length > 3);
   const hit = t?.segments.find((s) => words.some((w) => fold(s.text).includes(w)));
-  if (!hit) return { answered: false, text: "", citations: [], searched: words, engine };
+  if (!hit) return { answered: false, text: "", citations: [], searched: words, engine, id: null };
+  const id = `answer-${++answerSeq}`;
+  answerDrafts.set(id, { meeting, question, text: hit.text, t0Ms: hit.t0Ms, t1Ms: hit.t1Ms });
   return {
     answered: true,
     text: hit.text,
     citations: [{ t0Ms: hit.t0Ms, t1Ms: hit.t1Ms, quote: hit.text, speakerGid: hit.speakerGid, stale: false, missing: false }],
     searched: [],
     engine,
+    id,
   };
 }
 

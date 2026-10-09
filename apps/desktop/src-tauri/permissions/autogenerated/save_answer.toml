@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-answer"
+description = "Enables the save_answer command without any pre-configured scope."
+commands.allow = ["save_answer"]
+
+[[permission]]
+identifier = "deny-save-answer"
+description = "Denies the save_answer command without any pre-configured scope."
+commands.deny = ["save_answer"]

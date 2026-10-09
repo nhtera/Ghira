@@ -135,6 +135,26 @@ const open = async () => {
 };
 
 describe("NotesTab", () => {
+  it("lists saved Ask answers in their own section, pinned, editable and deletable", async () => {
+    notes.blocks.push({ ...block("ans1", "answer", "ai", "Q: When?\nA: On the 12th.", [cite]), pinned: true });
+    await open();
+    const list = within(screen.getByTestId("saved-answers"));
+    expect(screen.getByRole("heading", { name: "Saved from Ask" })).toBeTruthy();
+    expect(list.getAllByRole("listitem")).toHaveLength(1);
+    expect(list.getByDisplayValue(/Q: When\?/)).toBeTruthy();
+    expect(list.getByText("Kept when the notes are rewritten")).toBeTruthy();
+    // the citation chip works like any other
+    expect(list.getByRole("button", { name: "Show in transcript 00:12" })).toBeTruthy();
+    fireEvent.click(list.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(commands.deleteNoteBlock).toHaveBeenCalledWith("m1", "ans1"));
+  });
+
+  it("a pinned block shows the pin, an unpinned one does not, and no answers means no section", async () => {
+    await open();
+    expect(screen.queryByText("Kept when the notes are rewritten")).toBeNull();
+    expect(screen.queryByTestId("saved-answers")).toBeNull();
+  });
+
   it("stars the items that cover a marked moment and lists only the uncovered marks", async () => {
     notes.marks = [
       { tMs: 724_000, tag: "decision", segment: "g1", text: "we ship on the 12th", coveredBy: ["t1", "a1"] },

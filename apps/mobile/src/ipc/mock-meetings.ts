@@ -350,6 +350,14 @@ function defaults(): MockMeeting[] {
             citations: [cite(200_000, "", { missing: true, t1Ms: null })],
           },
           {
+            gid: "n-ask",
+            kind: "answer",
+            origin: "ai",
+            text: "Q: When does the beta ship?\nA: On 15 October if QA signs off by Friday.",
+            pinned: true,
+            citations: [cite(105_000, "I will send the revised budget in đồng and dollars before the review.", { speakerGid: "sp-me" })],
+          },
+          {
             gid: "n4",
             kind: "note",
             origin: "user",

@@ -257,9 +257,11 @@
       "actionItems": "Việc cần làm",
       "openQuestions": "Câu hỏi mở",
       "keyQuotes": "Trích dẫn chính",
-      "marked": "Thời điểm bạn đã đánh dấu"
+      "marked": "Thời điểm bạn đã đánh dấu",
+      "fromAsk": "Lưu từ Hỏi"
     },
     "markedAt": "Bạn đã đánh dấu chỗ này lúc {{time}}",
+    "pinned": "Được giữ khi ghi chú được viết lại",
     "yourNoteLabel": "Ghi chú của bạn",
     "enhancedLabel": "Ý từ bản ghi",
     "blockLabel": "Ghi chú",
@@ -1424,6 +1426,10 @@
       "open": "Hỏi",
       "close": "Đóng",
       "hint": "Hỏi điều đã quyết định hay ai nói gì. Câu trả lời dẫn tới đúng thời điểm.",
+      "save": "Lưu vào ghi chú",
+      "saved": "Đã lưu vào ghi chú",
+      "saveExpired": "Hãy hỏi lại để lưu câu trả lời này.",
+      "saveLimit": "Đã lưu đủ 10 câu trả lời. Xoá một câu để lưu thêm.",
       "suggestions": {
         "label": "Thử hỏi",
         "decided": "Đã quyết định những gì?",

@@ -93,7 +93,8 @@ export function NotesTab({
     !layout.questions.length &&
     !layout.quotes.length &&
     !layout.mine.length &&
-    !layout.topics.length;
+    !layout.topics.length &&
+    !layout.answers.length;
 
   return (
     <NotesContext.Provider value={ctx}>
@@ -157,6 +158,27 @@ export function NotesTab({
         {layout.quotes.length > 0 && (
           <Section ai title={t("notes.sections.keyQuotes")}>
             {blocks(layout.quotes, t("notes.blockLabel"))}
+          </Section>
+        )}
+        {layout.answers.length > 0 && (
+          <Section ai title={t("notes.sections.fromAsk")}>
+            <ul data-testid="saved-answers" className="m-0 flex list-none flex-col gap-3 p-0">
+              {layout.answers.map((b) => (
+                <li key={b.gid} className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <BlockRow block={b} label={t("notes.blockLabel")} />
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={t("common.delete")}
+                    onClick={() => void edit.deleteBlock(b.gid)}
+                    className="grid size-6 shrink-0 place-items-center rounded-seg text-muted hover:bg-sunk hover:text-ink"
+                  >
+                    <Icon name="delete" size={16} />
+                  </button>
+                </li>
+              ))}
+            </ul>
           </Section>
         )}
         {missed.length > 0 && (

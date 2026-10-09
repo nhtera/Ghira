@@ -498,6 +498,11 @@ export type AskAnswer = {
 	searched: string[],
 	/**  `local` or the cloud provider. */
 	engine: string,
+	/**
+	 *  What to pass to `save_answer`: the core keeps the answer under it for
+	 *  a while (none for "not discussed"). The webview never sends the text.
+	 */
+	id: string | null,
 };
 
 /**  The audio bar's source: a play token and how long the audio is. */

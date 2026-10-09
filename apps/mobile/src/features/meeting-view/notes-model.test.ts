@@ -63,10 +63,12 @@ describe("groupBlocks", () => {
       block("tldr"),
       block("section:risks"),
       block("enhanced:n1"),
+      block("answer"),
     ]);
     expect(g.map((x) => [x.key, x.blocks.length])).toEqual([
       ["tldr", 1],
       ["decision", 1],
+      ["answer", 1],
       ["note", 2],
       ["other", 1],
     ]);

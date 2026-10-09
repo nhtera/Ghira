@@ -137,6 +137,7 @@ fn main() {
             "set_vocabulary_packs",
             "vocabulary",
             "ask_meeting",
+            "save_answer",
             "cloud_request_log",
             "set_meeting_cloud_locked",
             "set_meeting_sensitive",

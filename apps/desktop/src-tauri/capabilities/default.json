@@ -108,6 +108,7 @@
     "allow-set-sensitive-next",
     "allow-cloud-request-log",
     "allow-ask-meeting",
+    "allow-save-answer",
     "allow-vocabulary",
     "allow-set-vocabulary",
     "allow-set-vocabulary-packs",

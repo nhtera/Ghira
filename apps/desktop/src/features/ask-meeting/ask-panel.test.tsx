@@ -5,6 +5,7 @@ import {
   fireEvent,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +20,8 @@ const commands = vi.hoisted(() => ({
   updateSettings: vi.fn(),
   cloudPreview: vi.fn(),
   cloudSend: vi.fn(),
+  meetingNotes: vi.fn(),
+  saveAnswer: vi.fn(),
 }));
 vi.mock("../../ipc", () => ({ ipc: { commands } }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
@@ -61,6 +64,7 @@ const answered: AskAnswer = {
   ],
   searched: [],
   engine: "local",
+  id: "ans-1",
 };
 
 const ask = (q: string) => {
@@ -82,6 +86,7 @@ beforeEach(() => {
       strictOffline: false,
     }),
   );
+  commands.meetingNotes.mockReturnValue(ok({ blocks: [], actionItems: [], sections: [], marks: [] }));
   renderLive(<AskPanel meeting="m1" detail={detail} onClose={vi.fn()} />);
 });
 afterEach(() => cleanup());
@@ -228,5 +233,66 @@ describe("AskPanel", () => {
     await screen.findByText("We chose NeMo for diarization.");
     expect(screen.getAllByRole("button", { name: /^Show in transcript \d\d:\d\d$/ })).toHaveLength(1);
     expect(screen.getByRole("button", { name: "1 more source" }).textContent).toBe("+1");
+  });
+
+  const remount = (blocks: { kind: string; text: string }[]) => {
+    cleanup();
+    commands.meetingNotes.mockReturnValue(ok({ blocks: blocks.map((b, i) => ({ gid: `b${i}`, origin: "ai", pinned: false, citations: [], ...b })), actionItems: [], sections: [], marks: [] }));
+    renderLive(<AskPanel meeting="m1" detail={detail} onClose={vi.fn()} />);
+  };
+
+  it("starts with the meeting's open questions, then makes up three with the static ones", async () => {
+    commands.askMeeting.mockReturnValue(ok(answered));
+    remount([
+      { kind: "question", text: "Who owns the budget?" },
+      { kind: "question", text: "Khi nào export xong？" },
+      { kind: "question", text: "We still need a date" },
+      { kind: "decision", text: "Is this a decision?" },
+    ]);
+    const starters = within(screen.getByRole("list", { name: "Try asking" }));
+    await waitFor(() => expect(starters.getByRole("button", { name: "Who owns the budget?" })).toBeTruthy());
+    const names = starters.getAllByRole("button").map((b) => b.textContent);
+    expect(names).toEqual(["Who owns the budget?", "Khi nào export xong？", "What was decided?"]);
+    fireEvent.click(starters.getByRole("button", { name: "Khi nào export xong？" }));
+    expect(commands.askMeeting).toHaveBeenCalledWith("m1", "Khi nào export xong？", "meeting");
+  });
+
+  it("shows only three open questions, and none when the notes have no real questions", async () => {
+    remount(["a", "b", "c", "d"].map((x) => ({ kind: "question", text: `Question ${x}?` })));
+    const starters = within(screen.getByRole("list", { name: "Try asking" }));
+    await waitFor(() => expect(starters.getByRole("button", { name: "Question a?" })).toBeTruthy());
+    expect(starters.getAllByRole("button").map((b) => b.textContent)).toEqual(["Question a?", "Question b?", "Question c?"]);
+    remount([{ kind: "question", text: "just a statement" }]);
+    expect(screen.getAllByRole("button", { name: /decided|action items|themes/ })).toHaveLength(3);
+  });
+
+  it("Save to notes sends the answer's id, never its text, and says so", async () => {
+    commands.askMeeting.mockReturnValue(ok(answered));
+    commands.saveAnswer.mockReturnValue(ok(null));
+    ask("Why NeMo?");
+    await screen.findByText("We chose NeMo for diarization.");
+    fireEvent.click(screen.getByRole("button", { name: "Save to notes" }));
+    await waitFor(() => expect(commands.saveAnswer).toHaveBeenCalledWith("m1", "ans-1"));
+    expect(commands.saveAnswer.mock.calls[0]).toHaveLength(2);
+    const done = await screen.findByRole("button", { name: "Saved to notes" });
+    expect((done as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("an expired or full save is said in words", async () => {
+    commands.askMeeting.mockReturnValue(ok(answered));
+    commands.saveAnswer.mockReturnValue(Promise.resolve({ status: "error" as const, error: "answerExpired" }));
+    ask("Why NeMo?");
+    await screen.findByText("We chose NeMo for diarization.");
+    fireEvent.click(screen.getByRole("button", { name: "Save to notes" }));
+    expect((await screen.findAllByText("Ask again to save this answer.")).length).toBeGreaterThan(0);
+    // still savable (nothing was written)
+    expect((screen.getByRole("button", { name: "Save to notes" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("a not-discussed answer has nothing to save", async () => {
+    commands.askMeeting.mockReturnValue(ok({ answered: false, text: "", citations: [], searched: ["x"], engine: "local", id: null }));
+    ask("kubernetes?");
+    await screen.findByTestId("ask-not-discussed");
+    expect(screen.queryByRole("button", { name: "Save to notes" })).toBeNull();
   });
 });

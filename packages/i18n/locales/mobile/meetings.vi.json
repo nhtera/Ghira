@@ -42,6 +42,7 @@
       "save": "Lưu",
       "saveFailed": "Không lưu được dòng này. Hãy thử lại.",
       "section": {
+        "answer": "Lưu từ Hỏi",
         "decision": "Quyết định",
         "note": "Ghi chú của bạn",
         "other": "Khác",

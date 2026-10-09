@@ -76,6 +76,14 @@ pub struct Plan {
 pub const EXCERPT_MAX: usize = 4000;
 
 impl Plan {
+    /// The question of an Ask plan, as the user typed it (not redacted).
+    pub fn ask_question(&self) -> Option<&str> {
+        match &self.task {
+            Prepared2::Ask { question, .. } => Some(question),
+            Prepared2::Notes { .. } => None,
+        }
+    }
+
     /// The request's user text before and after redaction, for the sheet's
     /// "on this Mac" / "what is sent" box, each cut to [`EXCERPT_MAX`]. `None`
     /// when the request shape has no user text. Never the system prompt.

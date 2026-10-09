@@ -269,9 +269,11 @@
       "actionItems": "Action items",
       "openQuestions": "Open questions",
       "keyQuotes": "Key quotes",
-      "marked": "Moments you marked"
+      "marked": "Moments you marked",
+      "fromAsk": "Saved from Ask"
     },
     "markedAt": "You marked this at {{time}}",
+    "pinned": "Kept when the notes are rewritten",
     "yourNoteLabel": "Your note",
     "enhancedLabel": "Points from the transcript",
     "blockLabel": "Note",
@@ -1471,6 +1473,10 @@
       "open": "Ask",
       "close": "Close",
       "hint": "Ask what was decided or who said something. Answers link to the moment.",
+      "save": "Save to notes",
+      "saved": "Saved to notes",
+      "saveExpired": "Ask again to save this answer.",
+      "saveLimit": "10 answers are saved already. Delete one to save another.",
       "suggestions": {
         "label": "Try asking",
         "decided": "What was decided?",

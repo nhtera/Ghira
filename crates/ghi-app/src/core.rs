@@ -68,6 +68,8 @@ pub struct Core {
     /// The embedding model for search queries, kept loaded while the user
     /// searches (dropped after [`QUERY_EMBEDDER_IDLE`]).
     query_embedder: QueryEmbedder,
+    /// Ask answers waiting to be saved to the notes (by id).
+    answers: crate::cloud_cmd::AnswerCache,
     events: EventTx,
     hooks: CoreHooks,
     /// The launch lock check ran (see [`CoreHooks::gate_launch`]).
@@ -487,6 +489,10 @@ fn final_engines(
 }
 
 impl Core {
+    pub(crate) fn answers(&self) -> &crate::cloud_cmd::AnswerCache {
+        &self.answers
+    }
+
     /// Starts forwarding core events to the webview.
     /// `on_event` also sees every event (the tray follows the session).
     pub fn new<R: Runtime>(
@@ -568,6 +574,7 @@ impl Core {
             settings_hook: Mutex::new(None),
             recovered: Mutex::new(Vec::new()),
             sensitive_next: std::sync::atomic::AtomicBool::new(false),
+            answers: Default::default(),
             events,
             hooks,
             launch_checked: std::sync::atomic::AtomicBool::new(false),

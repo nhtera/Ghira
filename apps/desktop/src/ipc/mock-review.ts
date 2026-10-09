@@ -23,7 +23,7 @@ import type {
   TemplateInfo,
 } from "../bindings";
 import type { Commands } from "./ipc";
-import { audioDeleted, lockedMeetings, sensitiveMeetings } from "./mock-ai";
+import { audioDeleted, lockedMeetings, sensitiveMeetings, takeAnswerDraft } from "./mock-ai";
 
 type Result<T> = { status: "ok"; data: T } | { status: "error"; error: string };
 const ok = <T>(data: T): Promise<Result<T>> => Promise.resolve({ status: "ok", data });
@@ -402,6 +402,7 @@ type ReviewCommands = Pick<
   Commands,
   | "meetingDetail"
   | "meetingNotes"
+  | "saveAnswer"
   | "meetingTranscript"
   | "updateSegmentText"
   | "setSegmentSpeaker"
@@ -483,6 +484,23 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         sourceApp: r.source === "live" && r.mode === "call" ? "zoom" : null,
       };
       return ok(detail);
+    },
+    saveAnswer: (m, id) => {
+      if (!row(m)) return fail(`meeting not found: ${m}`);
+      const d = detailOf(m);
+      const draft = takeAnswerDraft(m, id);
+      if (!draft) return fail("answerExpired");
+      if (d.notes.blocks.filter((b) => b.kind === "answer").length >= 10) return fail("answerLimit");
+      const at = d.transcript.segments.findIndex((s) => s.t0Ms === draft.t0Ms);
+      d.notes.blocks.push({
+        gid: gid("blk"),
+        kind: "answer",
+        origin: "ai",
+        text: `Q: ${draft.question.trim()}\nA: ${draft.text.trim()}`,
+        pinned: true,
+        citations: at >= 0 ? cite(d.transcript.segments, [at]) : [],
+      });
+      return ok(null);
     },
     meetingNotes: (m) => withDetail(m, (d) => structuredClone({ ...d.notes, marks: momentsOf(d) })),
     meetingTranscript: (m) => withDetail(m, (d) => structuredClone(d.transcript)),
@@ -615,7 +633,7 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
       // Keep what the user wrote or edited; rewrite the rest.
       const d = detailOf(m);
       const fresh = build(document.documentElement.lang === "vi" ? "vi" : "en");
-      const keep = d.notes.blocks.filter((b) => b.origin !== "ai");
+      const keep = d.notes.blocks.filter((b) => b.origin !== "ai" || b.pinned);
       d.notes = {
         blocks: [...fresh.notes.blocks.filter((b) => b.origin === "ai" && !b.kind.startsWith("enhanced:")), ...keep],
         actionItems: [...d.notes.actionItems.filter((a) => a.origin !== "ai" || a.done), ...fresh.notes.actionItems.filter((a) => a.origin === "ai")],
