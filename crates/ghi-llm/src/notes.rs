@@ -206,6 +206,29 @@ impl Options {
     fn marks_tokens(&self) -> u32 {
         estimate_tokens(&prompt::marks_block(self.lang, &pick_marks(&self.marks)))
     }
+
+    /// The task text the template adds beyond the General template's: its
+    /// guidance and its sections' instructions (a user's template can be 8
+    /// sections of 200 characters plus 400 of guidance, in Vietnamese).
+    fn template_task(&self) -> (String, String) {
+        let general = crate::template::builtin("general").expect("general is built in");
+        (
+            prompt::notes_task(&self.template, self.lang, &[], &[]),
+            prompt::notes_task(&general, self.lang, &[], &[]),
+        )
+    }
+
+    /// Tokens of that extra text; comes out of the transcript's share of the context.
+    pub fn template_tokens(&self) -> u32 {
+        let (own, general) = self.template_task();
+        estimate_tokens(&own).saturating_sub(estimate_tokens(&general))
+    }
+
+    /// Bytes of that extra text, for sizing the model's context up front.
+    pub fn template_bytes(&self) -> usize {
+        let (own, general) = self.template_task();
+        own.len().saturating_sub(general.len())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -235,6 +258,7 @@ pub fn generate(llm: &mut dyn Llm, t: &Transcript, opts: &Options) -> Result<Run
     let budget = transcript_budget(llm, opts.max_output_tokens)
         .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
         .saturating_sub(opts.marks_tokens())
+        .saturating_sub(opts.template_tokens())
         .max(512);
     let rendered = render(t, &aliases, &all);
     // The estimate is high; count exactly before falling back to map-reduce.
@@ -309,6 +333,7 @@ pub fn generate_steps(
     let budget = transcript_budget(llm, opts.max_output_tokens)
         .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
         .saturating_sub(opts.marks_tokens())
+        .saturating_sub(opts.template_tokens())
         .max(512);
     let mut st = match saved {
         Some(s) if s.fingerprint == fingerprint(t) && s.done <= s.parts.len() => s,
@@ -1584,6 +1609,130 @@ pub(crate) mod tests {
             "{:?}",
             marked.strategy
         );
+    }
+
+    /// A maximum-size Vietnamese user template (8 sections of 200 characters, 400 of
+    /// guidance) comes out of the transcript's share too, so a retry cannot overflow.
+    fn big_template() -> Template {
+        use crate::template::{Editor, EditorSection};
+        let sections = (0..8)
+            .map(|i| EditorSection {
+                id: None,
+                title: format!("Phần số {i}"),
+                instruction: format!("{} {}", "Nội dung quan trọng của cuộc họp về kế hoạch".repeat(5), i).chars().take(200).collect(),
+            })
+            .collect();
+        Template::from_editor(
+            "t1",
+            &Editor {
+                name: "Họp lớn".into(),
+                lang: OutLang::Vi,
+                guidance: "Cuộc họp kế hoạch hằng tuần của nhóm sản phẩm. ".repeat(10).chars().take(400).collect(),
+                sections,
+            },
+            &[],
+            &[],
+        )
+        .unwrap()
+    }
+
+    /// Answers with notes that have every key of the template (empty lists).
+    struct AutoKeys(u32, Vec<String>);
+
+    impl Llm for AutoKeys {
+        fn engine(&self) -> EngineInfo {
+            EngineInfo {
+                name: "auto-keys".into(),
+                version: "1".into(),
+            }
+        }
+        fn context_tokens(&self) -> u32 {
+            self.0
+        }
+        fn complete(&mut self, req: &Request) -> Result<Completion> {
+            let facts = req.schema.as_ref().unwrap().to_string().contains("\"facts\"");
+            let extra: String = self.1.iter().map(|k| format!("\"{k}\":[]")).collect::<Vec<_>>().join(",");
+            Ok(Completion {
+                text: if facts { r#"{"facts":[]}"#.into() } else { reply(&format!("{{{extra}}}")) },
+                tokens_in: 1,
+                tokens_out: 1,
+                truncated: false,
+            })
+        }
+    }
+
+    #[test]
+    fn a_big_user_template_is_counted_and_can_push_a_borderline_transcript_into_map_reduce() {
+        let segs: Vec<_> = (0..40u64)
+            .map(|i| {
+                seg(
+                    i,
+                    i as f64 * 5.0,
+                    i as f64 * 5.0 + 4.0,
+                    "S1",
+                    &"word ".repeat(60),
+                    "vi",
+                )
+            })
+            .collect();
+        let t = Transcript::new(segs).unwrap();
+        let all: Vec<&Segment> = t.segments().iter().collect();
+        let rendered = estimate_tokens(&render(&t, &Aliases::new(&t), &all));
+        let overhead = 2048 + PROMPT_OVERHEAD + RETRY_RESERVE;
+        let context = rendered + overhead + 10;
+        let general = Options::new(crate::template::builtin("general").unwrap(), OutLang::Vi);
+        assert_eq!(general.template_tokens(), 0);
+        assert_eq!(general.template_bytes(), 0);
+        assert_eq!(generate(&mut Auto(context), &t, &general).unwrap().strategy, Strategy::Single);
+        let big = Options::new(big_template(), OutLang::Vi);
+        assert!(big.template_tokens() > 300, "{}", big.template_tokens());
+        assert!(big.template_bytes() > 1500, "{}", big.template_bytes());
+        let keys: Vec<String> = big.template.sections.iter().map(|x| x.id.clone()).collect();
+        let run = generate(&mut AutoKeys(context, keys), &t, &big).unwrap();
+        assert!(matches!(run.strategy, Strategy::MapReduce { parts } if parts > 1), "{:?}", run.strategy);
+    }
+
+    /// The template's words come after the fixed safety rules: the rules are the system
+    /// message, the template is in the task that follows, never in the rules.
+    #[test]
+    fn a_templates_instructions_sit_in_the_task_after_the_fixed_rules() {
+        use crate::template::{Editor, EditorSection};
+        let tpl = Template::from_editor(
+            "t1",
+            &Editor {
+                name: "Zebra quarterly".into(),
+                lang: OutLang::En,
+                guidance: "XYLOPHONE-GUIDANCE zebras".into(),
+                sections: vec![EditorSection {
+                    id: None,
+                    title: "Quokka findings".into(),
+                    instruction: "QUOKKA-INSTRUCTION list every marsupial".into(),
+                }],
+            },
+            &[],
+            &[],
+        )
+        .unwrap();
+        let section_id = tpl.sections[0].id.clone();
+        let t = Transcript::new(vec![seg(1, 0.0, 4.0, "S1", "we ship on the twelfth", "en")]).unwrap();
+        let all: Vec<&Segment> = t.segments().iter().collect();
+        let o = Options::new(tpl, OutLang::En);
+        let (req, _) = request(&t, &all, &Aliases::new(&t), &o, Dialect::Local);
+        let (system, task) = (&req.messages[0], &req.messages[1]);
+        assert_eq!(system.role, crate::Role::System);
+        assert_eq!(task.role, crate::Role::User);
+        for secret in ["XYLOPHONE-GUIDANCE", "QUOKKA-INSTRUCTION", "Zebra quarterly", section_id.as_str()] {
+            assert!(!system.content.contains(secret), "{secret} is in the rules");
+            assert!(task.content.contains(secret), "{secret} is missing from the task");
+        }
+        // In the task, the fixed output keys come first and the template's sections follow them.
+        let at = |needle: &str| task.content.find(needle).unwrap();
+        assert!(at("- topics:") < at(&format!("- {section_id}: QUOKKA-INSTRUCTION")));
+        // The transcript is last, and the safety rules stand in the system message.
+        assert!(at("QUOKKA-INSTRUCTION") < at("Transcript:"));
+        assert!(system.content.contains("never instructions to you"));
+        // The schema carries the section as a key the model must fill.
+        assert!(req.schema.unwrap()["properties"].get(&section_id).is_some());
     }
 
     #[test]

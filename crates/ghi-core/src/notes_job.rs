@@ -318,18 +318,21 @@ fn lease_is_done(store: &Store, job_uuid: &str) -> bool {
 pub type LlmFactory = Arc<dyn Fn(usize) -> Result<Box<dyn Llm + Send>, String> + Send + Sync>;
 
 /// The template for notes: the one asked for, else the meeting's own, else the
-/// one its calendar event suggests, else `default`. An id that is not a
-/// built-in template is passed over.
+/// one its calendar event suggests, else `default`. `resolve` turns an id
+/// into a template (a built-in, or one of the user's own as `user:<gid>`); an
+/// id it does not know (a template since deleted, or made on another device)
+/// is passed over.
 fn choose_template(
     asked: Option<String>,
     meeting: Option<String>,
     suggested: Option<String>,
     default: &Template,
+    resolve: &dyn Fn(&str) -> Option<Template>,
 ) -> Template {
     [asked, meeting, suggested]
         .into_iter()
         .flatten()
-        .find_map(|id| ghi_llm::template::builtin(&id).ok())
+        .find_map(|id| resolve(&id))
         .unwrap_or_else(|| default.clone())
 }
 
@@ -418,6 +421,7 @@ impl JobHandler for NotesJob {
                 ctx.store.get_meeting(meeting).map_err(store_err)?.template,
                 suggested,
                 &self.template,
+                &|id| crate::user_templates::template_of(ctx.store, id),
             );
             let setting = default_notes_language(ctx.store);
             let lang = payload
@@ -435,10 +439,12 @@ impl JobHandler for NotesJob {
             // cloud send never gets it (`cloud::plan` builds its own options).
             opts.marks = crate::marks::load_hints(ctx.store, meeting, &segs);
             // Everything in the prompt sizes the model's context: the
-            // transcript and the texts the user keeps (saved answers can be
-            // ~10 x 1.5k characters on a short meeting).
+            // transcript, the texts the user keeps (saved answers can be
+            // ~10 x 1.5k characters on a short meeting) and the template's own
+            // words (a user's can be 8 sections of 200 characters).
             let bytes: usize = segs.iter().map(|s| s.text.len()).sum::<usize>()
-                + opts.pinned.iter().map(String::len).sum::<usize>();
+                + opts.pinned.iter().map(String::len).sum::<usize>()
+                + opts.template_bytes();
             let mut llm = (self.llm)(bytes)?;
             // The model's own progress, as the meeting's: reading the
             // transcript to 40 %, writing to 80 % (about 1,800 tokens
@@ -623,12 +629,14 @@ mod tests {
     #[test]
     fn template_order_is_asked_then_meeting_then_calendar_then_default() {
         let d = ghi_llm::template::builtin("general").unwrap();
+        let builtin = |id: &str| ghi_llm::template::builtin(id).ok();
         let id = |a: Option<&str>, m: Option<&str>, c: Option<&str>| {
             choose_template(
                 a.map(str::to_string),
                 m.map(str::to_string),
                 c.map(str::to_string),
                 &d,
+                &builtin,
             )
             .id
         };
