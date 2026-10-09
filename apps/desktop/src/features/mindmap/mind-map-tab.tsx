@@ -2,7 +2,10 @@
 // The Map tab: the notes of the meeting as a mind map. Built from the notes
 // that are already there (no model call): the same blocks the Notes tab shows,
 // each leaf playable. "Copy as outline" is the same tree as nested Markdown.
-import { notesToTree, treeToOutline, useToast, type MapNode, type NotesTreeInput } from "@ghi/ui";
+import { notesTree, useToast } from "@ghi/ui";
+
+type MapNode = notesTree.MapNode;
+type NotesTreeInput = notesTree.NotesTreeInput;
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -43,6 +46,7 @@ export function MindMapTab({ meeting, detail }: { meeting: string; detail: Meeti
         actions: t("notes.sections.actionItems"),
         questions: t("notes.sections.openQuestions"),
         topics: t("detail.topics.title"),
+        answers: t("notes.sections.fromAsk"),
         marked: t("mindmap.sections.marked"),
         other: t("mindmap.sections.other"),
       },
@@ -52,13 +56,14 @@ export function MindMapTab({ meeting, detail }: { meeting: string; detail: Meeti
       actions: l.actions,
       questions: l.questions,
       topics: l.topics,
+      answers: l.answers,
       proposals: l.proposals,
       other,
       // The marks nothing covers, and the items that cover a mark (starred).
       marks: notes.marks.filter((k) => k.coveredBy.length === 0).map((k, i) => ({ gid: `mark-${i}`, tMs: k.tMs ?? 0, text: k.text ?? t(`notes.tags.${k.tag === "decision" || k.tag === "action" || k.tag === "question" ? k.tag : "star"}`) })),
       covered: new Set(notes.marks.flatMap((k) => k.coveredBy)),
     };
-    return notesToTree(input);
+    return notesTree.notesToTree(input);
   }, [notes, detail.title, vi, t]);
 
   const onActivate = useCallback(
@@ -82,7 +87,7 @@ export function MindMapTab({ meeting, detail }: { meeting: string; detail: Meeti
         const s = findSpeaker(detail.speakers, gid);
         return s ? speakerDisplay(s, t).name : null;
       };
-      await navigator.clipboard.writeText(treeToOutline(root, owner));
+      await navigator.clipboard.writeText(notesTree.treeToOutline(root, owner));
       show({ tone: "success", title: t("mindmap.copied") });
     } catch (e) {
       show({ tone: "warning", title: t("system.commandFailed", { message: String(e) }) });

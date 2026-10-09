@@ -4,7 +4,9 @@
 // hidden until it has focus, then shows over the map; moving in it moves the
 // map's highlight. A leaf click plays its first citation, a modified click
 // shows it in the transcript.
-import { Avatar, Button, Icon, cn, usePlatform, type MapNode } from "@ghi/ui";
+import { Avatar, Button, Icon, cn, usePlatform, type notesTree } from "@ghi/ui";
+
+type MapNode = notesTree.MapNode;
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingSpeaker } from "../../bindings";

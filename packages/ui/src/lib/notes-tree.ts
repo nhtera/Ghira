@@ -10,13 +10,13 @@ export type TreeCite = { t0Ms: number | null; t1Ms: number | null; missing?: boo
 export type TreeBlock = { gid: string; text: string; citations: readonly TreeCite[] };
 export type TreeAction = TreeBlock & { ownerSpeakerGid: string | null; dueText?: string | null; done?: boolean };
 
-export type SectionKind = "summary" | "template" | "decisions" | "proposed" | "actions" | "questions" | "topics" | "marked" | "other";
+export type SectionKind = "summary" | "template" | "decisions" | "proposed" | "actions" | "questions" | "topics" | "answers" | "marked" | "other";
 
 export type NotesTreeInput = {
   /** The meeting's title: the root. */
   title: string;
   /** Section titles, localized by the caller. */
-  titles: { summary: string; decisions: string; proposed: string; actions: string; questions: string; topics: string; marked: string; other: string };
+  titles: { summary: string; decisions: string; proposed: string; actions: string; questions: string; topics: string; answers: string; marked: string; other: string };
   tldr: readonly TreeBlock[];
   /** Template sections, in the template's order. */
   sections: readonly { id: string; title: string; blocks: readonly TreeBlock[] }[];
@@ -24,6 +24,8 @@ export type NotesTreeInput = {
   actions: readonly TreeAction[];
   questions: readonly TreeBlock[];
   topics: readonly TreeBlock[];
+  /** Answers saved from Ask (block kind `answer`). */
+  answers?: readonly TreeBlock[];
   /** Suggested follow-ups (block kind `proposal`). */
   proposals?: readonly TreeBlock[];
   /** Moments the person marked while recording. */
@@ -103,6 +105,7 @@ export function notesToTree(input: NotesTreeInput): MapNode {
   );
   section("questions", "questions", titles.questions, blocks(input.questions));
   section("topics", "topics", titles.topics, blocks(input.topics));
+  section("answers", "answers", titles.answers, blocks(input.answers ?? []));
   section(
     "marked",
     "marked",

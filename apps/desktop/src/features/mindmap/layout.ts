@@ -3,7 +3,9 @@
 // depth, every parent centered on its children. A subtree owns the vertical
 // band it needs, so nothing overlaps whatever the node heights; pure and
 // deterministic (same tree, same boxes). Linear in the node count.
-import type { MapNode } from "@ghi/ui";
+import type { notesTree } from "@ghi/ui";
+
+type MapNode = notesTree.MapNode;
 
 export type Size = { w: number; h: number };
 export type Placed = { id: string; node: MapNode; depth: number; x: number; y: number; w: number; h: number };

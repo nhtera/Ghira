@@ -5,7 +5,7 @@ import { clip, escapeMd, notesToTree, treeToOutline, type NotesTreeInput, type T
 const cite = (t0Ms: number | null, missing = false) => ({ t0Ms, t1Ms: t0Ms == null ? null : t0Ms + 2000, missing });
 const block = (gid: string, text: string, at: number | null = 1000): TreeBlock => ({ gid, text, citations: at == null ? [] : [cite(at)] });
 
-const titles = { summary: "Summary", decisions: "Decisions", proposed: "Proposed", actions: "Action items", questions: "Open questions", topics: "Topics", marked: "Moments you marked", other: "Other" };
+const titles = { summary: "Summary", decisions: "Decisions", proposed: "Proposed", actions: "Action items", questions: "Open questions", topics: "Topics", answers: "Saved from Ask", marked: "Moments you marked", other: "Other" };
 const input = (over: Partial<NotesTreeInput> = {}): NotesTreeInput => ({
   title: "Client call",
   titles,
@@ -65,6 +65,16 @@ describe("notesToTree", () => {
     const marked = root.children.find((s) => s.sectionKind === "marked")!;
     expect(marked.full).toBe("Moments you marked");
     expect(marked.children[0]).toMatchObject({ id: "m1", atMs: 723_000, cite: { t0Ms: 723_000 } });
+  });
+
+  it("saved Ask answers are their own branch, after Topics", () => {
+    const root = notesToTree(input({ answers: [block("an1", "Q: When? A: On the 12th.", 9000)] }));
+    const names = root.children.map((s) => s.sectionKind);
+    expect(names.indexOf("answers")).toBe(names.indexOf("topics") + 1);
+    const sec = root.children.find((s) => s.sectionKind === "answers")!;
+    expect(sec.full).toBe("Saved from Ask");
+    expect(sec.children[0]).toMatchObject({ id: "an1", cite: { t0Ms: 9000 } });
+    expect(notesToTree(input()).children.some((s) => s.sectionKind === "answers")).toBe(false);
   });
 
   it("unknown kinds do not crash: they land in Other", () => {

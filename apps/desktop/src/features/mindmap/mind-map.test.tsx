@@ -2,7 +2,10 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeetingSpeaker } from "../../bindings";
-import { notesToTree, type TreeBlock } from "@ghi/ui";
+import { notesTree } from "@ghi/ui";
+
+const { notesToTree } = notesTree;
+type TreeBlock = notesTree.TreeBlock;
 import { MindMap } from "./mind-map";
 import { extraBlocks } from "./mind-map-tab";
 
@@ -20,7 +23,7 @@ const b = (gid: string, text: string, at = 1000): TreeBlock => ({ gid, text, cit
 const speakers = [{ gid: "s1", name: "Sarah", number: 1, colorSlot: 2, isMe: false, notPerson: false, lines: 1, sampleT0Ms: null, sampleT1Ms: null }] as unknown as MeetingSpeaker[];
 const inputBase = {
   title: "Client call",
-  titles: { summary: "Summary", decisions: "Decisions", proposed: "Proposed", actions: "Action items", questions: "Open questions", topics: "Topics", marked: "Marked", other: "Other" },
+  titles: { summary: "Summary", decisions: "Decisions", proposed: "Proposed", actions: "Action items", questions: "Open questions", topics: "Topics", answers: "Saved from Ask", marked: "Marked", other: "Other" },
   tldr: [b("t1", "We ship on the 12th.")],
   sections: [],
   decisions: [b("d1", "Rename ships in beta.", 5000), b("d2", "Consent first.", 6000)],
