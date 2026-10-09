@@ -438,13 +438,22 @@ impl JobHandler for NotesJob {
             // What the user marked while recording steers the local model; a
             // cloud send never gets it (`cloud::plan` builds its own options).
             opts.marks = crate::marks::load_hints(ctx.store, meeting, &segs);
+            // Terms the transcript says, in the user's spelling (their vocabulary,
+            // attendees, enabled glossary packs): local prompts only.
+            opts.spellings = crate::vocab::spellings_for_prompt(
+                ctx.store,
+                meeting,
+                &segs,
+                ghi_llm::notes::MAX_SPELLINGS,
+            );
             // Everything in the prompt sizes the model's context: the
             // transcript, the texts the user keeps (saved answers can be
             // ~10 x 1.5k characters on a short meeting) and the template's own
             // words (a user's can be 8 sections of 200 characters).
             let bytes: usize = segs.iter().map(|s| s.text.len()).sum::<usize>()
                 + opts.pinned.iter().map(String::len).sum::<usize>()
-                + opts.template_bytes();
+                + opts.template_bytes()
+                + opts.spellings().iter().map(String::len).sum::<usize>();
             let mut llm = (self.llm)(bytes)?;
             // The model's own progress, as the meeting's: reading the
             // transcript to 40 %, writing to 80 % (about 1,800 tokens

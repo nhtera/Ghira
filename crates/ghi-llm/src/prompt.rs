@@ -46,6 +46,7 @@ pub(crate) fn notes_task(
     lang: OutLang,
     pinned: &[String],
     marks: &[MarkHint],
+    spellings: &[String],
 ) -> String {
     let mut s = String::new();
     match lang {
@@ -92,7 +93,26 @@ pub(crate) fn notes_task(
         s.push_str(&format!("- {p}\n"));
     }
     s.push_str(&marks_block(lang, marks));
+    s.push_str(&spellings_block(lang, spellings));
     s
+}
+
+/// Terms said in the meeting, with the spelling to write them in (empty when
+/// there are none). Only for a local prompt: it comes from the user's own
+/// vocabulary, attendees and glossary packs.
+pub(crate) fn spellings_block(lang: OutLang, spellings: &[String]) -> String {
+    if spellings.is_empty() {
+        return String::new();
+    }
+    let list = spellings.join("; ");
+    match lang {
+        OutLang::En => format!(
+            "\nThese terms are said in the meeting. Write them exactly like this: {list}\n"
+        ),
+        OutLang::Vi => format!(
+            "\nCác thuật ngữ sau được nhắc đến trong cuộc họp. Hãy viết đúng như sau: {list}\n"
+        ),
+    }
 }
 
 /// The moments the user marked, to be covered (empty when there are none).

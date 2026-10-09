@@ -187,7 +187,15 @@ pub struct Options {
     /// Moments the user marked: local prompts ask the model to cover them.
     /// Never part of a cloud request.
     pub marks: Vec<MarkHint>,
+    /// Terms said in the meeting, to be written as given (the user's own
+    /// vocabulary, attendees, enabled glossary packs; already filtered to the
+    /// ones the transcript says). Local prompts only: never part of a cloud
+    /// request.
+    pub spellings: Vec<String>,
 }
+
+/// Most spellings one prompt carries.
+pub const MAX_SPELLINGS: usize = 40;
 
 impl Options {
     pub fn new(template: Template, lang: OutLang) -> Options {
@@ -199,7 +207,28 @@ impl Options {
             chunk_minutes: 10,
             compact: false,
             marks: Vec::new(),
+            spellings: Vec::new(),
         }
+    }
+
+    /// The spellings one prompt carries: at most [`MAX_SPELLINGS`], distinct, in order.
+    pub fn spellings(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for s in &self.spellings {
+            let s = s.split_whitespace().collect::<Vec<_>>().join(" ");
+            if !s.is_empty() && !out.contains(&s) {
+                out.push(s);
+            }
+            if out.len() == MAX_SPELLINGS {
+                break;
+            }
+        }
+        out
+    }
+
+    /// Tokens the spellings block takes in a local prompt.
+    fn spellings_tokens(&self) -> u32 {
+        estimate_tokens(&prompt::spellings_block(self.lang, &self.spellings()))
     }
 
     /// Tokens the marks block takes in a local prompt.
@@ -213,8 +242,8 @@ impl Options {
     fn template_task(&self) -> (String, String) {
         let general = crate::template::builtin("general").expect("general is built in");
         (
-            prompt::notes_task(&self.template, self.lang, &[], &[]),
-            prompt::notes_task(&general, self.lang, &[], &[]),
+            prompt::notes_task(&self.template, self.lang, &[], &[], &[]),
+            prompt::notes_task(&general, self.lang, &[], &[], &[]),
         )
     }
 
@@ -259,6 +288,7 @@ pub fn generate(llm: &mut dyn Llm, t: &Transcript, opts: &Options) -> Result<Run
         .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
         .saturating_sub(opts.marks_tokens())
         .saturating_sub(opts.template_tokens())
+        .saturating_sub(opts.spellings_tokens())
         .max(512);
     let rendered = render(t, &aliases, &all);
     // The estimate is high; count exactly before falling back to map-reduce.
@@ -334,6 +364,7 @@ pub fn generate_steps(
         .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
         .saturating_sub(opts.marks_tokens())
         .saturating_sub(opts.template_tokens())
+        .saturating_sub(opts.spellings_tokens())
         .max(512);
     let mut st = match saved {
         Some(s) if s.fingerprint == fingerprint(t) && s.done <= s.parts.len() => s,
@@ -398,6 +429,11 @@ pub fn request(
         ids: &ids,
         speakers: aliases.aliases(),
     };
+    // Spellings (the user's vocabulary, attendees, glossary packs) are local-only too.
+    let spellings = match dialect {
+        Dialect::Local => opts.spellings(),
+        Dialect::Cloud => Vec::new(),
+    };
     // Marks are local-only: a cloud request never carries them.
     let marks = match dialect {
         Dialect::Local => {
@@ -413,7 +449,7 @@ pub fn request(
     };
     let user = format!(
         "{}\n{}",
-        prompt::notes_task(&opts.template, opts.lang, &opts.pinned, &marks),
+        prompt::notes_task(&opts.template, opts.lang, &opts.pinned, &marks, &spellings),
         prompt::transcript_block(opts.lang, &render(t, aliases, segments))
     );
     let req = Request {
@@ -849,7 +885,7 @@ fn reduce(
     };
     let user = format!(
         "{}\n{}",
-        prompt::notes_task(&opts.template, opts.lang, &opts.pinned, &marks),
+        prompt::notes_task(&opts.template, opts.lang, &opts.pinned, &marks, &opts.spellings()),
         prompt::reduce_block(opts.lang, &lines)
     );
     let req = Request {
@@ -1634,6 +1670,63 @@ pub(crate) mod tests {
             &[],
         )
         .unwrap()
+    }
+
+    #[test]
+    fn spellings_are_a_local_prompt_block_in_both_languages_and_never_in_a_cloud_request() {
+        let t = Transcript::new(vec![seg(1, 0.0, 4.0, "S1", "we use nemotron and Coreml here", "en")]).unwrap();
+        let all: Vec<&Segment> = t.segments().iter().collect();
+        let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        o.spellings = vec!["Nemotron".into(), "CoreML".into()];
+        let text = |d: Dialect, o: &Options| request(&t, &all, &Aliases::new(&t), o, d).0.messages[1].content.clone();
+        let local = text(Dialect::Local, &o);
+        assert!(local.contains("These terms are said in the meeting. Write them exactly like this: Nemotron; CoreML\n"), "{local}");
+        // After the template and before the transcript.
+        assert!(local.find("- topics:").unwrap() < local.find("Nemotron; CoreML").unwrap());
+        assert!(local.find("Nemotron; CoreML").unwrap() < local.find("Transcript:").unwrap());
+        let cloud = text(Dialect::Cloud, &o);
+        assert!(!cloud.contains("Nemotron") && !cloud.contains("CoreML") && !cloud.contains("exactly like this"), "{cloud}");
+        o.lang = OutLang::Vi;
+        let vi = text(Dialect::Local, &o);
+        assert!(vi.contains("Các thuật ngữ sau được nhắc đến trong cuộc họp. Hãy viết đúng như sau: Nemotron; CoreML\n"), "{vi}");
+        o.spellings.clear();
+        assert!(!text(Dialect::Local, &o).contains("exactly like this"));
+        assert_eq!(prompt::spellings_block(OutLang::En, &[]), "");
+    }
+
+    #[test]
+    fn at_most_forty_distinct_spellings_are_carried() {
+        let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        o.spellings = (0..60).map(|i| format!("Term{}", i % 50)).collect();
+        o.spellings.insert(1, "  Term0  ".into());
+        o.spellings.push(String::new());
+        let s = o.spellings();
+        assert_eq!(s.len(), MAX_SPELLINGS);
+        assert_eq!(s[0], "Term0");
+        assert_eq!(s.iter().collect::<HashSet<_>>().len(), MAX_SPELLINGS, "distinct");
+    }
+
+    /// The spellings come out of the transcript's share like marks do.
+    #[test]
+    fn spellings_can_push_a_borderline_transcript_into_map_reduce() {
+        let segs: Vec<_> = (0..40u64)
+            .map(|i| seg(i, i as f64 * 5.0, i as f64 * 5.0 + 4.0, "S1", &"word ".repeat(60), "en"))
+            .collect();
+        let t = Transcript::new(segs).unwrap();
+        let all: Vec<&Segment> = t.segments().iter().collect();
+        let rendered = estimate_tokens(&render(&t, &Aliases::new(&t), &all));
+        let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        // The smallest context that reads it whole, found by trying (the reserved output room is the engine's business).
+        let mut context = rendered;
+        while generate(&mut Auto(context), &t, &o).unwrap().strategy != Strategy::Single {
+            context += 16;
+        }
+        context += 10;
+        assert_eq!(generate(&mut Auto(context), &t, &o).unwrap().strategy, Strategy::Single);
+        o.spellings = (0..40).map(|i| format!("Pharmacokinetics{i}")).collect();
+        assert!(o.spellings_tokens() > 10);
+        let run = generate(&mut Auto(context), &t, &o).unwrap();
+        assert!(matches!(run.strategy, Strategy::MapReduce { parts } if parts > 1), "{:?}", run.strategy);
     }
 
     /// Answers with notes that have every key of the template (empty lists).

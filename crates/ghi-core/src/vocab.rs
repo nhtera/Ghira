@@ -139,6 +139,89 @@ pub fn pack_terms_seen<S: AsRef<str>>(lines: &[S], ids: &[String]) -> Vec<String
     seen
 }
 
+/// Of `terms`, the ones the lines actually say, in the order first said: an
+/// exact whole-word match (case ignored; a term written with accents is said
+/// with them), on a line in any language. The same rule as
+/// [`pack_terms_seen`] for the user's own terms and attendees' names.
+pub fn terms_seen<S: AsRef<str>>(lines: &[S], terms: &[String]) -> Vec<String> {
+    use std::collections::HashMap;
+    let mut index: HashMap<String, Vec<&str>> = HashMap::new();
+    let mut sizes: Vec<usize> = Vec::new();
+    for t in terms {
+        let w = words(t);
+        if w.is_empty() {
+            continue;
+        }
+        if !sizes.contains(&w.len()) {
+            sizes.push(w.len());
+        }
+        let slot = index.entry(w.join(" ")).or_default();
+        if !slot.contains(&t.as_str()) {
+            slot.push(t);
+        }
+    }
+    let mut seen: Vec<String> = Vec::new();
+    if index.is_empty() {
+        return seen;
+    }
+    for line in lines {
+        let nfc = ghi_text::nfc(line.as_ref());
+        let toks = tokenize(&nfc);
+        for &n in &sizes {
+            for w in toks.windows(n) {
+                let key = w.iter().map(|t| t.folded.as_str()).collect::<Vec<_>>().join(" ");
+                let Some(found) = index.get(&key) else {
+                    continue;
+                };
+                let src = nfc[w[0].range.start..w[n - 1].range.end].to_lowercase();
+                for t in found {
+                    let said = !ghi_text::has_diacritics(t) || src == t.to_lowercase();
+                    if said && !seen.iter().any(|x| x == t) {
+                        seen.push((*t).to_string());
+                    }
+                }
+            }
+        }
+    }
+    seen
+}
+
+/// The spellings the local notes prompt carries for a meeting: the terms that
+/// were actually said, from the meeting's attendees, the user's own terms and
+/// the names learned from speakers, then those of the enabled glossary packs;
+/// at most `max`. Terms nobody said are left out (they would only crowd the
+/// prompt), and nothing here is sent to a cloud model.
+pub fn spellings_for_prompt(
+    store: &ghi_store::store::Store,
+    meeting: &str,
+    segments: &[ghi_store::store::Segment],
+    max: usize,
+) -> Vec<String> {
+    let lines: Vec<&str> = segments.iter().map(|s| s.text.as_str()).collect();
+    let own = match meeting_terms(store, meeting) {
+        Ok(t) => terms_seen(&lines, &t),
+        Err(e) => {
+            log::warn!("terms not read, notes written without spellings: {e}");
+            Vec::new()
+        }
+    };
+    let packs = match enabled_packs(store) {
+        Ok(ids) => pack_terms_seen(&lines, &ids),
+        Err(_) => Vec::new(),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for t in own.into_iter().chain(packs) {
+        let folded = ghi_text::fold(&t);
+        if !out.iter().any(|x| ghi_text::fold(x) == folded) {
+            out.push(t);
+        }
+        if out.len() == max {
+            break;
+        }
+    }
+    out
+}
+
 /// The terms of the packs named in `ids`, at most [`MAX_PACK_TERMS`].
 pub fn pack_terms(ids: &[String]) -> Vec<&'static str> {
     packs()
@@ -691,6 +774,82 @@ mod tests {
 
     fn ids(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn your_terms_are_seen_only_when_said_whole_and_exactly() {
+        let terms: Vec<String> = ["Nemotron", "CoreML", "Nguyễn Văn An", "Chốt", "Acme Corp", "Plaud"].map(String::from).to_vec();
+        let seen = |lines: &[&str]| terms_seen(lines, &terms);
+        // Case is ignored, any language, multi-word terms by their words.
+        assert_eq!(seen(&["we ship nemotron today", "ask nguyễn văn an about acme corp"]), ["Nemotron", "Nguyễn Văn An", "Acme Corp"]);
+        // A term with accents is said with them; one without is said however it is spelled.
+        assert_eq!(seen(&["ta chốt lịch", "ta chot lich"]), ["Chốt"]);
+        assert_eq!(seen(&["ta chot lich"]), Vec::<String>::new());
+        assert_eq!(seen(&["COREML and Plaud"]), ["CoreML", "Plaud"]);
+        // Whole words only: no part of a longer word, no near miss.
+        assert!(seen(&["coremlx plaudits nemotrons acme", "corp acme"]).is_empty());
+        // Nothing said, nothing listed.
+        assert!(seen(&["hello there"]).is_empty());
+        assert!(terms_seen::<&str>(&[], &terms).is_empty());
+    }
+
+    fn store() -> (tempfile::TempDir, ghi_store::store::Store) {
+        let tmp = tempfile::tempdir().unwrap();
+        let s = ghi_store::store::Store::open(
+            tmp.path(),
+            std::sync::Arc::new(ghi_store::keys::MemoryKeyStore::default()),
+            ghi_store::keys::Protection::default(),
+        )
+        .unwrap();
+        (tmp, s)
+    }
+
+    fn lines(store: &ghi_store::store::Store, m: &str, texts: &[&str]) -> Vec<ghi_store::store::Segment> {
+        store
+            .add_segments(
+                m,
+                texts
+                    .iter()
+                    .enumerate()
+                    .map(|(i, t)| ghi_store::store::NewSegment {
+                        t0_ms: i as i64 * 5000,
+                        t1_ms: i as i64 * 5000 + 4000,
+                        text: (*t).into(),
+                        ..Default::default()
+                    })
+                    .collect(),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn the_prompts_spellings_are_the_terms_said_yours_first_then_packs_distinct_and_capped() {
+        let (_t, store) = store();
+        let m = store.create_meeting(Default::default()).unwrap().gid;
+        store.set_setting(TERMS_SETTING, &serde_json::json!(["Nemotron", "Never said", "metformin"])).unwrap();
+        store.set_setting(PACKS_SETTING, &serde_json::json!(["medical-en", "tech-en"])).unwrap();
+        let segs = lines(&store, &m, &["we talked about nemotron and Metformin and hypertension", "then kubernetes", "Metformin again"]);
+        let got = spellings_for_prompt(&store, &m, &segs, 40);
+        // Yours first, in your spelling; pack terms after; "metformin" once (yours wins); unsaid terms out.
+        assert_eq!(got, ["Nemotron", "metformin", "hypertension", "Kubernetes"]);
+        // The cap.
+        assert_eq!(spellings_for_prompt(&store, &m, &segs, 2), ["Nemotron", "metformin"]);
+        // Nothing enabled and nothing said: nothing.
+        store.set_setting(PACKS_SETTING, &serde_json::json!([])).unwrap();
+        store.set_setting(TERMS_SETTING, &serde_json::json!([])).unwrap();
+        assert!(spellings_for_prompt(&store, &m, &segs, 40).is_empty());
+    }
+
+    #[test]
+    fn a_pack_term_in_the_wrong_language_is_not_a_spelling() {
+        let (_t, store) = store();
+        let m = store.create_meeting(Default::default()).unwrap().gid;
+        store.set_setting(PACKS_SETTING, &serde_json::json!(["medical-vi"])).unwrap();
+        // An English line never matches a Vietnamese pack, even if a word is shared.
+        let segs = lines(&store, &m, &["paracetamol is what I take for pain", "Bác sĩ cho tôi uống paracetamol sau bữa ăn"]);
+        assert_eq!(spellings_for_prompt(&store, &m, &segs, 40), ["paracetamol"]);
+        let only_en = lines(&store, &m, &["I take aspirin and ibuprofen for the headache every day"]);
+        assert!(spellings_for_prompt(&store, &m, &only_en, 40).is_empty());
     }
 
     #[test]
