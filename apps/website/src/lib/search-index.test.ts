@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { structure } from "fumadocs-core/mdx-plugins/remark-structure";
 import { staticClient } from "fumadocs-core/search/client/orama-static";
-import { buildSearchIndex, tidyText, trimStructuredData } from "./search-index.ts";
+import { buildSearchIndex, gzipSize, tidyText, trimStructuredData } from "./search-index.ts";
 
 const md = `
 ## One
@@ -64,10 +64,10 @@ test("the full index finds a word that only appears in a body paragraph", async 
 
 test("a small budget falls back to thinner levels, then fails", async () => {
   const s = source([page("a", md)]);
-  const full = (await buildSearchIndex(s)).json.length;
+  const full = await gzipSize((await buildSearchIndex(s)).json);
   const lead = await buildSearchIndex(s, full - 1);
   assert.equal(lead.level, "lead");
   assert.equal((await hits(lead.json, "giraffe")).length, 0);
   assert.ok((await hits(lead.json, "zebra")).length > 0);
-  await assert.rejects(buildSearchIndex(s, 10), /over 10 bytes/);
+  await assert.rejects(buildSearchIndex(s, 10), /over 10 gzipped bytes/);
 });

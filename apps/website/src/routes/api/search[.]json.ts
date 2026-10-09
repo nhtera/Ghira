@@ -12,7 +12,7 @@ export const Route = createFileRoute("/api/search.json")({
     handlers: {
       GET: async () => {
         const { level, json } = await buildSearchIndex(source);
-        if (level !== "full") console.warn(`search index: ${level} level (${json.length} bytes); the full text would not fit the size budget`);
+        if (level !== "full") console.warn(`search index: ${level} level (${json.length} bytes raw); the full text would not fit the gzipped size budget`);
         return new Response(json, { headers: { "content-type": "application/json" } });
       },
     },

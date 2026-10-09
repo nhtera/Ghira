@@ -128,6 +128,11 @@ in production.
 - **Font preloads** use `?url` imports of the same files the `@font-face`
   rules use (Sonde's approach): Vite emits one asset per file, so the
   preload and the face share a URL and nothing downloads twice.
+- **Search index budget on the gzip size.** The full-text index is about
+  780 KB of JSON but 180 KB gzipped (110 KB with Cloudflare's brotli), and it
+  loads only on the first search. `src/lib/search-index.ts` budgets 250 KB
+  gzipped and falls back to headings + first paragraphs, then headings only,
+  if the docs outgrow it (the build logs a warning).
 - **Markdown, not MDX.** fumadocs-mdx compiles `.md` as Markdown: `{…}` is
   text, raw HTML is dropped (`test/fixtures/hostile.md`).
 

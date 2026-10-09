@@ -99,6 +99,8 @@
   .results:not(:empty) + .search-note { border-top: 1px solid var(--line); }
 
   @media (pointer: coarse) {
+    /* No keyboard shortcut to show on a touch screen. */
+    .search-btn kbd { display: none; }
     .nav-group a, .search-btn, .toc a { min-height: 44px; display: flex; align-items: center; }
     .results a { min-height: 44px; align-content: center; }
     .edit a, .pager a { min-height: 44px; }

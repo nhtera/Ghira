@@ -9,8 +9,16 @@ import type { LoaderConfig, LoaderOutput } from "fumadocs-core/source";
 // uses the fullest level that stays under the budget: all text, then titles,
 // headings and the first paragraph of each section, then titles and headings.
 // The first level that fits is used; none fitting fails the build.
+// The budget is on the gzip size, close to what is transferred (Cloudflare
+// serves brotli, smaller still): the JSON compresses about 4-7x.
 
-export const INDEX_BUDGET = 500_000;
+export const INDEX_BUDGET = 250_000;
+
+/** Gzip size of a text, with the Web Streams API (Node and workerd alike). */
+export async function gzipSize(text: string): Promise<number> {
+  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+  return (await new Response(stream).arrayBuffer()).byteLength;
+}
 
 export type IndexLevel = "full" | "lead" | "headings";
 export const INDEX_LEVELS: IndexLevel[] = ["full", "lead", "headings"];
@@ -61,7 +69,7 @@ async function structuredDataOf(page: PageLike): Promise<StructuredData> {
   return data as StructuredData;
 }
 
-/** The search index as JSON text, at the fullest level within `budget` bytes. */
+/** The search index as JSON text, at the fullest level within `budget` gzipped bytes. */
 export async function buildSearchIndex<C extends LoaderConfig>(source: LoaderOutput<C>, budget = INDEX_BUDGET): Promise<{ level: IndexLevel; json: string }> {
   for (const level of INDEX_LEVELS) {
     const server = createFromSource(source, {
@@ -75,7 +83,7 @@ export async function buildSearchIndex<C extends LoaderConfig>(source: LoaderOut
       }),
     });
     const json = JSON.stringify(await server.export());
-    if (json.length <= budget) return { level, json };
+    if ((await gzipSize(json)) <= budget) return { level, json };
   }
-  throw new Error(`search index is over ${budget} bytes even with titles and headings only`);
+  throw new Error(`search index is over ${budget} gzipped bytes even with titles and headings only`);
 }

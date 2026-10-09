@@ -7,7 +7,12 @@ import { docLink } from "@/lib/site-links";
 import { CopyButton } from "./copy-button";
 
 const t = landing.get;
-const COMMANDS: string = quickstart.commands;
+// The README's commands without their trailing `# …` notes, so the block fits
+// the column as in the prototype (the install docs page keeps the notes).
+const COMMANDS: string = quickstart.commands
+  .split("\n")
+  .map((line) => line.replace(/\s+#\s.*$/, ""))
+  .join("\n");
 
 /** Where Ghira runs today, and the build-from-source commands (one source: the README's quick start). */
 export function GetBand() {
