@@ -52,6 +52,18 @@ describe("CloudSheet", () => {
     expect(calls("cloudSend")).toBe(1);
   });
 
+  it("says General is sent when the meeting's template is one of the user's own, and only then", async () => {
+    window.__ghiSettingsMock!.templateFallback = true;
+    renderSheet();
+    await screen.findByText("Exactly what will be sent");
+    expect((await screen.findByTestId("template-fallback")).textContent).toMatch(/built-in General template is sent\. Your instructions never leave your computer/);
+    cleanup();
+    window.__ghiSettingsMock!.templateFallback = false;
+    renderSheet();
+    await screen.findByText("Exactly what will be sent");
+    expect(screen.queryByTestId("template-fallback")).toBeNull();
+  });
+
   it("cancel closes and never sends", async () => {
     const { onOpenChange } = renderSheet();
     await screen.findByText("Exactly what will be sent");

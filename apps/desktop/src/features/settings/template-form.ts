@@ -12,12 +12,13 @@ export const MAX_TEMPLATES = 20;
 
 const len = (s: string) => Array.from(s.split(/\s+/).filter(Boolean).join(" ")).length;
 
-export type FormIssue = "nameRequired" | "titleRequired" | null;
+export type FormIssue = "nameRequired" | "guidanceTooLong" | "titleRequired" | null;
 
 /** The first thing wrong with the form (the core refuses the same). */
 export function formIssue(f: TemplateForm): FormIssue {
   if (len(f.name) < 1 || len(f.name) > MAX_NAME) return "nameRequired";
-  if (len(f.guidance) > MAX_GUIDANCE || f.sections.length > MAX_SECTIONS) return "titleRequired";
+  if (len(f.guidance) > MAX_GUIDANCE) return "guidanceTooLong";
+  if (f.sections.length > MAX_SECTIONS) return "titleRequired";
   for (const s of f.sections) {
     if (len(s.title) < 1 || len(s.title) > MAX_SECTION_TITLE || len(s.instruction) < 1 || len(s.instruction) > MAX_INSTRUCTION) return "titleRequired";
   }

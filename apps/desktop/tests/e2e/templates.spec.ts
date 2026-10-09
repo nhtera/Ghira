@@ -72,6 +72,8 @@ test("a built-in template duplicates into an editable copy; Save needs a complet
   await expect(editor.getByRole("button", { name: "Save template" })).toBeDisabled();
   await editor.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByTestId("builtin-templates")).toBeVisible();
+  // Cancelled: no copy was made.
+  await expect(page.getByTestId("user-templates").getByRole("listitem")).toHaveCount(0);
 });
 
 test("axe finds nothing on the templates list and the editor", async ({ page }) => {

@@ -70,6 +70,8 @@ pub struct Core {
     query_embedder: QueryEmbedder,
     /// Ask answers waiting to be saved to the notes (by id).
     answers: crate::cloud_cmd::AnswerCache,
+    /// Held while the template list is read, changed and written (no lost updates).
+    templates: Mutex<()>,
     events: EventTx,
     hooks: CoreHooks,
     /// The launch lock check ran (see [`CoreHooks::gate_launch`]).
@@ -496,6 +498,11 @@ impl Core {
         &self.answers
     }
 
+    /// Held across a read-change-write of the user's templates.
+    pub(crate) fn templates_guard(&self) -> MutexGuard<'_, ()> {
+        lock(&self.templates)
+    }
+
     /// Ask answers can be saved to the notes here (not on the phone).
     pub(crate) fn keeps_answers(&self) -> bool {
         !self.hooks.no_saved_answers
@@ -588,6 +595,7 @@ impl Core {
             recovered: Mutex::new(Vec::new()),
             sensitive_next: std::sync::atomic::AtomicBool::new(false),
             answers: Default::default(),
+            templates: Mutex::new(()),
             events,
             hooks,
             launch_checked: std::sync::atomic::AtomicBool::new(false),

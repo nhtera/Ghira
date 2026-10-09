@@ -6,7 +6,7 @@
 //! same parser as the built-in files, and are used as `user:<gid>`. Like the
 //! other content commands they refuse while the app is locked.
 
-use ghi_core::user_templates::{self as store_of, UserTemplate};
+use ghi_core::user_templates::{self as store_of, Records, UserTemplate};
 use ghi_llm::template::{Editor, EditorSection, OutLang, Template};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -94,25 +94,31 @@ fn view(u: &UserTemplate) -> Option<UserTemplateView> {
     })
 }
 
-fn new_gid(taken: &[UserTemplate]) -> String {
+fn new_gid(taken: &[String]) -> String {
     loop {
         let mut b = [0u8; 6];
         OsRng.fill_bytes(&mut b);
         let g = format!("t{}", b.iter().map(|x| format!("{x:02x}")).collect::<String>());
-        if !taken.iter().any(|u| u.gid == g) {
+        if !taken.contains(&g) {
             return g;
         }
     }
 }
 
+/// Section ids a template gave up that are remembered (so none is given twice).
+const RETIRED_KEPT: usize = 200;
+
 pub(crate) fn list_now(c: &Core) -> Result<Vec<UserTemplateView>, String> {
     let store = c.store()?;
-    Ok(store_of::load(&store)?.iter().filter_map(view).collect())
+    let _g = c.templates_guard();
+    Ok(Records::load(&store)?.usable().into_iter().filter_map(view).collect())
 }
 
 pub(crate) fn create_now(c: &Core, form: &TemplateForm) -> Result<UserTemplateView, String> {
     let store = c.store()?;
-    let mut all = store_of::load(&store)?;
+    // The whole read-change-write: two creates at once cannot lose one.
+    let _g = c.templates_guard();
+    let mut all = Records::load(&store)?;
     if all.len() >= store_of::MAX_USER_TEMPLATES {
         return Err(format!(
             "at most {} templates: delete one first",
@@ -120,7 +126,7 @@ pub(crate) fn create_now(c: &Core, form: &TemplateForm) -> Result<UserTemplateVi
         ));
     }
     // A new template has no sections yet: none of the form's may name an id.
-    let gid = new_gid(&all);
+    let gid = new_gid(&all.gids());
     let t = Template::from_editor(&gid, &editor_of(form)?, &[], &[]).map_err(|e| e.to_string())?;
     let u = UserTemplate {
         gid,
@@ -130,18 +136,16 @@ pub(crate) fn create_now(c: &Core, form: &TemplateForm) -> Result<UserTemplateVi
     };
     let out = view(&u).ok_or("the template could not be read back")?;
     all.push(u);
-    store_of::save(&store, &all)?;
+    all.save(&store)?;
     Ok(out)
 }
 
 pub(crate) fn update_now(c: &Core, id: &str, form: &TemplateForm) -> Result<UserTemplateView, String> {
     let store = c.store()?;
-    let mut all = store_of::load(&store)?;
+    let _g = c.templates_guard();
+    let mut all = Records::load(&store)?;
     let gid = store_of::gid_of(id).ok_or("not a template of yours")?;
-    let u = all
-        .iter_mut()
-        .find(|u| u.gid == gid)
-        .ok_or("this template is gone")?;
+    let u = all.find_mut(gid).ok_or("this template is gone")?;
     let old = u.template().ok_or("this template is gone")?;
     let known: Vec<String> = old.sections.iter().map(|s| s.id.clone()).collect();
     let t = Template::from_editor(&u.gid, &editor_of(form)?, &known, &u.retired)
@@ -152,28 +156,32 @@ pub(crate) fn update_now(c: &Core, id: &str, form: &TemplateForm) -> Result<User
             u.retired.push(k);
         }
     }
+    if u.retired.len() > RETIRED_KEPT {
+        let extra = u.retired.len() - RETIRED_KEPT;
+        u.retired.drain(..extra);
+    }
     u.lang = form.language.clone();
     u.toml = t.to_toml();
     let out = view(u).ok_or("the template could not be read back")?;
-    store_of::save(&store, &all)?;
+    all.save(&store)?;
     Ok(out)
 }
 
 pub(crate) fn delete_now(c: &Core, id: &str) -> Result<(), String> {
     let store = c.store()?;
-    let mut all = store_of::load(&store)?;
+    let _g = c.templates_guard();
+    let mut all = Records::load(&store)?;
     let gid = store_of::gid_of(id).ok_or("not a template of yours")?;
-    let before = all.len();
-    all.retain(|u| u.gid != gid);
-    if all.len() == before {
+    // Meetings that used it keep their notes and every section (their blocks name them).
+    if !all.remove(gid) {
         return Err("this template is gone".into());
     }
-    // Meetings that used it keep their notes and every section (their blocks name them).
-    store_of::save(&store, &all)
+    all.save(&store)
 }
 
-/// A copy of a built-in template (or one of yours) to edit, in `language`.
-pub(crate) fn duplicate_now(c: &Core, id: &str, language: &str) -> Result<UserTemplateView, String> {
+/// A form to start from: a copy of a built-in template (or one of yours) in
+/// `language`. Nothing is saved: the person edits it and saves, or cancels.
+pub(crate) fn duplicate_now(c: &Core, id: &str, language: &str) -> Result<TemplateForm, String> {
     let lang = lang_of(language)?;
     let store = c.store()?;
     let t = if store_of::gid_of(id).is_some() {
@@ -182,18 +190,15 @@ pub(crate) fn duplicate_now(c: &Core, id: &str, language: &str) -> Result<UserTe
         ghi_llm::template::builtin(id).map_err(|e| e.to_string())?
     };
     let mut form = form_of(&t, lang);
-    form.name = format!("{} (copy)", form.name.trim_end());
-    form.name = form.name.chars().take(ghi_llm::template::MAX_NAME).collect();
     // The copy is a new template: its sections get ids of their own.
     for s in &mut form.sections {
         s.id = None;
+        s.instruction = s.instruction.chars().take(ghi_llm::template::MAX_INSTRUCTION).collect();
+        s.title = s.title.chars().take(ghi_llm::template::MAX_SECTION_TITLE).collect();
     }
     form.guidance = form.guidance.chars().take(ghi_llm::template::MAX_GUIDANCE).collect();
-    for s in &mut form.sections {
-        s.instruction = s.instruction.chars().take(ghi_llm::template::MAX_INSTRUCTION).collect();
-    }
     form.sections.truncate(ghi_llm::template::MAX_SECTIONS);
-    create_now(c, &form)
+    Ok(form)
 }
 
 /// Your templates.
@@ -234,7 +239,7 @@ pub async fn duplicate_template(
     core: CoreState<'_>,
     id: String,
     language: String,
-) -> Result<UserTemplateView, String> {
+) -> Result<TemplateForm, String> {
     blocking(&core, move |c| duplicate_now(c, &id, &language)).await
 }
 
@@ -316,16 +321,109 @@ mod tests {
     }
 
     #[test]
-    fn duplicating_a_builtin_makes_an_editable_copy_in_the_chosen_language() {
+    fn duplicating_makes_an_unsaved_form_in_the_chosen_language() {
         let (_t, c) = fix();
         let en = duplicate_now(&c, "standup", "en").unwrap();
-        assert_eq!(en.form.name, "Standup (copy)");
-        assert_eq!(en.form.sections.len(), 3);
-        assert_eq!(en.form.sections[0].title, "Done");
-        let vi = duplicate_now(&c, &en.id, "vi").unwrap();
-        assert_eq!(vi.form.language, "vi");
+        assert_eq!(en.name, "Standup");
+        assert_eq!(en.sections.len(), 3);
+        assert_eq!(en.sections[0].title, "Done");
+        assert!(en.sections.iter().all(|s| s.id.is_none()), "a new template, new ids");
+        let vi = duplicate_now(&c, "standup", "vi").unwrap();
+        assert_eq!((vi.language.as_str(), vi.sections[0].title.as_str()), ("vi", "Đã làm"));
         assert!(duplicate_now(&c, "nope", "en").is_err());
-        assert_eq!(list_now(&c).unwrap().len(), 2);
+        assert!(duplicate_now(&c, "standup", "fr").is_err());
+        // Nothing was saved: only Save creates it.
+        assert!(list_now(&c).unwrap().is_empty());
+        // The form is valid as it is.
+        let made = create_now(&c, &en).unwrap();
+        let again = duplicate_now(&c, &made.id, "en").unwrap();
+        assert_eq!(again.sections.len(), 3);
+        assert_eq!(list_now(&c).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn creates_at_once_all_land() {
+        let (_t, c) = fix();
+        std::thread::scope(|s| {
+            let hs: Vec<_> = (0..12)
+                .map(|n| {
+                    let c = &c;
+                    s.spawn(move || create_now(c, &form(&format!("T{n}"), &["A"])).unwrap())
+                })
+                .collect();
+            for h in hs {
+                h.join().unwrap();
+            }
+        });
+        let names: std::collections::BTreeSet<String> =
+            list_now(&c).unwrap().into_iter().map(|u| u.form.name).collect();
+        assert_eq!(names.len(), 12, "{names:?}");
+    }
+
+    #[test]
+    fn an_edit_and_a_delete_at_once_do_not_undo_each_other() {
+        let (_t, c) = fix();
+        let a = create_now(&c, &form("A", &["X"])).unwrap();
+        let b = create_now(&c, &form("B", &["X"])).unwrap();
+        std::thread::scope(|s| {
+            let (c1, c2) = (&c, &c);
+            let (a1, b1) = (a.clone(), b.clone());
+            let h1 = s.spawn(move || {
+                let mut f = a1.form.clone();
+                f.name = "A renamed".into();
+                update_now(c1, &a1.id, &f).unwrap()
+            });
+            let h2 = s.spawn(move || delete_now(c2, &b1.id).unwrap());
+            h1.join().unwrap();
+            h2.join().unwrap();
+        });
+        let left = list_now(&c).unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].form.name, "A renamed");
+    }
+
+    #[test]
+    fn templates_this_version_cannot_read_survive_a_save_and_the_cap_counts_them() {
+        let (_t, c) = fix();
+        let store = c.store().unwrap();
+        let mut list: Vec<serde_json::Value> = (0..store_of::MAX_USER_TEMPLATES)
+            .map(|n| serde_json::json!({ "gid": format!("tf{n}"), "from": "a newer app" }))
+            .collect();
+        store.set_setting(store_of::KEY, &serde_json::Value::Array(list.clone())).unwrap();
+        assert!(list_now(&c).unwrap().is_empty());
+        assert!(create_now(&c, &form("X", &["A"])).is_err(), "twenty entries, readable or not");
+        list.pop();
+        store.set_setting(store_of::KEY, &serde_json::Value::Array(list)).unwrap();
+        create_now(&c, &form("X", &["A"])).unwrap();
+        let raw = store.get_setting(store_of::KEY).unwrap().unwrap();
+        assert_eq!(raw.as_array().unwrap().len(), store_of::MAX_USER_TEMPLATES);
+        assert_eq!(raw[0]["from"], "a newer app");
+        // A value that is not a list is never overwritten.
+        store.set_setting(store_of::KEY, &serde_json::json!("garbage")).unwrap();
+        assert!(create_now(&c, &form("Y", &["A"])).is_err());
+        assert_eq!(store.get_setting(store_of::KEY).unwrap().unwrap(), "garbage");
+    }
+
+    #[test]
+    fn the_retired_ids_are_capped() {
+        let (_t, c) = fix();
+        let made = create_now(&c, &form("A", &["X"])).unwrap();
+        let mut f = made.form.clone();
+        // Churn sections: each round drops the section and adds a new one.
+        let mut cur = made;
+        for n in 0..210 {
+            f = cur.form.clone();
+            f.sections = vec![FormSection {
+                id: None,
+                title: format!("Part {n}"),
+                instruction: "i".into(),
+            }];
+            cur = update_now(&c, &cur.id, &f).unwrap();
+        }
+        let raw = c.store().unwrap().get_setting(store_of::KEY).unwrap().unwrap();
+        assert!(raw[0]["retired"].as_array().unwrap().len() <= 200);
+        assert_eq!(cur.form.sections.len(), 1);
+        let _ = f;
     }
 
     #[test]

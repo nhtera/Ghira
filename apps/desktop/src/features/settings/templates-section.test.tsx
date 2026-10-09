@@ -56,7 +56,6 @@ describe("TemplatesSection", () => {
     const editor = within(screen.getByTestId("template-editor"));
     const save = editor.getByRole("button", { name: "Save template" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
-    expect(editor.getByText("Give the template a name.")).toBeTruthy();
     await user.type(editor.getByRole("textbox", { name: "Name" }), "Weekly review");
     expect(save.disabled).toBe(true);
     expect(editor.getByText(/needs a title/)).toBeTruthy();
@@ -115,16 +114,63 @@ describe("TemplatesSection", () => {
     await waitFor(() => expect(commands.deleteTemplate).toHaveBeenCalledWith("user:t1"));
   });
 
-  it("duplicating a built-in one opens the copy in the editor, in the interface language", async () => {
+  it("duplicating opens an unsaved form with a localized copy name; only Save creates it", async () => {
     const user = userEvent.setup();
     commands.duplicateTemplate.mockImplementation((_id: string, language: string) =>
-      ok({ id: "user:t3", form: { name: "Standup (copy)", language, guidance: "", sections: [{ id: "done", title: "Done", instruction: "What was done." }] } }),
+      ok({ name: "Standup", language, guidance: "", sections: [{ id: null, title: "Done", instruction: "What was done." }] }),
     );
+    commands.createTemplate.mockImplementation((f: TemplateForm) => ok({ id: "user:t3", form: f }));
     renderSettings(<TemplatesSection />);
     await user.click(await screen.findByRole("button", { name: "Duplicate Standup" }));
     expect(commands.duplicateTemplate).toHaveBeenCalledWith("standup", "en");
-    const editor = within(await screen.findByTestId("template-editor"));
+    let editor = within(await screen.findByTestId("template-editor"));
     expect((editor.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Standup (copy)");
+    // Cancel: nothing was created.
+    await user.click(editor.getByRole("button", { name: "Cancel" }));
+    expect(commands.createTemplate).not.toHaveBeenCalled();
+    // Again, then Save: one template, with the copy name.
+    await user.click(await screen.findByRole("button", { name: "Duplicate Standup" }));
+    editor = within(await screen.findByTestId("template-editor"));
+    await user.click(editor.getByRole("button", { name: "Save template" }));
+    await waitFor(() => expect(commands.createTemplate).toHaveBeenCalledTimes(1));
+    expect(commands.createTemplate.mock.calls[0]![0].name).toBe("Standup (copy)");
+  });
+
+  it("does not scold before the person has typed, then says why Save is off", async () => {
+    const user = userEvent.setup();
+    renderSettings(<TemplatesSection />);
+    await user.click(await screen.findByRole("button", { name: "New template" }));
+    const editor = within(screen.getByTestId("template-editor"));
+    expect(editor.queryByText("Give the template a name.")).toBeNull();
+    expect((editor.getByRole("button", { name: "Save template" }) as HTMLButtonElement).disabled).toBe(true);
+    await user.type(editor.getByRole("textbox", { name: "Section 1: title" }), "A");
+    expect(editor.getByText("Give the template a name.")).toBeTruthy();
+  });
+
+  it("removing a section keeps the text of the others where it was typed", async () => {
+    const user = userEvent.setup();
+    renderSettings(<TemplatesSection />);
+    await user.click(await screen.findByRole("button", { name: "New template" }));
+    const editor = within(screen.getByTestId("template-editor"));
+    await user.click(editor.getByRole("button", { name: "Add a section" }));
+    await user.type(editor.getByRole("textbox", { name: "Section 1: title" }), "First");
+    await user.type(editor.getByRole("textbox", { name: "Section 2: title" }), "Second");
+    await user.click(editor.getByRole("button", { name: "Remove section 1" }));
+    expect((editor.getByRole("textbox", { name: "Section 1: title" }) as HTMLInputElement).value).toBe("Second");
+    expect(editor.getAllByTestId("template-section")).toHaveLength(1);
+  });
+
+  it("a change in flight turns the other buttons off", async () => {
+    const user = userEvent.setup();
+    let done!: (v: unknown) => void;
+    commands.deleteTemplate.mockReturnValue(new Promise((r) => (done = r)));
+    renderSettings(<TemplatesSection />);
+    await user.click(await screen.findByRole("button", { name: "Delete Retro" }));
+    await user.click(screen.getByRole("button", { name: "Delete template" }));
+    expect((screen.getByRole("button", { name: "Edit Retro" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Duplicate Standup" }) as HTMLButtonElement).disabled).toBe(true);
+    done({ status: "ok", data: null });
+    await waitFor(() => expect((screen.getByRole("button", { name: "Edit Retro" }) as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("a refused save stays in the editor and says why", async () => {

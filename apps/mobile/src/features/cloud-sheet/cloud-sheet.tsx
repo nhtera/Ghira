@@ -341,6 +341,15 @@ function CloudFlow({
             )}
             {preview && (
               <>
+                {preview.templateFallback && (
+                  <p
+                    data-testid="template-fallback"
+                    className="text-ios-footnote m-0 flex items-start gap-1.5 text-muted"
+                  >
+                    <Icon name="info" size={16} className="shrink-0" />
+                    {t("mobile.cloudSheet.templateFallback")}
+                  </p>
+                )}
                 <p className="text-ios-footnote m-0 text-muted">
                   {[
                     t("mobile.cloudSheet.tokens", {

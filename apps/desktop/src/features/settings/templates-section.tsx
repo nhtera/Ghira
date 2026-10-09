@@ -13,7 +13,7 @@ import { useTemplates } from "../../state/meeting-queries";
 import { templateName } from "../meeting/template-names";
 import { Card, Note, useFail } from "./parts";
 import { TemplateEditor } from "./template-editor";
-import { MAX_TEMPLATES, emptyForm } from "./template-form";
+import { MAX_NAME, MAX_TEMPLATES, emptyForm } from "./template-form";
 
 const userKey = ["user-templates"] as const;
 
@@ -38,6 +38,8 @@ export function TemplatesSection() {
   const [editing, setEditing] = useState<Editing>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  // A change is on its way: no second one starts (each is one read-change-write in the core).
+  const [busy, setBusy] = useState(false);
   const yours = mine.data ?? [];
   const atLimit = yours.length >= MAX_TEMPLATES;
 
@@ -46,22 +48,29 @@ export function TemplatesSection() {
 
   const save = async (form: TemplateForm) => {
     setSaving(true);
+    setBusy(true);
     const r = editing?.id ? await ipc.commands.updateTemplate(editing.id, form) : await ipc.commands.createTemplate(form);
     setSaving(false);
+    setBusy(false);
     if (r.status === "error") return fail(r.error);
     setEditing(null);
     show({ tone: "success", title: t("settings.templates.saved") });
     void changed();
   };
+  // A copy is a form to edit: nothing is saved until Save, so cancelling leaves no trace.
   const duplicate = async (id: string) => {
+    setBusy(true);
     const r = await ipc.commands.duplicateTemplate(id, language);
+    setBusy(false);
     if (r.status === "error") return fail(r.error);
-    void changed();
-    setEditing({ id: r.data.id, form: r.data.form });
+    const name = Array.from(t("settings.templates.copyName", { name: r.data.name })).slice(0, MAX_NAME).join("");
+    setEditing({ id: null, form: { ...r.data, name } });
   };
   const remove = async (id: string) => {
     setDeleting(null);
+    setBusy(true);
     const r = await ipc.commands.deleteTemplate(id);
+    setBusy(false);
     if (r.status === "error") return fail(r.error);
     show({ tone: "success", title: t("settings.templates.deleted") });
     void changed();
@@ -89,13 +98,13 @@ export function TemplatesSection() {
                         <div className="text-[14px] font-medium">{u.form.name}</div>
                         <div className="text-[12.5px] text-muted">{sectionCount(u.form.sections.length)}</div>
                       </div>
-                      <Button size="sm" aria-label={t("settings.templates.editOf", { name: u.form.name })} onClick={() => setEditing({ id: u.id, form: u.form })}>
+                      <Button size="sm" disabled={busy} aria-label={t("settings.templates.editOf", { name: u.form.name })} onClick={() => setEditing({ id: u.id, form: u.form })}>
                         {t("settings.templates.edit")}
                       </Button>
-                      <Button size="sm" variant="ghost" aria-label={t("settings.templates.duplicateOf", { name: u.form.name })} disabled={atLimit} onClick={() => void duplicate(u.id)}>
+                      <Button size="sm" variant="ghost" aria-label={t("settings.templates.duplicateOf", { name: u.form.name })} disabled={atLimit || busy} onClick={() => void duplicate(u.id)}>
                         {t("settings.templates.duplicate")}
                       </Button>
-                      <Button size="sm" variant="ghost" icon="delete" aria-label={t("settings.templates.deleteOf", { name: u.form.name })} onClick={() => setDeleting(u.id)} />
+                      <Button size="sm" variant="ghost" icon="delete" disabled={busy} aria-label={t("settings.templates.deleteOf", { name: u.form.name })} onClick={() => setDeleting(u.id)} />
                     </>
                   )}
                 </li>
@@ -118,7 +127,7 @@ export function TemplatesSection() {
                       <div className="text-[14px] font-medium">{templateName(x.id, t, x.name)}</div>
                       <div className="text-[12.5px] text-muted">{x.sections.length ? x.sections.map((s) => (language === "vi" ? s.titleVi : s.titleEn)).join(" · ") : sectionCount(0)}</div>
                     </div>
-                    <Button size="sm" aria-label={t("settings.templates.duplicateOf", { name: templateName(x.id, t, x.name) })} disabled={atLimit} onClick={() => void duplicate(x.id)}>
+                    <Button size="sm" aria-label={t("settings.templates.duplicateOf", { name: templateName(x.id, t, x.name) })} disabled={atLimit || busy} onClick={() => void duplicate(x.id)}>
                       {t("settings.templates.duplicate")}
                     </Button>
                   </li>

@@ -303,40 +303,26 @@ fn sections_of(t: &ghi_llm::template::Template) -> Vec<TemplateSection> {
 
 /// A template by id: a built-in, or `user:<gid>` (this device's own).
 fn template_of(store: &Store, id: &str) -> Option<ghi_llm::template::Template> {
-    if ghi_core::user_templates::gid_of(id).is_some() {
-        ghi_core::user_templates::find(store, id)
-    } else {
-        ghi_llm::template::builtin(id).ok()
-    }
+    ghi_core::user_templates::template_of(store, id)
 }
 
-/// The sections of the Notes tab: the meeting's template's own, then any
-/// `section:<id>` the blocks hold that the template does not list (it was
-/// edited or deleted, or the notes were written on the computer with a
-/// template this device does not have), so no section ever disappears. Their
-/// titles are the ids as words.
+/// The sections of the Notes tab: the template's own, then any `section:<id>`
+/// the blocks hold that the template does not list (see
+/// [`ghi_core::user_templates::sections_for`], which the exports share), so no
+/// section ever disappears.
 pub fn sections_for(
     store: &Store,
     template: Option<&str>,
     blocks: &[ghi_store::store::NoteBlock],
 ) -> Vec<TemplateSection> {
-    let mut out = template_of(store, template.unwrap_or("general"))
-        .map(|t| sections_of(&t))
-        .unwrap_or_default();
-    for b in blocks {
-        let Some(id) = b.kind.strip_prefix("section:") else {
-            continue;
-        };
-        if !out.iter().any(|s| s.id == id) {
-            let title = ghi_llm::template::humanize_id(id);
-            out.push(TemplateSection {
-                id: id.to_string(),
-                title_en: title.clone(),
-                title_vi: title,
-            });
-        }
-    }
-    out
+    ghi_core::user_templates::sections_for(store, template, blocks.iter().map(|b| b.kind.as_str()))
+        .into_iter()
+        .map(|s| TemplateSection {
+            id: s.id,
+            title_en: s.title_en,
+            title_vi: s.title_vi,
+        })
+        .collect()
 }
 
 /// Whether a block of this kind covers a mark. Only what the Notes tab draws

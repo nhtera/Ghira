@@ -721,6 +721,7 @@
       "new": "New template",
       "duplicate": "Duplicate",
       "duplicateOf": "Duplicate {{name}}",
+      "copyName": "{{name}} (copy)",
       "edit": "Edit",
       "editOf": "Edit {{name}}",
       "delete": "Delete",
@@ -750,6 +751,7 @@
         "save": "Save template",
         "count": "{{used}} / {{max}}",
         "nameRequired": "Give the template a name.",
+        "guidanceTooLong": "The description is too long: 400 characters at most.",
         "titleRequired": "Every section needs a title and a line on what goes in it."
       }
     },

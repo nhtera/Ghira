@@ -309,6 +309,7 @@
       "none": "None"
     },
     "cloudSheet": {
+      "templateFallback": "This meeting uses one of your own templates, so the built-in General template is sent. Your instructions never leave your computer.",
       "title": "Improve with cloud",
       "intro": "Only the transcript text leaves this phone, never audio. You see exactly what is sent before anything goes.",
       "provider": "{{provider}} · {{model}}",

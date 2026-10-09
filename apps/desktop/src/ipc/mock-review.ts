@@ -276,7 +276,7 @@ const slug = (title: string, taken: string[]) => {
       .replace(/^_+|_+$/g, "")
       .slice(0, 24) || "s";
   let id = /^[a-z]/.test(base) ? base : `s_${base}`;
-  for (let n = 2; taken.includes(id) || ["tldr", "decisions", "actions"].includes(id); n++) id = `${base}_${n}`;
+  for (let n = 2; taken.includes(id) || ["tldr", "decisions", "action_items", "open_questions", "key_quotes", "topics"].includes(id); n++) id = `${base}_${n}`;
   return id;
 };
 
@@ -736,14 +736,12 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
       const src = userTpls.find((u) => u.id === id);
       const builtin = TEMPLATES.find((t) => t.id === id);
       if (!src && !builtin) return fail(`unknown template ${id}`);
-      const sections = src ? src.form.sections : (builtin?.sections ?? []).map((s) => ({ id: null, title: language === "vi" ? s.titleVi : s.titleEn, instruction: "What belongs in this section." }));
-      const name = src ? src.form.name : builtin!.name;
-      if (userTpls.length >= MAX_USER) return fail(`at most ${MAX_USER} templates: delete one first`);
-      const v = formToView(`user:t${String(++userSeq).padStart(12, "0")}`, { name: `${name} (copy)`, language, guidance: src?.form.guidance ?? "", sections: sections.map((s) => ({ ...s, id: null })) }, [], []);
-      if (typeof v === "string") return fail(v);
-      userTpls.push(v);
-      return ok(structuredClone(v));
+      if (language !== "en" && language !== "vi") return fail("the language is en or vi");
+      // A form to edit, not a saved template: sections get new ids when it is saved.
+      const sections = src ? src.form.sections.map((s) => ({ id: null, title: s.title, instruction: s.instruction })) : (builtin?.sections ?? []).map((s) => ({ id: null, title: language === "vi" ? s.titleVi : s.titleEn, instruction: "What belongs in this section." }));
+      return ok({ name: src ? src.form.name : builtin!.name, language, guidance: src?.form.guidance ?? "", sections });
     },
+
     regenerateNotes: (m, template) => {
       const r = row(m);
       if (!r) return fail(`meeting not found: ${m}`);

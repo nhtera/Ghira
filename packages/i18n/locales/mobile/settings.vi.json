@@ -306,6 +306,7 @@
       "none": "Không có"
     },
     "cloudSheet": {
+      "templateFallback": "Cuộc họp này dùng mẫu của riêng bạn nên mẫu Chung có sẵn sẽ được gửi đi. Hướng dẫn của bạn không rời khỏi máy tính của bạn.",
       "title": "Cải thiện bằng đám mây",
       "intro": "Chỉ văn bản bản ghi rời khỏi điện thoại, không bao giờ gửi âm thanh. Bạn thấy đúng nội dung sẽ gửi trước khi gửi.",
       "provider": "{{provider}} · {{model}}",

@@ -215,7 +215,7 @@ export const commands = {
 	createTemplate: (form: TemplateForm) => typedError<UserTemplateView, string>(__TAURI_INVOKE("create_template", { form })),
 	updateTemplate: (id: string, form: TemplateForm) => typedError<UserTemplateView, string>(__TAURI_INVOKE("update_template", { id, form })),
 	deleteTemplate: (id: string) => typedError<null, string>(__TAURI_INVOKE("delete_template", { id })),
-	duplicateTemplate: (id: string, language: string) => typedError<UserTemplateView, string>(__TAURI_INVOKE("duplicate_template", { id, language })),
+	duplicateTemplate: (id: string, language: string) => typedError<TemplateForm, string>(__TAURI_INVOKE("duplicate_template", { id, language })),
 	/**
 	 *  Rewrites the AI notes (template and language as chosen); what the user
 	 *  wrote, edited, pinned or ticked off stays [RT-7]. Returns whether it waits

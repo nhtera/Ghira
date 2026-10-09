@@ -5,7 +5,7 @@
 // section keeps its id (`id` is sent back as it came) so renaming never
 // detaches notes already written.
 import { Button, Icon, Segmented } from "@ghi/ui";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TemplateForm } from "../../bindings";
 import { inputCls } from "./parts";
@@ -26,10 +26,26 @@ export function TemplateEditor({
 }) {
   const { t } = useTranslation();
   const [form, setForm] = useState(initial);
+  // Each section row keeps its own key (not its position or id): removing one never moves another's text.
+  const nextKey = useRef(initial.sections.length);
+  const [keys, setKeys] = useState(() => initial.sections.map((_, i) => i));
+  // The reason Save is off is only said once the person has started typing.
+  const [touched, setTouched] = useState(false);
   const uid = useId();
   const issue = formIssue(form);
-  const set = (p: Partial<TemplateForm>) => setForm((f) => ({ ...f, ...p }));
+  const set = (p: Partial<TemplateForm>) => {
+    setTouched(true);
+    setForm((f) => ({ ...f, ...p }));
+  };
   const setSection = (i: number, p: Partial<TemplateForm["sections"][number]>) => set({ sections: form.sections.map((s, k) => (k === i ? { ...s, ...p } : s)) });
+  const addSection = () => {
+    setKeys((k) => [...k, nextKey.current++]);
+    set({ sections: [...form.sections, { id: null, title: "", instruction: "" }] });
+  };
+  const removeSection = (i: number) => {
+    setKeys((k) => k.filter((_, n) => n !== i));
+    set({ sections: form.sections.filter((_, n) => n !== i) });
+  };
 
   return (
     <form
@@ -49,9 +65,7 @@ export function TemplateEditor({
         <input id={`${uid}-name`} value={form.name} maxLength={MAX_NAME} onChange={(e) => set({ name: e.target.value })} className={inputCls} />
       </div>
       <div className="flex items-center gap-3">
-        <span id={`${uid}-lang`} className="text-[13px] font-medium">
-          {t("settings.templates.editor.language")}
-        </span>
+        <span className="text-[13px] font-medium">{t("settings.templates.editor.language")}</span>
         <Segmented<string>
           label={t("settings.templates.editor.language")}
           value={form.language}
@@ -75,7 +89,7 @@ export function TemplateEditor({
         <legend className="mb-1 p-0 text-[13px] font-medium">{t("settings.templates.editor.sections")}</legend>
         <p className="m-0 text-[12px] text-muted">{t("settings.templates.editor.sectionsHint")}</p>
         {form.sections.map((s, i) => (
-          <div key={s.id ?? `new-${i}`} data-testid="template-section" className="flex flex-col gap-1.5 rounded-panel border border-line2 p-2.5">
+          <div key={keys[i]} data-testid="template-section" className="flex flex-col gap-1.5 rounded-panel border border-line2 p-2.5">
             <div className="flex items-center gap-2">
               <input
                 aria-label={t("settings.templates.editor.sectionTitle", { number: i + 1 })}
@@ -84,7 +98,7 @@ export function TemplateEditor({
                 onChange={(e) => setSection(i, { title: e.target.value })}
                 className={`${inputCls} flex-1 font-semibold`}
               />
-              <Button size="sm" variant="ghost" icon="close" aria-label={t("settings.templates.editor.removeSection", { number: i + 1 })} onClick={() => set({ sections: form.sections.filter((_, k) => k !== i) })} />
+              <Button size="sm" variant="ghost" icon="close" aria-label={t("settings.templates.editor.removeSection", { number: i + 1 })} onClick={() => removeSection(i)} />
             </div>
             <input
               aria-label={t("settings.templates.editor.sectionInstruction", { number: i + 1 })}
@@ -98,11 +112,11 @@ export function TemplateEditor({
             </span>
           </div>
         ))}
-        <Button size="sm" icon="add" disabled={form.sections.length >= MAX_SECTIONS} onClick={() => set({ sections: [...form.sections, { id: null, title: "", instruction: "" }] })} className="self-start">
+        <Button size="sm" icon="add" disabled={form.sections.length >= MAX_SECTIONS} onClick={addSection} className="self-start">
           {t("settings.templates.editor.addSection")}
         </Button>
       </fieldset>
-      {issue && (
+      {issue && touched && (
         <p role="status" className="m-0 flex items-center gap-1.5 text-[12.5px] text-muted">
           <Icon name="info" size={14} />
           {t(`settings.templates.editor.${issue}`)}

@@ -60,6 +60,8 @@ export interface GhiSettingsMock {
   failSend: string[];
   /** Meeting ids with cloud AI off. */
   cloudLocked: string[];
+  /** The preview says General is sent (the meeting's template is one of the user's own). */
+  templateFallback: boolean;
   /** The share-extension inbox. */
   inbox: InboxItem[];
   /** How long a confirmed inbox item stays "importing" (ms). */
@@ -145,6 +147,7 @@ const hooks: GhiSettingsMock = {
   packsOn: [],
   failSend: [],
   cloudLocked: [],
+  templateFallback: false,
   inbox: [],
   inboxImportMs: 250,
   exportedWith: null,
@@ -165,7 +168,7 @@ const hooks: GhiSettingsMock = {
     mobile = freshMobile();
     meDeleted = false;
     ignored = [];
-    Object.assign(hooks, { calls: {}, args: {}, locked: false, starting: false, storeProblem: null, startupFails: false, noAuthMethod: false, warnings: [], retentionNote: "", faceIdOk: true, faceIdPrompts: 0, busy: false, keys: {}, lastKey: "", cloudRequests: 0, logAt: null, terms: [], learned: ["Linh Trần"], maxTerms: 200, packsOn: [], failSend: [], cloudLocked: [], inbox: [], inboxImportMs: 250, exportedWith: null, wiped: false });
+    Object.assign(hooks, { calls: {}, args: {}, locked: false, starting: false, storeProblem: null, startupFails: false, noAuthMethod: false, warnings: [], retentionNote: "", faceIdOk: true, faceIdPrompts: 0, busy: false, keys: {}, lastKey: "", cloudRequests: 0, logAt: null, terms: [], learned: ["Linh Trần"], maxTerms: 200, packsOn: [], failSend: [], cloudLocked: [], templateFallback: false, inbox: [], inboxImportMs: 250, exportedWith: null, wiped: false });
   },
 };
 if (typeof window !== "undefined") {
@@ -385,7 +388,7 @@ const scripted: Partial<Commands> = {
       redactions: ask.redact ? [{ kind: "PERSON", count: 2 }] : [],
       excerptBefore: RAW_TEXT,
       excerptAfter: ask.redact ? REDACTED_TEXT : RAW_TEXT,
-      templateFallback: false,
+      templateFallback: hooks.templateFallback,
     });
   },
   cloudSend: async (id) => {

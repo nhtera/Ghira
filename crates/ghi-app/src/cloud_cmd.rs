@@ -430,6 +430,28 @@ fn answer_view(
     })
 }
 
+/// The template a cloud notes request uses: the one asked for, else the
+/// meeting's own, else General. One of the user's own (`user:<gid>`) is never
+/// sent, instructions and all: General goes instead, and the flag says so for
+/// the preview.
+pub(crate) fn cloud_notes_template(
+    store: &Store,
+    meeting: &str,
+    asked: Option<String>,
+) -> Result<(ghi_llm::template::Template, bool), String> {
+    let id = asked
+        .or(store.get_meeting(meeting).map_err(err)?.template)
+        .unwrap_or_else(|| "general".into());
+    if ghi_core::user_templates::gid_of(&id).is_some() {
+        let general = ghi_llm::template::builtin("general").map_err(|e| e.to_string())?;
+        return Ok((general, true));
+    }
+    Ok((
+        ghi_llm::template::builtin(&id).map_err(|e| e.to_string())?,
+        false,
+    ))
+}
+
 /// Builds the exact request for the sheet (nothing is sent).
 #[tauri::command]
 #[specta::specta]
@@ -452,16 +474,10 @@ pub async fn cloud_preview(
         let mut template_fallback = false;
         let task = match ask.task {
             CloudTask::Notes { template, language } => {
-                let mut id = template
-                    .or(store.get_meeting(&meeting).map_err(err)?.template)
-                    .unwrap_or_else(|| "general".into());
-                // Your own templates' instructions never leave the device: General is sent.
-                if ghi_core::user_templates::gid_of(&id).is_some() {
-                    id = "general".into();
-                    template_fallback = true;
-                }
+                let (template, fallback) = cloud_notes_template(&store, &meeting, template)?;
+                template_fallback = fallback;
                 Task::Notes {
-                    template: ghi_llm::template::builtin(&id).map_err(|e| e.to_string())?,
+                    template,
                     lang: out_lang(language, &store, &meeting)?,
                 }
             }
@@ -1211,5 +1227,83 @@ mod tests {
         .unwrap();
         assert!(v.id.is_none());
         assert!(core.answers().lock().is_empty());
+    }
+
+    #[test]
+    fn a_cloud_request_never_carries_what_is_in_one_of_your_templates() {
+        use ghi_core::cloud::{plan, Planned};
+        use ghi_core::user_templates::{Records, UserTemplate};
+        use ghi_llm::cloud::CloudProvider;
+        use ghi_llm::preview::Prices;
+        use ghi_llm::template::{Editor, EditorSection};
+        let f = fix();
+        let store = f.core.store().unwrap();
+        // A template with words nobody else would write, in every field that could be sent.
+        let t = ghi_llm::template::Template::from_editor(
+            "t77",
+            &Editor {
+                name: "Zebra quarterly".into(),
+                lang: OutLang::En,
+                guidance: "XYLOPHONE-GUIDANCE meetings about zebras".into(),
+                sections: vec![EditorSection {
+                    id: None,
+                    title: "Quokka findings".into(),
+                    instruction: "QUOKKA-INSTRUCTION list every marsupial".into(),
+                }],
+            },
+            &[],
+            &[],
+        )
+        .unwrap();
+        let section_id = t.sections[0].id.clone();
+        let mut r = Records::load(&store).unwrap();
+        r.push(UserTemplate {
+            gid: "t77".into(),
+            lang: "en".into(),
+            toml: t.to_toml(),
+            retired: vec![],
+        });
+        r.save(&store).unwrap();
+
+        let payload_for = |asked: Option<&str>| {
+            let (template, fallback) =
+                cloud_notes_template(&store, &f.meeting, asked.map(String::from)).unwrap();
+            let Planned::Send(p) = plan(
+                &store,
+                &f.meeting,
+                CloudProvider::preset("openai", "gpt-4.1-mini").unwrap(),
+                ghi_core::cloud::Task::Notes {
+                    template,
+                    lang: OutLang::En,
+                },
+                true,
+                &[],
+                &Prices::builtin(),
+            )
+            .unwrap() else {
+                panic!("a request")
+            };
+            (p.preview.payload.clone(), fallback)
+        };
+
+        // Asked for explicitly, or the meeting's own template: General goes, flagged.
+        store.set_meeting_template(&f.meeting, Some("user:t77")).unwrap();
+        for asked in [Some("user:t77"), None] {
+            let (payload, fallback) = payload_for(asked);
+            assert!(fallback, "{asked:?}");
+            for secret in ["XYLOPHONE", "QUOKKA", "Zebra", "Quokka", section_id.as_str(), "user:t77"] {
+                assert!(!payload.contains(secret), "{secret} left the device: {payload}");
+            }
+            assert!(payload.contains("we ship on the 12th"), "still the transcript");
+        }
+        // A built-in template is sent as it is, and says nothing about falling back.
+        store.set_meeting_template(&f.meeting, None).unwrap();
+        let (payload, fallback) = payload_for(Some("standup"));
+        assert!(!fallback);
+        assert!(payload.contains("blockers"), "the standup's own section: {payload}");
+        let (_, fallback) = payload_for(None);
+        assert!(!fallback, "no template at all is General, not a fallback");
+        // An id that is neither is refused, not silently General.
+        assert!(cloud_notes_template(&store, &f.meeting, Some("nope".into())).is_err());
     }
 }

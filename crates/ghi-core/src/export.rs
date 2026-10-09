@@ -776,29 +776,21 @@ fn note_sections(
     };
     push(s.summary.into(), ai("tldr"));
 
-    // Template sections in template order, then any other `section:<id>`.
-    let template = m
-        .template
-        .as_deref()
-        .and_then(|id| ghi_llm::template::builtin(id).ok());
-    let mut ids: Vec<(String, String)> = template
-        .iter()
-        .flat_map(|t| &t.sections)
-        .map(|sec| {
-            let title = match lang {
-                Lang::En => &sec.title_en,
-                Lang::Vi => &sec.title_vi,
-            };
-            (sec.id.clone(), title.clone())
-        })
-        .collect();
-    for b in &blocks {
-        if let Some(id) = b.kind.strip_prefix("section:")
-            && !ids.iter().any(|(i, _)| i == id)
-        {
-            ids.push((id.to_string(), id.to_string()));
-        }
-    }
+    // Template sections in template order (the user's own too), then any other `section:<id>`.
+    let ids: Vec<(String, String)> = crate::user_templates::sections_for(
+        store,
+        m.template.as_deref(),
+        blocks.iter().map(|b| b.kind.as_str()),
+    )
+    .into_iter()
+    .map(|sec| {
+        let title = match lang {
+            Lang::En => sec.title_en,
+            Lang::Vi => sec.title_vi,
+        };
+        (sec.id, title)
+    })
+    .collect();
     for (id, title) in ids {
         push(title, ai(&format!("section:{id}")));
     }
@@ -1049,6 +1041,65 @@ mod tests {
 
     fn render_str(store: &Store, g: &str, f: Format, o: &ExportOptions) -> String {
         String::from_utf8(render(store, g, f, o).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_user_templates_sections_get_their_titles_and_a_deleted_ones_get_words() {
+        use crate::user_templates::{Records, UserTemplate};
+        use ghi_llm::template::{Editor, EditorSection, OutLang, Template};
+        let (_t, store, g) = fixture();
+        let template = Template::from_editor(
+            "t1",
+            &Editor {
+                name: "Retro".into(),
+                lang: OutLang::En,
+                guidance: String::new(),
+                sections: vec![EditorSection {
+                    id: None,
+                    title: "Went well!".into(),
+                    instruction: "What worked.".into(),
+                }],
+            },
+            &[],
+            &[],
+        )
+        .unwrap();
+        let mut r = Records::load(&store).unwrap();
+        r.push(UserTemplate {
+            gid: "t1".into(),
+            lang: "en".into(),
+            toml: template.to_toml(),
+            retired: vec![],
+        });
+        r.save(&store).unwrap();
+        store.set_meeting_template(&g, Some("user:t1")).unwrap();
+        store
+            .add_note_block(
+                &g,
+                NewNoteBlock {
+                    kind: "section:went_well".into(),
+                    provenance: Provenance::Ai,
+                    body: "Shipped the parser".into(),
+                    anchors: vec![],
+                    pinned: false,
+                },
+            )
+            .unwrap();
+        let m = store.get_meeting(&g).unwrap();
+        let heads = |store: &Store| -> Vec<String> {
+            note_sections(store, &g, &store.get_meeting(&g).unwrap(), &HashMap::new(), Lang::En)
+                .unwrap()
+                .into_iter()
+                .map(|s| s.heading)
+                .collect()
+        };
+        assert_eq!(m.template.as_deref(), Some("user:t1"));
+        assert!(heads(&store).contains(&"Went well!".to_string()), "{:?}", heads(&store));
+        // The template is deleted: the section is still in the export, titled from its id.
+        let mut r = Records::load(&store).unwrap();
+        assert!(r.remove("t1"));
+        r.save(&store).unwrap();
+        assert!(heads(&store).contains(&"Went well".to_string()), "{:?}", heads(&store));
     }
 
     #[test]
