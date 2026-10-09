@@ -120,6 +120,9 @@ function build(lang: "en" | "vi"): Detail {
     );
   ai("tldr", n.summary);
   ai("decision", n.decisions);
+  // The first decision has three sources (one chip, "+2", a stepper in the preview).
+  const multi = blocks.find((b) => b.kind === "decision");
+  if (multi) multi.citations = cite(segs, [4, 6, 8]);
   ai("question", n.openQuestions);
   ai("quote", n.keyQuotes);
   for (const [t, en, vi] of sample.topics as [number, string, string][]) {

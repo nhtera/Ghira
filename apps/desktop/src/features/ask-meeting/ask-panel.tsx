@@ -9,12 +9,13 @@ import { useTranslation } from "react-i18next";
 import type { AskAnswer, MeetingDetail } from "../../bindings";
 import { ipc } from "../../ipc";
 import { AskError } from "../ask/ask-error";
-import { CitationLink } from "../citation/citation-link";
+import { CitationGroup } from "../citation/citation-link";
 import { useCloudOffered } from "../cloud-sheet/cloud-offered";
 import { CloudSheet } from "../cloud-sheet/cloud-sheet";
 import { providerName } from "../cloud-sheet/provider-names";
 
 const KEEP = 5;
+const STARTERS = ["decided", "actions", "themes"] as const;
 
 type Entry = {
   id: number;
@@ -48,9 +49,11 @@ function Elapsed({ since }: { since: number }) {
 function AnswerCard({
   entry,
   detail,
+  meeting,
 }: {
   entry: Entry;
   detail: MeetingDetail;
+  meeting: string;
 }) {
   const { t } = useTranslation();
   const a = entry.answer;
@@ -95,14 +98,12 @@ function AnswerCard({
           <p className="text-body m-0 whitespace-pre-wrap">{a.text}</p>
           {a.citations.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {a.citations.map((c, i) => (
-                <CitationLink
-                  key={i}
-                  citation={c}
-                  speakers={detail.speakers}
-                  audioAvailable={detail.audioAvailable}
-                />
-              ))}
+              <CitationGroup
+                citations={a.citations}
+                speakers={detail.speakers}
+                audioAvailable={detail.audioAvailable}
+                meeting={meeting}
+              />
             </div>
           )}
         </div>
@@ -173,8 +174,8 @@ export function AskPanel({
     else patch(id, { state: "done", answer: r.data, cloudFailed });
   };
 
-  const submit = () => {
-    const q = question.trim();
+  const submit = (text = question) => {
+    const q = text.trim();
     if (!q || thinking) return;
     setQuestion("");
     if (offered && engine === "cloud") setCloudQuestion(q);
@@ -200,14 +201,25 @@ export function AskPanel({
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-4 py-2">
         {entries.length === 0 ? (
-          <p className="text-small m-0 text-muted">{t("ask.meeting.hint")}</p>
+          <div className="flex flex-col gap-2">
+            <p className="text-small m-0 text-muted">{t("ask.meeting.hint")}</p>
+            <ul aria-label={t("ask.meeting.suggestions.label")} className="m-0 flex list-none flex-col items-start gap-1.5 p-0">
+              {STARTERS.map((k) => (
+                <li key={k}>
+                  <Button size="sm" disabled={thinking} onClick={() => submit(t(`ask.meeting.suggestions.${k}`))} className="h-auto min-h-8 py-1 text-left whitespace-normal">
+                    {t(`ask.meeting.suggestions.${k}`)}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : (
           <ol
             aria-live="polite"
             className="m-0 flex list-none flex-col gap-4 p-0"
           >
             {entries.map((e) => (
-              <AnswerCard key={e.id} entry={e} detail={detail} />
+              <AnswerCard key={e.id} entry={e} detail={detail} meeting={meeting} />
             ))}
           </ol>
         )}
@@ -256,7 +268,7 @@ export function AskPanel({
             icon="arrow_upward"
             aria-label={t("ask.meeting.send")}
             disabled={!question.trim() || thinking}
-            onClick={submit}
+            onClick={() => submit()}
           />
         </div>
       </div>

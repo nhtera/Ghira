@@ -82,3 +82,27 @@ test("Transcribe again asks for the spoken language, then processes the meeting"
   await expect(panel).toBeHidden();
   await expect(page.getByText("Transcribing again…", { exact: true })).toBeVisible();
 });
+
+test("a decision with three sources is one chip with +2; the preview steps and shows the line in the transcript", async ({ page }) => {
+  await open(page);
+  const more = page.getByRole("button", { name: "2 more sources" });
+  await expect(more).toHaveText("+2");
+  await expect(page.getByRole("button", { name: "2 more sources" })).toHaveCount(1);
+  // By keyboard: Safari does not focus a button on click, and the arrows act on the focused chip.
+  await more.focus();
+  await page.keyboard.press("Enter");
+  const preview = page.getByRole("group", { name: "Quote preview" });
+  await expect(preview).toContainText("2/3");
+  await page.keyboard.press("ArrowRight");
+  await expect(preview).toContainText("3/3");
+  await page.keyboard.press("ArrowRight");
+  await expect(preview).toContainText("1/3");
+  await preview.getByRole("button", { name: "Next source" }).click();
+  await preview.getByRole("button", { name: "Show in transcript" }).click();
+  await expect(page).toHaveURL(/\/transcript\?t=\d+$/);
+  await expect(page.getByTestId("transcript-group").first()).toBeVisible();
+  // The landing line pulses (or is outlined under reduced motion), then settles.
+  await expect(page.locator("[data-seg][data-pulse=true]")).toHaveCount(1);
+  await expect(page.locator("[data-seg][data-pulse=true]")).toHaveCount(0, { timeout: 3000 });
+});
+

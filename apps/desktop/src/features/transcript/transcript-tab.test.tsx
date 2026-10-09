@@ -6,7 +6,20 @@ import { PlatformProvider, ToastProvider } from "@ghi/ui";
 import type { MeetingDetail, MeetingSpeaker, MeetingTranscript, SegmentView } from "../../bindings";
 import { ipc } from "../../ipc";
 import { usePlayer } from "../../state/player";
+import { showRequests } from "./show-requests";
 import { TranscriptTab } from "./transcript-tab";
+
+const panelProps = vi.hoisted(() => ({ last: null as null | { fromSegment: string | null } }));
+vi.mock("../speaker-panel", async (orig) => {
+  const actual = await orig<typeof import("../speaker-panel")>();
+  return {
+    ...actual,
+    SpeakerPanel: (p: Parameters<typeof actual.SpeakerPanel>[0]) => {
+      panelProps.last = p;
+      return <div data-testid="panel-stub" />;
+    },
+  };
+});
 
 afterEach(() => {
   cleanup();
@@ -26,7 +39,7 @@ const speaker = (gid: string, number: number, over: Partial<MeetingSpeaker> = {}
   suggestion: null,
   ...over,
 });
-const speakers = [speaker("a", 1, { name: "Linh" }), speaker("b", 2)];
+const speakers = [speaker("a", 1, { name: "Linh", lines: 2 }), speaker("b", 2)];
 
 const seg = (i: number, spk: string, text: string, over: Partial<SegmentView> = {}): SegmentView => ({
   gid: `s${i}`,
@@ -114,6 +127,43 @@ describe("TranscriptTab", () => {
     expect(usePlayer.getState().seekRequest).toBeNull(); // no audio yet: nothing to seek
     act(() => usePlayer.setState({ meeting: "m1", src: "x" }));
     await waitFor(() => expect(usePlayer.getState().seekRequest).toMatchObject({ ms: 25_000 }));
+  });
+
+  it("shows who talked how much above the transcript, adding up to 100%", async () => {
+    mount();
+    const bar = await screen.findByTestId("talk-share");
+    expect(bar.textContent).toContain("2 speakers · 3 turns");
+    // a: 16 s (two lines), b: 8 s.
+    expect(within(bar).getByRole("button", { name: "Linh: 67%, 2 turns" })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: "Speaker 2: 33%, 1 turn" })).toBeTruthy();
+  });
+
+  it("a legend entry opens the speaker panel with no line picked (never 'from the first line on')", async () => {
+    mount();
+    const bar = await screen.findByTestId("talk-share");
+    fireEvent.click(within(bar).getByRole("button", { name: /^Linh/ }));
+    await screen.findByTestId("panel-stub");
+    expect(panelProps.last?.fromSegment).toBeFalsy();
+  });
+
+  it("showing the same moment again scrolls and pulses again", async () => {
+    const into = vi.fn();
+    HTMLElement.prototype.scrollIntoView = into;
+    mount(data, 25_000);
+    await waitFor(() => expect(document.querySelector('[data-seg="2"]')?.getAttribute("data-pulse")).toBe("true"), { timeout: 3000 });
+    await waitFor(() => expect(document.querySelector("[data-pulse]")).toBeNull(), { timeout: 2500 });
+    const calls = into.mock.calls.length;
+    act(() => showRequests.emit(25_000));
+    await waitFor(() => expect(document.querySelector('[data-seg="2"]')?.getAttribute("data-pulse")).toBe("true"), { timeout: 3000 });
+    expect(into.mock.calls.length).toBeGreaterThan(calls);
+  });
+
+  it("pulses the line it lands on for 1.2 s", async () => {
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    mount(data, 25_000);
+    await waitFor(() => expect(document.querySelector('[data-seg="2"]')?.getAttribute("data-pulse")).toBe("true"), { timeout: 3000 });
+    expect(document.querySelectorAll("[data-pulse]")).toHaveLength(1);
+    await waitFor(() => expect(document.querySelector("[data-pulse]")).toBeNull(), { timeout: 2500 });
   });
 
   it("finds without accents and steps through the matches", async () => {

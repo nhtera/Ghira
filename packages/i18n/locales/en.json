@@ -321,7 +321,8 @@
     },
     "topics": {
       "title": "Topics",
-      "subtitle": "Found by {{app}} · click to jump"
+      "subtitle": "Found by {{app}} · click to jump",
+      "outline": "Outline ({{count}})"
     },
     "failed": {
       "title": "{{app}} couldn’t write notes for this meeting",
@@ -1446,6 +1447,12 @@
       "open": "Ask",
       "close": "Close",
       "hint": "Ask what was decided or who said something. Answers link to the moment.",
+      "suggestions": {
+        "label": "Try asking",
+        "decided": "What was decided?",
+        "actions": "What are the action items and who owns them?",
+        "themes": "What were the main themes?"
+      },
       "label": "Question",
       "placeholder": "Ask about this meeting",
       "send": "Ask",
@@ -1629,7 +1636,13 @@
     "preview": "Quote preview",
     "missing": "Nothing in the transcript at that moment.",
     "noAudio": "The audio was deleted. The transcript line is kept.",
-    "stale": "Written from an earlier version of the transcript."
+    "stale": "Written from an earlier version of the transcript.",
+    "more_one": "{{count}} more source",
+    "more_other": "{{count}} more sources",
+    "step": "Source {{k}} of {{total}}",
+    "prev": "Previous source",
+    "next": "Next source",
+    "showInTranscript": "Show in transcript"
   },
   "meter": {
     "silent": "No speech",
@@ -1696,6 +1709,16 @@
   },
   "transcript": {
     "backToPlayback": "Back to playback",
+    "share": {
+      "label": "Talk share",
+      "summary": "{{speakers}} · {{turns}}",
+      "speakers_one": "{{count}} speaker",
+      "speakers_other": "{{count}} speakers",
+      "turns_one": "{{count}} turn",
+      "turns_other": "{{count}} turns",
+      "unassigned": "Unassigned",
+      "entry": "{{name}}: {{pct}}%, {{turns}}"
+    },
     "findCount": "{{current}} of {{total}}",
     "noMatches": "No matches",
     "findPrev": "Previous match",

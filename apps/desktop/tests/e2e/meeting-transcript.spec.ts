@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Transcript tab and audio bar of the meeting detail on the mocked core.
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 // The mock core plays a blob: WAV, which the production media-src (ghi-audio: only) refuses.
@@ -90,3 +91,48 @@ test("without overlap in the data there is no marker and no bracket", async ({ p
   await expect(page.getByTestId("transcript-stack")).toHaveCount(0);
   await expect(page.getByTestId("overlap-tag")).toHaveCount(0);
 });
+
+test("the talk share bar sums to 100% and a legend entry opens the speaker panel", async ({ page }) => {
+  await openTranscript(page);
+  const share = page.getByTestId("talk-share");
+  await expect(share).toContainText(/\d+ speakers · \d+ turns/);
+  const pcts = (await share.locator("li").allTextContents()).map((t) => Number(/(\d+)%/.exec(t)?.[1]));
+  expect(pcts.reduce((a, b) => a + b, 0)).toBe(100);
+  await share.getByRole("button").first().click();
+  await expect(page.getByTestId("speaker-panel")).toBeVisible();
+});
+
+test("a long meeting shows the topic rail wide and the collapsible Outline row when narrow", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openTranscript(page);
+  await expect(page.getByTestId("topic-rail")).toBeVisible();
+  await expect(page.getByTestId("topic-outline")).toBeHidden();
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await expect(page.getByTestId("topic-rail")).toBeHidden();
+  const toggle = page.getByRole("button", { name: /^Outline \(\d+\)$/ });
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.click();
+  const before = await playerMs(page);
+  await page.getByTestId("topic-outline").getByRole("button").nth(3).click();
+  await expect.poll(() => playerMs(page)).not.toBe(before);
+});
+
+test("axe: talk share bar, Outline row (narrow) and an open citation preview with the stepper", async ({ page }) => {
+  const scan = async (include: string) => {
+    const r = await new AxeBuilder({ page }).include(include).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+    expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+  };
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await openTranscript(page);
+  await scan('[data-testid="talk-share"]');
+  await page.getByRole("button", { name: /^Outline \(\d+\)$/ }).click();
+  await scan('[data-testid="topic-outline"]');
+  await page.getByRole("tab", { name: "Notes" }).click();
+  const more = page.getByRole("button", { name: "2 more sources" });
+  await more.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("group", { name: "Quote preview" })).toContainText("2/3");
+  await scan('[role="group"][aria-label="Quote preview"]');
+});
+

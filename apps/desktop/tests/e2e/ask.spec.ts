@@ -31,3 +31,21 @@ test("a question nothing matches is a Not discussed card with the searched terms
   await expect(card.getByText("Not discussed in this meeting")).toBeVisible();
   await expect(card).toContainText("kubernetes");
 });
+
+test("the empty state offers three starter questions that send", async ({ page }) => {
+  const panel = await open(page);
+  const starters = panel.getByRole("list", { name: "Try asking" }).getByRole("button");
+  await expect(starters).toHaveCount(3);
+  await starters.first().click();
+  const entry = panel.getByTestId("ask-entry");
+  await expect(entry.getByText("What was decided?")).toBeVisible();
+  await expect(panel.getByRole("list", { name: "Try asking" })).toHaveCount(0);
+});
+
+test("a starter sends with Enter from the keyboard", async ({ page }) => {
+  const panel = await open(page);
+  await panel.getByRole("button", { name: "What were the main themes?" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(panel.getByTestId("ask-entry").getByText("What were the main themes?")).toBeVisible();
+});
+

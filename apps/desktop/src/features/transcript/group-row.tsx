@@ -153,7 +153,7 @@ export const GroupRow = memo(function GroupRow({ group, stacked, speaker, others
               aria-current={isActive ? "true" : undefined}
               data-overlap={seg.overlap ? "true" : undefined}
               // An overlapped line is less certain: its text is muted like a low-confidence one.
-              className={cn("group/line relative -mx-1.5 rounded-ctl px-1.5 py-0.5", isActive && "bg-accent-soft", seg.overlap && "[&_p]:text-muted")}
+              className={cn("group/line relative -mx-1.5 rounded-ctl px-1.5 py-0.5", isActive && "bg-accent-soft", "transition-[outline-color,background-color] duration-300 motion-reduce:transition-none data-[pulse=true]:bg-accent-soft data-[pulse=true]:outline-2 data-[pulse=true]:outline-accent", seg.overlap && "[&_p]:text-muted")}
               onDoubleClick={() => editing !== seg.gid && onEdit(seg.gid)}
             >
               {editing === seg.gid ? (

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
 import type { SegmentView } from "../../bindings";
-import { buildRows, stackRuns, findMatches, findRanges, fold, lineWords, marksOf, rowIndexBySegment, segmentAt, wordIndexAt, MAX_LINES_PER_GROUP } from "./logic";
-import { currentTopic, showTopicRail } from "../topic-rail";
+import { buildRows, stackRuns, findMatches, findRanges, fold, lineWords, marksOf, rowIndexBySegment, segmentAt, talkShare, wordIndexAt, MAX_LINES_PER_GROUP } from "./logic";
 
 const seg = (i: number, speaker: string | null, over: Partial<SegmentView> = {}): SegmentView => ({
   gid: `s${i}`,
@@ -149,17 +148,41 @@ describe("stacking talked-over lines", () => {
   });
 });
 
-describe("topic rail", () => {
-  it("shows for an hour or for four topics", () => {
-    const t = (n: number) => Array.from({ length: n }, (_, i) => ({ title: `t${i}`, tMs: i * 1000 }));
-    expect(showTopicRail(30 * 60_000, t(3))).toBe(false);
-    expect(showTopicRail(30 * 60_000, t(4))).toBe(true);
-    expect(showTopicRail(61 * 60_000, t(1))).toBe(true);
-    expect(showTopicRail(61 * 60_000, [])).toBe(false);
+describe("talkShare", () => {
+  const spk = [
+    { gid: "a", lines: 2 },
+    { gid: "b", lines: 1 },
+  ];
+  const seg = (speakerGid: string | null, t0Ms: number | null, t1Ms: number | null) => ({ speakerGid, t0Ms, t1Ms });
+
+  it("sums talk time per speaker, biggest first, with turns from the speakers", () => {
+    const r = talkShare([seg("a", 0, 3000), seg("b", 3000, 4000), seg("a", 4000, 7000)], spk);
+    expect(r).toEqual([
+      { gid: "a", talkMs: 6000, pct: 86, turns: 2 },
+      { gid: "b", talkMs: 1000, pct: 14, turns: 1 },
+    ]);
   });
 
-  it("tracks the topic being discussed", () => {
-    const topics = [{ tMs: 0 }, { tMs: 5000 }, { tMs: 9000 }];
-    expect([-1, 0, 4999, 5000, 20_000].map((ms) => currentTopic(topics, ms))).toEqual([-1, 0, 0, 1, 2]);
+  it("always adds up to 100 (largest remainder)", () => {
+    const r = talkShare([seg("a", 0, 1000), seg("b", 0, 1000), seg("c", 0, 1000)], [...spk, { gid: "c", lines: 1 }]);
+    expect(r.map((e) => e.pct).sort()).toEqual([33, 33, 34]);
+    for (const n of [3, 7, 11]) {
+      const many = Array.from({ length: n }, (_, i) => seg(`s${i}`, 0, 1000 + i * 137));
+      const total = talkShare(many, many.map((m) => ({ gid: m.speakerGid!, lines: 1 }))).reduce((a, e) => a + e.pct, 0);
+      expect(total).toBe(100);
+    }
+  });
+
+  it("puts null and unknown speakers under unassigned, with their line count as turns", () => {
+    const r = talkShare([seg("a", 0, 2000), seg(null, 2000, 3000), seg("gone", 3000, 4000)], spk);
+    expect(r.find((e) => e.gid === null)).toEqual({ gid: null, talkMs: 2000, pct: 50, turns: 2 });
+    expect(r.find((e) => e.gid === "a")?.pct).toBe(50);
+  });
+
+  it("ignores zero-length and missing-time lines; nothing to share is empty", () => {
+    expect(talkShare([seg("a", 5000, 5000), seg("b", null, null), seg("a", 9000, 8000)], spk)).toEqual([]);
+    expect(talkShare([], spk)).toEqual([]);
+    const r = talkShare([seg("a", 0, 1000), seg("b", 1000, 1000)], spk);
+    expect(r).toEqual([{ gid: "a", talkMs: 1000, pct: 100, turns: 2 }]);
   });
 });

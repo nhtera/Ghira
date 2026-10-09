@@ -6,6 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AskAnswer, MeetingDetail } from "../../bindings";
 
@@ -199,5 +200,33 @@ describe("AskPanel", () => {
       await screen.findByText("We chose NeMo for diarization."),
     ).toBeTruthy();
     expect(screen.getByText(/cloudFailed|503/)).toBeTruthy();
+  });
+
+  it("shows three starter questions that send on click", async () => {
+    commands.askMeeting.mockReturnValue(ok(answered));
+    const starters = screen.getByRole("list", { name: "Try asking" });
+    expect(starters.querySelectorAll("button")).toHaveLength(3);
+    fireEvent.click(screen.getByRole("button", { name: "What was decided?" }));
+    expect(commands.askMeeting).toHaveBeenCalledWith("m1", "What was decided?", "meeting");
+    await screen.findByText("We chose NeMo for diarization.");
+    // Once there is a conversation the starters are gone.
+    expect(screen.queryByRole("list", { name: "Try asking" })).toBeNull();
+  });
+
+  it("a starter is reachable and sent with Enter", async () => {
+    const user = userEvent.setup();
+    commands.askMeeting.mockReturnValue(ok(answered));
+    const b = screen.getByRole("button", { name: "What are the action items and who owns them?" });
+    b.focus();
+    await user.keyboard("{Enter}");
+    expect(commands.askMeeting).toHaveBeenCalledWith("m1", "What are the action items and who owns them?", "meeting");
+  });
+
+  it("answers with several sources are one chip group with +n", async () => {
+    commands.askMeeting.mockReturnValue(ok({ ...answered, citations: [answered.citations[0]!, { ...answered.citations[0]!, t0Ms: 40_000, t1Ms: 42_000 }] }));
+    ask("Why NeMo?");
+    await screen.findByText("We chose NeMo for diarization.");
+    expect(screen.getAllByRole("button", { name: /^Show in transcript \d\d:\d\d$/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "1 more source" }).textContent).toBe("+1");
   });
 });

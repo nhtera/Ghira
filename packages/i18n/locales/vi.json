@@ -309,7 +309,8 @@
     },
     "topics": {
       "title": "Chủ đề",
-      "subtitle": "{{app}} tự chia · bấm để chuyển tới"
+      "subtitle": "{{app}} tự chia · bấm để chuyển tới",
+      "outline": "Dàn ý ({{count}})"
     },
     "failed": {
       "title": "{{app}} chưa viết được ghi chú cho cuộc họp này",
@@ -1399,6 +1400,12 @@
       "open": "Hỏi",
       "close": "Đóng",
       "hint": "Hỏi điều đã quyết định hay ai nói gì. Câu trả lời dẫn tới đúng thời điểm.",
+      "suggestions": {
+        "label": "Thử hỏi",
+        "decided": "Đã quyết định những gì?",
+        "actions": "Có những việc cần làm nào và ai phụ trách?",
+        "themes": "Các chủ đề chính là gì?"
+      },
       "label": "Câu hỏi",
       "placeholder": "Hỏi về cuộc họp này",
       "send": "Hỏi",
@@ -1578,7 +1585,12 @@
     "preview": "Xem trước trích dẫn",
     "missing": "Không có nội dung ở thời điểm đó trong bản ghi.",
     "noAudio": "Âm thanh đã bị xóa. Dòng bản ghi vẫn còn.",
-    "stale": "Viết từ phiên bản bản ghi cũ hơn."
+    "stale": "Viết từ phiên bản bản ghi cũ hơn.",
+    "more_other": "Thêm {{count}} nguồn",
+    "step": "Nguồn {{k}} / {{total}}",
+    "prev": "Nguồn trước",
+    "next": "Nguồn sau",
+    "showInTranscript": "Xem trong bản ghi"
   },
   "meter": {
     "silent": "Không có tiếng nói",
@@ -1645,6 +1657,14 @@
   },
   "transcript": {
     "backToPlayback": "Về chỗ đang phát",
+    "share": {
+      "label": "Tỉ lệ nói",
+      "summary": "{{speakers}} · {{turns}}",
+      "speakers_other": "{{count}} người nói",
+      "turns_other": "{{count}} lượt nói",
+      "unassigned": "Chưa rõ người nói",
+      "entry": "{{name}}: {{pct}}%, {{turns}}"
+    },
     "findCount": "{{current}} / {{total}}",
     "noMatches": "Không có kết quả",
     "findPrev": "Kết quả trước",

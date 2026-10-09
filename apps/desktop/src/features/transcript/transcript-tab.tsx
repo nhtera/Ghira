@@ -12,14 +12,17 @@ import type { MeetingDetail, MeetingSpeaker } from "../../bindings";
 import { useMeetingTranscript } from "../../state/meeting-queries";
 import { usePlayer } from "../../state/player";
 import { SpeakerPanel } from "../speaker-panel";
-import { TopicRail, showTopicRail } from "../topic-rail";
+import { TopicOutline, TopicRail, showTopicRail } from "../topic-rail";
 import { FindBar } from "./find-bar";
 import { GroupRow, OverlapTag, type SpeakerLabel } from "./group-row";
 import type { LineRange } from "./line-text";
-import { buildRows, type GroupData, findMatches, marksOf, rowIndexBySegment, segmentAt } from "./logic";
+import { buildRows, type GroupData, findMatches, marksOf, rowIndexBySegment, segmentAt, talkShare } from "./logic";
+import { showRequests } from "./show-requests";
+import { TalkShare } from "./talk-share";
 import { useLineActions } from "./use-line-actions";
 
 const ESTIMATE_PX = 96;
+const PULSE_MS = 1200;
 
 /** The nearest ancestor that scrolls: the detail screen scrolls as one page, so the lines virtualize against it. */
 function scrollParent(el: HTMLElement): HTMLElement | null {
@@ -40,6 +43,9 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
   const rowOf = useMemo(() => rowIndexBySegment(rows, segments.length), [rows, segments.length]);
   const marks = useMemo(() => marksOf(segments, transcript.data?.marks ?? []), [segments, transcript.data]);
   const ready = usePlayer((s) => s.meeting === meeting && !!s.src);
+  const share = useMemo(() => talkShare(segments, detail.speakers), [segments, detail.speakers]);
+  // Only people count as speakers (not video or music).
+  const shareSpeakers = share.filter((e) => e.gid !== null && detail.speakers.some((s) => s.gid === e.gid && !s.notPerson)).length;
 
   const labelOf = useCallback(
     (s: MeetingSpeaker): SpeakerLabel => ({
@@ -186,6 +192,22 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
   // Opened from a search hit (`?t=`): show that line as soon as the lines are
   // there (with or without audio); move the audio there once it is ready.
   const target = startAtMs;
+  const pulseTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(pulseTimer.current), []);
+  // The line "Show in transcript" lands on: marked for 1.2 s (a static outline under reduced motion, by CSS).
+  const pulse = useCallback((seg: number) => {
+    window.clearTimeout(pulseTimer.current);
+    list.current?.querySelectorAll("[data-pulse]").forEach((el) => el.removeAttribute("data-pulse"));
+    let tries = 0;
+    // The row may not be drawn yet right after the scroll: look again for a few frames.
+    const mark = () => {
+      const el = list.current?.querySelector(`[data-seg="${seg}"]`);
+      if (!el) return tries++ < 30 ? void requestAnimationFrame(mark) : undefined;
+      el.setAttribute("data-pulse", "true");
+      pulseTimer.current = window.setTimeout(() => el.removeAttribute("data-pulse"), PULSE_MS);
+    };
+    requestAnimationFrame(mark);
+  }, []);
   const scrolledTo = useRef<number | null>(null);
   const soughtTo = useRef<number | null>(null);
   useEffect(() => {
@@ -193,13 +215,27 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
     if (scrolledTo.current !== target) {
       scrolledTo.current = target;
       setFollow(false);
-      scrollToSegment(Math.max(0, segmentAt(segments, target, Infinity)), "center");
+      const seg = Math.max(0, segmentAt(segments, target, Infinity));
+      scrollToSegment(seg, "center");
+      pulse(seg);
     }
     if (ready && soughtTo.current !== target) {
       soughtTo.current = target;
       usePlayer.getState().seek(target);
     }
-  }, [target, segments, ready, scrollToSegment]);
+  }, [target, segments, ready, scrollToSegment, pulse]);
+  // The same moment shown again (a citation, while already there): scroll and pulse again.
+  useEffect(
+    () =>
+      showRequests.subscribe((tMs) => {
+        if (!segments.length) return;
+        const seg = Math.max(0, segmentAt(segments, tMs, Infinity));
+        setFollow(false);
+        scrollToSegment(seg, "center");
+        pulse(seg);
+      }),
+    [segments, scrollToSegment, pulse],
+  );
   const onKeyDown = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
       e.preventDefault();
@@ -255,6 +291,8 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
   return (
     <div onKeyDown={onKeyDown} className="flex items-start gap-3">
       <div className="min-w-0 flex-1">
+        <TalkShare entries={share} labels={labels} speakerCount={shareSpeakers} onOpenSpeaker={(gid) => openSpeaker(gid, "")} />
+        {rail && <TopicOutline topics={topics} onJump={jumpTo} />}
         <div className="sticky top-0 z-10 bg-surface pt-1 pb-2">
           <FindBar
             ref={findInput}

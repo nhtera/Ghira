@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -21,10 +21,12 @@ const commands = vi.hoisted(() => ({
   updateActionItem: vi.fn(),
 }));
 vi.mock("../../ipc", () => ({ ipc: { commands } }));
+const navigate = vi.hoisted(() => vi.fn());
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 
 import { renderLive } from "../live/test-utils";
 import { usePlayer } from "../../state/player";
-import { CitationLink } from "../citation/citation-link";
+import { CitationGroup, CitationLink } from "../citation/citation-link";
 import { NotesTab } from "./notes-tab";
 
 const block = (
@@ -401,5 +403,78 @@ describe("typing pauses (debounce)", () => {
     await user.tab();
     expect(ta.value).toBe("The beta ships on the 12th.");
     expect(commands.updateNoteBlock).not.toHaveBeenCalled();
+  });
+});
+
+describe("CitationGroup", () => {
+  const three = [cite, { ...cite, t0Ms: 40_000, t1Ms: 44_000, quote: "second source" }, { ...cite, t0Ms: 90_000, t1Ms: 93_000, quote: "third source" }];
+  const group = () =>
+    renderLive(<CitationGroup citations={three} speakers={detail.speakers} audioAvailable meeting="m1" />);
+
+  it("renders the first chip and a +2 chip, not three chips", () => {
+    group();
+    expect(screen.getAllByRole("button", { name: /^Show in transcript \d\d:\d\d$/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "2 more sources" }).textContent).toBe("+2");
+  });
+
+  it("steps through all sources with the buttons and wraps", async () => {
+    group();
+    fireEvent.click(screen.getByRole("button", { name: "2 more sources" }));
+    const preview = await screen.findByRole("group", { name: "Quote preview" }, { timeout: 3000 });
+    expect(preview.textContent).toContain("second source");
+    expect(preview.textContent).toContain("2/3");
+    fireEvent.click(screen.getByRole("button", { name: "Next source" }));
+    expect(preview.textContent).toContain("third source");
+    fireEvent.click(screen.getByRole("button", { name: "Next source" }));
+    expect(preview.textContent).toContain("we ship on the 12th");
+    expect(preview.textContent).toContain("1/3");
+    fireEvent.click(screen.getByRole("button", { name: "Previous source" }));
+    expect(preview.textContent).toContain("3/3");
+  });
+
+  it("steps with the arrow keys and plays the shown source", async () => {
+    const play = vi.spyOn(usePlayer.getState(), "playSpan").mockImplementation(() => undefined);
+    group();
+    fireEvent.click(screen.getByRole("button", { name: "2 more sources" }));
+    const preview = await screen.findByRole("group", { name: "Quote preview" }, { timeout: 3000 });
+    fireEvent.keyDown(preview, { key: "ArrowRight" });
+    expect(preview.textContent).toContain("3/3");
+    fireEvent.keyDown(preview, { key: "ArrowLeft" });
+    fireEvent.keyDown(preview, { key: "ArrowLeft" });
+    expect(preview.textContent).toContain("1/3");
+    fireEvent.keyDown(preview, { key: "ArrowRight" });
+    fireEvent.click(screen.getByRole("button", { name: "Play from 00:40" }));
+    expect(play).toHaveBeenCalledWith(40_000, 44_000);
+  });
+
+  it("Show in transcript opens the transcript tab at the shown source", async () => {
+    group();
+    fireEvent.click(screen.getByRole("button", { name: "2 more sources" }));
+    await screen.findByRole("group", { name: "Quote preview" }, { timeout: 3000 });
+    fireEvent.click(screen.getByRole("button", { name: "Next source" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show in transcript" }));
+    expect(navigate).toHaveBeenCalledWith({ to: "/meetings/$id/$tab", params: { id: "m1", tab: "transcript" }, search: { t: 90_000 } });
+  });
+
+  it("names the position for assistive tech and starts at the first source after closing", async () => {
+    group();
+    fireEvent.click(screen.getByRole("button", { name: "2 more sources" }));
+    const preview = await screen.findByRole("group", { name: "Quote preview" }, { timeout: 3000 });
+    expect(within(preview).getByRole("status").textContent).toContain("Source 2 of 3");
+    expect(preview.querySelector("[aria-live]")).toBeNull();
+    fireEvent.keyDown(preview, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Quote preview" })).toBeNull());
+    fireEvent.focus(screen.getByRole("button", { name: /^Show in transcript \d\d:\d\d$/ }));
+    const again = await screen.findByRole("group", { name: "Quote preview" }, { timeout: 3000 });
+    expect(again.textContent).toContain("1/3");
+  });
+
+  it("a single source has no +n and no stepper", async () => {
+    renderLive(<CitationGroup citations={[cite]} speakers={detail.speakers} audioAvailable meeting="m1" />);
+    expect(screen.queryByRole("button", { name: /more source/ })).toBeNull();
+    fireEvent.focus(screen.getByRole("button", { name: "Show in transcript 00:12" }));
+    await screen.findByRole("group", { name: "Quote preview" });
+    expect(screen.queryByRole("button", { name: "Next source" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Show in transcript" })).toBeTruthy();
   });
 });

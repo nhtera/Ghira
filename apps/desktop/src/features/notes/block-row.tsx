@@ -6,7 +6,7 @@
 import { Icon, cn } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
 import type { NoteBlockView } from "../../bindings";
-import { CitationLink } from "../citation/citation-link";
+import { CitationGroup } from "../citation/citation-link";
 import { AutoTextarea } from "./auto-textarea";
 import { useNotesContext } from "./notes-context";
 
@@ -57,7 +57,7 @@ export function BlockRow({
   onBackspaceEmpty,
   className,
 }: BlockRowProps) {
-  const { speakers, audioAvailable, edit } = useNotesContext();
+  const { meeting, speakers, audioAvailable, edit } = useNotesContext();
   const commit = (text: string) => {
     const v = text.trim();
     if (v === block.text) return;
@@ -85,11 +85,11 @@ export function BlockRow({
         trailing={
           (block.citations.length > 0 || kind === "edited") && (
             <>
-              {block.citations.map((c, i) => (
-                <span key={i} className="ml-1.5 align-[2px]">
-                  <CitationLink citation={c} speakers={speakers} audioAvailable={audioAvailable} />
+              {block.citations.length > 0 && (
+                <span className="ml-1.5 align-[2px]">
+                  <CitationGroup citations={block.citations} speakers={speakers} audioAvailable={audioAvailable} meeting={meeting} />
                 </span>
-              ))}
+              )}
               {/* Edited blocks say so right after the text, like the design. */}
               {kind === "edited" && (
                 <span className="ml-2 align-[2px] font-sans">

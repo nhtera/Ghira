@@ -4,7 +4,7 @@
 import { Avatar, Icon, Menu, cn, type MenuItem } from "@ghi/ui";
 import { useTranslation } from "react-i18next";
 import type { ActionItemView } from "../../bindings";
-import { CitationLink } from "../citation/citation-link";
+import { CitationGroup } from "../citation/citation-link";
 import { findSpeaker, speakerDisplay } from "../meeting/speaker-display";
 import { AutoTextarea } from "./auto-textarea";
 import { Provenance } from "./block-row";
@@ -63,7 +63,7 @@ function OwnerMenu({ item }: { item: ActionItemView }) {
 
 function ActionRow({ item }: { item: ActionItemView }) {
   const { t } = useTranslation();
-  const { speakers, audioAvailable, edit } = useNotesContext();
+  const { meeting, speakers, audioAvailable, edit } = useNotesContext();
   const provenance =
     item.origin === "user"
       ? "user"
@@ -104,13 +104,9 @@ function ActionRow({ item }: { item: ActionItemView }) {
               label={t("notes.actionLabel")}
               trailing={
                 item.citations.length > 0 && (
-                  <>
-                    {item.citations.map((c, i) => (
-                      <span key={i} className="ml-1.5 align-[2px]">
-                        <CitationLink citation={c} speakers={speakers} audioAvailable={audioAvailable} />
-                      </span>
-                    ))}
-                  </>
+                  <span className="ml-1.5 align-[2px]">
+                    <CitationGroup citations={item.citations} speakers={speakers} audioAvailable={audioAvailable} meeting={meeting} />
+                  </span>
                 )
               }
               onCommit={(text) =>
