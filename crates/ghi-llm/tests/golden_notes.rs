@@ -14,7 +14,7 @@ use std::time::Instant;
 use ghi_llm::ask::{self, Answer};
 use ghi_llm::enhance::{self, NoteLine};
 use ghi_llm::local::LocalLlm;
-use ghi_llm::notes::{self, MarkHint, MarkKind, Notes, Options};
+use ghi_llm::notes::{self, Notes, Options};
 use ghi_llm::template::{self, OutLang};
 use ghi_llm::{Segment, Transcript};
 
@@ -264,95 +264,6 @@ fn golden_consultation() {
         assert!(!low.contains("diagnos"), "diagnosis wording in `{text}`");
     }
     assert_eq!(ghi_net::connections_opened(), 0);
-}
-
-/// Phase 2 measurement (`--ignored`): a ~60-minute meeting (the EN golden
-/// repeated 32 times, so the same story recurs; real recordings never enter
-/// git) with 10 marks, notes with and without them: time, how many marked
-/// lines are cited, and how many items the notes hold.
-#[test]
-#[ignore = "measurement: minutes on the local model"]
-fn marks_on_a_long_meeting() {
-    let Some(mut llm) = model() else { return };
-    let base = golden("en");
-    let n = base.segments().len() as u64;
-    let span = base.segments().last().unwrap().t1_ms + 2000;
-    let mut segs = Vec::new();
-    for rep in 0..32u64 {
-        for s in base.segments() {
-            segs.push(Segment {
-                id: s.id + rep * n,
-                t0_ms: s.t0_ms + rep as i64 * span,
-                t1_ms: s.t1_ms + rep as i64 * span,
-                ..s.clone()
-            });
-        }
-    }
-    let t = Transcript::new(segs).unwrap();
-    // (repeat, line in the repeat, tag): decisions, actions and questions across the hour.
-    let picks = [
-        (1, 4, MarkKind::Decision),
-        (4, 6, MarkKind::Action),
-        (8, 11, MarkKind::Question),
-        (12, 17, MarkKind::Action),
-        (15, 19, MarkKind::Decision),
-        (19, 12, MarkKind::Action),
-        (23, 4, MarkKind::Star),
-        (26, 14, MarkKind::Action),
-        (29, 9, MarkKind::Decision),
-        (31, 20, MarkKind::Star),
-    ];
-    let marks: Vec<MarkHint> = picks
-        .iter()
-        .map(|&(rep, line, kind)| {
-            let id = rep * n + line;
-            MarkHint {
-                id,
-                kind,
-                t_ms: t.get(id).unwrap().t0_ms,
-            }
-        })
-        .collect();
-    let count = |n: &Notes| {
-        n.tldr.len()
-            + n.decisions.len()
-            + n.proposals.len()
-            + n.action_items.len()
-            + n.open_questions.len()
-            + n.key_quotes.len()
-            + n.topics.len()
-    };
-    let mut report = Vec::new();
-    for (label, with) in [("no marks", false), ("marks", true)] {
-        let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
-        if with {
-            o.marks = marks.clone();
-        }
-        let started = Instant::now();
-        let run = match notes::generate(&mut llm, &t, &o) {
-            Ok(run) => run,
-            Err(e) => {
-                report.push(format!(
-                    "{label}: failed after {:.1} s: {e}",
-                    started.elapsed().as_secs_f64()
-                ));
-                continue;
-            }
-        };
-        let wall = started.elapsed().as_secs_f64();
-        let cited: std::collections::HashSet<u64> =
-            run.notes.all_citations().flatten().copied().collect();
-        let hit = marks.iter().filter(|m| cited.contains(&m.id)).count();
-        report.push(format!(
-            "{label}: {wall:.1} s, {:?}, {} items, {} of {} marked lines cited, diagnostics {:?}",
-            run.strategy,
-            count(&run.notes),
-            hit,
-            marks.len(),
-            run.diagnostics
-        ));
-    }
-    eprintln!("{}", report.join("\n"));
 }
 
 /// Meetings with lines that were agreed and lines only suggested: `agreed`
