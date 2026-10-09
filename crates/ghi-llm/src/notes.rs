@@ -284,7 +284,7 @@ pub fn generate(llm: &mut dyn Llm, t: &Transcript, opts: &Options) -> Result<Run
     let mut diag = Diagnostics::default();
     let all: Vec<&Segment> = t.segments().iter().collect();
     // Pinned notes are in every prompt too.
-    let budget = transcript_budget(llm, opts.max_output_tokens)
+    let budget = transcript_budget(llm, output_room(opts))
         .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
         .saturating_sub(opts.marks_tokens())
         .saturating_sub(opts.template_tokens())
@@ -360,7 +360,7 @@ pub fn generate_steps(
     }
     let aliases = Aliases::new(t);
     let mut diag = Diagnostics::default();
-    let budget = transcript_budget(llm, opts.max_output_tokens)
+    let budget = transcript_budget(llm, output_room(opts))
         .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
         .saturating_sub(opts.marks_tokens())
         .saturating_sub(opts.template_tokens())
@@ -402,6 +402,72 @@ fn transcript_budget(llm: &dyn Llm, max_output: u32) -> u32 {
     llm.context_tokens()
         .saturating_sub(max_output + PROMPT_OVERHEAD + RETRY_RESERVE)
         .max(512)
+}
+
+/// Output tokens the reduce step of a long meeting may write (full notes). A
+/// reduce over many parts' facts used to write past 2,048 and fail; its
+/// lists are bounded now ([`bound_reduce`]) and this covers the bound.
+const REDUCE_OUTPUT_TOKENS: u32 = 4096;
+/// Item caps of the reduce step's lists (a template section gets
+/// [`REDUCE_SECTION_CAP`]), citations per item, and characters per text.
+const REDUCE_CAPS: &[(&str, usize)] = &[
+    ("tldr", schema::MAX_TLDR),
+    ("decisions", 12),
+    ("action_items", 15),
+    ("open_questions", 8),
+    ("key_quotes", schema::MAX_QUOTES),
+    ("topics", 8),
+];
+const REDUCE_SECTION_CAP: usize = 8;
+const REDUCE_CITES: usize = 4;
+const REDUCE_TEXT_CHARS: usize = 240;
+
+/// Tokens a notes call may write, which the transcript budget leaves room
+/// for: the reduce step's, unless the notes are compact.
+fn output_room(opts: &Options) -> u32 {
+    if opts.compact {
+        opts.max_output_tokens
+    } else {
+        opts.max_output_tokens.max(REDUCE_OUTPUT_TOKENS)
+    }
+}
+
+/// Bounds a local notes schema for the reduce step: fewer items per list,
+/// fewer citations and shorter texts, so the reply fits [`REDUCE_OUTPUT_TOKENS`]
+/// however many facts it summarises. Cloud schemas are returned as they are.
+fn bound_reduce(mut schema: serde_json::Value, d: Dialect) -> serde_json::Value {
+    if d != Dialect::Local {
+        return schema;
+    }
+    let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) else {
+        return schema;
+    };
+    for (key, prop) in props.iter_mut() {
+        let cap = REDUCE_CAPS
+            .iter()
+            .find(|(k, _)| k == key)
+            .map_or(REDUCE_SECTION_CAP, |(_, c)| *c);
+        let lower = prop
+            .get("maxItems")
+            .and_then(Value::as_u64)
+            .map_or(cap, |m| (m as usize).min(cap));
+        prop["maxItems"] = serde_json::json!(lower);
+        let Some(fields) = prop
+            .pointer_mut("/items/properties")
+            .and_then(Value::as_object_mut)
+        else {
+            continue;
+        };
+        for name in ["text", "title"] {
+            if let Some(f) = fields.get_mut(name) {
+                f["maxLength"] = serde_json::json!(REDUCE_TEXT_CHARS);
+            }
+        }
+        if let Some(c) = fields.get_mut("cite") {
+            c["maxItems"] = serde_json::json!(REDUCE_CITES);
+        }
+    }
+    schema
 }
 
 /// The notes schema for `opts` (compact on request).
@@ -874,45 +940,66 @@ fn reduce(
     );
     add_marked_facts(&mut facts, &marks, t, aliases);
     trim_facts(&mut facts, &marks, budget, &mut diag);
-    let cited: HashSet<u64> = facts.iter().flat_map(|f| f.cites.iter().copied()).collect();
-    let lines = render_facts(&facts);
-    let mut ids: Vec<u64> = cited.iter().copied().collect();
-    ids.sort_unstable();
-    let shape = Shape {
-        dialect: Dialect::Local,
-        ids: &ids,
-        speakers: aliases.aliases(),
-    };
-    let user = format!(
-        "{}\n{}",
-        prompt::notes_task(&opts.template, opts.lang, &opts.pinned, &marks, &opts.spellings()),
-        prompt::reduce_block(opts.lang, &lines)
-    );
-    let req = Request {
-        messages: vec![
-            Message::system(prompt::notes_system(opts.lang)),
-            Message::user(user),
-        ],
-        schema: Some(notes_schema(opts, &shape)),
-        max_tokens: opts.max_output_tokens,
-        temperature: 0.3,
-    };
-    let allowed = |id: u64| cited.contains(&id);
-    match run::complete_json(llm, req, opts.lang, &mut diag, |v, d| {
-        parse_notes(v, &Ctx::new(t, aliases, opts, &allowed), d)
-    })? {
-        Outcome::Done(mut notes) => Ok(Run {
-            notes: {
+    let max_tokens = output_room(opts);
+    let mut retries_left = 2;
+    loop {
+        let cited: HashSet<u64> = facts.iter().flat_map(|f| f.cites.iter().copied()).collect();
+        let lines = render_facts(&facts);
+        let mut ids: Vec<u64> = cited.iter().copied().collect();
+        ids.sort_unstable();
+        let shape = Shape {
+            dialect: Dialect::Local,
+            ids: &ids,
+            speakers: aliases.aliases(),
+        };
+        let user = format!(
+            "{}\n{}",
+            prompt::notes_task(&opts.template, opts.lang, &opts.pinned, &marks, &opts.spellings()),
+            prompt::reduce_block(opts.lang, &lines)
+        );
+        let schema = notes_schema(opts, &shape);
+        let req = Request {
+            messages: vec![
+                Message::system(prompt::notes_system(opts.lang)),
+                Message::user(user),
+            ],
+            schema: Some(if opts.compact {
+                schema
+            } else {
+                bound_reduce(schema, Dialect::Local)
+            }),
+            max_tokens,
+            temperature: 0.3,
+        };
+        let allowed = |id: u64| cited.contains(&id);
+        match run::complete_json(llm, req, opts.lang, &mut diag, |v, d| {
+            parse_notes(v, &Ctx::new(t, aliases, opts, &allowed), d)
+        })? {
+            Outcome::Done(mut notes) => {
                 keep_proposals(&mut notes, &facts);
-                notes
-            },
-            engine: llm.engine(),
-            strategy: Strategy::MapReduce { parts: n },
-            diagnostics: diag,
-        }),
-        Outcome::Truncated => Err(LlmError::InvalidOutput(
-            "the notes hit the token limit".into(),
-        )),
+                return Ok(Run {
+                    notes,
+                    engine: llm.engine(),
+                    strategy: Strategy::MapReduce { parts: n },
+                    diagnostics: diag,
+                });
+            }
+            // Still too long: say it about fewer facts (minor points first).
+            Outcome::Truncated if retries_left > 0 => {
+                retries_left -= 1;
+                let before = facts.len();
+                let target = estimate_tokens(&render_facts(&facts)) * 3 / 4;
+                trim_facts(&mut facts, &marks, target, &mut diag);
+                if facts.len() == before {
+                    retries_left = 0;
+                }
+            }
+            Outcome::Truncated => {
+                return Err(LlmError::InvalidOutput(
+                    "the notes hit the token limit".into(),
+                ));
+            }
+        }
     }
 }
 
@@ -1365,7 +1452,7 @@ pub(crate) mod tests {
                 r#"{"decisions":[{"text":"Ship it","status":"decided","cite":[0]}],"tldr":[{"text":"Not mapped","cite":[5]}]}"#,
             ),
         ]);
-        llm.context = 6500;
+        llm.context = 8548;
         let run = generate(
             &mut llm,
             &t,
@@ -1630,7 +1717,7 @@ pub(crate) mod tests {
         let all: Vec<&Segment> = t.segments().iter().collect();
         let rendered = estimate_tokens(&render(&t, &Aliases::new(&t), &all));
         // The room left for the transcript is exactly what it needs, plus a little.
-        let overhead = 2048 + PROMPT_OVERHEAD + RETRY_RESERVE;
+        let overhead = REDUCE_OUTPUT_TOKENS + PROMPT_OVERHEAD + RETRY_RESERVE;
         let context = rendered + overhead + 10;
         let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
         let plain = generate(&mut Auto(context), &t, &o).unwrap();
@@ -1655,7 +1742,14 @@ pub(crate) mod tests {
             .map(|i| EditorSection {
                 id: None,
                 title: format!("Phần số {i}"),
-                instruction: format!("{} {}", "Nội dung quan trọng của cuộc họp về kế hoạch".repeat(5), i).chars().take(200).collect(),
+                instruction: format!(
+                    "{} {}",
+                    "Nội dung quan trọng của cuộc họp về kế hoạch".repeat(5),
+                    i
+                )
+                .chars()
+                .take(200)
+                .collect(),
             })
             .collect();
         Template::from_editor(
@@ -1663,7 +1757,11 @@ pub(crate) mod tests {
             &Editor {
                 name: "Họp lớn".into(),
                 lang: OutLang::Vi,
-                guidance: "Cuộc họp kế hoạch hằng tuần của nhóm sản phẩm. ".repeat(10).chars().take(400).collect(),
+                guidance: "Cuộc họp kế hoạch hằng tuần của nhóm sản phẩm. "
+                    .repeat(10)
+                    .chars()
+                    .take(400)
+                    .collect(),
                 sections,
             },
             &[],
@@ -1743,10 +1841,24 @@ pub(crate) mod tests {
             self.0
         }
         fn complete(&mut self, req: &Request) -> Result<Completion> {
-            let facts = req.schema.as_ref().unwrap().to_string().contains("\"facts\"");
-            let extra: String = self.1.iter().map(|k| format!("\"{k}\":[]")).collect::<Vec<_>>().join(",");
+            let facts = req
+                .schema
+                .as_ref()
+                .unwrap()
+                .to_string()
+                .contains("\"facts\"");
+            let extra: String = self
+                .1
+                .iter()
+                .map(|k| format!("\"{k}\":[]"))
+                .collect::<Vec<_>>()
+                .join(",");
             Ok(Completion {
-                text: if facts { r#"{"facts":[]}"#.into() } else { reply(&format!("{{{extra}}}")) },
+                text: if facts {
+                    r#"{"facts":[]}"#.into()
+                } else {
+                    reply(&format!("{{{extra}}}"))
+                },
                 tokens_in: 1,
                 tokens_out: 1,
                 truncated: false,
@@ -1771,18 +1883,25 @@ pub(crate) mod tests {
         let t = Transcript::new(segs).unwrap();
         let all: Vec<&Segment> = t.segments().iter().collect();
         let rendered = estimate_tokens(&render(&t, &Aliases::new(&t), &all));
-        let overhead = 2048 + PROMPT_OVERHEAD + RETRY_RESERVE;
+        let overhead = REDUCE_OUTPUT_TOKENS + PROMPT_OVERHEAD + RETRY_RESERVE;
         let context = rendered + overhead + 10;
         let general = Options::new(crate::template::builtin("general").unwrap(), OutLang::Vi);
         assert_eq!(general.template_tokens(), 0);
         assert_eq!(general.template_bytes(), 0);
-        assert_eq!(generate(&mut Auto(context), &t, &general).unwrap().strategy, Strategy::Single);
+        assert_eq!(
+            generate(&mut Auto(context), &t, &general).unwrap().strategy,
+            Strategy::Single
+        );
         let big = Options::new(big_template(), OutLang::Vi);
         assert!(big.template_tokens() > 300, "{}", big.template_tokens());
         assert!(big.template_bytes() > 1500, "{}", big.template_bytes());
         let keys: Vec<String> = big.template.sections.iter().map(|x| x.id.clone()).collect();
         let run = generate(&mut AutoKeys(context, keys), &t, &big).unwrap();
-        assert!(matches!(run.strategy, Strategy::MapReduce { parts } if parts > 1), "{:?}", run.strategy);
+        assert!(
+            matches!(run.strategy, Strategy::MapReduce { parts } if parts > 1),
+            "{:?}",
+            run.strategy
+        );
     }
 
     /// The template's words come after the fixed safety rules: the rules are the system
@@ -1807,16 +1926,25 @@ pub(crate) mod tests {
         )
         .unwrap();
         let section_id = tpl.sections[0].id.clone();
-        let t = Transcript::new(vec![seg(1, 0.0, 4.0, "S1", "we ship on the twelfth", "en")]).unwrap();
+        let t =
+            Transcript::new(vec![seg(1, 0.0, 4.0, "S1", "we ship on the twelfth", "en")]).unwrap();
         let all: Vec<&Segment> = t.segments().iter().collect();
         let o = Options::new(tpl, OutLang::En);
         let (req, _) = request(&t, &all, &Aliases::new(&t), &o, Dialect::Local);
         let (system, task) = (&req.messages[0], &req.messages[1]);
         assert_eq!(system.role, crate::Role::System);
         assert_eq!(task.role, crate::Role::User);
-        for secret in ["XYLOPHONE-GUIDANCE", "QUOKKA-INSTRUCTION", "Zebra quarterly", section_id.as_str()] {
+        for secret in [
+            "XYLOPHONE-GUIDANCE",
+            "QUOKKA-INSTRUCTION",
+            "Zebra quarterly",
+            section_id.as_str(),
+        ] {
             assert!(!system.content.contains(secret), "{secret} is in the rules");
-            assert!(task.content.contains(secret), "{secret} is missing from the task");
+            assert!(
+                task.content.contains(secret),
+                "{secret} is missing from the task"
+            );
         }
         // In the task, the fixed output keys come first and the template's sections follow them.
         let at = |needle: &str| task.content.find(needle).unwrap();
@@ -1902,6 +2030,7 @@ pub(crate) mod tests {
             r#"{"decisions":[{"text":"Early","status":"decided","cite":[3]}],"tldr":[{"text":"Late","cite":[55]},{"text":"Unmarked","cite":[30]}]}"#,
         );
         let mut llm = Scripted::new(&[&f1, &f2, &f3, &reduce]);
+        llm.context = 18_432; // 16k of room for the transcript, as before the reduce was given 4k to write
         let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
         o.marks = vec![
             hint(3, MarkKind::Decision, 90_000),
@@ -2013,7 +2142,7 @@ pub(crate) mod tests {
                 r#"{"decisions":[{"text":"Ship Friday","status":"decided","cite":[21]},{"text":"Dark mode","status":"proposed","cite":[0]}]}"#,
             ),
         ]);
-        llm.context = 6500;
+        llm.context = 8548;
         let o = Options::new(template::builtin("general").unwrap(), OutLang::En);
         let run = generate(&mut llm, &t, &o).unwrap();
         assert_eq!(run.strategy, Strategy::MapReduce { parts: 2 });
@@ -2056,7 +2185,7 @@ pub(crate) mod tests {
                     "open_questions":[{"text":"Try dark mode","cite":[0]},{"text":"Budget?","cite":[22]}]}"#,
             ),
         ]);
-        llm.context = 6500;
+        llm.context = 8548;
         let o = Options::new(template::builtin("general").unwrap(), OutLang::En);
         let run = generate(&mut llm, &t, &o).unwrap();
         assert_eq!(run.notes.proposals[0].text, "Try dark mode");
@@ -2090,7 +2219,7 @@ pub(crate) mod tests {
                       {"text":"Ship Friday","cite":[21]}]}"#,
             ),
         ]);
-        llm.context = 6500;
+        llm.context = 8548;
         let o = Options::new(template::builtin("general").unwrap(), OutLang::En);
         let run = generate(&mut llm, &t, &o).unwrap();
         let q: Vec<&str> = run
@@ -2104,5 +2233,78 @@ pub(crate) mod tests {
             ["Should we maybe switch vendors, and who would pay for it?"]
         );
         assert_eq!(run.notes.proposals[0].text, "Try dark mode");
+    }
+
+    #[test]
+    fn the_reduce_is_bounded_and_retries_with_fewer_facts_when_still_cut_off() {
+        let mut segs = Vec::new();
+        for i in 0..40u64 {
+            let sp = if i % 2 == 0 { "S1" } else { "S2" };
+            segs.push(seg(
+                i,
+                i as f64 * 30.0,
+                i as f64 * 30.0 + 25.0,
+                sp,
+                &"word ".repeat(40),
+                "en",
+            ));
+        }
+        let t = Transcript::new(segs).unwrap();
+        let fact = |kind: &str, text: &str, cite: u64| {
+            format!(
+                r#"{{"kind":"{kind}","text":"{text}","speaker":"SPK1","owner":null,"due":null,"cite":[{cite}]}}"#
+            )
+        };
+        let map1 = format!(
+            r#"{{"facts":[{},{}]}}"#,
+            fact("decision", "Ship Friday", 0),
+            fact("point", "minor aside", 1)
+        );
+        let map2 = r#"{"facts":[]}"#;
+        let mut llm = Scripted::new(&[
+            &map1,
+            map2,
+            "{",
+            &reply(r#"{"tldr":[{"text":"ok","cite":[0]}]}"#),
+        ]);
+        llm.replies[2].1 = true; // the first reduce reply is cut off
+        llm.context = 8548;
+        let o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        let run = generate(&mut llm, &t, &o).unwrap();
+        assert_eq!(run.strategy, Strategy::MapReduce { parts: 2 });
+        let (first, second) = (&llm.requests[2], &llm.requests[3]);
+        assert!(first.messages[1].content.contains("minor aside"));
+        assert!(
+            !second.messages[1].content.contains("minor aside"),
+            "fewer facts"
+        );
+        // The reduce writes up to 4,096 tokens, and its lists are bounded.
+        assert_eq!(first.max_tokens, REDUCE_OUTPUT_TOKENS);
+        let p = &first.schema.as_ref().unwrap()["properties"];
+        assert_eq!(p["decisions"]["maxItems"], 12);
+        assert_eq!(p["action_items"]["maxItems"], 15);
+        assert_eq!(p["tldr"]["maxItems"], 5);
+        assert_eq!(
+            p["decisions"]["items"]["properties"]["text"]["maxLength"],
+            240
+        );
+        assert_eq!(p["decisions"]["items"]["properties"]["cite"]["maxItems"], 4);
+        // The map steps are not bounded this way.
+        assert!(
+            llm.requests[0]
+                .schema
+                .as_ref()
+                .unwrap()
+                .to_string()
+                .find("maxLength")
+                .is_none()
+        );
+        // Two cut-offs in a row with nothing left to drop: an error, not a loop.
+        let mut cut = Scripted::new(&[&map1, map2, "{", "{", "{"]);
+        for r in &mut cut.replies[2..] {
+            r.1 = true;
+        }
+        cut.context = 8548;
+        assert!(generate(&mut cut, &t, &o).is_err());
     }
 }
