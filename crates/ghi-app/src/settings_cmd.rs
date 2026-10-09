@@ -71,11 +71,27 @@ pub(crate) fn store_packs(
     {
         return Err(format!("unknown glossary pack {bad}"));
     }
-    // Pack order, each once.
-    let out: Vec<&str> = ghi_store::sync::settings::PACK_IDS
+    // The known ids asked for, in pack order, once each; then the ids this
+    // build does not know that are already stored (a newer device's packs), so
+    // saving here does not wipe them through last-writer-wins.
+    let stored: Vec<String> = store
+        .get_setting(vocab::PACKS_SETTING)
+        .map_err(|e| e.to_string())?
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    let mut out: Vec<String> = ghi_store::sync::settings::PACK_IDS
         .into_iter()
         .filter(|p| ids.iter().any(|i| i == p))
+        .map(String::from)
         .collect();
+    for id in stored {
+        if !ghi_store::sync::settings::PACK_IDS.contains(&id.as_str())
+            && ghi_store::sync::settings::is_pack_id(&id)
+            && !out.contains(&id)
+        {
+            out.push(id);
+        }
+    }
     let value = serde_json::json!(out);
     store
         .set_setting(vocab::PACKS_SETTING, &value)
@@ -335,5 +351,31 @@ mod tests {
         // Off again.
         let v = store_packs(&store, vec![]).unwrap();
         assert!(v.packs.iter().all(|p| !p.enabled));
+    }
+
+    #[test]
+    fn packs_from_a_newer_device_survive_a_save_here() {
+        let (_t, store) = open();
+        store
+            .set_setting(
+                vocab::PACKS_SETTING,
+                &serde_json::json!(["klingon-en", "tech-en", "Bad Id"]),
+            )
+            .unwrap();
+        let v = store_packs(&store, vec!["medical-vi".into()]).unwrap();
+        let on: Vec<&str> = v
+            .packs
+            .iter()
+            .filter(|p| p.enabled)
+            .map(|p| p.id.as_str())
+            .collect();
+        assert_eq!(on, ["medical-vi"], "tech-en was switched off here");
+        assert_eq!(
+            store.get_setting(vocab::PACKS_SETTING).unwrap().unwrap(),
+            serde_json::json!(["medical-vi", "klingon-en"]),
+            "the unknown pack stays, the malformed id goes"
+        );
+        // Still only the ids this build knows are applied.
+        assert_eq!(vocab::enabled_packs(&store).unwrap(), ["medical-vi"]);
     }
 }
