@@ -110,6 +110,7 @@
     "allow-ask-meeting",
     "allow-vocabulary",
     "allow-set-vocabulary",
+    "allow-set-vocabulary-packs",
     "allow-ignore-learned-term",
     "allow-export-everything",
     "allow-delete-all-data",

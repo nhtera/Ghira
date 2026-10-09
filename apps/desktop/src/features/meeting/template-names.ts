@@ -11,6 +11,7 @@ const KEYS: Record<string, string> = {
   interview: "meeting.templates.interview",
   lecture: "meeting.templates.lecture",
   sales: "meeting.templates.sales",
+  consultation: "meeting.templates.consultation",
 };
 
 export const DEFAULT_TEMPLATE = "general";

@@ -328,6 +328,11 @@ export const commands = {
 	vocabulary: () => typedError<Vocabulary, string>(__TAURI_INVOKE("vocabulary")),
 	/**  Replaces the user's terms (trimmed, deduplicated, at most 200). */
 	setVocabulary: (terms: string[]) => typedError<Vocabulary, string>(__TAURI_INVOKE("set_vocabulary", { terms })),
+	/**
+	 *  Switches the glossary packs on (the ids listed) and the rest off. Unknown
+	 *  ids are refused; the choice syncs to the paired devices.
+	 */
+	setVocabularyPacks: (ids: string[]) => typedError<Vocabulary, string>(__TAURI_INVOKE("set_vocabulary_packs", { ids })),
 	/**  Removes a learned name from the vocabulary (it stays removed). */
 	ignoreLearnedTerm: (term: string) => typedError<Vocabulary, string>(__TAURI_INVOKE("ignore_learned_term", { term })),
 	/**
@@ -1505,6 +1510,15 @@ export type Origin = "user" | "ai" |
 /**  AI-written, then changed by the user (kept by a regenerate). */
 "aiEdited";
 
+/**  A bundled glossary pack (`<domain>-<lang>`; the UI names it by id). */
+export type PackInfo = {
+	id: string,
+	domain: string,
+	lang: string,
+	terms: number,
+	enabled: boolean,
+};
+
 /**  A pairing code to show on the desktop. */
 export type PairOffer = {
 	/**  The QR code as an SVG document (rendered in Rust; the webview only displays it). */
@@ -1933,6 +1947,8 @@ export type Vocabulary = {
 	/**  Names learned from the speakers the user named (removable). */
 	learned: string[],
 	maxTerms: number,
+	/**  The bundled glossary packs, with the ones switched on. */
+	packs: PackInfo[],
 };
 
 /**

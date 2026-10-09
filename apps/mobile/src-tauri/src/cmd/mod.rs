@@ -126,6 +126,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             ghi_app::system::update_settings,
             ghi_app::settings_cmd::vocabulary,
             ghi_app::settings_cmd::set_vocabulary,
+            ghi_app::settings_cmd::set_vocabulary_packs,
             ghi_app::settings_cmd::ignore_learned_term,
             ghi_app::lock_cmd::lock_state,
             ghi_app::lock_cmd::lock_now,

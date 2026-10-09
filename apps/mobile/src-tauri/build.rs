@@ -92,6 +92,7 @@ fn main() {
             "update_settings",
             "vocabulary",
             "set_vocabulary",
+            "set_vocabulary_packs",
             "ignore_learned_term",
             "lock_state",
             "lock_now",

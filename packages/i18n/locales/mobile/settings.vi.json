@@ -160,6 +160,26 @@
         "learnedFooter": "Các tên này cũng được dùng. Xoá để ngừng sửa theo tên đó.",
         "learnedEmpty": "Chưa có. Tên bạn đặt cho người nói sẽ hiện ở đây."
       },
+      "packs": {
+        "header": "Bộ thuật ngữ",
+        "footer": "Thuật ngữ thông dụng của một lĩnh vực. Bản ghi cuối được sửa theo các từ này, nhưng chỉ sửa lỗi gần đúng của từ dài, nên từ thường ngày vẫn giữ nguyên như đã nói.",
+        "names": {
+          "medical": "Y tế",
+          "legal": "Pháp lý",
+          "finance": "Tài chính",
+          "tech": "Công nghệ phần mềm"
+        },
+        "about": {
+          "medical": "Bệnh, thuốc, xét nghiệm và thủ thuật.",
+          "legal": "Hợp đồng, tòa án, đất đai và luật doanh nghiệp.",
+          "finance": "Kế toán, thuế, ngân hàng và đầu tư.",
+          "tech": "Phần mềm, đám mây, bảo mật và AI."
+        },
+        "lang": {
+          "en": "Tiếng Anh",
+          "vi": "Tiếng Việt"
+        }
+      },
       "calendar": {
         "title": "Lịch",
         "header": "Tiêu đề và người tham dự cuộc họp",

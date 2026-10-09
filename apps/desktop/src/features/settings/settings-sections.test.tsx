@@ -34,6 +34,30 @@ describe("custom vocabulary", () => {
   });
 });
 
+describe("glossary packs", () => {
+  it("switches a pack on and off through the core, one pack at a time", async () => {
+    const user = userEvent.setup();
+    const save = vi.spyOn(ipc.commands, "setVocabularyPacks");
+    renderSettings(<LanguagesSection />);
+    const medical = await screen.findByRole("switch", { name: "Medical · Vietnamese" });
+    const tech = screen.getByRole("switch", { name: "Tech and software · English" });
+    expect(medical.getAttribute("aria-checked")).toBe("false");
+    await user.click(medical);
+    await waitFor(() => expect(medical.getAttribute("aria-checked")).toBe("true"));
+    expect(save).toHaveBeenLastCalledWith(["medical-vi"]);
+    await user.click(tech);
+    await waitFor(() => expect(tech.getAttribute("aria-checked")).toBe("true"));
+    expect(save).toHaveBeenLastCalledWith(["medical-vi", "tech-en"]);
+    expect(medical.getAttribute("aria-checked")).toBe("true");
+    await user.click(medical);
+    await waitFor(() => expect(medical.getAttribute("aria-checked")).toBe("false"));
+    expect(save).toHaveBeenLastCalledWith(["tech-en"]);
+    await user.click(tech);
+    await waitFor(() => expect(tech.getAttribute("aria-checked")).toBe("false"));
+    expect(save).toHaveBeenLastCalledWith([]);
+  });
+});
+
 describe("provider keys", () => {
   it("never puts a saved key back into the page", async () => {
     const user = userEvent.setup();

@@ -90,3 +90,8 @@ export function filterLicenses(rows: LicenseRow[], query: string): LicenseRow[] 
     return words.every((w) => hay.includes(w));
   });
 }
+
+/** The pack ids to save after switching `id` on or off (the others stay as they are). */
+export function packsAfter(packs: readonly { id: string; enabled: boolean }[], id: string, on: boolean): string[] {
+  return packs.filter((p) => (p.id === id ? on : p.enabled)).map((p) => p.id);
+}

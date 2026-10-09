@@ -244,6 +244,7 @@ const TEMPLATES: TemplateInfo[] = [
   { id: "sales", name: "Sales call", sections: [] },
   { id: "interview", name: "Interview", sections: [] },
   { id: "lecture", name: "Lecture", sections: [] },
+  { id: "consultation", name: "Consultation", sections: [] },
 ];
 
 // Import: staged files from the design's sample list.

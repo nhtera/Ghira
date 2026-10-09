@@ -3,7 +3,7 @@
 // returned), the cloud send preview / send with a request log, "Ask this
 // meeting", the custom vocabulary, export-everything and delete-all. `?cloudfail=1`
 // in the URL makes cloud sends fail (to see the local fallback).
-import type { AsrEngine, AskAllAnswer, AskScope, AskAnswer, CloudLogEntry, CloudModel, CloudPreview, MeetingRow, MeetingRef, MeetingTranscript, RelatedHit, Vocabulary } from "../bindings";
+import type { AsrEngine, AskAllAnswer, AskScope, AskAnswer, CloudLogEntry, CloudModel, CloudPreview, MeetingRow, MeetingRef, MeetingTranscript, PackInfo, RelatedHit, Vocabulary } from "../bindings";
 import email from "@ghi/ui/mocks/email.json";
 import type { Commands } from "./ipc";
 
@@ -41,6 +41,11 @@ const pending = new Map<string, Pending>();
 let seq = 0;
 let terms: string[] = ["Nemotron", "CoreML", "Plaud"];
 const ignored = new Set<string>();
+/** The glossary packs, in the core's order (`<domain>-<lang>`), and the ones switched on. */
+const PACK_CATALOG: PackInfo[] = (["medical", "legal", "finance", "tech"] as const).flatMap((domain) =>
+  (["en", "vi"] as const).map((lang) => ({ id: `${domain}-${lang}`, domain, lang, terms: 120, enabled: false })),
+);
+let packsOn = new Set<string>();
 
 const fold = (s: string) =>
   s
@@ -69,7 +74,7 @@ function vocabulary(host: AiHost): Vocabulary {
   const learned = [...new Set(host.rows.flatMap((r) => r.people.map((p) => p.name)))]
     .filter((n) => !ignored.has(n) && !terms.some((t) => fold(t) === fold(n)))
     .sort();
-  return { terms: [...terms], learned, maxTerms: 200 };
+  return { terms: [...terms], learned, maxTerms: 200, packs: PACK_CATALOG.map((pk) => ({ ...pk, enabled: packsOn.has(pk.id) })) };
 }
 
 
@@ -153,6 +158,7 @@ type AiCommands = Pick<
   | "relatedMeetings"
   | "vocabulary"
   | "setVocabulary"
+  | "setVocabularyPacks"
   | "transcriptionEngine"
   | "setTranscriptionEngine"
   | "ignoreLearnedTerm"
@@ -280,6 +286,12 @@ export function aiCommands(host: AiHost): AiCommands {
       for (const t of next.map((x) => x.trim()).filter(Boolean)) if (!out.some((o) => fold(o) === fold(t))) out.push(t);
       if (out.length > 200) return fail("at most 200 terms");
       terms = out;
+      return ok(vocabulary(host));
+    },
+    setVocabularyPacks: (ids) => {
+      const bad = ids.find((i) => !PACK_CATALOG.some((pk) => pk.id === i));
+      if (bad) return fail(`unknown glossary pack ${bad}`);
+      packsOn = new Set(ids);
       return ok(vocabulary(host));
     },
     ignoreLearnedTerm: (term) => {

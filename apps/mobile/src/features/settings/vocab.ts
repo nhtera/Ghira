@@ -16,3 +16,8 @@ export function addTerm(terms: string[], input: string, max: number): TermResult
   if (terms.length >= max) return { terms, status: "full" };
   return { terms: [...terms, term], status: "added" };
 }
+
+/** The pack ids to save after switching `id` on or off (the others stay as they are). */
+export function packsAfter(packs: readonly { id: string; enabled: boolean }[], id: string, on: boolean): string[] {
+  return packs.filter((p) => (p.id === id ? on : p.enabled)).map((p) => p.id);
+}

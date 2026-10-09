@@ -134,6 +134,7 @@ fn main() {
             "export_everything",
             "ignore_learned_term",
             "set_vocabulary",
+            "set_vocabulary_packs",
             "vocabulary",
             "ask_meeting",
             "cloud_request_log",

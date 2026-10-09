@@ -8,14 +8,15 @@ import { useTranslation } from "react-i18next";
 import type { Vocabulary } from "../../bindings";
 import { ipc } from "../../ipc";
 import { unwrap, useAction, useResource } from "../../features/settings/api";
-import { Btn, ErrorLine, Field } from "../../features/settings/controls";
+import { Btn, ErrorLine, Field, Switch } from "../../features/settings/controls";
 import { Page } from "../../features/settings/page";
-import { addTerm, type TermResult } from "../../features/settings/vocab";
+import { addTerm, packsAfter, type TermResult } from "../../features/settings/vocab";
 
 const load = async () => unwrap(await ipc.commands.vocabulary());
 
 export function VocabularyScreen() {
   const { t } = useTranslation();
+  const tx = t as (k: string) => string;
   const vocab = useResource(load);
   const action = useAction();
   const [draft, setDraft] = useState("");
@@ -38,6 +39,8 @@ export function VocabularyScreen() {
   };
   const remove = (term: string) =>
     void apply(async () => unwrap(await ipc.commands.setVocabulary(v!.terms.filter((x) => x !== term))));
+  const togglePack = (id: string, on: boolean) =>
+    void apply(async () => unwrap(await ipc.commands.setVocabularyPacks(packsAfter(v!.packs, id, on))));
   const forget = (term: string) => void apply(async () => unwrap(await ipc.commands.ignoreLearnedTerm(term)));
 
   return (
@@ -98,6 +101,20 @@ export function VocabularyScreen() {
               ))}
             </ListSection>
           )}
+
+          <ListSection header={t("mobile.settings.packs.header")} footer={t("mobile.settings.packs.footer")}>
+            {v.packs.map((p) => {
+              const name = `${tx(`mobile.settings.packs.names.${p.domain}`)} · ${tx(`mobile.settings.packs.lang.${p.lang}`)}`;
+              return (
+                <ListRow
+                  key={p.id}
+                  title={name}
+                  subtitle={tx(`mobile.settings.packs.about.${p.domain}`)}
+                  trailing={(id) => <Switch checked={p.enabled} labelledBy={id} disabled={action.busy} onChange={(on) => togglePack(p.id, on)} />}
+                />
+              );
+            })}
+          </ListSection>
 
           <ListSection header={t("mobile.settings.vocab.learnedHeader")} footer={t("mobile.settings.vocab.learnedFooter")}>
             {v.learned.length === 0 ? (

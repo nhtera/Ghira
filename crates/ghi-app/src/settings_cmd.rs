@@ -16,14 +16,72 @@ pub struct Vocabulary {
     /// Names learned from the speakers the user named (removable).
     pub learned: Vec<String>,
     pub max_terms: u32,
+    /// The bundled glossary packs, with the ones switched on.
+    pub packs: Vec<PackInfo>,
+}
+
+/// A bundled glossary pack (`<domain>-<lang>`; the UI names it by id).
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PackInfo {
+    pub id: String,
+    pub domain: String,
+    pub lang: String,
+    pub terms: u32,
+    pub enabled: bool,
 }
 
 fn vocabulary_of(store: &ghi_store::store::Store) -> Result<Vocabulary, String> {
+    let on = vocab::enabled_packs(store)?;
     Ok(Vocabulary {
         terms: vocab::user_terms(store)?,
         learned: vocab::learned_terms(store)?,
         max_terms: MAX_TERMS as u32,
+        packs: vocab::packs()
+            .iter()
+            .map(|p| PackInfo {
+                id: p.id.clone(),
+                domain: p.domain.clone(),
+                lang: p.lang.clone(),
+                terms: p.terms.len() as u32,
+                enabled: on.contains(&p.id),
+            })
+            .collect(),
     })
+}
+
+/// Switches the glossary packs on (the ids listed) and the rest off. Unknown
+/// ids are refused; the choice syncs to the paired devices.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_vocabulary_packs(
+    core: CoreState<'_>,
+    ids: Vec<String>,
+) -> Result<Vocabulary, String> {
+    blocking(&core, move |c| store_packs(&*c.store()?, ids)).await
+}
+
+pub(crate) fn store_packs(
+    store: &ghi_store::store::Store,
+    ids: Vec<String>,
+) -> Result<Vocabulary, String> {
+    if let Some(bad) = ids
+        .iter()
+        .find(|i| !ghi_store::sync::settings::PACK_IDS.contains(&i.as_str()))
+    {
+        return Err(format!("unknown glossary pack {bad}"));
+    }
+    // Pack order, each once.
+    let out: Vec<&str> = ghi_store::sync::settings::PACK_IDS
+        .into_iter()
+        .filter(|p| ids.iter().any(|i| i == p))
+        .collect();
+    let value = serde_json::json!(out);
+    store
+        .set_setting(vocab::PACKS_SETTING, &value)
+        .map_err(|e| e.to_string())?;
+    sync_setting(store, vocab::PACKS_SETTING, &value);
+    vocabulary_of(store)
 }
 
 #[tauri::command]
@@ -210,5 +268,72 @@ mod tests {
         let back = store_engine(&store, &models, AsrEngine::Nemo).unwrap();
         assert_eq!(back.engine, AsrEngine::Nemo);
         assert!(crate::core::wanted_optional_models(&store).is_empty());
+    }
+
+    fn open() -> (tempfile::TempDir, ghi_store::store::Store) {
+        let t = tempfile::tempdir().unwrap();
+        let store = ghi_store::store::Store::open(
+            t.path(),
+            std::sync::Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        (t, store)
+    }
+
+    #[test]
+    fn glossary_packs_are_validated_stored_and_synced() {
+        let (_t, store) = open();
+        let v = vocabulary_of(&store).unwrap();
+        assert_eq!(v.packs.len(), ghi_store::sync::settings::PACK_IDS.len());
+        assert!(v.packs.iter().all(|p| !p.enabled && p.terms > 0));
+
+        let v = store_packs(
+            &store,
+            vec!["tech-en".into(), "medical-vi".into(), "tech-en".into()],
+        )
+        .unwrap();
+        let on: Vec<&str> = v
+            .packs
+            .iter()
+            .filter(|p| p.enabled)
+            .map(|p| p.id.as_str())
+            .collect();
+        assert_eq!(on, ["medical-vi", "tech-en"], "pack order, once each");
+        assert_eq!(
+            store.get_setting(vocab::PACKS_SETTING).unwrap().unwrap(),
+            serde_json::json!(["medical-vi", "tech-en"])
+        );
+        // The final pass reads the same setting.
+        assert_eq!(
+            vocab::enabled_packs(&store).unwrap(),
+            ["medical-vi", "tech-en"]
+        );
+        let synced = store
+            .changes_since(0, 256)
+            .unwrap()
+            .changes
+            .into_iter()
+            .any(|c| {
+                matches!(&c.record, ghi_store::sync::records::Record::Setting(s)
+                    if s.key == vocab::PACKS_SETTING
+                        && s.value_json.as_deref() == Some("[\"medical-vi\",\"tech-en\"]"))
+            });
+        assert!(synced, "the choice is in the change feed");
+
+        // Unknown ids change nothing.
+        for bad in [
+            vec!["klingon-en".to_string()],
+            vec!["tech-en".into(), "x".into()],
+        ] {
+            assert!(store_packs(&store, bad).is_err());
+        }
+        assert_eq!(
+            vocab::enabled_packs(&store).unwrap(),
+            ["medical-vi", "tech-en"]
+        );
+        // Off again.
+        let v = store_packs(&store, vec![]).unwrap();
+        assert!(v.packs.iter().all(|p| !p.enabled));
     }
 }

@@ -740,6 +740,27 @@
         "learnedTitle": "Learned from names you gave speakers",
         "learnedHint": "These are used too. Remove one to stop correcting towards it.",
         "learnedEmpty": "Nothing yet. Names you give speakers appear here."
+      },
+      "packs": {
+        "title": "Glossary packs",
+        "hint": "Common terms for a field. The final transcript is corrected towards them, but only close misspellings of longer terms, so everyday words stay as spoken.",
+        "names": {
+          "medical": "Medical",
+          "legal": "Legal",
+          "finance": "Finance",
+          "tech": "Tech and software"
+        },
+        "about": {
+          "medical": "Conditions, medicines, tests and procedures.",
+          "legal": "Contracts, courts, property and company law.",
+          "finance": "Accounting, tax, banking and investing.",
+          "tech": "Software, cloud, security and AI."
+        },
+        "lang": {
+          "en": "English",
+          "vi": "Vietnamese"
+        },
+        "count": "{{count}} terms"
       }
     },
     "recording": {
@@ -1679,7 +1700,8 @@
     "templates": {
       "interview": "Interview",
       "lecture": "Lecture / Workshop",
-      "sales": "Sales call"
+      "sales": "Sales call",
+      "consultation": "Consultation"
     },
     "noAudio": "Audio deleted",
     "tabs": "Meeting",

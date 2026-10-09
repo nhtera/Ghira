@@ -389,6 +389,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cloud_cmd::ask_meeting,
             settings_cmd::vocabulary,
             settings_cmd::set_vocabulary,
+            settings_cmd::set_vocabulary_packs,
             settings_cmd::ignore_learned_term,
             settings_cmd::export_everything,
             settings_cmd::delete_all_data,

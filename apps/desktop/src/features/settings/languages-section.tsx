@@ -8,7 +8,7 @@ import { Button, Icon, Segmented } from "@ghi/ui";
 import type { AppSettings, MeetingLanguage, Vocabulary } from "../../bindings";
 import { APP_NAME, formatDate, formatTime, type Locale } from "@ghi/i18n";
 import { ipc } from "../../ipc";
-import { addTerm, editTerm, type TermResult } from "./logic";
+import { addTerm, editTerm, packsAfter, type TermResult } from "./logic";
 import { Card, Row, Switch, bigSegCls, inputCls, useFail, useSettings } from "./parts";
 
 const vocabKey = ["vocabulary"] as const;
@@ -58,15 +58,13 @@ export function LanguagesSection() {
         </Row>
       </Card>
       <VocabularyCard />
+      <GlossaryPacksCard />
     </div>
   );
 }
 
-export function VocabularyCard() {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const fail = useFail();
-  const { data } = useQuery({
+const useVocabulary = () =>
+  useQuery({
     queryKey: vocabKey,
     queryFn: async () => {
       const r = await ipc.commands.vocabulary();
@@ -74,6 +72,46 @@ export function VocabularyCard() {
       return r.data;
     },
   });
+
+/** Switches for the bundled glossary packs (they sync to the phone). */
+export function GlossaryPacksCard() {
+  const { t } = useTranslation();
+  const tx = t as (k: string, o?: Record<string, unknown>) => string;
+  const queryClient = useQueryClient();
+  const fail = useFail();
+  const { data } = useVocabulary();
+  const [saving, setSaving] = useState(false);
+  const toggle = async (id: string, on: boolean) => {
+    const cur = queryClient.getQueryData<Vocabulary>(vocabKey) ?? data;
+    if (!cur || saving) return;
+    setSaving(true);
+    const r = await ipc.commands.setVocabularyPacks(packsAfter(cur.packs, id, on));
+    setSaving(false);
+    if (r.status === "ok") queryClient.setQueryData(vocabKey, r.data);
+    else fail(r.error);
+  };
+  if (!data) return null;
+  return (
+    <Card title={t("settings.languages.packs.title")} hint={t("settings.languages.packs.hint")} className="max-w-2xl">
+      <div data-testid="glossary-packs">
+        {data.packs.map((p) => {
+          const name = `${tx(`settings.languages.packs.names.${p.domain}`)} · ${tx(`settings.languages.packs.lang.${p.lang}`)}`;
+          return (
+            <Row key={p.id} label={name} hint={`${tx(`settings.languages.packs.about.${p.domain}`)} ${tx("settings.languages.packs.count", { count: p.terms })}`}>
+              <Switch checked={p.enabled} disabled={saving} label={name} onChange={(on) => void toggle(p.id, on)} />
+            </Row>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+export function VocabularyCard() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const fail = useFail();
+  const { data } = useVocabulary();
   const [draft, setDraft] = useState("");
   const [message, setMessage] = useState<TermResult["status"] | null>(null);
   const [editing, setEditing] = useState<number | null>(null);

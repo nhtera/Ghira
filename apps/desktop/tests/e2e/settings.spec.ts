@@ -25,6 +25,20 @@ test("adds a custom vocabulary term", async ({ page }) => {
   await expect(page.getByText(/^Already in the list\./)).toBeVisible();
 });
 
+test("glossary packs switch on and stay on", async ({ page }) => {
+  await open(page, "languages");
+  const medical = page.getByRole("switch", { name: "Medical · Vietnamese" });
+  await expect(page.getByTestId("glossary-packs").getByRole("switch")).toHaveCount(8);
+  await expect(medical).toHaveAttribute("aria-checked", "false");
+  await medical.click();
+  await expect(medical).toHaveAttribute("aria-checked", "true");
+  // Away and back: the state comes from the core.
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "General", exact: true }).click();
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Languages", exact: true }).click();
+  await expect(page.getByRole("switch", { name: "Medical · Vietnamese" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("switch", { name: "Legal · English" })).toHaveAttribute("aria-checked", "false");
+});
+
 test("a saved key is never shown again and nothing is logged", async ({ page }) => {
   await open(page, "ai");
   await expect(page.getByTestId("log-empty")).toBeVisible();

@@ -161,6 +161,26 @@
         "learnedFooter": "These are used too. Remove one to stop correcting towards it.",
         "learnedEmpty": "Nothing yet. Names you give speakers appear here."
       },
+      "packs": {
+        "header": "Glossary packs",
+        "footer": "Common terms for a field. The final transcript is corrected towards them, but only close misspellings of longer terms, so everyday words stay as spoken.",
+        "names": {
+          "medical": "Medical",
+          "legal": "Legal",
+          "finance": "Finance",
+          "tech": "Tech and software"
+        },
+        "about": {
+          "medical": "Conditions, medicines, tests and procedures.",
+          "legal": "Contracts, courts, property and company law.",
+          "finance": "Accounting, tax, banking and investing.",
+          "tech": "Software, cloud, security and AI."
+        },
+        "lang": {
+          "en": "English",
+          "vi": "Vietnamese"
+        }
+      },
       "calendar": {
         "title": "Calendar",
         "header": "Meeting titles and attendees",

@@ -99,3 +99,20 @@ test("Vietnamese at 200% text stays accessible", async ({ page }) => {
   await expect(page.getByTestId("vocab-count")).toHaveText("1/200");
   await expectAccessible(page);
 });
+
+test("a glossary pack is switched on, kept after leaving, and off again", async ({ page }) => {
+  await openApp(page, "/settings/vocabulary");
+  const medical = page.getByRole("switch", { name: /^Medical · Vietnamese/ });
+  await expect(page.getByRole("switch")).toHaveCount(8);
+  await expect(medical).toHaveAttribute("aria-checked", "false");
+  await medical.click();
+  await expect(medical).toHaveAttribute("aria-checked", "true");
+  expect(await calls(page, "setVocabularyPacks")).toBe(1);
+  await page.evaluate(() => (location.hash = "#/settings"));
+  await page.evaluate(() => (location.hash = "#/settings/vocabulary"));
+  await expect(page.getByRole("switch", { name: /^Medical · Vietnamese/ })).toHaveAttribute("aria-checked", "true");
+  await expectAccessible(page);
+  await page.getByRole("switch", { name: /^Medical · Vietnamese/ }).click();
+  await expect(page.getByRole("switch", { name: /^Medical · Vietnamese/ })).toHaveAttribute("aria-checked", "false");
+  expect(await calls(page, "setVocabularyPacks")).toBe(2);
+});

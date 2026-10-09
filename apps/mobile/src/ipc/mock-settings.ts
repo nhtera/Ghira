@@ -5,7 +5,7 @@
 // ("the cloud sheet never calls cloudSend before the click"), the lock, the
 // inbox and the failure switches. Time stands still: nothing happens by itself
 // except the short scripted import of an inbox item.
-import type { AppSettings, CloudSendResult, InboxItem, MobileSettings, StoreProblem, Vocabulary } from "../bindings";
+import type { AppSettings, CloudSendResult, InboxItem, MobileSettings, PackInfo, StoreProblem, Vocabulary } from "../bindings";
 import type { Commands } from "./ipc";
 import { recordCommands } from "./mock-record";
 
@@ -54,6 +54,8 @@ export interface GhiSettingsMock {
   learned: string[];
   /** Vocabulary cap (the core's is 200). */
   maxTerms: number;
+  /** The glossary packs switched on. */
+  packsOn: string[];
   /** Meeting ids whose cloud send fails (the notes stay local). */
   failSend: string[];
   /** Meeting ids with cloud AI off. */
@@ -140,6 +142,7 @@ const hooks: GhiSettingsMock = {
   terms: [],
   learned: ["Linh Trần"],
   maxTerms: 200,
+  packsOn: [],
   failSend: [],
   cloudLocked: [],
   inbox: [],
@@ -162,7 +165,7 @@ const hooks: GhiSettingsMock = {
     mobile = freshMobile();
     meDeleted = false;
     ignored = [];
-    Object.assign(hooks, { calls: {}, args: {}, locked: false, starting: false, storeProblem: null, startupFails: false, noAuthMethod: false, warnings: [], retentionNote: "", faceIdOk: true, faceIdPrompts: 0, busy: false, keys: {}, lastKey: "", cloudRequests: 0, logAt: null, terms: [], learned: ["Linh Trần"], maxTerms: 200, failSend: [], cloudLocked: [], inbox: [], inboxImportMs: 250, exportedWith: null, wiped: false });
+    Object.assign(hooks, { calls: {}, args: {}, locked: false, starting: false, storeProblem: null, startupFails: false, noAuthMethod: false, warnings: [], retentionNote: "", faceIdOk: true, faceIdPrompts: 0, busy: false, keys: {}, lastKey: "", cloudRequests: 0, logAt: null, terms: [], learned: ["Linh Trần"], maxTerms: 200, packsOn: [], failSend: [], cloudLocked: [], inbox: [], inboxImportMs: 250, exportedWith: null, wiped: false });
   },
 };
 if (typeof window !== "undefined") {
@@ -206,10 +209,15 @@ export const foldPhrase = (s: string) =>
 
 // Like ghi-core vocab::learned_terms: minus the removed names and the user's own terms, compared without case or accents.
 let ignored: string[] = [];
+// The bundled packs, in the core's order (`<domain>-<lang>`).
+const PACK_CATALOG: PackInfo[] = (["medical", "legal", "finance", "tech"] as const).flatMap((domain) =>
+  (["en", "vi"] as const).map((lang) => ({ id: `${domain}-${lang}`, domain, lang, terms: 120, enabled: false })),
+);
 const vocabularyOf = (): Vocabulary => ({
   terms: [...hooks.terms],
   learned: hooks.learned.filter((n) => ![...ignored, ...hooks.terms].some((x) => foldPhrase(x) === foldPhrase(n))),
   maxTerms: hooks.maxTerms,
+  packs: PACK_CATALOG.map((pk) => ({ ...pk, enabled: hooks.packsOn.includes(pk.id) })),
 });
 
 const RAW_TEXT = "Nguyễn Văn An: Chúng ta chốt ngân sách 2 tỷ đồng cho quý bốn.\nLinh Trần: Mình sẽ gửi báo cáo cho anh An trước thứ Sáu.";
@@ -344,6 +352,12 @@ const scripted: Partial<Commands> = {
     for (const t of terms.map((x) => Array.from(x.trim()).slice(0, 80).join("")).filter(Boolean)) if (!out.some((o) => foldPhrase(o) === foldPhrase(t))) out.push(t);
     if (out.length > hooks.maxTerms) return fail(`at most ${hooks.maxTerms} terms`);
     hooks.terms = out;
+    return ok(vocabularyOf());
+  },
+  setVocabularyPacks: async (ids) => {
+    const bad = ids.find((i) => !PACK_CATALOG.some((pk) => pk.id === i));
+    if (bad) return fail(`unknown glossary pack ${bad}`);
+    hooks.packsOn = PACK_CATALOG.map((pk) => pk.id).filter((id) => ids.includes(id));
     return ok(vocabularyOf());
   },
   ignoreLearnedTerm: async (term) => {

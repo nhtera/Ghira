@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { addTerm } from "./vocab";
+import { addTerm, packsAfter } from "./vocab";
 
 describe("addTerm", () => {
   it("trims and collapses spaces", () => {
@@ -17,5 +17,22 @@ describe("addTerm", () => {
     const full = Array.from({ length: 3 }, (_, i) => `t${i}`);
     expect(addTerm(full, "new", 3)).toEqual({ terms: full, status: "full" });
     expect(addTerm(full, "new", 4).status).toBe("added");
+  });
+});
+
+describe("packsAfter", () => {
+  const packs = [
+    { id: "medical-vi", enabled: true },
+    { id: "tech-en", enabled: false },
+    { id: "legal-en", enabled: true },
+  ];
+  it("adds a pack and keeps the others", () => {
+    expect(packsAfter(packs, "tech-en", true)).toEqual(["medical-vi", "tech-en", "legal-en"]);
+  });
+  it("removes only that pack", () => {
+    expect(packsAfter(packs, "medical-vi", false)).toEqual(["legal-en"]);
+  });
+  it("is not changed by switching a pack to the state it has", () => {
+    expect(packsAfter(packs, "legal-en", true)).toEqual(["medical-vi", "legal-en"]);
   });
 });

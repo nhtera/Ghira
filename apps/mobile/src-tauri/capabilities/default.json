@@ -95,6 +95,7 @@
     "allow-update-settings",
     "allow-vocabulary",
     "allow-set-vocabulary",
+    "allow-set-vocabulary-packs",
     "allow-ignore-learned-term",
     "allow-lock-state",
     "allow-lock-now",
