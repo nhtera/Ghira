@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+id = "consultation"
+name = "Consultation"
+guidance_en = "A consultation call with a professional (doctor, lawyer, advisor). Structure what was said, never add to it: copy numbers, doses, amounts and dates exactly as spoken, never invent or convert them, and do not diagnose or give advice that was not given."
+guidance_vi = "Cuộc tư vấn với chuyên gia (bác sĩ, luật sư, cố vấn). Chỉ sắp xếp lại những gì đã nói, không thêm: giữ nguyên con số, liều lượng, số tiền và ngày tháng như được nói, không tự bịa hay quy đổi, không chẩn đoán và không đưa ra lời khuyên chưa được nói."
+
+[[section]]
+id = "reason"
+title_en = "Reason for the call"
+title_vi = "Lý do cuộc gọi"
+instruction = "Why the person called or asked for the consultation, in their own terms."
+
+[[section]]
+id = "findings"
+title_en = "What was found or said"
+title_vi = "Những gì được nói hoặc ghi nhận"
+instruction = "Facts, results and statements from the professional. Numbers exactly as said. No diagnosis that was not stated."
+
+[[section]]
+id = "advice"
+title_en = "Advice"
+title_vi = "Lời khuyên"
+instruction = "Advice or recommendations the professional actually gave."
+
+[[section]]
+id = "next_steps"
+title_en = "Next steps"
+title_vi = "Các bước tiếp theo"
+instruction = "What each side agreed to do next."
+
+[[section]]
+id = "next_questions"
+title_en = "Questions for next time"
+title_vi = "Câu hỏi cho lần sau"
+instruction = "Questions left open or to bring to the next consultation."
+
+[[section]]
+id = "follow_up"
+title_en = "Follow-up date"
+title_vi = "Ngày hẹn lại"
+instruction = "The follow-up date or time exactly as said. Leave empty if none was given."

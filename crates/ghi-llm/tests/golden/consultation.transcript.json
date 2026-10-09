@@ -1,0 +1,175 @@
+{
+ "schema": "ghi.transcript/1",
+ "audio": "consultation.wav",
+ "duration_s": 120.0,
+ "pass": "final",
+ "lang": "en",
+ "engine": {
+  "name": "synthetic",
+  "version": "1"
+ },
+ "segments": [
+  {
+   "id": 0,
+   "start": 0.0,
+   "end": 5.6,
+   "text": "Hello, this is Dr. Hale's clinic. How can I help you today?",
+   "lang": "en",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 1,
+   "start": 6.2,
+   "end": 13.8,
+   "text": "Hi doctor, I'm calling about the headaches I've had for about 2 weeks, mostly in the evening.",
+   "lang": "en",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 2,
+   "start": 14.4,
+   "end": 20.4,
+   "text": "I see. Did you check your blood pressure at home like we discussed?",
+   "lang": "en",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 3,
+   "start": 21.0,
+   "end": 27.4,
+   "text": "Yes. This morning it was 135 over 85, and last night 140 over 90.",
+   "lang": "en",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 4,
+   "start": 28.0,
+   "end": 36.0,
+   "text": "Okay. Those readings are a little higher than the target we set, which was under 130 over 80.",
+   "lang": "en",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 5,
+   "start": 36.6,
+   "end": 39.4,
+   "text": "Should I change my medication?",
+   "lang": "en",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 6,
+   "start": 40.0,
+   "end": 48.0,
+   "text": "Not yet. Keep taking the 5 milligram tablet once a day, and cut down on salt and coffee.",
+   "lang": "en",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 7,
+   "start": 48.6,
+   "end": 56.6,
+   "text": "Also try to drink at least 2 liters of water a day and go to bed before 11.",
+   "lang": "en",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 8,
+   "start": 57.2,
+   "end": 62.4,
+   "text": "Okay. Should I stop the ibuprofen I take for the headaches?",
+   "lang": "en",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 9,
+   "start": 63.0,
+   "end": 70.6,
+   "text": "Please limit it to 2 tablets a day and not more than 3 days in a row.",
+   "lang": "en",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 10,
+   "start": 71.2,
+   "end": 76.0,
+   "text": "Understood. What should I write down until the next visit?",
+   "lang": "en",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 11,
+   "start": 76.6,
+   "end": 83.0,
+   "text": "Write your blood pressure every morning and evening, and note when each headache starts.",
+   "lang": "en",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 12,
+   "start": 83.6,
+   "end": 88.0,
+   "text": "I'll do that and bring the notebook with me.",
+   "lang": "en",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 13,
+   "start": 88.6,
+   "end": 95.0,
+   "text": "Good. Let's see you again on Tuesday the 14th at 9:30 in the morning.",
+   "lang": "en",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 14,
+   "start": 95.6,
+   "end": 105.2,
+   "text": "Tuesday the 14th at 9:30, got it. One more thing, I want to ask next time whether I need a blood test.",
+   "lang": "en",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 15,
+   "start": 105.8,
+   "end": 113.8,
+   "text": "We can talk about that at the visit. Call the clinic if the headache gets suddenly much worse.",
+   "lang": "en",
+   "speaker": "S1",
+   "words": null
+  },
+  {
+   "id": 16,
+   "start": 114.4,
+   "end": 116.8,
+   "text": "Thank you, doctor. Goodbye.",
+   "lang": "en",
+   "speaker": "S2",
+   "words": null
+  },
+  {
+   "id": 17,
+   "start": 117.4,
+   "end": 119.4,
+   "text": "Goodbye, take care.",
+   "lang": "en",
+   "speaker": "S1",
+   "words": null
+  }
+ ]
+}

@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Glossary pack, written in-house (not copied from any published list).
+# Terms are spelled as they should appear in a transcript. Words that are
+# also common in everyday speech are left out on purpose: packs correct
+# near-misses (one edit, terms of 5+ letters), so a common word in here
+# would rewrite ordinary speech.
+id = "medical-en"
+domain = "medical"
+lang = "en"
+needs_owner_review = false
+terms = [
+  "hypertension", "hypotension", "diabetes", "insulin", "metformin", "cholesterol", "triglycerides",
+  "antibiotic", "antibiotics", "amoxicillin", "ibuprofen", "paracetamol", "acetaminophen",
+  "prednisone", "antihistamine", "antidepressant", "anticoagulant", "warfarin", "heparin",
+  "inhaler", "albuterol", "steroid", "dosage", "prescription", "symptom", "symptoms", "syndrome",
+  "chronic", "benign", "malignant", "biopsy", "carcinoma", "lymphoma", "leukemia",
+  "chemotherapy", "radiotherapy", "oncology", "oncologist", "cardiology", "cardiologist", "neurology",
+  "neurologist", "dermatology", "dermatologist", "pediatrician", "gynecologist", "obstetrician",
+  "urologist", "radiologist", "pathologist", "anesthesia", "anesthesiologist", "surgeon", "surgery",
+  "endoscopy", "colonoscopy", "mammogram", "ultrasound", "echocardiogram", "electrocardiogram",
+  "MRI", "CT scan", "X-ray", "blood pressure", "blood sugar", "blood test", "heart rate",
+  "systolic", "diastolic", "glucose", "hemoglobin", "creatinine", "bilirubin", "thyroid",
+  "hypothyroidism", "hyperthyroidism", "anemia", "arrhythmia", "palpitations", "angina",
+  "myocardial infarction", "thrombosis", "embolism", "aneurysm", "cirrhosis", "hepatitis",
+  "gastritis", "ulcer", "colitis", "appendicitis", "pneumonia", "bronchitis", "asthma",
+  "emphysema", "tuberculosis", "sinusitis", "tonsillitis", "migraine", "vertigo", "dizziness",
+  "nausea", "inflammation", "allergy", "eczema", "psoriasis", "arthritis",
+  "osteoporosis", "fracture", "tendon", "ligament", "cartilage", "vaccine", "vaccination",
+  "immunization", "pregnancy", "trimester", "ovulation", "menopause", "dialysis", "transplant",
+  "referral", "outpatient", "intensive care", "triage", "prognosis", "diagnosis",
+  "contraindication", "side effects", "milligrams", "teaspoon",
+]

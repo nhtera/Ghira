@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# Glossary pack, written in-house (not copied from any published list).
+# Terms are spelled as they should appear in a transcript. Packs correct
+# near-misses only (one edit, terms of 5+ letters), so words that are also
+# common in everyday speech are left out on purpose.
+id = "finance-en"
+domain = "finance"
+lang = "en"
+needs_owner_review = false
+terms = [
+  "turnover", "profit margin", "gross margin", "net income", "EBITDA", "cash flow",
+  "working capital", "balance sheet", "income statement", "general ledger", "accounts payable",
+  "accounts receivable", "accrual", "depreciation", "amortization", "impairment", "goodwill",
+  "amortized", "capex", "opex", "budget variance", "forecast", "runway", "burn rate", "unit economics",
+  "valuation", "dilution", "cap table", "term sheet", "convertible note", "equity", "preferred shares",
+  "common stock", "buyback", "IPO", "underwriter", "venture capital", "private equity",
+  "seed round", "series A", "bridge loan", "line of credit", "credit facility", "covenant",
+  "interest rate", "basis points", "coupon", "maturity", "bond", "debenture", "treasury bills",
+  "inflation", "deflation", "recession", "monetary policy", "fiscal policy", "central bank",
+  "exchange rate", "hedging", "derivative", "futures", "options", "swap", "volatility", "liquidity",
+  "solvency", "insolvency", "default", "collateral", "underwriting",
+  "mortgage", "refinancing", "amortization schedule", "principal", "compound interest",
+  "portfolio", "diversification", "asset allocation", "mutual fund", "index fund", "ETF",
+  "brokerage", "custodian", "capital gains", "withholding tax", "value added tax", "VAT",
+  "corporate tax", "tax deduction", "tax return", "auditor", "compliance", "invoice",
+  "reconciliation", "payroll", "severance", "reimbursement", "expense report",
+  "procurement", "purchase order", "due diligence", "acquisition", "joint venture",
+  "stakeholder", "shareholder", "fiduciary", "insurance premium", "deductible", "annuity",
+  "retirement account", "credit score", "overdraft", "wire transfer", "remittance",
+  "fintech", "KYC", "anti-money laundering", "chargeback", "settlement",
+]

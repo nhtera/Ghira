@@ -15,7 +15,7 @@ use crate::{Result, StoreError};
 
 /// The only keys that sync: the `"app"` JSON fields (serde names) and the
 /// vocabulary keys. Everything else is device-local.
-pub const SYNCED_KEYS: [&str; 7] = [
+pub const SYNCED_KEYS: [&str; 8] = [
     "meetingLanguage",
     "cloudRedact",
     "audioRetentionDays",
@@ -23,6 +23,20 @@ pub const SYNCED_KEYS: [&str; 7] = [
     "consentMessageVi",
     "vocabulary",
     "vocabulary.ignored",
+    "vocabulary.packs",
+];
+
+/// The glossary packs that exist (`ghi-core` `glossaries/`): `<domain>-<lang>`.
+/// `vocabulary.packs` is a list of these.
+pub const PACK_IDS: [&str; 8] = [
+    "medical-en",
+    "medical-vi",
+    "legal-en",
+    "legal-vi",
+    "finance-en",
+    "finance-vi",
+    "tech-en",
+    "tech-vi",
 ];
 
 /// The settings key whose JSON object holds the first five keys.
@@ -59,6 +73,10 @@ fn parse_value(key: &str, value_json: &str) -> Result<Value> {
             a.len() <= MAX_TERMS
                 && a.iter()
                     .all(|t| t.as_str().is_some_and(|s| s.len() <= MAX_TERM_LEN))
+        }),
+        "vocabulary.packs" => v.as_array().is_some_and(|a| {
+            a.iter()
+                .all(|t| t.as_str().is_some_and(|s| PACK_IDS.contains(&s)))
         }),
         _ => false,
     };

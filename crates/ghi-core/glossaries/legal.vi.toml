@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+# Glossary pack, written in-house (not copied from any published list).
+# Terms are spelled as they should appear in a transcript. Words that are
+# also common in everyday speech are left out on purpose: packs correct
+# near-misses (one edit, terms of 5+ letters), so a common word in here
+# would rewrite ordinary speech.
+id = "legal-vi"
+domain = "legal"
+lang = "vi"
+needs_owner_review = true
+terms = [
+  "nguyên đơn", "bị đơn", "tố tụng", "kiện tụng", "trọng tài", "hòa giải", "thẩm quyền",
+  "luật sư", "công chứng", "công chứng viên", "văn phòng công chứng", "thừa phát lại", "thẩm phán",
+  "viện kiểm sát", "kiểm sát viên", "tòa án", "tòa sơ thẩm", "phúc thẩm", "giám đốc thẩm",
+  "bản án", "quyết định", "kháng cáo", "kháng nghị", "thi hành án", "án phí", "lệ phí", "tạm ứng án phí",
+  "hợp đồng", "phụ lục hợp đồng", "điều khoản", "điều kiện", "bảo hành", "vi phạm hợp đồng",
+  "chấm dứt hợp đồng", "bồi thường", "bồi thường thiệt hại", "phạt vi phạm", "thanh lý hợp đồng",
+  "bảo mật thông tin", "thỏa thuận bảo mật", "cạnh tranh không lành mạnh", "sở hữu trí tuệ",
+  "bản quyền", "nhãn hiệu", "sáng chế", "bí mật kinh doanh", "chuyển nhượng", "chuyển nhượng quyền",
+  "thế chấp", "cầm cố", "bảo lãnh", "tài sản đảm bảo", "đặt cọc", "tiền cọc", "cho thuê", "thuê nhà",
+  "sổ đỏ", "sổ hồng", "giấy chứng nhận quyền sử dụng đất", "quyền sử dụng đất", "quyền sở hữu",
+  "tranh chấp đất đai", "giải phóng mặt bằng", "thừa kế", "di chúc", "người thừa kế", "người lập di chúc",
+  "người thực hiện di chúc", "giấy ủy quyền", "ủy quyền", "đại diện theo pháp luật", "người giám hộ",
+  "quyền nuôi con", "cấp dưỡng", "ly hôn", "thuận tình ly hôn", "tài sản chung", "tài sản riêng",
+  "kết hôn", "khai sinh", "giấy đăng ký kết hôn", "nhận nuôi con nuôi", "thành lập doanh nghiệp",
+  "giấy phép kinh doanh", "đăng ký kinh doanh", "điều lệ công ty", "cổ đông", "cổ phần",
+  "hội đồng quản trị", "thành viên góp vốn", "vốn điều lệ", "giải thể", "phá sản", "thanh lý tài sản",
+  "tuân thủ pháp luật", "quy định pháp luật", "nghị định", "thông tư", "văn bản pháp luật",
+  "xử phạt hành chính", "khiếu nại", "tố cáo", "khởi kiện", "đơn khởi kiện", "bằng chứng",
+  "chứng cứ", "nhân chứng", "lời khai", "bị can", "bị cáo", "cáo buộc", "truy tố", "khởi tố",
+  "tạm giam", "tại ngoại", "án treo", "hình sự", "dân sự", "hành chính", "lừa đảo", "chiếm đoạt tài sản",
+  "rửa tiền", "thời hiệu", "thời hiệu khởi kiện", "bất khả kháng", "luật áp dụng", "tạm trú", "thường trú",
+]

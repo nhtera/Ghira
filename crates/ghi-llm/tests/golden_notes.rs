@@ -14,7 +14,7 @@ use std::time::Instant;
 use ghi_llm::ask::{self, Answer};
 use ghi_llm::enhance::{self, NoteLine};
 use ghi_llm::local::LocalLlm;
-use ghi_llm::notes::{self, Notes, Options};
+use ghi_llm::notes::{self, MarkHint, MarkKind, Notes, Options};
 use ghi_llm::template::{self, OutLang};
 use ghi_llm::{Segment, Transcript};
 
@@ -189,4 +189,137 @@ fn golden_meetings() {
 
     // The local path never opened a network connection (ghi-net counts every attempt).
     assert_eq!(ghi_net::connections_opened(), 0);
+}
+
+/// Digit runs ("135", "9:30" gives "9" and "30") in `s`.
+fn numbers(s: &str) -> Vec<String> {
+    s.split(|c: char| !c.is_ascii_digit())
+        .filter(|p| !p.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// The consultation template on a synthetic call (no real patient data):
+/// its sections exist, every cited line exists, and no number or date in the
+/// notes is absent from the transcript (nothing invented, nothing converted).
+#[test]
+fn golden_consultation() {
+    let Some(mut llm) = model() else { return };
+    let t = golden("consultation");
+    let run = notes::generate(
+        &mut llm,
+        &t,
+        &Options::new(template::builtin("consultation").unwrap(), OutLang::En),
+    )
+    .unwrap();
+    eprintln!(
+        "consultation: {:?}, diagnostics {:?}\n{}",
+        run.strategy,
+        run.diagnostics,
+        serde_json::to_string_pretty(&run.notes).unwrap()
+    );
+    let n = &run.notes;
+    for cites in n.all_citations() {
+        assert!(!cites.is_empty(), "an AI item without a citation");
+        assert!(cites.iter().all(|id| t.get(*id).is_some()));
+    }
+    let ids: Vec<&str> = n.sections.iter().map(|s| s.id.as_str()).collect();
+    for want in ["findings", "advice", "next_steps"] {
+        assert!(ids.contains(&want), "no `{want}` section in {ids:?}");
+    }
+    assert!(
+        n.sections
+            .iter()
+            .any(|s| s.id == "findings" && !s.items.is_empty()),
+        "nothing under what was said"
+    );
+    let said: std::collections::HashSet<String> =
+        t.segments().iter().flat_map(|s| numbers(&s.text)).collect();
+    for text in texts(n) {
+        for num in numbers(text) {
+            assert!(said.contains(&num), "invented number {num} in `{text}`");
+        }
+        let low = text.to_lowercase();
+        assert!(!low.contains("diagnos"), "diagnosis wording in `{text}`");
+    }
+    assert_eq!(ghi_net::connections_opened(), 0);
+}
+
+/// Phase 2 measurement (`--ignored`): a ~60-minute meeting (the EN golden
+/// repeated 32 times, so the same story recurs; real recordings never enter
+/// git) with 10 marks, notes with and without them: time, how many marked
+/// lines are cited, and how many items the notes hold.
+#[test]
+#[ignore = "measurement: minutes on the local model"]
+fn marks_on_a_long_meeting() {
+    let Some(mut llm) = model() else { return };
+    let base = golden("en");
+    let n = base.segments().len() as u64;
+    let span = base.segments().last().unwrap().t1_ms + 2000;
+    let mut segs = Vec::new();
+    for rep in 0..32u64 {
+        for s in base.segments() {
+            segs.push(Segment {
+                id: s.id + rep * n,
+                t0_ms: s.t0_ms + rep as i64 * span,
+                t1_ms: s.t1_ms + rep as i64 * span,
+                ..s.clone()
+            });
+        }
+    }
+    let t = Transcript::new(segs).unwrap();
+    // (repeat, line in the repeat, tag): decisions, actions and questions across the hour.
+    let picks = [
+        (1, 4, MarkKind::Decision),
+        (4, 6, MarkKind::Action),
+        (8, 11, MarkKind::Question),
+        (12, 17, MarkKind::Action),
+        (15, 19, MarkKind::Decision),
+        (19, 12, MarkKind::Action),
+        (23, 4, MarkKind::Star),
+        (26, 14, MarkKind::Action),
+        (29, 9, MarkKind::Decision),
+        (31, 20, MarkKind::Star),
+    ];
+    let marks: Vec<MarkHint> = picks
+        .iter()
+        .map(|&(rep, line, kind)| {
+            let id = rep * n + line;
+            MarkHint {
+                id,
+                kind,
+                t_ms: t.get(id).unwrap().t0_ms,
+            }
+        })
+        .collect();
+    let count = |n: &Notes| {
+        n.tldr.len()
+            + n.decisions.len()
+            + n.action_items.len()
+            + n.open_questions.len()
+            + n.key_quotes.len()
+            + n.topics.len()
+    };
+    let mut report = Vec::new();
+    for (label, with) in [("no marks", false), ("marks", true)] {
+        let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        if with {
+            o.marks = marks.clone();
+        }
+        let started = Instant::now();
+        let run = notes::generate(&mut llm, &t, &o).unwrap();
+        let wall = started.elapsed().as_secs_f64();
+        let cited: std::collections::HashSet<u64> =
+            run.notes.all_citations().flatten().copied().collect();
+        let hit = marks.iter().filter(|m| cited.contains(&m.id)).count();
+        report.push(format!(
+            "{label}: {wall:.1} s, {:?}, {} items, {} of {} marked lines cited, diagnostics {:?}",
+            run.strategy,
+            count(&run.notes),
+            hit,
+            marks.len(),
+            run.diagnostics
+        ));
+    }
+    eprintln!("{}", report.join("\n"));
 }

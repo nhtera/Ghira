@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Glossary pack, written in-house (not copied from any published list).
+# Terms are spelled as they should appear in a transcript. Packs correct
+# near-misses only (one edit, terms of 5+ letters), so words that are also
+# common in everyday speech are left out on purpose.
+id = "finance-vi"
+domain = "finance"
+lang = "vi"
+needs_owner_review = false
+terms = [
+  "doanh thu", "lợi nhuận", "lợi nhuận gộp", "lợi nhuận ròng", "biên lợi nhuận", "EBITDA",
+  "dòng tiền", "vốn lưu động", "bảng cân đối kế toán", "báo cáo kết quả kinh doanh",
+  "báo cáo lưu chuyển tiền tệ", "sổ cái", "khoản phải trả", "khoản phải thu", "khấu hao",
+  "dự phòng", "lợi thế thương mại", "chi phí đầu tư", "chi phí vận hành", "ngân sách", "dự báo",
+  "định giá", "pha loãng cổ phần", "bảng vốn cổ phần", "thỏa thuận sơ bộ", "trái phiếu chuyển đổi",
+  "vốn chủ sở hữu", "cổ phiếu ưu đãi", "cổ phiếu phổ thông", "cổ tức", "mua lại cổ phiếu",
+  "phát hành lần đầu ra công chúng", "quỹ đầu tư mạo hiểm", "quỹ đầu tư tư nhân", "vòng gọi vốn",
+  "vòng hạt giống", "vay cầu nối", "hạn mức tín dụng", "tín dụng", "lãi suất", "điểm cơ bản",
+  "lợi suất", "kỳ hạn", "đáo hạn", "trái phiếu", "kỳ phiếu", "lạm phát", "giảm phát", "suy thoái",
+  "chính sách tiền tệ", "chính sách tài khóa", "ngân hàng trung ương", "ngân hàng nhà nước",
+  "tỷ giá", "phòng ngừa rủi ro", "phái sinh", "hợp đồng tương lai", "quyền chọn", "biến động",
+  "thanh khoản", "đòn bẩy tài chính", "khả năng thanh toán", "mất khả năng thanh toán", "nợ xấu",
+  "tài sản thế chấp", "thế chấp", "tái cấp vốn", "nợ gốc", "lãi kép", "danh mục đầu tư",
+  "đa dạng hóa", "phân bổ tài sản", "quỹ tương hỗ", "quỹ chỉ số", "môi giới", "lưu ký",
+  "thuế thu nhập cá nhân", "thuế thu nhập doanh nghiệp", "thuế giá trị gia tăng", "thuế GTGT",
+  "thuế khấu trừ", "khấu trừ thuế", "quyết toán thuế", "kê khai thuế", "kiểm toán", "kiểm toán viên",
+  "hóa đơn", "hóa đơn điện tử", "đối chiếu", "đối chiếu công nợ", "công nợ", "bảng lương", "trợ cấp thôi việc",
+  "hoàn ứng", "thanh toán", "đề nghị thanh toán", "mua sắm", "đơn đặt hàng", "thẩm định", "sáp nhập",
+  "mua lại doanh nghiệp", "liên doanh", "bên liên quan", "cổ đông", "phí bảo hiểm", "mức miễn thường",
+  "bảo hiểm xã hội", "bảo hiểm y tế", "lương hưu", "điểm tín dụng", "thấu chi", "chuyển khoản",
+  "kiều hối", "công nghệ tài chính", "định danh khách hàng", "phòng chống rửa tiền", "hoàn tiền",
+]

@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# Glossary pack, written in-house (not copied from any published list).
+# Terms are spelled as they should appear in a transcript. Packs correct
+# near-misses only (one edit, terms of 5+ letters), so words that are also
+# common in everyday speech are left out on purpose.
+id = "tech-en"
+domain = "tech"
+lang = "en"
+needs_owner_review = false
+terms = [
+  "Kubernetes", "container", "microservice", "microservices", "serverless", "Terraform",
+  "Ansible", "Jenkins", "GitHub", "GitLab", "pull request", "merge request", "monorepo",
+  "repository", "refactoring", "deployment", "rollback", "staging", "production",
+  "pipeline", "CI/CD", "observability", "telemetry", "latency", "bandwidth",
+  "scalability", "autoscaling", "load balancer", "reverse proxy", "nginx", "CDN", "DNS", "TLS",
+  "SSL certificate", "OAuth", "JWT", "SSO", "authentication", "authorization", "encryption",
+  "firewall", "VPN", "penetration test", "vulnerability", "CVE", "zero-day", "SQL injection",
+  "PostgreSQL", "MySQL", "SQLite", "MongoDB", "Redis", "Elasticsearch", "Kafka", "RabbitMQ",
+  "GraphQL", "REST API", "gRPC", "WebSocket", "webhook", "endpoint", "middleware", "migration", "index", "query", "transaction", "replication", "sharding", "backup", "failover",
+  "TypeScript", "JavaScript", "Python", "Rust", "Golang", "Kotlin", "Node.js", "Angular", "Vue", "Next.js", "Tailwind", "Webpack", "Vite", "npm", "pnpm", "Cargo", "runtime", "garbage collector", "concurrency", "mutex", "algorithm", "data structure", "hash map", "binary tree", "recursion", "regex", "unit test",
+  "integration test", "end-to-end test", "regression", "benchmark", "debugger",
+  "stack trace", "memory leak", "race condition", "deadlock", "technical debt", "backlog",
+  "standup", "retrospective", "Jira", "Confluence", "AWS", "Azure",
+  "GCP", "Cloudflare", "S3 bucket", "Lambda", "EC2", "VPC", "IAM", "machine learning",
+  "neural network", "transformer", "embedding", "fine-tuning", "inference", "LLM", "tokenizer",
+  "prompt engineering", "PyTorch", "TensorFlow", "GPU", "CUDA", "open source", "API key",
+]

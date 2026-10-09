@@ -18,6 +18,10 @@ const BUILTIN: &[(&str, &str)] = &[
     ("interview", include_str!("../templates/interview.toml")),
     ("client", include_str!("../templates/client.toml")),
     ("lecture", include_str!("../templates/lecture.toml")),
+    (
+        "consultation",
+        include_str!("../templates/consultation.toml"),
+    ),
 ];
 
 /// Most sections a template may add (keeps the schema small for local models).
@@ -139,7 +143,7 @@ mod tests {
     #[test]
     fn every_builtin_parses_and_has_distinct_sections() {
         let ids: Vec<_> = builtin_ids().collect();
-        assert_eq!(ids.len(), 7);
+        assert_eq!(ids.len(), 8);
         for id in ids {
             let t = builtin(id).unwrap();
             assert_eq!(t.id, id);

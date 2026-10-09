@@ -848,6 +848,8 @@ impl FinalPassJob {
             store, &meeting,
         )?))
         .filter(|v| !v.is_empty());
+        // The enabled glossary packs: stricter, and after the user's terms.
+        let packs = crate::vocab::pack_vocabulary(store)?;
         let me_spans: Vec<(i64, i64)> = lines
             .iter()
             .filter(|l| l.me)
@@ -864,10 +866,12 @@ impl FinalPassJob {
             })
             .filter(|l| !discarded.iter().any(|&(a, b)| a < l.t1_ms && l.t0_ms < b))
             .map(|l| {
-                let text = match &vocab {
-                    Some(v) => v.correct(&l.text).unwrap_or(l.text),
-                    None => l.text,
-                };
+                let mut text = l.text;
+                for v in vocab.iter().chain(&packs) {
+                    if let Some(t) = v.correct(&text) {
+                        text = t;
+                    }
+                }
                 let gid = ghi_store::new_gid();
                 if l.overlap {
                     overlaps.push(gid.clone());

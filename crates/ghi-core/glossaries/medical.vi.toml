@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+# Glossary pack, written in-house (not copied from any published list).
+# Terms are spelled as they should appear in a transcript. Words that are
+# also common in everyday speech are left out on purpose: packs correct
+# near-misses (one edit, terms of 5+ letters), so a common word in here
+# would rewrite ordinary speech.
+id = "medical-vi"
+domain = "medical"
+lang = "vi"
+needs_owner_review = true
+terms = [
+  "huyết áp", "tăng huyết áp", "hạ huyết áp", "tiểu đường", "đường huyết", "insulin", "metformin",
+  "cholesterol", "mỡ máu", "kháng sinh", "amoxicillin", "ibuprofen", "paracetamol", "aspirin",
+  "thuốc giảm đau", "thuốc hạ sốt", "thuốc kháng viêm", "thuốc chống đông", "liều lượng", "đơn thuốc",
+  "toa thuốc", "triệu chứng", "hội chứng", "mãn tính", "cấp tính", "lành tính", "ác tính",
+  "sinh thiết", "khối u", "ung thư", "hóa trị", "xạ trị", "tim mạch", "thần kinh", "nội tiết",
+  "tiêu hóa", "hô hấp", "da liễu", "nhi khoa", "sản khoa", "phụ khoa", "tiết niệu", "chẩn đoán hình ảnh",
+  "gây mê", "phẫu thuật", "nội soi", "siêu âm", "chụp cắt lớp", "chụp X-quang", "chụp MRI",
+  "điện tâm đồ", "điện não đồ", "xét nghiệm", "xét nghiệm máu", "xét nghiệm nước tiểu", "nhịp tim",
+  "huyết sắc tố", "hồng cầu", "bạch cầu", "tiểu cầu", "men gan", "chức năng gan", "chức năng thận",
+  "creatinin", "bilirubin", "tuyến giáp", "suy giáp", "cường giáp", "thiếu máu", "rối loạn nhịp tim",
+  "đau thắt ngực", "nhồi máu cơ tim", "đột quỵ", "huyết khối", "tắc mạch", "phình mạch", "xơ gan",
+  "viêm gan", "viêm dạ dày", "loét dạ dày", "trào ngược", "viêm đại tràng", "viêm ruột thừa",
+  "viêm phổi", "viêm phế quản", "hen suyễn", "lao phổi", "viêm xoang", "viêm amidan", "đau nửa đầu",
+  "chóng mặt", "buồn nôn", "viêm nhiễm", "nhiễm trùng", "dị ứng", "chàm", "vảy nến", "viêm khớp",
+  "loãng xương", "gãy xương", "bong gân", "gân cơ", "dây chằng", "sụn khớp", "vắc xin", "tiêm chủng",
+  "mang thai", "thai kỳ", "rụng trứng", "mãn kinh", "lọc máu", "ghép tạng", "giấy chuyển viện",
+  "ngoại trú", "nội trú", "chăm sóc đặc biệt", "tiên lượng", "chống chỉ định", "tác dụng phụ",
+  "bác sĩ chuyên khoa", "khám bệnh", "tái khám", "bệnh nền", "tiền sử bệnh",
+]

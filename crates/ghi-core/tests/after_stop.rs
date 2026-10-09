@@ -73,7 +73,14 @@ fn notes_then_final_pass_then_final_notes() {
     store
         .set_setting(
             VOCABULARY_SETTING,
-            &serde_json::json!(["Lê Minh Anh", "Kubernetes"]),
+            &serde_json::json!(["Lê Minh Anh"]),
+        )
+        .unwrap();
+    // "Kubernetes" comes from an enabled glossary pack, not the user's list.
+    store
+        .set_setting(
+            ghi_core::vocab::PACKS_SETTING,
+            &serde_json::json!(["tech-en"]),
         )
         .unwrap();
     let (tx, rx) = bus();

@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Glossary pack, written in-house (not copied from any published list).
+# Terms are spelled as they should appear in a transcript. Words that are
+# also common in everyday speech are left out on purpose: packs correct
+# near-misses (one edit, terms of 5+ letters), so a common word in here
+# would rewrite ordinary speech.
+id = "legal-en"
+domain = "legal"
+lang = "en"
+needs_owner_review = false
+terms = [
+  "plaintiff", "defendant", "arbitration", "jurisdiction", "precedent", "subpoena", "affidavit", "deposition", "testimony", "injunction", "indemnity",
+  "indemnification", "negligence", "damages", "settlement", "verdict", "agreement", "addendum", "amendment", "covenant", "warranty", "warranties",
+  "termination", "severance", "confidentiality", "non-disclosure agreement",
+  "non-compete", "intellectual property", "copyright", "trademark", "trade secret",
+  "licensing", "licensor", "licensee", "assignment", "novation", "escrow", "collateral", "lien",
+  "mortgage", "tenancy", "title deed", "probate", "will",
+  "testator", "executor", "beneficiary", "trustee", "fiduciary", "power of attorney", "guardianship",
+  "custody", "alimony", "prenuptial agreement", "divorce", "annulment", "adoption",
+  "incorporation", "articles of association", "bylaws", "shareholder", "shareholders agreement",
+  "due diligence", "compliance", "regulation", "regulator", "sanction", "penalty", "fine",
+  "misdemeanor", "felony", "indictment", "arraignment", "bail", "probation", "acquittal",
+  "conviction", "sentencing", "prosecutor", "defense attorney", "barrister", "solicitor", "paralegal", "counsel", "pro bono", "statute of limitations", "burden of proof",
+  "reasonable doubt", "hearsay", "evidence", "exhibit", "discovery", "summary judgment",
+  "default judgment", "class action", "tort", "defamation", "fraud",
+  "embezzlement", "money laundering", "bankruptcy", "insolvency", "liquidation", "garnishment",
+  "eviction", "immigration", "visa", "asylum", "naturalization", "force majeure", "governing law",
+]
