@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import type { Citation, MarkedMoment, MarkView, MeetingSpeaker, SegmentView } from "../../bindings";
+import type { Citation, MarkedMoment, MarkView, MeetingNotes, MeetingSpeaker, SegmentView } from "../../bindings";
 import {
   marksBySegment,
+  outlineInput,
   uncoveredMarks,
   activeSegment,
   activeWord,
@@ -218,5 +219,39 @@ describe("groupBlocks: proposed decisions", () => {
       ["tldr", ["tldr"]],
       ["decision", ["decision", "proposal", "proposal"]],
     ]);
+  });
+});
+
+const titles = { summary: "S", decisions: "D", proposed: "P", actions: "A", questions: "Q", topics: "T", marked: "M", other: "O" };
+
+describe("unknown future kinds", () => {
+  it("stay in 'other' (the Notes tab) and in the outline's Other section", () => {
+    const g = groupBlocks([block("tldr"), block("future-kind"), block("another_new_thing", "ai")]);
+    expect(g.map((x) => [x.key, x.blocks.length])).toEqual([
+      ["tldr", 1],
+      ["other", 2],
+    ]);
+    const notes = { sections: [], marks: [], actionItems: [], blocks: [block("tldr"), block("future-kind"), block("mine", "user")] } as unknown as MeetingNotes;
+    const t = outlineInput(notes, { title: "T", vi: false, titles: titles, markLabel: (x) => x });
+    expect(t.other?.map((x) => x.text)).toEqual(["x"]);
+    expect(t.tldr).toHaveLength(1);
+  });
+
+  it("the outline splits decided from proposed, titles a template's sections, and lists only uncovered marks", () => {
+    const notes = {
+      sections: [{ id: "risks", titleEn: "Risks", titleVi: "Rủi ro" }],
+      marks: [
+        { tMs: 1000, tag: "decision", segment: "s1", text: "covered line", coveredBy: ["d1"] },
+        { tMs: 2000, tag: "star", segment: null, text: null, coveredBy: [] },
+      ],
+      actionItems: [],
+      blocks: [{ ...block("decision"), gid: "d1" }, block("proposal"), block("section:risks")],
+    } as unknown as MeetingNotes;
+    const t = outlineInput(notes, { title: "T", vi: true, titles, markLabel: (x) => `tag:${x}` });
+    expect(t.decisions).toHaveLength(1);
+    expect(t.proposals).toHaveLength(1);
+    expect(t.sections).toEqual([expect.objectContaining({ id: "risks", title: "Rủi ro" })]);
+    expect(t.marks).toEqual([{ gid: "mark-0", tMs: 2000, text: "tag:star" }]);
+    expect([...(t.covered ?? [])]).toEqual(["d1"]);
   });
 });

@@ -5,11 +5,13 @@
 // so and offers the cloud sheet.
 import { formatClock } from "@ghi/i18n";
 import { Button, Icon, ListRow, ListSection, NoteBlock } from "@ghi/ui";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import type { Citation, MeetingNotes } from "../../bindings";
+import type { Citation, MeetingNotes, MeetingSpeaker } from "../../bindings";
 import { openCloudSheet } from "./handoff";
 import { useCloudOffered } from "../settings/use-cloud-offered";
-import { groupBlocks, noteKind, toNoteCitation, uncoveredMarks, type SectionKey } from "./notes-model";
+import { Outline } from "./outline";
+import { groupBlocks, noteKind, outlineInput, toNoteCitation, uncoveredMarks, type SectionKey } from "./notes-model";
 
 export type NotesPanelProps = {
   meeting: string;
@@ -20,6 +22,9 @@ export type NotesPanelProps = {
   onCite: (citation: Citation, key: string) => void;
   /** Play the audio from a moment (a mark); absent when there is no audio here. */
   onPlayAt?: (ms: number) => void;
+  /** The meeting's title and speakers, for the outline. */
+  title?: string;
+  speakers?: MeetingSpeaker[];
 };
 
 export function NotesPanel({
@@ -30,11 +35,36 @@ export function NotesPanel({
   visited,
   onCite,
   onPlayAt,
+  title = "",
+  speakers = [],
 }: NotesPanelProps) {
   const { t, i18n } = useTranslation();
   // The cloud entry only exists once the user offered cloud notes in Settings.
   const cloudOffered = useCloudOffered();
-  const groups = groupBlocks(notes.blocks, notes.sections, i18n.language === "vi");
+  const vi = i18n.language === "vi";
+  const groups = groupBlocks(notes.blocks, notes.sections, vi);
+  const outline = useMemo(
+    () =>
+      outlineInput(notes, {
+        title,
+        vi,
+        titles: {
+          summary: t("notes.sections.summary"),
+          decisions: t("notes.sections.decisions"),
+          proposed: t("mindmap.sections.proposed"),
+          actions: t("notes.sections.actionItems"),
+          questions: t("notes.sections.openQuestions"),
+          topics: t("detail.topics.title"),
+          marked: t("mindmap.sections.marked"),
+          other: t("mindmap.sections.other"),
+        },
+        markLabel: (tag) =>
+          t(
+            `notes.tags.${tag === "decision" || tag === "action" || tag === "question" ? tag : "star"}`,
+          ),
+      }),
+    [notes, title, vi, t],
+  );
   const missed = uncoveredMarks(notes.marks);
   const marked = missed.length > 0 && (
     <section aria-labelledby="sec-marked" className="px-4 pt-4">
@@ -171,6 +201,7 @@ export function NotesPanel({
         </section>
       ))}
       {marked}
+      <Outline input={outline} speakers={speakers} onPlayAt={onPlayAt} />
       {cloudOffered && (
         <ListSection className="mt-6">
           <ListRow

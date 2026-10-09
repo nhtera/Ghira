@@ -223,6 +223,8 @@ export function MeetingView({
                     ? (ms) => void audio.playFrom(ms)
                     : undefined
                 }
+                title={detail.title}
+                speakers={detail.speakers}
               />
               <div className="mx-4 mt-2 mb-4 flex flex-col gap-3 rounded-(--ios-radius-group) bg-surface2 p-3">
                 <div className="flex items-center justify-between gap-3">

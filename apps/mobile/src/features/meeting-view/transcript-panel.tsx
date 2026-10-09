@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import type { MarkView, MeetingSpeaker, SegmentView } from "../../bindings";
 import { LOCKED_EVENT } from "../app-lock/events";
 import { useWindowEvent } from "./use-window-event";
+import { TalkShareBar } from "./talk-share-bar";
 import { TranscriptRow } from "./transcript-row";
 import {
   activeSegment,
@@ -81,7 +82,7 @@ export function TranscriptPanel({
 
   useLayoutEffect(() => {
     if (listRef.current) setMargin(listRef.current.offsetTop);
-  }, [segments.length]);
+  }, [segments.length, speakers]);
 
   const marksOf = useMemo(() => marksBySegment(marks), [marks]);
   // eslint-disable-next-line react-hooks/incompatible-library -- the virtualizer is only used in this component
@@ -129,6 +130,8 @@ export function TranscriptPanel({
   };
 
   return (
+    <>
+    <TalkShareBar segments={segments} speakers={speakers} />
     <div
       ref={listRef}
       style={{ height: virtual.getTotalSize(), position: "relative" }}
@@ -244,5 +247,6 @@ export function TranscriptPanel({
         );
       })}
     </div>
+    </>
   );
 }

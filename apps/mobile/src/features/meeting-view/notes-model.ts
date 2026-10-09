@@ -2,6 +2,7 @@
 // Pure mapping from the core's notes and transcript views to what the
 // @ghi/ui components draw: provenance, sections, citations, speaker labels.
 import type {
+  NotesTreeInput,
   NoteCitation,
   NoteKind,
   TranscriptSpeaker,
@@ -11,6 +12,7 @@ import type {
   Citation,
   MarkedMoment,
   MarkView,
+  MeetingNotes,
   MeetingSpeaker,
   NoteBlockView,
   SegmentView,
@@ -224,4 +226,52 @@ export function marksBySegment(
   for (const m of marks)
     if (m.segment !== null) by.set(m.segment, [...(by.get(m.segment) ?? []), m]);
   return by;
+}
+
+/**
+ * What the Outline list is built from (`notesToTree` in @ghi/ui): the same
+ * grouping as the Notes tab, so unknown future block kinds land in "Other"
+ * and a template's own sections keep their titles. Read-only.
+ */
+export function outlineInput(
+  notes: MeetingNotes,
+  o: {
+    title: string;
+    titles: NotesTreeInput["titles"];
+    vi: boolean;
+    /** The words for a mark that has no line of its own. */
+    markLabel: (tag: string) => string;
+  },
+): NotesTreeInput {
+  const groups = groupBlocks(notes.blocks, notes.sections, o.vi);
+  // What the app wrote (your own notes are on the Notes tab, not in the outline).
+  const ai = (key: string) =>
+    (groups.find((g) => g.key === key)?.blocks ?? []).filter(
+      (b) => b.origin !== "user",
+    );
+  const decisions = ai("decision");
+  return {
+    title: o.title,
+    titles: o.titles,
+    tldr: ai("tldr"),
+    sections: groups
+      .filter((g) => g.key.startsWith("section:"))
+      .map((g) => ({
+        id: g.key.slice("section:".length),
+        title: g.title ?? g.key,
+        blocks: g.blocks.filter((b) => b.origin !== "user"),
+      })),
+    decisions: decisions.filter((b) => b.kind !== "proposal"),
+    proposals: decisions.filter((b) => b.kind === "proposal"),
+    actions: notes.actionItems,
+    questions: ai("question"),
+    topics: ai("topic"),
+    other: ai("other"),
+    marks: uncoveredMarks(notes.marks).map((m, i) => ({
+      gid: `mark-${i}`,
+      tMs: m.tMs ?? 0,
+      text: m.text ?? o.markLabel(m.tag),
+    })),
+    covered: new Set(notes.marks.flatMap((m) => m.coveredBy)),
+  };
 }

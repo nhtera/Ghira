@@ -46,6 +46,28 @@ test.describe("meeting view", () => {
     expect(text.indexOf("Scope for the beta")).toBeLessThan(text.indexOf("Maybe add Android"));
   });
 
+  test("the outline lists the notes by section and a tap plays the first source", async ({ page }) => {
+    await openMeetings(page, "/meetings/m-notes");
+    const outline = page.getByTestId("outline");
+    await outline.getByRole("button", { name: /^Outline \(\d+\)$/ }).click();
+    await expect(outline.getByRole("heading", { name: "Summary" })).toBeVisible();
+    await expect(outline.getByRole("heading", { name: "Proposed" })).toBeVisible();
+    await expect(outline.getByTestId("proposed-chip")).toHaveText("Proposed");
+    await outline.getByRole("button", { name: "Play from 01:30" }).click();
+    await expect
+      .poll(async () => (await recorded(page)).audio.at(-1))
+      .toEqual({ op: "play", t: 90 });
+  });
+
+  test("the transcript opens with who talked how much", async ({ page }) => {
+    await openMeetings(page, "/meetings/m-notes");
+    await page.getByRole("tab", { name: "Transcript" }).click();
+    const share = page.getByTestId("talk-share");
+    await expect(share).toContainText(/\d speakers · \d+ turns/);
+    const pcts = (await share.locator("li").allTextContents()).map((t) => Number(/(\d+)%\d+ turn/.exec(t)?.[1]));
+    expect(pcts.reduce((a, b) => a + b, 0)).toBe(100);
+  });
+
   test("a saved Ask answer has its own section with its source", async ({ page }) => {
     await openMeetings(page, "/meetings/m-notes");
     await expect(page.getByRole("heading", { name: "Saved from Ask" })).toBeVisible();
