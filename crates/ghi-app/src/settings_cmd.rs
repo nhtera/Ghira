@@ -119,7 +119,7 @@ pub(crate) fn store_terms(
 ) -> Result<Vocabulary, String> {
     let mut out: Vec<String> = Vec::new();
     for t in terms {
-        let t: String = t.trim().chars().take(80).collect();
+        let t: String = ghi_text::nfc(t.trim()).chars().take(80).collect();
         if !t.is_empty() && !out.iter().any(|o| ghi_text::fold(o) == ghi_text::fold(&t)) {
             out.push(t);
         }
@@ -253,6 +253,23 @@ pub async fn set_transcription_engine(
 mod tests {
     use super::*;
     use ghi_store::keys::{MemoryKeyStore, Protection};
+
+    #[test]
+    fn terms_are_stored_composed_so_one_term_is_one_term_however_it_was_typed() {
+        let t = tempfile::tempdir().unwrap();
+        let store = ghi_store::store::Store::open(
+            t.path(),
+            std::sync::Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap();
+        // Typed with decomposed accents (some keyboards and pasted text), and again composed.
+        let v = store_terms(&store, vec!["Nguye\u{302}\u{303}n Va\u{306}n An".into(), "Nguyễn Văn An".into()]).unwrap();
+        assert_eq!(v.terms, ["Nguyễn Văn An"], "composed, and not twice");
+        let raw = store.get_setting(TERMS_SETTING).unwrap().unwrap();
+        assert_eq!(raw, serde_json::json!(["Nguyễn Văn An"]));
+        assert!(raw[0].as_str().unwrap().chars().all(|c| !('\u{300}'..='\u{36f}').contains(&c)));
+    }
 
     #[test]
     fn the_engine_choice_is_stored_and_needs_a_whisper_build() {

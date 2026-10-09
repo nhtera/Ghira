@@ -125,10 +125,10 @@ pub fn pack_terms_seen<S: AsRef<str>>(lines: &[S], ids: &[String]) -> Vec<String
                 let Some(terms) = index.get(&(lang.as_str(), key)) else {
                     continue;
                 };
-                let src = nfc[w[0].range.start..w[n - 1].range.end].to_lowercase();
+                let src = said_as(&nfc, w);
                 for t in terms {
                     // A term written with accents is said with them.
-                    let said = !ghi_text::has_diacritics(t) || src == t.to_lowercase();
+                    let said = !ghi_text::has_diacritics(t) || src == ghi_text::nfc(t).to_lowercase();
                     if said && !seen.iter().any(|x| x == t) {
                         seen.push((*t).to_string());
                     }
@@ -139,15 +139,28 @@ pub fn pack_terms_seen<S: AsRef<str>>(lines: &[S], ids: &[String]) -> Vec<String
     seen
 }
 
+/// What the words of a window were written as: each word as it stands in the line (NFC,
+/// lowercased), joined by single spaces: so "Nguyễn  Văn-An" is said as "nguyễn văn an",
+/// whatever sat between the words.
+fn said_as(nfc: &str, window: &[Tok]) -> String {
+    window
+        .iter()
+        .map(|t| nfc[t.range.clone()].to_lowercase())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Of `terms`, the ones the lines actually say, in the order first said: an
 /// exact whole-word match (case ignored; a term written with accents is said
 /// with them), on a line in any language. The same rule as
 /// [`pack_terms_seen`] for the user's own terms and attendees' names.
 pub fn terms_seen<S: AsRef<str>>(lines: &[S], terms: &[String]) -> Vec<String> {
     use std::collections::HashMap;
+    // Terms are compared in NFC (a term typed with decomposed accents is the same term).
+    let terms: Vec<String> = terms.iter().map(|t| ghi_text::nfc(t)).collect();
     let mut index: HashMap<String, Vec<&str>> = HashMap::new();
     let mut sizes: Vec<usize> = Vec::new();
-    for t in terms {
+    for t in &terms {
         let w = words(t);
         if w.is_empty() {
             continue;
@@ -173,7 +186,7 @@ pub fn terms_seen<S: AsRef<str>>(lines: &[S], terms: &[String]) -> Vec<String> {
                 let Some(found) = index.get(&key) else {
                     continue;
                 };
-                let src = nfc[w[0].range.start..w[n - 1].range.end].to_lowercase();
+                let src = said_as(&nfc, w);
                 for t in found {
                     let said = !ghi_text::has_diacritics(t) || src == t.to_lowercase();
                     if said && !seen.iter().any(|x| x == t) {
@@ -199,7 +212,18 @@ pub fn spellings_for_prompt(
 ) -> Vec<String> {
     let lines: Vec<&str> = segments.iter().map(|s| s.text.as_str()).collect();
     let own = match meeting_terms(store, meeting) {
-        Ok(t) => terms_seen(&lines, &t),
+        Ok(t) => {
+            // Said terms in the order they rank: attendees, then yours, then learned names.
+            let said = terms_seen(&lines, &t);
+            let mut ranked: Vec<String> = Vec::new();
+            for term in &t {
+                let nfc = ghi_text::nfc(term);
+                if said.contains(&nfc) && !ranked.contains(&nfc) {
+                    ranked.push(nfc);
+                }
+            }
+            ranked
+        }
         Err(e) => {
             log::warn!("terms not read, notes written without spellings: {e}");
             Vec::new()
@@ -791,6 +815,38 @@ mod tests {
         // Nothing said, nothing listed.
         assert!(seen(&["hello there"]).is_empty());
         assert!(terms_seen::<&str>(&[], &terms).is_empty());
+    }
+
+    #[test]
+    fn accents_typed_decomposed_and_separators_between_words_do_not_hide_a_term() {
+        let nfd = "Nguye\u{302}\u{303}n Va\u{306}n An".to_string();
+        // A decomposed term finds its composed spelling, and comes back composed.
+        assert_eq!(terms_seen(&["gặp ông Nguyễn Văn An hôm qua"], std::slice::from_ref(&nfd)), ["Nguyễn Văn An"]);
+        // ... and a composed term finds a decomposed line.
+        assert_eq!(terms_seen(&["gặp ông Nguye\u{302}\u{303}n Văn An hôm qua"], &["Nguyễn Văn An".to_string()]), ["Nguyễn Văn An"]);
+        // The accents must be there: the plain spelling is another word.
+        assert!(terms_seen(&["gặp ông Nguyen Van An"], &["Nguyễn Văn An".to_string()]).is_empty());
+        // Extra spaces or a hyphen between the words still say the term.
+        for line in ["gặp ông Nguyễn  Văn   An", "gặp ông Nguyễn-Văn An", "gặp ông nguyễn văn an."] {
+            assert_eq!(terms_seen(&[line], &["Nguyễn Văn An".to_string()]), ["Nguyễn Văn An"], "{line}");
+        }
+        // The same rule for pack terms.
+        assert_eq!(pack_terms_seen(&["bác sĩ nói huyết   áp cao"], &ids(&["medical-vi"])), ["huyết áp"]);
+    }
+
+    #[test]
+    fn more_than_forty_said_terms_keep_their_priority_not_the_order_they_were_said() {
+        let (_t, store) = store();
+        let m = store.create_meeting(Default::default()).unwrap().gid;
+        let terms: Vec<String> = (0..45).map(|i| format!("Alpha{i}")).collect();
+        store.set_setting(TERMS_SETTING, &serde_json::json!(terms)).unwrap();
+        // The meeting says them last to first.
+        let said: Vec<String> = terms.iter().rev().map(|t| format!("we discussed {}", t.to_lowercase())).collect();
+        let refs: Vec<&str> = said.iter().map(String::as_str).collect();
+        let segs = lines(&store, &m, &refs);
+        let got = spellings_for_prompt(&store, &m, &segs, 40);
+        assert_eq!(got.len(), 40);
+        assert_eq!(got, terms[..40]);
     }
 
     fn store() -> (tempfile::TempDir, ghi_store::store::Store) {

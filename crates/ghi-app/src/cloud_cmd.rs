@@ -516,6 +516,8 @@ pub async fn cloud_preview(
                     Some((b, a)) => (Some(b), Some(a)),
                     None => (None, None),
                 };
+                // Also when the core itself swapped a template that is not a built-in one.
+                template_fallback |= p.template_fallback;
                 let id = plans.put(p);
                 Ok(CloudPreviewResult::Preview(CloudPreview {
                     id,

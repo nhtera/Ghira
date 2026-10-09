@@ -4,12 +4,12 @@
 // title and one line on what goes in. Section ids are the core's: an existing
 // section keeps its id (`id` is sent back as it came) so renaming never
 // detaches notes already written.
-import { Button, Icon, Segmented } from "@ghi/ui";
+import { Button, Icon, InlineConfirm, Segmented } from "@ghi/ui";
 import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TemplateForm } from "../../bindings";
 import { inputCls } from "./parts";
-import { MAX_DESCRIPTION, MAX_GUIDANCE, MAX_INSTRUCTION, MAX_NAME, MAX_SECTIONS, MAX_SECTION_TITLE, formIssue } from "./template-form";
+import { MAX_DESCRIPTION, hasContent, MAX_GUIDANCE, MAX_INSTRUCTION, MAX_NAME, MAX_SECTIONS, MAX_SECTION_TITLE, formIssue } from "./template-form";
 
 export function TemplateEditor({
   initial,
@@ -39,6 +39,8 @@ export function TemplateEditor({
   const [drafting, setDrafting] = useState(false);
   // What the last draft attempt said: "drafted", or a waiting state (busy, no model) in words.
   const [draftNote, setDraftNote] = useState<string | null>(null);
+  // A draft that came back while the form already holds the person's own words: asks before replacing them.
+  const [pending, setPending] = useState<TemplateForm | null>(null);
   const issue = formIssue(form);
   const set = (p: Partial<TemplateForm>) => {
     setTouched(true);
@@ -53,10 +55,16 @@ export function TemplateEditor({
     setDrafting(false);
     if (!r) return;
     if ("error" in r) return setDraftNote(r.error);
-    nextKey.current += r.form.sections.length;
-    setKeys(r.form.sections.map((_, i) => nextKey.current - r.form.sections.length + i));
+    // What was typed is not replaced without asking.
+    if (hasContent(form)) return setPending(r.form);
+    apply(r.form);
+  };
+  const apply = (next: TemplateForm) => {
+    nextKey.current += next.sections.length;
+    setKeys(next.sections.map((_, i) => nextKey.current - next.sections.length + i));
     setTouched(true);
-    setForm(r.form);
+    setForm(next);
+    setPending(null);
     setDraftNote(t("settings.templates.editor.drafted"));
   };
   const addSection = () => {
@@ -96,8 +104,18 @@ export function TemplateEditor({
           <span id={`${uid}-dh`} className="text-[12px] text-muted">
             {t("settings.templates.editor.draftHint")}
           </span>
+          {pending && (
+            <InlineConfirm
+              icon="warning"
+              tone="warn"
+              question={t("settings.templates.editor.replaceQuestion")}
+              confirmLabel={t("settings.templates.editor.replace")}
+              onConfirm={() => apply(pending)}
+              onCancel={() => setPending(null)}
+            />
+          )}
           <div className="flex items-center gap-2">
-            <Button size="sm" icon="auto_awesome" disabled={drafting || !description.trim()} onClick={() => void draft()}>
+            <Button size="sm" icon="auto_awesome" disabled={drafting || !!pending || !description.trim()} onClick={() => void draft()}>
               {t("settings.templates.editor.draftButton")}
             </Button>
             <span role="status" className="text-[12.5px] text-muted">

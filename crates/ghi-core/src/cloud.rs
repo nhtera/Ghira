@@ -70,6 +70,23 @@ pub struct Plan {
     /// The transcript the request was built from (a send after an edit or a
     /// final pass is refused: review it again).
     version: i64,
+    /// The notes template asked for was not a built-in one (the user's own),
+    /// so the built-in General template is what the request carries.
+    pub template_fallback: bool,
+}
+
+/// The template a cloud notes request may carry: a built-in one as it is.
+/// Anything else (a template the user made: its titles and instructions are
+/// theirs and stay on the device) becomes the built-in General template. This
+/// holds whoever calls [`plan`], whatever id the template has.
+fn cloud_template(template: Template) -> (Template, bool) {
+    match ghi_llm::template::builtin(&template.id) {
+        Ok(b) if b == template => (template, false),
+        _ => (
+            ghi_llm::template::builtin("general").expect("general is built in"),
+            true,
+        ),
+    }
 }
 
 /// Longest excerpt of the request's text shown in the send sheet (characters).
@@ -228,8 +245,11 @@ pub fn plan(
         t.clone()
     };
     let aliases = Aliases::new(&red);
+    let mut template_fallback = false;
     let (request, state): (Request, Prepared2) = match task {
         Task::Notes { template, lang } => {
+            let (template, fell_back) = cloud_template(template);
+            template_fallback = fell_back;
             // Transcript text only: never the user's own notes (so no
             // `pinned` either; what they wrote stays on this device). Marks
             // stay local too: `Options::marks` is empty here, and the cloud
@@ -270,6 +290,7 @@ pub fn plan(
     Ok(Planned::Send(Box::new(Plan {
         meeting: meeting.to_string(),
         preview: pv,
+        template_fallback,
         redactions: redactor.summary(),
         provider,
         prepared,
@@ -432,6 +453,65 @@ mod tests {
             template: ghi_llm::template::builtin("general").unwrap(),
             lang: OutLang::En,
         }
+    }
+
+    /// Whatever the caller passes, a template the user made never reaches the payload.
+    #[test]
+    fn a_template_that_is_not_built_in_is_swapped_for_general_inside_plan() {
+        use ghi_llm::template::{Editor, EditorSection};
+        let (_tmp, store) = store();
+        let m = meeting(&store);
+        let mine = Template::from_editor(
+            "t77",
+            &Editor {
+                name: "Zebra quarterly".into(),
+                lang: OutLang::En,
+                guidance: "XYLOPHONE-GUIDANCE zebras".into(),
+                sections: vec![EditorSection {
+                    id: None,
+                    title: "Quokka findings".into(),
+                    instruction: "QUOKKA-INSTRUCTION list every marsupial".into(),
+                }],
+            },
+            &[],
+            &[],
+        )
+        .unwrap();
+        // A user's template that borrows a built-in's id is no more the built-in than any other.
+        let mut disguised = mine.clone();
+        disguised.id = "standup".into();
+        let provider = CloudProvider::preset("openai", "gpt-4.1-mini").unwrap();
+        let send = |template: Template| {
+            let Planned::Send(p) = plan(
+                &store,
+                &m,
+                provider.clone(),
+                Task::Notes {
+                    template,
+                    lang: OutLang::En,
+                },
+                true,
+                &[],
+                &Prices::builtin(),
+            )
+            .unwrap() else {
+                panic!("a request")
+            };
+            p
+        };
+        for t in [mine.clone(), disguised] {
+            let p = send(t);
+            assert!(p.template_fallback);
+            for secret in ["XYLOPHONE", "QUOKKA", "Zebra", "Quokka", "t77"] {
+                assert!(!p.preview.payload.contains(secret), "{secret} left the device: {}", p.preview.payload);
+            }
+            assert!(p.preview.payload.contains("pricing deck"), "the transcript is still sent");
+        }
+        // A built-in template goes as it is, with no fallback.
+        let standup = ghi_llm::template::builtin("standup").unwrap();
+        let p = send(standup);
+        assert!(!p.template_fallback);
+        assert!(p.preview.payload.contains("blockers"), "{}", p.preview.payload);
     }
 
     #[test]

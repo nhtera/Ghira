@@ -33,3 +33,7 @@ export const emptyForm = (language: string): TemplateForm => ({
   guidance: "",
   sections: [{ id: null, title: "", instruction: "" }],
 });
+
+/** The form holds something the person typed (a draft must not replace it unasked). */
+export const hasContent = (f: TemplateForm) =>
+  f.name.trim() !== "" || f.guidance.trim() !== "" || f.sections.some((s) => s.title.trim() !== "" || s.instruction.trim() !== "");

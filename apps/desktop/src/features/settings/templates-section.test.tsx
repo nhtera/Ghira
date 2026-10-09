@@ -198,6 +198,29 @@ describe("TemplatesSection", () => {
     expect(commands.createTemplate.mock.calls[0]![0].sections.map((x: { id: string | null }) => x.id)).toEqual([null, null]);
   });
 
+  it("a draft asks before it replaces what was typed; Cancel keeps it, Replace takes the draft", async () => {
+    const user = userEvent.setup();
+    commands.draftTemplate.mockImplementation((_d: string, language: string) =>
+      ok({ name: "Drafted", language, guidance: "", sections: [{ id: null, title: "Drafted section", instruction: "Drafted line." }] }),
+    );
+    renderSettings(<TemplatesSection />);
+    await user.click(await screen.findByRole("button", { name: "New template" }));
+    const editor = within(screen.getByTestId("template-editor"));
+    await user.type(editor.getByRole("textbox", { name: "Name" }), "My own");
+    await user.type(editor.getByRole("textbox", { name: "Describe your meetings" }), "anything");
+    await user.click(editor.getByRole("button", { name: "Draft" }));
+    expect(await editor.findByText("Replace what you have typed with the draft?")).toBeTruthy();
+    // nothing changed yet
+    expect((editor.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("My own");
+    await user.click(editor.getAllByRole("button", { name: "Cancel" }).find((b) => b.closest("[role=alertdialog],[data-confirm],div")!.textContent!.includes("Replace what"))!);
+    expect((editor.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("My own");
+    expect(editor.queryByText("Replace what you have typed with the draft?")).toBeNull();
+    await user.click(editor.getByRole("button", { name: "Draft" }));
+    await user.click(await editor.findByRole("button", { name: "Replace" }));
+    expect((editor.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Drafted");
+    expect((editor.getByRole("textbox", { name: "Section 1: title" }) as HTMLInputElement).value).toBe("Drafted section");
+  });
+
   it("a draft that has to wait says why in words and leaves the form alone; editing has no draft box", async () => {
     const user = userEvent.setup();
     commands.draftTemplate.mockImplementation(() => Promise.resolve({ status: "error" as const, error: "busyNotes" }));

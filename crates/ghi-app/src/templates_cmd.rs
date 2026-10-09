@@ -480,11 +480,12 @@ mod tests {
         let (_t, c) = fix();
         let made = create_now(&c, &form("Retro", &["A"])).unwrap();
         c.set_locked(true);
-        assert!(list_now(&c).is_err());
-        assert!(create_now(&c, &form("B", &["A"])).is_err());
-        assert!(update_now(&c, &made.id, &made.form).is_err());
-        assert!(delete_now(&c, &made.id).is_err());
-        assert!(duplicate_now(&c, "standup", "en").is_err());
+        let locked = "the app is locked";
+        assert_eq!(list_now(&c).unwrap_err(), locked);
+        assert_eq!(create_now(&c, &form("B", &["A"])).unwrap_err(), locked);
+        assert_eq!(update_now(&c, &made.id, &made.form).unwrap_err(), locked);
+        assert_eq!(delete_now(&c, &made.id).unwrap_err(), locked);
+        assert_eq!(duplicate_now(&c, "standup", "en").unwrap_err(), locked);
         c.set_locked(false);
         assert_eq!(list_now(&c).unwrap().len(), 1);
     }
@@ -540,7 +541,7 @@ mod draft_tests {
         let tmp = tempfile::tempdir().unwrap();
         let (c, _rx) = Core::for_test(tmp.path().join("data"));
         c.set_locked(true);
-        assert!(draft_now(&c, "A weekly retro", "en").is_err());
+        assert_eq!(draft_now(&c, "A weekly retro", "en").unwrap_err(), "the app is locked");
         c.set_locked(false);
         // Unlocked, but no model is set up in this core: refused in words, nothing drafted.
         let e = draft_now(&c, "A weekly retro", "en").unwrap_err();

@@ -758,6 +758,8 @@
         "draftLabel": "Describe your meetings",
         "draftButton": "Draft",
         "drafting": "Drafting…",
+        "replaceQuestion": "Replace what you have typed with the draft?",
+        "replace": "Replace",
         "drafted": "Draft ready. Review it, change what you like, then save.",
         "guidanceTooLong": "The description is too long: 400 characters at most.",
         "titleRequired": "Every section needs a title and a line on what goes in it."
