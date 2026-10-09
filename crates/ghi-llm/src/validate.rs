@@ -40,9 +40,8 @@ pub struct Diagnostics {
     pub weak_anchors: u32,
     /// Action items whose owner wasn't a speaker of the cited segments.
     pub unassigned_owners: u32,
-    /// Decisions the model gave no status; kept as proposed (never over-claim
-    /// a commitment).
-    pub missing_status: u32,
+    /// The status pass failed (or could not run): every decision stays decided.
+    pub status_failed: u32,
     /// Items cut because a list was longer than allowed.
     pub truncated_lists: u32,
     /// Repeated items removed (same text after folding, in the same list).
@@ -61,7 +60,7 @@ impl Diagnostics {
         self.dropped_cites += o.dropped_cites;
         self.weak_anchors += o.weak_anchors;
         self.unassigned_owners += o.unassigned_owners;
-        self.missing_status += o.missing_status;
+        self.status_failed += o.status_failed;
         self.truncated_lists += o.truncated_lists;
         self.duplicates += o.duplicates;
         self.snapped_cites += o.snapped_cites;

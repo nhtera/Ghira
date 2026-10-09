@@ -503,14 +503,45 @@ fn decision_status_recall_and_precision() {
                         })
                     })
                     .count();
+                let cites = |items: &[notes::Item], lines: &[u64]| {
+                    items
+                        .iter()
+                        .any(|i| i.citations.iter().any(|c| lines.contains(c)))
+                };
+                let agreed_total = set.groups.iter().filter(|(_, a)| *a).count();
+                let agreed_decided = set
+                    .groups
+                    .iter()
+                    .filter(|(l, a)| *a && cites(&n.decisions, l))
+                    .count();
+                let open_total = set.groups.len() - agreed_total;
+                let open_proposed = set
+                    .groups
+                    .iter()
+                    .filter(|(l, a)| !*a && cites(&n.proposals, l))
+                    .count();
+                // How long the status pass takes: run it again over everything listed.
+                let mut again = run.clone();
+                again
+                    .notes
+                    .decisions
+                    .extend(std::mem::take(&mut again.notes.proposals));
+                let pass = Instant::now();
+                notes::classify_decisions(&mut llm, &t, &o, &mut again);
+                let pass_s = pass.elapsed().as_secs_f64();
                 eprintln!(
-                    "{:?} {label} #{run_no}: recall {found}/{}, precision {right}/{} ({} decided, {} proposed)",
+                    "{:?} {label} #{run_no}: agreed as decided {agreed_decided}/{agreed_total}, open as proposed {open_proposed}/{open_total}; recall {found}/{}, precision {right}/{} ({} decided, {} proposed); status pass {pass_s:.1} s",
                     set.lang,
                     set.groups.len(),
                     listed.len(),
                     n.decisions.len(),
                     n.proposals.len()
                 );
+                for (name, items) in [("decided", &n.decisions), ("proposed", &n.proposals)] {
+                    for i in items {
+                        eprintln!("    {name}: {} {:?}", i.text, i.citations);
+                    }
+                }
                 let t = &mut total[si];
                 *t = (
                     t.0 + found,
@@ -531,5 +562,102 @@ fn decision_status_recall_and_precision() {
             t.3,
             100.0 * t.2 as f64 / t.3.max(1) as f64
         );
+    }
+}
+
+/// The status pass alone, on decisions whose lines and status are known: one
+/// decision per group of the messy sets and per line of the first sets
+/// (`--ignored`; seconds).
+#[test]
+#[ignore = "measurement: local model"]
+fn status_pass_accuracy() {
+    let Some(mut llm) = model() else { return };
+    type Case<'a> = (OutLang, &'a [&'a str], Vec<(Vec<u64>, bool)>);
+    let mut cases: Vec<Case> = Vec::new();
+    for m in MESSY {
+        cases.push((
+            m.lang,
+            m.lines,
+            m.groups.iter().map(|(l, a)| (l.to_vec(), *a)).collect(),
+        ));
+    }
+    for s in STATUS_SETS {
+        let mut g: Vec<(Vec<u64>, bool)> = s.agreed.iter().map(|&l| (vec![l], true)).collect();
+        g.extend(s.suggested.iter().map(|&l| (vec![l], false)));
+        cases.push((s.lang, s.lines, g));
+    }
+    let (mut right, mut all) = (0, 0);
+    for (lang, lines, groups) in cases {
+        let segs: Vec<Segment> = lines
+            .iter()
+            .enumerate()
+            .map(|(i, text)| Segment {
+                id: i as u64,
+                t0_ms: i as i64 * 10_000,
+                t1_ms: i as i64 * 10_000 + 4000,
+                speaker: Some(format!("S{}", i % 3 + 1)),
+                text: text.to_string(),
+                lang: Some(lang.code().to_string()),
+            })
+            .collect();
+        let t = Transcript::new(segs).unwrap();
+        let o = Options::new(template::builtin("general").unwrap(), lang);
+        let mut run = notes::Run {
+            notes: Notes {
+                template: "general".into(),
+                lang: lang.code().into(),
+                tldr: vec![],
+                decisions: groups
+                    .iter()
+                    .map(|(l, _)| notes::Item {
+                        text: format!("decision about line {}", l[0]),
+                        citations: l.clone(),
+                    })
+                    .collect(),
+                proposals: vec![],
+                action_items: vec![],
+                open_questions: vec![],
+                key_quotes: vec![],
+                topics: vec![],
+                sections: vec![],
+            },
+            engine: llm_engine(),
+            strategy: notes::Strategy::Single,
+            diagnostics: Default::default(),
+        };
+        let started = Instant::now();
+        notes::classify_decisions(&mut llm, &t, &o, &mut run);
+        let proposed: std::collections::HashSet<u64> = run
+            .notes
+            .proposals
+            .iter()
+            .flat_map(|i| i.citations.clone())
+            .collect();
+        let ok = groups
+            .iter()
+            .filter(|(l, agreed)| proposed.contains(&l[0]) != *agreed)
+            .count();
+        eprintln!(
+            "{:?}: {ok} of {} right ({:.1} s, failed {}); wrong: {:?}",
+            lang,
+            groups.len(),
+            started.elapsed().as_secs_f64(),
+            run.diagnostics.status_failed,
+            groups
+                .iter()
+                .filter(|(l, agreed)| proposed.contains(&l[0]) == *agreed)
+                .map(|(l, a)| (l[0], *a))
+                .collect::<Vec<_>>()
+        );
+        right += ok;
+        all += groups.len();
+    }
+    eprintln!("STATUS PASS: {right} of {all} right");
+}
+
+fn llm_engine() -> ghi_llm::EngineInfo {
+    ghi_llm::EngineInfo {
+        name: "x".into(),
+        version: "1".into(),
     }
 }

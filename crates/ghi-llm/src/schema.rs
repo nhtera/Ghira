@@ -121,18 +121,6 @@ fn item(s: &Shape) -> Value {
 /// How sure a decision is: someone agreed or confirmed it, or it was only suggested.
 pub const DECISION_STATUSES: &[&str] = &["decided", "proposed"];
 
-/// A decision: like an item, with its status (required, like every property).
-fn decision(s: &Shape) -> Value {
-    object(&[
-        ("text", string()),
-        (
-            "status",
-            json!({"type": "string", "enum": DECISION_STATUSES}),
-        ),
-        ("cite", cites(s, true)),
-    ])
-}
-
 /// The notes output for `template`.
 pub fn notes(template: &Template, s: &Shape) -> Value {
     let d = s.dialect;
@@ -150,7 +138,7 @@ pub fn notes(template: &Template, s: &Shape) -> Value {
     let topic = object(&[("title", string()), ("cite", cites(s, true))]);
     let mut props = vec![
         ("tldr", array(item(s), None, Some(MAX_TLDR), d)),
-        ("decisions", array(decision(s), None, None, d)),
+        ("decisions", array(item(s), None, None, d)),
         ("action_items", array(action, None, None, d)),
         ("open_questions", array(item(s), None, None, d)),
         ("key_quotes", array(quote, None, Some(MAX_QUOTES), d)),
@@ -217,9 +205,7 @@ pub fn compact(mut schema: Value, d: Dialect) -> Value {
 }
 
 /// Kinds of facts the map step extracts from one chunk.
-pub const FACT_KINDS: &[&str] = &[
-    "decision", "proposal", "action", "question", "quote", "point",
-];
+pub const FACT_KINDS: &[&str] = &["decision", "action", "question", "quote", "point"];
 
 /// The map step: facts from one chunk of the transcript.
 pub fn facts(s: &Shape) -> Value {
@@ -232,6 +218,13 @@ pub fn facts(s: &Shape) -> Value {
         ("cite", cites(s, true)),
     ]);
     object(&[("facts", array(fact, None, Some(MAX_FACTS), s.dialect))])
+}
+
+/// The status pass: one status per listed decision, in order (`n` of them;
+/// locally the grammar fixes the count).
+pub fn statuses(n: usize, d: Dialect) -> Value {
+    let status = json!({"type": "string", "enum": DECISION_STATUSES});
+    object(&[("statuses", array(status, Some(n), Some(n), d))])
 }
 
 /// Enhance: per user note line (numbered from 1), supporting points or not found.
@@ -248,7 +241,6 @@ pub fn enhance(s: &Shape, lines: usize) -> Value {
     object(&[("lines", array(line, None, Some(lines), s.dialect))])
 }
 
-/// Ask this meeting: an answer with citations, or not discussed.
 /// A note template drafted from a description (the editor's shape; ids are
 /// made when it is saved). Local only: the grammar bounds the sections.
 pub fn template_draft() -> Value {
@@ -268,6 +260,7 @@ pub fn template_draft() -> Value {
     ])
 }
 
+/// Ask this meeting: an answer with citations, or not discussed.
 pub fn ask(s: &Shape) -> Value {
     object(&[
         ("discussed", json!({"type": "boolean"})),
@@ -363,14 +356,11 @@ mod tests {
             speakers: &sp,
         };
         let s = notes(&t, &sh).to_string();
-        // No enum next to a ["string","null"] type (the speakers): Anthropic
-        // rejects it; aliases are checked when the reply is parsed. The only
-        // enum is the decision status, on a plain string.
-        for bound in ["minItems", "maxItems", "minimum", "[1,2]"] {
+        // No enums at all: Anthropic rejects one next to a ["string","null"]
+        // type (the speakers); aliases are checked when the reply is parsed.
+        for bound in ["minItems", "maxItems", "minimum", "[1,2]", "\"enum\""] {
             assert!(!s.contains(bound), "{bound}");
         }
-        assert_eq!(s.matches("\"enum\"").count(), 1);
-        assert!(s.contains(r#""enum":["decided","proposed"]"#));
         sh.dialect = Dialect::Local;
         let local = notes(&t, &sh).to_string();
         assert!(local.contains("\"maxItems\":5"));
