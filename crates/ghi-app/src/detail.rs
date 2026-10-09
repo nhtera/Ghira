@@ -8,9 +8,9 @@
 //! [RT-6]. Edits of AI-written blocks and items flip them to `ai_edited` in
 //! the store, so a regenerate keeps them.
 
+use ghi_core::marks::{self, Cover};
 use ghi_store::anchors::Anchor;
 use ghi_store::search::{HitKind, SearchFilter, SearchQuery};
-use ghi_core::marks::{self, Cover};
 use ghi_store::store::{Item, Mark, NewActionItem, NewNoteBlock, Provenance, Segment, Store};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -336,7 +336,9 @@ pub fn linked_sources(
 ) -> u32 {
     let sentences = blocks
         .iter()
-        .filter(|b| b.provenance != Provenance::User && covers_marks(&b.kind) && !b.anchors.is_empty())
+        .filter(|b| {
+            b.provenance != Provenance::User && covers_marks(&b.kind) && !b.anchors.is_empty()
+        })
         .count();
     let items = actions
         .iter()
@@ -349,8 +351,10 @@ pub fn linked_sources(
 /// as a note sentence (where the star shows): topics are a list of times and
 /// kinds this version does not draw would hide the mark from "Moments you marked".
 pub fn covers_marks(kind: &str) -> bool {
-    matches!(kind, "tldr" | "decision" | "proposal" | "question" | "quote" | "answer")
-        || kind.starts_with("section:")
+    matches!(
+        kind,
+        "tldr" | "decision" | "proposal" | "question" | "quote" | "answer"
+    ) || kind.starts_with("section:")
         || kind.starts_with("enhanced:")
 }
 
@@ -1445,10 +1449,16 @@ mod tests {
             anchors: vec![anchor(t0)],
             pinned: false,
         };
-        let ai = store.add_note_block(&m, block("decision", Provenance::Ai, 0)).unwrap();
+        let ai = store
+            .add_note_block(&m, block("decision", Provenance::Ai, 0))
+            .unwrap();
         // Your own note and a topic (one cites many lines) cover nothing.
-        store.add_note_block(&m, block("note", Provenance::User, 10_000)).unwrap();
-        store.add_note_block(&m, block("topic", Provenance::Ai, 20_000)).unwrap();
+        store
+            .add_note_block(&m, block("note", Provenance::User, 10_000))
+            .unwrap();
+        store
+            .add_note_block(&m, block("topic", Provenance::Ai, 20_000))
+            .unwrap();
         let act = store
             .add_action_item(
                 &m,
@@ -1505,7 +1515,11 @@ mod tests {
             provenance: prov,
             ..Default::default()
         };
-        assert_eq!(notes_of(&store, &m).unwrap().linked, 0, "no notes, no links");
+        assert_eq!(
+            notes_of(&store, &m).unwrap().linked,
+            0,
+            "no notes, no links"
+        );
         for (kind, prov, cited) in [
             ("decision", Provenance::Ai, true),
             ("proposal", Provenance::AiEdited, true),
@@ -1515,15 +1529,30 @@ mod tests {
         ] {
             store.add_note_block(&m, block(kind, prov, cited)).unwrap();
         }
-        store.add_action_item(&m, action(Provenance::Ai, true)).unwrap();
-        store.add_action_item(&m, action(Provenance::Ai, false)).unwrap();
-        store.add_action_item(&m, action(Provenance::User, true)).unwrap();
+        store
+            .add_action_item(&m, action(Provenance::Ai, true))
+            .unwrap();
+        store
+            .add_action_item(&m, action(Provenance::Ai, false))
+            .unwrap();
+        store
+            .add_action_item(&m, action(Provenance::User, true))
+            .unwrap();
         assert_eq!(notes_of(&store, &m).unwrap().linked, 3);
     }
 
     #[test]
     fn only_drawn_sentence_kinds_cover_marks() {
-        for k in ["tldr", "decision", "proposal", "question", "quote", "answer", "section:risks", "enhanced:b1"] {
+        for k in [
+            "tldr",
+            "decision",
+            "proposal",
+            "question",
+            "quote",
+            "answer",
+            "section:risks",
+            "enhanced:b1",
+        ] {
             assert!(covers_marks(k), "{k}");
         }
         for k in ["topic", "note", "future"] {
@@ -1572,7 +1601,9 @@ mod tests {
         };
         let made = crate::templates_cmd::create_now(&core, &form).unwrap();
         store.set_meeting_template(&m, Some(&made.id)).unwrap();
-        store.add_note_block(&m, section_block("went_well")).unwrap();
+        store
+            .add_note_block(&m, section_block("went_well"))
+            .unwrap();
         let notes = notes_of(&store, &m).unwrap();
         assert_eq!(notes.sections.len(), 1);
         assert_eq!(notes.sections[0].title_en, "Went well");
@@ -1586,14 +1617,25 @@ mod tests {
             instruction: "i".into(),
         });
         crate::templates_cmd::update_now(&core, &made.id, &f).unwrap();
-        let ids: Vec<String> = notes_of(&store, &m).unwrap().sections.into_iter().map(|s| s.id).collect();
+        let ids: Vec<String> = notes_of(&store, &m)
+            .unwrap()
+            .sections
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
         assert_eq!(ids, ["risks", "went_well"]);
 
         // Deleted: nothing resolves, every section the blocks name still shows, titled from its id.
         crate::templates_cmd::delete_now(&core, &made.id).unwrap();
         let notes = notes_of(&store, &m).unwrap();
         assert_eq!(notes.sections.len(), 1);
-        assert_eq!((notes.sections[0].id.as_str(), notes.sections[0].title_en.as_str()), ("went_well", "Went well"));
+        assert_eq!(
+            (
+                notes.sections[0].id.as_str(),
+                notes.sections[0].title_en.as_str()
+            ),
+            ("went_well", "Went well")
+        );
     }
 
     #[test]
@@ -1602,12 +1644,24 @@ mod tests {
         let store = core.store().unwrap();
         store.set_meeting_template(&m, Some("standup")).unwrap();
         store.add_note_block(&m, section_block("done")).unwrap();
-        store.add_note_block(&m, section_block("from_computer")).unwrap();
-        let ids: Vec<String> = notes_of(&store, &m).unwrap().sections.into_iter().map(|s| s.id).collect();
+        store
+            .add_note_block(&m, section_block("from_computer"))
+            .unwrap();
+        let ids: Vec<String> = notes_of(&store, &m)
+            .unwrap()
+            .sections
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
         assert_eq!(ids, ["done", "next", "blockers", "from_computer"]);
         // a template id this device does not have
         store.set_meeting_template(&m, Some("user:t0123")).unwrap();
-        let ids: Vec<String> = notes_of(&store, &m).unwrap().sections.into_iter().map(|s| s.id).collect();
+        let ids: Vec<String> = notes_of(&store, &m)
+            .unwrap()
+            .sections
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
         assert_eq!(ids, ["done", "from_computer"]);
     }
 
@@ -1626,9 +1680,14 @@ mod tests {
         )
         .unwrap();
         store.set_meeting_status(&m, "ready").unwrap();
-        assert!(queue_notes_again(&store, &m, Some("user:t000"), NotesLanguage::En, false).is_err());
+        assert!(
+            queue_notes_again(&store, &m, Some("user:t000"), NotesLanguage::En, false).is_err()
+        );
         queue_notes_again(&store, &m, Some(&made.id), NotesLanguage::En, false).unwrap();
-        assert_eq!(store.get_meeting(&m).unwrap().template.as_deref(), Some(made.id.as_str()));
+        assert_eq!(
+            store.get_meeting(&m).unwrap().template.as_deref(),
+            Some(made.id.as_str())
+        );
         let jobs = store.jobs_for_meeting(&m).unwrap();
         assert_eq!(jobs.len(), 1);
     }
@@ -1663,7 +1722,14 @@ mod tests {
                 .unwrap()
         };
         set_decision_status_now(&store, &m, &dec, true).unwrap();
-        assert_eq!(kind_of(&dec), ("proposal".into(), Provenance::AiEdited, "Ship Friday".into()));
+        assert_eq!(
+            kind_of(&dec),
+            (
+                "proposal".into(),
+                Provenance::AiEdited,
+                "Ship Friday".into()
+            )
+        );
         // Back again; asking for what it already is changes nothing.
         set_decision_status_now(&store, &m, &dec, false).unwrap();
         set_decision_status_now(&store, &m, &dec, false).unwrap();

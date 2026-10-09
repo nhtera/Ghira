@@ -71,17 +71,23 @@ impl Records {
     /// nothing may be written over it.
     pub fn load(store: &Store) -> Result<Records, String> {
         let Some(v) = store.get_setting(KEY).map_err(|e| e.to_string())? else {
-            return Ok(Records { entries: Vec::new() });
+            return Ok(Records {
+                entries: Vec::new(),
+            });
         };
         let serde_json::Value::Array(list) = v else {
-            return Err("the stored templates could not be read, so they were left as they are".into());
+            return Err(
+                "the stored templates could not be read, so they were left as they are".into(),
+            );
         };
         let entries = list
             .into_iter()
-            .map(|raw| match serde_json::from_value::<UserTemplate>(raw.clone()) {
-                Ok(u) => Entry::Known(u),
-                Err(_) => Entry::Unread(raw),
-            })
+            .map(
+                |raw| match serde_json::from_value::<UserTemplate>(raw.clone()) {
+                    Ok(u) => Entry::Known(u),
+                    Err(_) => Entry::Unread(raw),
+                },
+            )
             .collect();
         Ok(Records { entries })
     }
@@ -153,7 +159,11 @@ impl Records {
 
 /// The user's usable templates.
 pub fn load(store: &Store) -> Result<Vec<UserTemplate>, String> {
-    Ok(Records::load(store)?.usable().into_iter().cloned().collect())
+    Ok(Records::load(store)?
+        .usable()
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 /// The template behind `user:<gid>`, if it exists and is usable.
@@ -274,7 +284,10 @@ mod tests {
         assert!(find(&store, "general").is_none());
         assert_eq!(template_of(&store, "general").unwrap().id, "general");
         assert_eq!(template_of(&store, "user:t1").unwrap().name, "Retro");
-        assert!(!ghi_store::sync::settings::is_synced_key(KEY), "stays on this device");
+        assert!(
+            !ghi_store::sync::settings::is_synced_key(KEY),
+            "stays on this device"
+        );
     }
 
     #[test]
@@ -288,7 +301,9 @@ mod tests {
         let big = UserTemplate {
             gid: "t9".into(),
             lang: "en".into(),
-            toml: format!("id = \"t9\"\nname = \"Big\"\nguidance_en = \"\"\nguidance_vi = \"\"\n{nine}"),
+            toml: format!(
+                "id = \"t9\"\nname = \"Big\"\nguidance_en = \"\"\nguidance_vi = \"\"\n{nine}"
+            ),
             retired: vec![],
         };
         assert!(big.template().is_none(), "over the cap today");
@@ -296,7 +311,11 @@ mod tests {
         store
             .set_setting(
                 KEY,
-                &serde_json::json!([future, serde_json::to_value(&big).unwrap(), serde_json::to_value(record("t1")).unwrap()]),
+                &serde_json::json!([
+                    future,
+                    serde_json::to_value(&big).unwrap(),
+                    serde_json::to_value(record("t1")).unwrap()
+                ]),
             )
             .unwrap();
         let mut r = Records::load(&store).unwrap();
@@ -305,11 +324,19 @@ mod tests {
         assert_eq!(r.gids(), ["tf", "t9", "t1"]);
         // Edit and add through the same list, save: nothing is lost.
         r.push(record("t2"));
-        assert!(r.find_mut("t9").is_none(), "an unusable one is not editable");
+        assert!(
+            r.find_mut("t9").is_none(),
+            "an unusable one is not editable"
+        );
         assert!(!r.remove("tf"), "an unreadable one is not deletable either");
         r.save(&store).unwrap();
         let raw = store.get_setting(KEY).unwrap().unwrap();
-        let gids: Vec<&str> = raw.as_array().unwrap().iter().map(|v| v["gid"].as_str().unwrap()).collect();
+        let gids: Vec<&str> = raw
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["gid"].as_str().unwrap())
+            .collect();
         assert_eq!(gids, ["tf", "t9", "t1", "t2"]);
         assert_eq!(raw[0], future);
     }
@@ -317,7 +344,9 @@ mod tests {
     #[test]
     fn a_stored_value_that_is_not_a_list_is_never_written_over() {
         let (_d, store) = store();
-        store.set_setting(KEY, &serde_json::json!({ "not": "a list" })).unwrap();
+        store
+            .set_setting(KEY, &serde_json::json!({ "not": "a list" }))
+            .unwrap();
         assert!(Records::load(&store).is_err());
         assert!(load(&store).is_err());
         assert!(find(&store, "user:t1").is_none());
@@ -332,11 +361,26 @@ mod tests {
         r.push(record("t1"));
         r.save(&store).unwrap();
         let ids = |t: Option<&str>, kinds: &[&str]| -> Vec<String> {
-            sections_for(&store, t, kinds.iter().copied()).into_iter().map(|s| s.id).collect()
+            sections_for(&store, t, kinds.iter().copied())
+                .into_iter()
+                .map(|s| s.id)
+                .collect()
         };
-        assert_eq!(ids(Some("user:t1"), &["section:went_well", "decision", "section:old_one"]), ["went_well", "old_one"]);
-        assert_eq!(ids(Some("user:gone"), &["section:went_well"]), ["went_well"]);
-        assert_eq!(ids(Some("standup"), &["section:done", "section:x_y"]), ["done", "next", "blockers", "x_y"]);
+        assert_eq!(
+            ids(
+                Some("user:t1"),
+                &["section:went_well", "decision", "section:old_one"]
+            ),
+            ["went_well", "old_one"]
+        );
+        assert_eq!(
+            ids(Some("user:gone"), &["section:went_well"]),
+            ["went_well"]
+        );
+        assert_eq!(
+            ids(Some("standup"), &["section:done", "section:x_y"]),
+            ["done", "next", "blockers", "x_y"]
+        );
         let s = sections_for(&store, Some("user:gone"), ["section:went_well"]);
         assert_eq!(s[0].title_en, "Went well");
     }

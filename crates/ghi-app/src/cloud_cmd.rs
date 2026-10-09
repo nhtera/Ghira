@@ -328,9 +328,9 @@ impl AnswerCache {
     /// at once cannot both get it.
     fn take(&self, meeting: &str, id: &str) -> Option<TakenAnswer> {
         let mut q = self.lock();
-        let i = q.iter().position(|(i, d, at)| {
-            i == id && d.meeting == meeting && at.elapsed() < ANSWER_TTL
-        })?;
+        let i = q
+            .iter()
+            .position(|(i, d, at)| i == id && d.meeting == meeting && at.elapsed() < ANSWER_TTL)?;
         let (id, draft, at) = q.remove(i)?;
         Some(TakenAnswer { id, draft, at })
     }
@@ -619,11 +619,9 @@ pub async fn cloud_send(
         let (version, segs) = (plan.version(), plan.segments().to_vec());
         match cloud::send(&store, *plan, &key, policy)? {
             Outcome::Done(Sent::Notes(_)) => Ok(CloudSendResult::Notes),
-            Outcome::Done(Sent::Answer(a)) => {
-                Ok(CloudSendResult::Answer(answer_view(
-                    c, &meeting, &question, a, &segs, version, &provider,
-                )?))
-            }
+            Outcome::Done(Sent::Answer(a)) => Ok(CloudSendResult::Answer(answer_view(
+                c, &meeting, &question, a, &segs, version, &provider,
+            )?)),
             Outcome::Failed {
                 reason,
                 left_device,
@@ -993,7 +991,10 @@ mod tests {
         assert_eq!(b[0].provenance, Provenance::Ai);
         assert_eq!((b[0].anchors[0].t0_ms, b[0].anchors[0].t1_ms), (1000, 4000));
         // Saved once: the id is used up.
-        assert_eq!(save_answer_now(&f.core, &f.meeting, &id), Err(ANSWER_EXPIRED.into()));
+        assert_eq!(
+            save_answer_now(&f.core, &f.meeting, &id),
+            Err(ANSWER_EXPIRED.into())
+        );
         assert_eq!(answers(&f).len(), 1);
     }
 
@@ -1015,7 +1016,9 @@ mod tests {
     #[test]
     fn only_the_last_ten_answers_of_a_meeting_are_kept() {
         let f = fix();
-        let ids: Vec<String> = (0..11).map(|n| f.core.answers().put(draft(&f, n))).collect();
+        let ids: Vec<String> = (0..11)
+            .map(|n| f.core.answers().put(draft(&f, n)))
+            .collect();
         assert_eq!(
             save_answer_now(&f.core, &f.meeting, &ids[0]),
             Err(ANSWER_EXPIRED.into())
@@ -1112,7 +1115,10 @@ mod tests {
                 ..draft(&f, n)
             });
         }
-        assert!(f.core.answers().take("m0", &first).is_none(), "oldest dropped");
+        assert!(
+            f.core.answers().take("m0", &first).is_none(),
+            "oldest dropped"
+        );
         assert_eq!(f.core.answers().lock().len(), ANSWERS_KEPT_TOTAL);
         // An answer past its time is not found.
         let old = f.core.answers().put(draft(&f, 7));
@@ -1137,7 +1143,11 @@ mod tests {
                 .collect();
             hs.into_iter().map(|h| h.join().unwrap()).collect()
         });
-        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1, "{results:?}");
+        assert_eq!(
+            results.iter().filter(|r| r.is_ok()).count(),
+            1,
+            "{results:?}"
+        );
         assert_eq!(answers(&f).len(), 1);
     }
 
@@ -1149,7 +1159,10 @@ mod tests {
             save_answer_now(&f.core, &f.meeting, &id).unwrap();
         }
         let id = f.core.answers().put(draft(&f, 99));
-        assert_eq!(save_answer_now(&f.core, &f.meeting, &id), Err(ANSWER_LIMIT.into()));
+        assert_eq!(
+            save_answer_now(&f.core, &f.meeting, &id),
+            Err(ANSWER_LIMIT.into())
+        );
         // Still there: once a block is deleted the same id saves.
         let gone = answers(&f)[0].gid.clone();
         f.core.store().unwrap().delete_note_blocks(&[gone]).unwrap();
@@ -1167,7 +1180,11 @@ mod tests {
         save_answer_now(&f.core, &f.meeting, &id).unwrap();
         let body = answers(&f).remove(0).body;
         let (q, a) = body.split_once("\nA: ").unwrap();
-        assert!(q.chars().count() <= SAVED_QUESTION_CHARS + 3 + 1, "{}", q.len());
+        assert!(
+            q.chars().count() <= SAVED_QUESTION_CHARS + 3 + 1,
+            "{}",
+            q.len()
+        );
         assert!(a.chars().count() <= SAVED_ANSWER_CHARS + 1);
         assert!(q.ends_with('…') && a.ends_with('…'));
     }
@@ -1197,7 +1214,10 @@ mod tests {
         let kept = f.core.answers().take(&f.meeting, &id).unwrap().draft;
         assert_eq!(kept.question, "When?");
         assert_eq!(kept.anchors.len(), 1);
-        assert_eq!((kept.anchors[0].t0_ms, kept.anchors[0].transcript_version), (1000, 7));
+        assert_eq!(
+            (kept.anchors[0].t0_ms, kept.anchors[0].transcript_version),
+            (1000, 7)
+        );
         // Not discussed: nothing to save.
         let nd = answer_view(
             &f.core,
@@ -1245,7 +1265,7 @@ mod tests {
 
     #[test]
     fn a_cloud_request_never_carries_what_is_in_one_of_your_templates() {
-        use ghi_core::cloud::{plan, Planned};
+        use ghi_core::cloud::{Planned, plan};
         use ghi_core::user_templates::{Records, UserTemplate};
         use ghi_llm::cloud::CloudProvider;
         use ghi_llm::preview::Prices;
@@ -1301,20 +1321,38 @@ mod tests {
         };
 
         // Asked for explicitly, or the meeting's own template: General goes, flagged.
-        store.set_meeting_template(&f.meeting, Some("user:t77")).unwrap();
+        store
+            .set_meeting_template(&f.meeting, Some("user:t77"))
+            .unwrap();
         for asked in [Some("user:t77"), None] {
             let (payload, fallback) = payload_for(asked);
             assert!(fallback, "{asked:?}");
-            for secret in ["XYLOPHONE", "QUOKKA", "Zebra", "Quokka", section_id.as_str(), "user:t77"] {
-                assert!(!payload.contains(secret), "{secret} left the device: {payload}");
+            for secret in [
+                "XYLOPHONE",
+                "QUOKKA",
+                "Zebra",
+                "Quokka",
+                section_id.as_str(),
+                "user:t77",
+            ] {
+                assert!(
+                    !payload.contains(secret),
+                    "{secret} left the device: {payload}"
+                );
             }
-            assert!(payload.contains("we ship on the 12th"), "still the transcript");
+            assert!(
+                payload.contains("we ship on the 12th"),
+                "still the transcript"
+            );
         }
         // A built-in template is sent as it is, and says nothing about falling back.
         store.set_meeting_template(&f.meeting, None).unwrap();
         let (payload, fallback) = payload_for(Some("standup"));
         assert!(!fallback);
-        assert!(payload.contains("blockers"), "the standup's own section: {payload}");
+        assert!(
+            payload.contains("blockers"),
+            "the standup's own section: {payload}"
+        );
         let (_, fallback) = payload_for(None);
         assert!(!fallback, "no template at all is General, not a fallback");
         // An id that is neither is refused, not silently General.

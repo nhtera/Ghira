@@ -22,7 +22,10 @@ const MAX_DRAFT_TOKENS: u32 = 900;
 
 /// Plain text, no Markdown emphasis or heading marks, at most `max` characters.
 fn clip(s: &str, max: usize) -> String {
-    let text: String = plain_text(s).chars().filter(|c| !matches!(c, '*' | '`')).collect();
+    let text: String = plain_text(s)
+        .chars()
+        .filter(|c| !matches!(c, '*' | '`'))
+        .collect();
     text.trim_start_matches(['#', '>', ' '])
         .chars()
         .take(max)
@@ -57,9 +60,28 @@ pub fn draft(llm: &mut dyn Llm, description: &str, lang: OutLang) -> Result<Edit
 /// Titles of the standard sections (folded, so accents and case do not matter):
 /// every note has these already, so a draft that repeats one gets it dropped.
 const STANDARD: &[&str] = &[
-    "summary", "tldr", "tl dr", "decisions", "decision", "action items", "actions", "action", "open questions", "questions",
-    "key quotes", "quotes", "topics", "tom tat", "quyet dinh", "viec can lam", "cau hoi con mo", "cau hoi mo", "cau hoi",
-    "trich dan chinh", "trich dan", "chu de",
+    "summary",
+    "tldr",
+    "tl dr",
+    "decisions",
+    "decision",
+    "action items",
+    "actions",
+    "action",
+    "open questions",
+    "questions",
+    "key quotes",
+    "quotes",
+    "topics",
+    "tom tat",
+    "quyet dinh",
+    "viec can lam",
+    "cau hoi con mo",
+    "cau hoi mo",
+    "cau hoi",
+    "trich dan chinh",
+    "trich dan",
+    "chu de",
 ];
 
 fn is_standard(title: &str) -> bool {
@@ -151,11 +173,23 @@ mod tests {
 
     #[test]
     fn a_description_becomes_an_editor_form_that_validates_and_has_no_ids() {
-        let mut llm = Reply(vec![json("Retro", &[("Went well", "What worked."), ("Went badly", "What did not.")])], vec![]);
+        let mut llm = Reply(
+            vec![json(
+                "Retro",
+                &[
+                    ("Went well", "What worked."),
+                    ("Went badly", "What did not."),
+                ],
+            )],
+            vec![],
+        );
         let e = draft(&mut llm, "A weekly team retro", OutLang::En).unwrap();
         assert_eq!(e.name, "Retro");
         assert_eq!(e.sections.len(), 2);
-        assert!(e.sections.iter().all(|s| s.id.is_none()), "ids come at save");
+        assert!(
+            e.sections.iter().all(|s| s.id.is_none()),
+            "ids come at save"
+        );
         Template::from_editor("t1", &e, &[], &[]).unwrap();
         // The request is grammar-bounded and the description is in the user message, not the rules.
         let r = &llm.1[0];
@@ -171,7 +205,12 @@ mod tests {
         let mut llm = Reply(
             vec![json(
                 &format!("**{long}**"),
-                &[("[Link](http://x.y) Risks", &long), ("", "no title"), ("No instruction", ""), ("<b>Plans</b>", "Next steps")],
+                &[
+                    ("[Link](http://x.y) Risks", &long),
+                    ("", "no title"),
+                    ("No instruction", ""),
+                    ("<b>Plans</b>", "Next steps"),
+                ],
             )],
             vec![],
         );
@@ -194,7 +233,14 @@ mod tests {
         let e = draft(&mut llm, "x", OutLang::En).unwrap();
         assert_eq!(e.name, "Retro");
         assert_eq!(llm.1.len(), 2);
-        assert!(llm.1[1].messages.last().unwrap().content.contains("not valid"));
+        assert!(
+            llm.1[1]
+                .messages
+                .last()
+                .unwrap()
+                .content
+                .contains("not valid")
+        );
         let mut llm = Reply(vec![bad.clone(), bad.clone(), bad.clone(), bad], vec![]);
         assert!(draft(&mut llm, "x", OutLang::En).is_err());
     }
@@ -204,12 +250,26 @@ mod tests {
         let mut llm = Reply(
             vec![json(
                 "Retro",
-                &[("Summary", "x"), ("Action Items", "x"), ("Went well", "What worked."), ("TÓM TẮT", "x"), ("Việc cần làm", "x"), ("Câu hỏi mở", "x"), ("Rủi ro", "Điều có thể sai.")],
+                &[
+                    ("Summary", "x"),
+                    ("Action Items", "x"),
+                    ("Went well", "What worked."),
+                    ("TÓM TẮT", "x"),
+                    ("Việc cần làm", "x"),
+                    ("Câu hỏi mở", "x"),
+                    ("Rủi ro", "Điều có thể sai."),
+                ],
             )],
             vec![],
         );
         let e = draft(&mut llm, "x", OutLang::En).unwrap();
-        assert_eq!(e.sections.iter().map(|s| s.title.as_str()).collect::<Vec<_>>(), ["Went well", "Rủi ro"]);
+        assert_eq!(
+            e.sections
+                .iter()
+                .map(|s| s.title.as_str())
+                .collect::<Vec<_>>(),
+            ["Went well", "Rủi ro"]
+        );
         // Nothing of its own left: tried again, then refused.
         let only = json("Retro", &[("Summary", "x"), ("Topics", "x")]);
         let mut llm = Reply(vec![only.clone(), only.clone(), only.clone(), only], vec![]);

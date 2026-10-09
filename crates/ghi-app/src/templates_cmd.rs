@@ -98,7 +98,10 @@ fn new_gid(taken: &[String]) -> String {
     loop {
         let mut b = [0u8; 6];
         OsRng.fill_bytes(&mut b);
-        let g = format!("t{}", b.iter().map(|x| format!("{x:02x}")).collect::<String>());
+        let g = format!(
+            "t{}",
+            b.iter().map(|x| format!("{x:02x}")).collect::<String>()
+        );
         if !taken.contains(&g) {
             return g;
         }
@@ -111,7 +114,11 @@ const RETIRED_KEPT: usize = 200;
 pub(crate) fn list_now(c: &Core) -> Result<Vec<UserTemplateView>, String> {
     let store = c.store()?;
     let _g = c.templates_guard();
-    Ok(Records::load(&store)?.usable().into_iter().filter_map(view).collect())
+    Ok(Records::load(&store)?
+        .usable()
+        .into_iter()
+        .filter_map(view)
+        .collect())
 }
 
 pub(crate) fn create_now(c: &Core, form: &TemplateForm) -> Result<UserTemplateView, String> {
@@ -140,7 +147,11 @@ pub(crate) fn create_now(c: &Core, form: &TemplateForm) -> Result<UserTemplateVi
     Ok(out)
 }
 
-pub(crate) fn update_now(c: &Core, id: &str, form: &TemplateForm) -> Result<UserTemplateView, String> {
+pub(crate) fn update_now(
+    c: &Core,
+    id: &str,
+    form: &TemplateForm,
+) -> Result<UserTemplateView, String> {
     let store = c.store()?;
     let _g = c.templates_guard();
     let mut all = Records::load(&store)?;
@@ -193,10 +204,22 @@ pub(crate) fn duplicate_now(c: &Core, id: &str, language: &str) -> Result<Templa
     // The copy is a new template: its sections get ids of their own.
     for s in &mut form.sections {
         s.id = None;
-        s.instruction = s.instruction.chars().take(ghi_llm::template::MAX_INSTRUCTION).collect();
-        s.title = s.title.chars().take(ghi_llm::template::MAX_SECTION_TITLE).collect();
+        s.instruction = s
+            .instruction
+            .chars()
+            .take(ghi_llm::template::MAX_INSTRUCTION)
+            .collect();
+        s.title = s
+            .title
+            .chars()
+            .take(ghi_llm::template::MAX_SECTION_TITLE)
+            .collect();
     }
-    form.guidance = form.guidance.chars().take(ghi_llm::template::MAX_GUIDANCE).collect();
+    form.guidance = form
+        .guidance
+        .chars()
+        .take(ghi_llm::template::MAX_GUIDANCE)
+        .collect();
     form.sections.truncate(ghi_llm::template::MAX_SECTIONS);
     Ok(form)
 }
@@ -227,7 +250,11 @@ pub(crate) fn draft_with(
 
 /// "Draft from description": the local model, like Ask (refused while
 /// recording or while notes are being written, and while the app is locked).
-pub(crate) fn draft_now(c: &Core, description: &str, language: &str) -> Result<TemplateForm, String> {
+pub(crate) fn draft_now(
+    c: &Core,
+    description: &str,
+    language: &str,
+) -> Result<TemplateForm, String> {
     lang_of(language)?;
     // Refused while the app is locked, like every content command.
     let store = c.store()?;
@@ -339,8 +366,17 @@ mod tests {
             instruction: "Again.".into(),
         });
         let upd = update_now(&c, &made.id, &f).unwrap();
-        let ids: Vec<_> = upd.form.sections.iter().map(|s| s.id.clone().unwrap()).collect();
-        assert_eq!(ids, ["went_well", "went_badly_2"], "went_badly stays retired");
+        let ids: Vec<_> = upd
+            .form
+            .sections
+            .iter()
+            .map(|s| s.id.clone().unwrap())
+            .collect();
+        assert_eq!(
+            ids,
+            ["went_well", "went_badly_2"],
+            "went_badly stays retired"
+        );
         // A form cannot name an id the template never had.
         let mut forged = upd.form.clone();
         forged.sections[0].id = Some("tldr".into());
@@ -376,9 +412,15 @@ mod tests {
         assert_eq!(en.name, "Standup");
         assert_eq!(en.sections.len(), 3);
         assert_eq!(en.sections[0].title, "Done");
-        assert!(en.sections.iter().all(|s| s.id.is_none()), "a new template, new ids");
+        assert!(
+            en.sections.iter().all(|s| s.id.is_none()),
+            "a new template, new ids"
+        );
         let vi = duplicate_now(&c, "standup", "vi").unwrap();
-        assert_eq!((vi.language.as_str(), vi.sections[0].title.as_str()), ("vi", "Đã làm"));
+        assert_eq!(
+            (vi.language.as_str(), vi.sections[0].title.as_str()),
+            ("vi", "Đã làm")
+        );
         assert!(duplicate_now(&c, "nope", "en").is_err());
         assert!(duplicate_now(&c, "standup", "fr").is_err());
         // Nothing was saved: only Save creates it.
@@ -404,8 +446,11 @@ mod tests {
                 h.join().unwrap();
             }
         });
-        let names: std::collections::BTreeSet<String> =
-            list_now(&c).unwrap().into_iter().map(|u| u.form.name).collect();
+        let names: std::collections::BTreeSet<String> = list_now(&c)
+            .unwrap()
+            .into_iter()
+            .map(|u| u.form.name)
+            .collect();
         assert_eq!(names.len(), 12, "{names:?}");
     }
 
@@ -438,19 +483,31 @@ mod tests {
         let mut list: Vec<serde_json::Value> = (0..store_of::MAX_USER_TEMPLATES)
             .map(|n| serde_json::json!({ "gid": format!("tf{n}"), "from": "a newer app" }))
             .collect();
-        store.set_setting(store_of::KEY, &serde_json::Value::Array(list.clone())).unwrap();
+        store
+            .set_setting(store_of::KEY, &serde_json::Value::Array(list.clone()))
+            .unwrap();
         assert!(list_now(&c).unwrap().is_empty());
-        assert!(create_now(&c, &form("X", &["A"])).is_err(), "twenty entries, readable or not");
+        assert!(
+            create_now(&c, &form("X", &["A"])).is_err(),
+            "twenty entries, readable or not"
+        );
         list.pop();
-        store.set_setting(store_of::KEY, &serde_json::Value::Array(list)).unwrap();
+        store
+            .set_setting(store_of::KEY, &serde_json::Value::Array(list))
+            .unwrap();
         create_now(&c, &form("X", &["A"])).unwrap();
         let raw = store.get_setting(store_of::KEY).unwrap().unwrap();
         assert_eq!(raw.as_array().unwrap().len(), store_of::MAX_USER_TEMPLATES);
         assert_eq!(raw[0]["from"], "a newer app");
         // A value that is not a list is never overwritten.
-        store.set_setting(store_of::KEY, &serde_json::json!("garbage")).unwrap();
+        store
+            .set_setting(store_of::KEY, &serde_json::json!("garbage"))
+            .unwrap();
         assert!(create_now(&c, &form("Y", &["A"])).is_err());
-        assert_eq!(store.get_setting(store_of::KEY).unwrap().unwrap(), "garbage");
+        assert_eq!(
+            store.get_setting(store_of::KEY).unwrap().unwrap(),
+            "garbage"
+        );
     }
 
     #[test]
@@ -469,7 +526,12 @@ mod tests {
             }];
             cur = update_now(&c, &cur.id, &f).unwrap();
         }
-        let raw = c.store().unwrap().get_setting(store_of::KEY).unwrap().unwrap();
+        let raw = c
+            .store()
+            .unwrap()
+            .get_setting(store_of::KEY)
+            .unwrap()
+            .unwrap();
         assert!(raw[0]["retired"].as_array().unwrap().len() <= 200);
         assert_eq!(cur.form.sections.len(), 1);
         let _ = f;
@@ -541,7 +603,10 @@ mod draft_tests {
         let tmp = tempfile::tempdir().unwrap();
         let (c, _rx) = Core::for_test(tmp.path().join("data"));
         c.set_locked(true);
-        assert_eq!(draft_now(&c, "A weekly retro", "en").unwrap_err(), "the app is locked");
+        assert_eq!(
+            draft_now(&c, "A weekly retro", "en").unwrap_err(),
+            "the app is locked"
+        );
         c.set_locked(false);
         // Unlocked, but no model is set up in this core: refused in words, nothing drafted.
         let e = draft_now(&c, "A weekly retro", "en").unwrap_err();

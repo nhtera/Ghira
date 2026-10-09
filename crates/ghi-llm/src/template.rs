@@ -101,10 +101,14 @@ impl Template {
             let title = one_line(&f.title);
             let instruction = one_line(&f.instruction);
             if title.is_empty() || title.chars().count() > MAX_SECTION_TITLE {
-                return bad(format!("a section title of 1 to {MAX_SECTION_TITLE} characters"));
+                return bad(format!(
+                    "a section title of 1 to {MAX_SECTION_TITLE} characters"
+                ));
             }
             if instruction.is_empty() || instruction.chars().count() > MAX_INSTRUCTION {
-                return bad(format!("a section instruction of 1 to {MAX_INSTRUCTION} characters"));
+                return bad(format!(
+                    "a section instruction of 1 to {MAX_INSTRUCTION} characters"
+                ));
             }
             let sid = match &f.id {
                 Some(k) if known.contains(k) && !sections.iter().any(|s| &s.id == k) => k.clone(),
@@ -352,7 +356,13 @@ mod tests {
         let e = t.to_editor(OutLang::En);
         assert_eq!(e.sections[1].id.as_deref(), Some("went_badly"));
         assert_eq!(e.name, "Weekly retro");
-        let again = Template::from_editor("user_1", &e, &["went_well".into(), "went_badly".into()], &[]).unwrap();
+        let again = Template::from_editor(
+            "user_1",
+            &e,
+            &["went_well".into(), "went_badly".into()],
+            &[],
+        )
+        .unwrap();
         assert_eq!(again, t);
     }
 
@@ -408,14 +418,20 @@ mod tests {
     #[test]
     fn new_ids_come_from_the_title_and_are_unique_and_allowed() {
         let mut f = form();
-        f.sections = ["Quyết định chính", "Quyết định chính", "TL;DR", "Đã làm!", "123 go"]
-            .iter()
-            .map(|t| EditorSection {
-                id: None,
-                title: t.to_string(),
-                instruction: "i".into(),
-            })
-            .collect();
+        f.sections = [
+            "Quyết định chính",
+            "Quyết định chính",
+            "TL;DR",
+            "Đã làm!",
+            "123 go",
+        ]
+        .iter()
+        .map(|t| EditorSection {
+            id: None,
+            title: t.to_string(),
+            instruction: "i".into(),
+        })
+        .collect();
         f.sections.push(EditorSection {
             id: None,
             title: "Decisions".into(),
@@ -427,7 +443,18 @@ mod tests {
             .into_iter()
             .map(|s| s.id)
             .collect();
-        assert_eq!(ids, ["quyet_dinh_chinh", "quyet_dinh_chinh_2", "tl_dr", "da_lam", "s_123_go", "decisions_2"].map(String::from));
+        assert_eq!(
+            ids,
+            [
+                "quyet_dinh_chinh",
+                "quyet_dinh_chinh_2",
+                "tl_dr",
+                "da_lam",
+                "s_123_go",
+                "decisions_2"
+            ]
+            .map(String::from)
+        );
         assert_eq!(humanize_id("went_well"), "Went well");
     }
 

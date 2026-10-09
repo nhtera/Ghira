@@ -503,15 +503,26 @@ mod tests {
             let p = send(t);
             assert!(p.template_fallback);
             for secret in ["XYLOPHONE", "QUOKKA", "Zebra", "Quokka", "t77"] {
-                assert!(!p.preview.payload.contains(secret), "{secret} left the device: {}", p.preview.payload);
+                assert!(
+                    !p.preview.payload.contains(secret),
+                    "{secret} left the device: {}",
+                    p.preview.payload
+                );
             }
-            assert!(p.preview.payload.contains("pricing deck"), "the transcript is still sent");
+            assert!(
+                p.preview.payload.contains("pricing deck"),
+                "the transcript is still sent"
+            );
         }
         // A built-in template goes as it is, with no fallback.
         let standup = ghi_llm::template::builtin("standup").unwrap();
         let p = send(standup);
         assert!(!p.template_fallback);
-        assert!(p.preview.payload.contains("blockers"), "{}", p.preview.payload);
+        assert!(
+            p.preview.payload.contains("blockers"),
+            "{}",
+            p.preview.payload
+        );
     }
 
     #[test]

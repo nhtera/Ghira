@@ -128,7 +128,8 @@ pub fn pack_terms_seen<S: AsRef<str>>(lines: &[S], ids: &[String]) -> Vec<String
                 let src = said_as(&nfc, w);
                 for t in terms {
                     // A term written with accents is said with them.
-                    let said = !ghi_text::has_diacritics(t) || src == ghi_text::nfc(t).to_lowercase();
+                    let said =
+                        !ghi_text::has_diacritics(t) || src == ghi_text::nfc(t).to_lowercase();
                     if said && !seen.iter().any(|x| x == t) {
                         seen.push((*t).to_string());
                     }
@@ -182,7 +183,11 @@ pub fn terms_seen<S: AsRef<str>>(lines: &[S], terms: &[String]) -> Vec<String> {
         let toks = tokenize(&nfc);
         for &n in &sizes {
             for w in toks.windows(n) {
-                let key = w.iter().map(|t| t.folded.as_str()).collect::<Vec<_>>().join(" ");
+                let key = w
+                    .iter()
+                    .map(|t| t.folded.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 let Some(found) = index.get(&key) else {
                     continue;
                 };
@@ -802,10 +807,25 @@ mod tests {
 
     #[test]
     fn your_terms_are_seen_only_when_said_whole_and_exactly() {
-        let terms: Vec<String> = ["Nemotron", "CoreML", "Nguyễn Văn An", "Chốt", "Acme Corp", "Plaud"].map(String::from).to_vec();
+        let terms: Vec<String> = [
+            "Nemotron",
+            "CoreML",
+            "Nguyễn Văn An",
+            "Chốt",
+            "Acme Corp",
+            "Plaud",
+        ]
+        .map(String::from)
+        .to_vec();
         let seen = |lines: &[&str]| terms_seen(lines, &terms);
         // Case is ignored, any language, multi-word terms by their words.
-        assert_eq!(seen(&["we ship nemotron today", "ask nguyễn văn an about acme corp"]), ["Nemotron", "Nguyễn Văn An", "Acme Corp"]);
+        assert_eq!(
+            seen(&[
+                "we ship nemotron today",
+                "ask nguyễn văn an about acme corp"
+            ]),
+            ["Nemotron", "Nguyễn Văn An", "Acme Corp"]
+        );
         // A term with accents is said with them; one without is said however it is spelled.
         assert_eq!(seen(&["ta chốt lịch", "ta chot lich"]), ["Chốt"]);
         assert_eq!(seen(&["ta chot lich"]), Vec::<String>::new());
@@ -821,17 +841,40 @@ mod tests {
     fn accents_typed_decomposed_and_separators_between_words_do_not_hide_a_term() {
         let nfd = "Nguye\u{302}\u{303}n Va\u{306}n An".to_string();
         // A decomposed term finds its composed spelling, and comes back composed.
-        assert_eq!(terms_seen(&["gặp ông Nguyễn Văn An hôm qua"], std::slice::from_ref(&nfd)), ["Nguyễn Văn An"]);
+        assert_eq!(
+            terms_seen(
+                &["gặp ông Nguyễn Văn An hôm qua"],
+                std::slice::from_ref(&nfd)
+            ),
+            ["Nguyễn Văn An"]
+        );
         // ... and a composed term finds a decomposed line.
-        assert_eq!(terms_seen(&["gặp ông Nguye\u{302}\u{303}n Văn An hôm qua"], &["Nguyễn Văn An".to_string()]), ["Nguyễn Văn An"]);
+        assert_eq!(
+            terms_seen(
+                &["gặp ông Nguye\u{302}\u{303}n Văn An hôm qua"],
+                &["Nguyễn Văn An".to_string()]
+            ),
+            ["Nguyễn Văn An"]
+        );
         // The accents must be there: the plain spelling is another word.
         assert!(terms_seen(&["gặp ông Nguyen Van An"], &["Nguyễn Văn An".to_string()]).is_empty());
         // Extra spaces or a hyphen between the words still say the term.
-        for line in ["gặp ông Nguyễn  Văn   An", "gặp ông Nguyễn-Văn An", "gặp ông nguyễn văn an."] {
-            assert_eq!(terms_seen(&[line], &["Nguyễn Văn An".to_string()]), ["Nguyễn Văn An"], "{line}");
+        for line in [
+            "gặp ông Nguyễn  Văn   An",
+            "gặp ông Nguyễn-Văn An",
+            "gặp ông nguyễn văn an.",
+        ] {
+            assert_eq!(
+                terms_seen(&[line], &["Nguyễn Văn An".to_string()]),
+                ["Nguyễn Văn An"],
+                "{line}"
+            );
         }
         // The same rule for pack terms.
-        assert_eq!(pack_terms_seen(&["bác sĩ nói huyết   áp cao"], &ids(&["medical-vi"])), ["huyết áp"]);
+        assert_eq!(
+            pack_terms_seen(&["bác sĩ nói huyết   áp cao"], &ids(&["medical-vi"])),
+            ["huyết áp"]
+        );
     }
 
     #[test]
@@ -839,9 +882,15 @@ mod tests {
         let (_t, store) = store();
         let m = store.create_meeting(Default::default()).unwrap().gid;
         let terms: Vec<String> = (0..45).map(|i| format!("Alpha{i}")).collect();
-        store.set_setting(TERMS_SETTING, &serde_json::json!(terms)).unwrap();
+        store
+            .set_setting(TERMS_SETTING, &serde_json::json!(terms))
+            .unwrap();
         // The meeting says them last to first.
-        let said: Vec<String> = terms.iter().rev().map(|t| format!("we discussed {}", t.to_lowercase())).collect();
+        let said: Vec<String> = terms
+            .iter()
+            .rev()
+            .map(|t| format!("we discussed {}", t.to_lowercase()))
+            .collect();
         let refs: Vec<&str> = said.iter().map(String::as_str).collect();
         let segs = lines(&store, &m, &refs);
         let got = spellings_for_prompt(&store, &m, &segs, 40);
@@ -860,7 +909,11 @@ mod tests {
         (tmp, s)
     }
 
-    fn lines(store: &ghi_store::store::Store, m: &str, texts: &[&str]) -> Vec<ghi_store::store::Segment> {
+    fn lines(
+        store: &ghi_store::store::Store,
+        m: &str,
+        texts: &[&str],
+    ) -> Vec<ghi_store::store::Segment> {
         store
             .add_segments(
                 m,
@@ -882,17 +935,39 @@ mod tests {
     fn the_prompts_spellings_are_the_terms_said_yours_first_then_packs_distinct_and_capped() {
         let (_t, store) = store();
         let m = store.create_meeting(Default::default()).unwrap().gid;
-        store.set_setting(TERMS_SETTING, &serde_json::json!(["Nemotron", "Never said", "metformin"])).unwrap();
-        store.set_setting(PACKS_SETTING, &serde_json::json!(["medical-en", "tech-en"])).unwrap();
-        let segs = lines(&store, &m, &["we talked about nemotron and Metformin and hypertension", "then kubernetes", "Metformin again"]);
+        store
+            .set_setting(
+                TERMS_SETTING,
+                &serde_json::json!(["Nemotron", "Never said", "metformin"]),
+            )
+            .unwrap();
+        store
+            .set_setting(PACKS_SETTING, &serde_json::json!(["medical-en", "tech-en"]))
+            .unwrap();
+        let segs = lines(
+            &store,
+            &m,
+            &[
+                "we talked about nemotron and Metformin and hypertension",
+                "then kubernetes",
+                "Metformin again",
+            ],
+        );
         let got = spellings_for_prompt(&store, &m, &segs, 40);
         // Yours first, in your spelling; pack terms after; "metformin" once (yours wins); unsaid terms out.
         assert_eq!(got, ["Nemotron", "metformin", "hypertension", "Kubernetes"]);
         // The cap.
-        assert_eq!(spellings_for_prompt(&store, &m, &segs, 2), ["Nemotron", "metformin"]);
+        assert_eq!(
+            spellings_for_prompt(&store, &m, &segs, 2),
+            ["Nemotron", "metformin"]
+        );
         // Nothing enabled and nothing said: nothing.
-        store.set_setting(PACKS_SETTING, &serde_json::json!([])).unwrap();
-        store.set_setting(TERMS_SETTING, &serde_json::json!([])).unwrap();
+        store
+            .set_setting(PACKS_SETTING, &serde_json::json!([]))
+            .unwrap();
+        store
+            .set_setting(TERMS_SETTING, &serde_json::json!([]))
+            .unwrap();
         assert!(spellings_for_prompt(&store, &m, &segs, 40).is_empty());
     }
 
@@ -900,11 +975,24 @@ mod tests {
     fn a_pack_term_in_the_wrong_language_is_not_a_spelling() {
         let (_t, store) = store();
         let m = store.create_meeting(Default::default()).unwrap().gid;
-        store.set_setting(PACKS_SETTING, &serde_json::json!(["medical-vi"])).unwrap();
+        store
+            .set_setting(PACKS_SETTING, &serde_json::json!(["medical-vi"]))
+            .unwrap();
         // An English line never matches a Vietnamese pack, even if a word is shared.
-        let segs = lines(&store, &m, &["paracetamol is what I take for pain", "Bác sĩ cho tôi uống paracetamol sau bữa ăn"]);
+        let segs = lines(
+            &store,
+            &m,
+            &[
+                "paracetamol is what I take for pain",
+                "Bác sĩ cho tôi uống paracetamol sau bữa ăn",
+            ],
+        );
         assert_eq!(spellings_for_prompt(&store, &m, &segs, 40), ["paracetamol"]);
-        let only_en = lines(&store, &m, &["I take aspirin and ibuprofen for the headache every day"]);
+        let only_en = lines(
+            &store,
+            &m,
+            &["I take aspirin and ibuprofen for the headache every day"],
+        );
         assert!(spellings_for_prompt(&store, &m, &only_en, 40).is_empty());
     }
 

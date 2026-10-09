@@ -1042,9 +1042,18 @@ fn a_meeting_deleted_on_the_phone_takes_its_waiting_ask_answers_off_the_hub_too(
     phone.store.delete_meeting(&gone).unwrap();
     sync(&hub, &phone);
     sync(&hub, &phone);
-    assert!(hub.store().get_meeting(&gone).is_err(), "deleted on the hub by the sync");
-    assert!(!cache.has_meeting(&gone), "its waiting answers went with it ({id_gone})");
-    assert!(cache.has_meeting(&kept), "the other meeting's answer stays ({id_kept})");
+    assert!(
+        hub.store().get_meeting(&gone).is_err(),
+        "deleted on the hub by the sync"
+    );
+    assert!(
+        !cache.has_meeting(&gone),
+        "its waiting answers went with it ({id_gone})"
+    );
+    assert!(
+        cache.has_meeting(&kept),
+        "the other meeting's answer stays ({id_kept})"
+    );
 }
 
 #[test]

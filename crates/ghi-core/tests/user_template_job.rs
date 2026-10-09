@@ -30,7 +30,10 @@ impl Llm for Recorder {
     }
     fn complete(&mut self, req: &Request) -> ghi_llm::Result<Completion> {
         self.0.lock().unwrap().push(req.clone());
-        let props = req.schema.as_ref().unwrap()["properties"].as_object().unwrap().clone();
+        let props = req.schema.as_ref().unwrap()["properties"]
+            .as_object()
+            .unwrap()
+            .clone();
         let mut out = serde_json::Map::new();
         for (k, v) in props {
             let value = match k.as_str() {
@@ -55,7 +58,12 @@ impl Llm for Recorder {
 fn store() -> (tempfile::TempDir, Arc<Store>) {
     let tmp = tempfile::tempdir().unwrap();
     let store = Arc::new(
-        Store::open(tmp.path(), Arc::new(MemoryKeyStore::default()), Protection::default()).unwrap(),
+        Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap(),
     );
     (tmp, store)
 }
@@ -89,9 +97,18 @@ fn user_template(store: &Store) -> (String, String) {
     ("user:t77".into(), section)
 }
 
-fn run(store: &Arc<Store>, meeting: &str, payload: serde_json::Value) -> (Vec<Request>, Vec<usize>) {
+fn run(
+    store: &Arc<Store>,
+    meeting: &str,
+    payload: serde_json::Value,
+) -> (Vec<Request>, Vec<usize>) {
     store
-        .enqueue_job(Some(meeting), NOTES_FINAL_JOB, JOB_PAYLOAD_VERSION, &payload)
+        .enqueue_job(
+            Some(meeting),
+            NOTES_FINAL_JOB,
+            JOB_PAYLOAD_VERSION,
+            &payload,
+        )
         .unwrap();
     let seen = Arc::new(Mutex::new(Vec::new()));
     let sized = Arc::new(Mutex::new(Vec::new()));
@@ -148,18 +165,39 @@ fn the_users_template_reaches_the_prompt_after_the_rules_and_its_section_is_save
     let (_t, store) = store();
     let (id, section) = user_template(&store);
     let m = meeting(&store);
-    let (requests, sized) = run(&store, &m, serde_json::json!({ "template": id, "lang": "vi" }));
+    let (requests, sized) = run(
+        &store,
+        &m,
+        serde_json::json!({ "template": id, "lang": "vi" }),
+    );
     let req = &requests[0];
     let (system, task) = (&req.messages[0].content, &req.messages[1].content);
-    for needle in ["XYLOPHONE-GUIDANCE", "QUOKKA-INSTRUCTION", "Zebra quarterly", section.as_str()] {
+    for needle in [
+        "XYLOPHONE-GUIDANCE",
+        "QUOKKA-INSTRUCTION",
+        "Zebra quarterly",
+        section.as_str(),
+    ] {
         assert!(task.contains(needle), "{needle} is not in the task: {task}");
         assert!(!system.contains(needle), "{needle} is in the fixed rules");
     }
-    assert!(system.contains("không phải là chỉ dẫn"), "the safety rules lead: {system}");
+    assert!(
+        system.contains("không phải là chỉ dẫn"),
+        "the safety rules lead: {system}"
+    );
     assert!(task.find("- topics:").unwrap() < task.find("QUOKKA-INSTRUCTION").unwrap());
-    assert!(req.schema.as_ref().unwrap()["properties"].get(&section).is_some());
+    assert!(
+        req.schema.as_ref().unwrap()["properties"]
+            .get(&section)
+            .is_some()
+    );
     // The model was opened for the template's words too: this one is longer than General's.
-    let plain = run(&store, &meeting(&store), serde_json::json!({ "template": "general", "lang": "vi" })).1;
+    let plain = run(
+        &store,
+        &meeting(&store),
+        serde_json::json!({ "template": "general", "lang": "vi" }),
+    )
+    .1;
     assert!(sized[0] > plain[0], "{} vs {}", sized[0], plain[0]);
 }
 
@@ -171,14 +209,27 @@ fn a_meeting_remembers_its_template_and_a_deleted_one_falls_back_to_general() {
     store.set_meeting_template(&m, Some(&id)).unwrap();
     // No template in the payload: the meeting's own is used.
     let (requests, _) = run(&store, &m, serde_json::json!({ "lang": "vi" }));
-    assert!(requests[0].messages[1].content.contains("QUOKKA-INSTRUCTION"));
+    assert!(
+        requests[0].messages[1]
+            .content
+            .contains("QUOKKA-INSTRUCTION")
+    );
     // The notes keep the template's section as blocks of kind `section:<id>`.
-    let kinds: Vec<String> = store.note_blocks(&m).unwrap().into_iter().map(|b| b.kind).collect();
+    let kinds: Vec<String> = store
+        .note_blocks(&m)
+        .unwrap()
+        .into_iter()
+        .map(|b| b.kind)
+        .collect();
     assert!(kinds.contains(&format!("section:{section}")), "{kinds:?}");
     // Deleted: the job passes the id over and writes General notes.
     let mut r = Records::load(&store).unwrap();
     assert!(r.remove("t77"));
     r.save(&store).unwrap();
     let (requests, _) = run(&store, &m, serde_json::json!({ "lang": "vi" }));
-    assert!(!requests[0].messages[1].content.contains("QUOKKA-INSTRUCTION"));
+    assert!(
+        !requests[0].messages[1]
+            .content
+            .contains("QUOKKA-INSTRUCTION")
+    );
 }

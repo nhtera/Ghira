@@ -264,11 +264,24 @@ mod tests {
         )
         .unwrap();
         // Typed with decomposed accents (some keyboards and pasted text), and again composed.
-        let v = store_terms(&store, vec!["Nguye\u{302}\u{303}n Va\u{306}n An".into(), "Nguyễn Văn An".into()]).unwrap();
+        let v = store_terms(
+            &store,
+            vec![
+                "Nguye\u{302}\u{303}n Va\u{306}n An".into(),
+                "Nguyễn Văn An".into(),
+            ],
+        )
+        .unwrap();
         assert_eq!(v.terms, ["Nguyễn Văn An"], "composed, and not twice");
         let raw = store.get_setting(TERMS_SETTING).unwrap().unwrap();
         assert_eq!(raw, serde_json::json!(["Nguyễn Văn An"]));
-        assert!(raw[0].as_str().unwrap().chars().all(|c| !('\u{300}'..='\u{36f}').contains(&c)));
+        assert!(
+            raw[0]
+                .as_str()
+                .unwrap()
+                .chars()
+                .all(|c| !('\u{300}'..='\u{36f}').contains(&c))
+        );
     }
 
     #[test]

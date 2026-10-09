@@ -1087,19 +1087,33 @@ mod tests {
             .unwrap();
         let m = store.get_meeting(&g).unwrap();
         let heads = |store: &Store| -> Vec<String> {
-            note_sections(store, &g, &store.get_meeting(&g).unwrap(), &HashMap::new(), Lang::En)
-                .unwrap()
-                .into_iter()
-                .map(|s| s.heading)
-                .collect()
+            note_sections(
+                store,
+                &g,
+                &store.get_meeting(&g).unwrap(),
+                &HashMap::new(),
+                Lang::En,
+            )
+            .unwrap()
+            .into_iter()
+            .map(|s| s.heading)
+            .collect()
         };
         assert_eq!(m.template.as_deref(), Some("user:t1"));
-        assert!(heads(&store).contains(&"Went well!".to_string()), "{:?}", heads(&store));
+        assert!(
+            heads(&store).contains(&"Went well!".to_string()),
+            "{:?}",
+            heads(&store)
+        );
         // The template is deleted: the section is still in the export, titled from its id.
         let mut r = Records::load(&store).unwrap();
         assert!(r.remove("t1"));
         r.save(&store).unwrap();
-        assert!(heads(&store).contains(&"Went well".to_string()), "{:?}", heads(&store));
+        assert!(
+            heads(&store).contains(&"Went well".to_string()),
+            "{:?}",
+            heads(&store)
+        );
     }
 
     #[test]
