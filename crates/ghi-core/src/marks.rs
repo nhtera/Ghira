@@ -26,8 +26,14 @@ pub struct MarkLine {
     pub range: (i64, i64),
 }
 
-/// Each mark on the last line starting at or before it, if that line ends
-/// within [`MAX_GAP_MS`] of the mark. `segments` are in time order. Marks keep
+/// Each mark on a line; this is the one rule for the notes prompt, the
+/// coverage check and (through `MeetingNotes.marks`) the apps.
+///
+/// A mark belongs to the last line starting at or before it, if that line ends
+/// within [`MAX_GAP_MS`] of the mark. When that line is too far back (speech
+/// overlapped: a longer line started earlier and still runs), the last line
+/// whose span contains the mark is used instead. Otherwise the mark is in
+/// silence and keeps its time only. `segments` are in time order; marks keep
 /// their order.
 pub fn mark_lines(marks: &[Mark], segments: &[Segment]) -> Vec<MarkLine> {
     marks
@@ -35,7 +41,13 @@ pub fn mark_lines(marks: &[Mark], segments: &[Segment]) -> Vec<MarkLine> {
         .map(|m| {
             // The last one wins a tie, as in the transcript view.
             let at = segments.iter().rposition(|s| s.t0_ms <= m.t_ms);
-            let line = at.filter(|&i| m.t_ms - segments[i].t1_ms <= MAX_GAP_MS);
+            let line = at
+                .filter(|&i| m.t_ms - segments[i].t1_ms <= MAX_GAP_MS)
+                .or_else(|| {
+                    segments
+                        .iter()
+                        .rposition(|s| s.t0_ms <= m.t_ms && m.t_ms <= s.t1_ms)
+                });
             MarkLine {
                 t_ms: m.t_ms,
                 tag: m.tag,
@@ -52,6 +64,22 @@ fn kind(tag: MarkTag) -> MarkKind {
         MarkTag::Decision => MarkKind::Decision,
         MarkTag::Action => MarkKind::Action,
         MarkTag::Question => MarkKind::Question,
+    }
+}
+
+/// The meeting's marks as prompt hints. Marks only steer the local model, so a
+/// store that cannot be read costs the hint, never the notes.
+pub fn load_hints(
+    store: &ghi_store::store::Store,
+    meeting: &str,
+    segments: &[Segment],
+) -> Vec<MarkHint> {
+    match store.marks(meeting) {
+        Ok(marks) => hints(&mark_lines(&marks, segments)),
+        Err(e) => {
+            log::warn!("marks not read, notes written without them: {e}");
+            Vec::new()
+        }
     }
 }
 
@@ -182,6 +210,21 @@ mod tests {
         let at: Vec<_> = lines.iter().map(|l| l.segment).collect();
         assert_eq!(at, [Some(0), Some(1), Some(1), Some(2)]);
         assert_eq!(lines[1].range, (4000, 8000));
+    }
+
+    #[test]
+    fn overlapping_speech_falls_back_to_the_line_that_holds_the_mark() {
+        // A long line (0-60 s) is still running when two short ones start.
+        let segs = [seg(0, 60_000), seg(20_000, 22_000), seg(25_000, 26_000)];
+        let lines = mark_lines(
+            &[mark(50_000, MarkTag::Star), mark(70_000, MarkTag::Star)],
+            &segs,
+        );
+        // The last line to start ended 24 s ago, but line 0 still holds 50 s.
+        assert_eq!(lines[0].segment, Some(0));
+        assert_eq!(lines[0].range, (0, 60_000));
+        // Past every line by more than 10 s: silence.
+        assert_eq!(lines[1].segment, None);
     }
 
     #[test]

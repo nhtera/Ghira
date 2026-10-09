@@ -506,6 +506,11 @@ pub fn store_notes(
         sensitive: m.sensitive,
     }];
     let provider = cloud.provider()?;
+    // What the user marked steers the local model, as in the app; a cloud
+    // send never carries it.
+    if provider.is_none() {
+        opts.marks = ghi_core::marks::load_hints(&store, meeting, &segs);
+    }
     // Logged as soon as a request may have left, before any fallback.
     let log = |sent: &Value| {
         store

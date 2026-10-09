@@ -127,7 +127,7 @@ impl Notes {
 }
 
 /// What kind of moment the user marked while recording.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MarkKind {
     Star,
@@ -165,7 +165,8 @@ pub const MAX_MARKS: usize = 24;
 pub fn pick_marks(marks: &[MarkHint]) -> Vec<MarkHint> {
     let mut v: Vec<MarkHint> = marks.to_vec();
     v.sort_by_key(|m| (m.kind == MarkKind::Star, std::cmp::Reverse(m.t_ms), m.id));
-    v.dedup_by_key(|m| (m.id, m.kind));
+    let mut seen = HashSet::new();
+    v.retain(|m| seen.insert((m.id, m.kind)));
     v.truncate(MAX_MARKS);
     v.sort_by_key(|m| (m.id, m.t_ms));
     v
@@ -792,20 +793,10 @@ fn reduce(
     n: usize,
     mut diag: Diagnostics,
 ) -> Result<Run> {
-    // Reduce: the facts, in transcript order, with the lines they cite. If
-    // they don't fit, minor points go first, then quotes, then the tail.
-    for minor in ["point", "quote"] {
-        if estimate_tokens(&render_facts(&facts)) <= budget {
-            break;
-        }
-        facts.retain(|f| f.kind != minor);
-        diag.truncated_lists += 1;
-    }
-    while facts.len() > 1 && estimate_tokens(&render_facts(&facts)) > budget {
-        facts.truncate(facts.len() * 3 / 4);
-        diag.truncated_lists += 1;
-    }
-    // Marked lines may be cited too, even when the map steps left them out.
+    // Reduce: the facts, in transcript order, with the lines they cite. The
+    // lines the user marked are in it too: a marked line no fact cites gets a
+    // fact of its own with the line's text (the model may only cite what it
+    // is shown), and neither it nor a fact citing a marked line is trimmed.
     let marks = pick_marks(
         &opts
             .marks
@@ -814,11 +805,9 @@ fn reduce(
             .filter(|m| t.get(m.id).is_some())
             .collect::<Vec<_>>(),
     );
-    let cited: HashSet<u64> = facts
-        .iter()
-        .flat_map(|f| f.cites.iter().copied())
-        .chain(marks.iter().map(|m| m.id))
-        .collect();
+    add_marked_facts(&mut facts, &marks, t, aliases);
+    trim_facts(&mut facts, &marks, budget, &mut diag);
+    let cited: HashSet<u64> = facts.iter().flat_map(|f| f.cites.iter().copied()).collect();
     let lines = render_facts(&facts);
     let mut ids: Vec<u64> = cited.iter().copied().collect();
     ids.sort_unstable();
@@ -857,6 +846,72 @@ fn reduce(
         Outcome::Truncated => Err(LlmError::InvalidOutput(
             "the notes hit the token limit".into(),
         )),
+    }
+}
+
+/// Longest stretch of a marked line shown to the reduce step.
+const MARKED_LINE_CHARS: usize = 200;
+
+/// A fact for each marked line that no fact cites: what the line says, of the
+/// kind the user tagged (a star is a point). Placed in transcript order.
+fn add_marked_facts(facts: &mut Vec<Fact>, marks: &[MarkHint], t: &Transcript, aliases: &Aliases) {
+    let cited: HashSet<u64> = facts.iter().flat_map(|f| f.cites.iter().copied()).collect();
+    for m in marks.iter().filter(|m| !cited.contains(&m.id)) {
+        let Some(seg) = t.get(m.id) else { continue };
+        let text = plain_text(&seg.text);
+        let text: String = text.chars().take(MARKED_LINE_CHARS).collect();
+        if text.is_empty() {
+            continue;
+        }
+        let fact = Fact {
+            kind: match m.kind {
+                MarkKind::Star => "point",
+                MarkKind::Decision => "decision",
+                MarkKind::Action => "action",
+                MarkKind::Question => "question",
+            }
+            .to_string(),
+            text,
+            speaker: seg
+                .speaker
+                .as_deref()
+                .and_then(|s| aliases.alias(s))
+                .map(str::to_string),
+            owner: None,
+            due: None,
+            cites: vec![m.id],
+        };
+        let at = facts
+            .iter()
+            .position(|f| f.cites.first().is_some_and(|&c| c > m.id))
+            .unwrap_or(facts.len());
+        facts.insert(at, fact);
+    }
+}
+
+/// Makes the facts fit `budget`: minor points go first, then quotes, then the
+/// tail. Facts citing a marked line stay.
+fn trim_facts(facts: &mut Vec<Fact>, marks: &[MarkHint], budget: u32, diag: &mut Diagnostics) {
+    let marked: HashSet<u64> = marks.iter().map(|m| m.id).collect();
+    let keeps = |f: &Fact| f.cites.iter().any(|c| marked.contains(c));
+    for minor in ["point", "quote"] {
+        if estimate_tokens(&render_facts(facts)) <= budget {
+            return;
+        }
+        facts.retain(|f| f.kind != minor || keeps(f));
+        diag.truncated_lists += 1;
+    }
+    while estimate_tokens(&render_facts(facts)) > budget {
+        let loose: Vec<usize> = (0..facts.len()).filter(|&i| !keeps(&facts[i])).collect();
+        if loose.is_empty() {
+            break;
+        }
+        // A quarter of the loose facts, from the end.
+        let drop = (loose.len() / 4).max(1);
+        for &i in loose.iter().rev().take(drop) {
+            facts.remove(i);
+        }
+        diag.truncated_lists += 1;
     }
 }
 
@@ -1375,6 +1430,23 @@ pub(crate) mod tests {
         assert!(!ids.contains(&0), "the oldest stars go first");
         assert!(ids.contains(&29));
         assert!(ids.windows(2).all(|w| w[0] <= w[1]), "in line order");
+        // The same line marked twice with other marks between: still once.
+        let again = pick_marks(&[
+            hint(5, MarkKind::Decision, 10),
+            hint(6, MarkKind::Action, 11),
+            hint(5, MarkKind::Decision, 12),
+            hint(7, MarkKind::Question, 13),
+            hint(5, MarkKind::Decision, 14),
+        ]);
+        let ids: Vec<(u64, MarkKind)> = again.iter().map(|m| (m.id, m.kind)).collect();
+        assert_eq!(
+            ids,
+            [
+                (5, MarkKind::Decision),
+                (6, MarkKind::Action),
+                (7, MarkKind::Question)
+            ]
+        );
     }
 
     #[test]
@@ -1426,16 +1498,123 @@ pub(crate) mod tests {
         assert!(!sent.contains("marked") && !sent.contains("[s1 decision]"));
     }
 
+    /// Answers a map step with no facts and a notes request with one TL;DR item.
+    struct Auto(u32);
+
+    impl Llm for Auto {
+        fn engine(&self) -> EngineInfo {
+            EngineInfo {
+                name: "auto".into(),
+                version: "1".into(),
+            }
+        }
+        fn context_tokens(&self) -> u32 {
+            self.0
+        }
+        fn complete(&mut self, req: &Request) -> Result<Completion> {
+            let facts = req
+                .schema
+                .as_ref()
+                .unwrap()
+                .to_string()
+                .contains("\"facts\"");
+            Ok(Completion {
+                text: if facts {
+                    r#"{"facts":[]}"#.into()
+                } else {
+                    reply(r#"{"tldr":[{"text":"ok","cite":[0]}]}"#)
+                },
+                tokens_in: 1,
+                tokens_out: 1,
+                truncated: false,
+            })
+        }
+    }
+
+    /// The marks block comes out of the transcript's share of the context: a
+    /// transcript that just fits alone is read in parts once 24 marks are added.
     #[test]
-    fn marks_shrink_the_transcript_budget() {
-        let mut llm = Scripted::new(&[]);
-        llm.context = 8192;
-        let plain = transcript_budget(&llm, 2048);
+    fn marks_can_push_a_borderline_transcript_into_map_reduce() {
+        let segs: Vec<_> = (0..40u64)
+            .map(|i| {
+                seg(
+                    i,
+                    i as f64 * 5.0,
+                    i as f64 * 5.0 + 4.0,
+                    "S1",
+                    &"word ".repeat(60),
+                    "en",
+                )
+            })
+            .collect();
+        let t = Transcript::new(segs).unwrap();
+        let all: Vec<&Segment> = t.segments().iter().collect();
+        let rendered = estimate_tokens(&render(&t, &Aliases::new(&t), &all));
+        // The room left for the transcript is exactly what it needs, plus a little.
+        let overhead = 2048 + PROMPT_OVERHEAD + RETRY_RESERVE;
+        let context = rendered + overhead + 10;
         let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
-        o.marks = (0..10).map(|i| hint(i, MarkKind::Decision, 0)).collect();
-        assert!(o.marks_tokens() > 0);
-        let with = plain.saturating_sub(o.marks_tokens());
-        assert!(with < plain);
+        let plain = generate(&mut Auto(context), &t, &o).unwrap();
+        assert_eq!(plain.strategy, Strategy::Single);
+        o.marks = (0..30)
+            .map(|i| hint(i, MarkKind::Decision, i as i64))
+            .collect();
+        assert!(o.marks_tokens() > 10);
+        let marked = generate(&mut Auto(context), &t, &o).unwrap();
+        assert!(
+            matches!(marked.strategy, Strategy::MapReduce { parts } if parts > 1),
+            "{:?}",
+            marked.strategy
+        );
+    }
+
+    #[test]
+    fn the_reduce_trims_loose_facts_but_not_the_ones_citing_marked_lines() {
+        let fact = |kind: &str, text: &str, cite: u64| Fact {
+            kind: kind.into(),
+            text: text.into(),
+            speaker: None,
+            owner: None,
+            due: None,
+            cites: vec![cite],
+        };
+        let mut facts = vec![
+            fact("point", "marked point", 1),
+            fact("point", &"loose ".repeat(40), 2),
+            fact("decision", "loose tail one", 3),
+            fact("decision", "marked decision", 4),
+            fact("decision", "loose tail two", 5),
+        ];
+        let marks = [hint(1, MarkKind::Star, 0), hint(4, MarkKind::Decision, 0)];
+        let mut d = Diagnostics::default();
+        trim_facts(&mut facts, &marks, 1, &mut d);
+        let left: Vec<&str> = facts.iter().map(|f| f.text.as_str()).collect();
+        assert_eq!(left, ["marked point", "marked decision"]);
+        assert!(d.truncated_lists > 0);
+    }
+
+    #[test]
+    fn a_marked_line_no_fact_cites_gets_a_fact_with_its_text() {
+        let t = meeting();
+        let a = Aliases::new(&t);
+        let fact = |cite: u64| Fact {
+            kind: "point".into(),
+            text: "p".into(),
+            speaker: None,
+            owner: None,
+            due: None,
+            cites: vec![cite],
+        };
+        let mut facts = vec![fact(0), fact(2)];
+        let marks = [hint(0, MarkKind::Decision, 0), hint(1, MarkKind::Action, 1)];
+        add_marked_facts(&mut facts, &marks, &t, &a);
+        // Line 0 is cited already; line 1 gets its own fact, between the two.
+        assert_eq!(facts.len(), 3);
+        assert_eq!(facts[1].kind, "action");
+        assert_eq!(facts[1].cites, [1]);
+        assert_eq!(facts[1].speaker.as_deref(), Some("SPK2"));
+        assert!(facts[1].text.contains("tài liệu scope"));
+        assert!(render_facts(&facts).contains("cite: 1"));
     }
 
     /// Marks in the first and the last of three parts: each part's prompt
@@ -1475,13 +1654,27 @@ pub(crate) mod tests {
         assert!(!map(1).contains("marked these") && !map(1).contains("[s3 decision]"));
         assert!(map(2).contains("[s55 star]") && !map(2).contains("[s3 decision]"));
         let reduce_req = &llm.requests[3];
+        let shown = &reduce_req.messages[1].content;
+        assert!(shown.contains("[s3 decision] [s55 star]"));
+        // A marked line is citable only because the reduce step is shown it:
+        // a fact with the line's own text (a star is a point), cap 200 chars.
+        let line = |kind: &str, n: u64| {
+            shown
+                .lines()
+                .find(|l| {
+                    l.starts_with(&format!("- [{kind}")) && l.ends_with(&format!("cite: {n}"))
+                })
+                .unwrap_or_else(|| panic!("no fact for line {n} in {shown}"))
+                .to_string()
+        };
+        let early = line("decision", 3);
         assert!(
-            reduce_req.messages[1]
-                .content
-                .contains("[s3 decision] [s55 star]")
+            early.contains("line3 word word") && early.len() < 300,
+            "{early}"
         );
+        assert!(line("point", 55).contains("line55 word word"));
         let schema = reduce_req.schema.as_ref().unwrap().to_string();
-        assert!(schema.contains("3") && schema.contains("55"));
+        assert!(schema.contains("\"enum\":[3,5,25,45,55]"), "{schema}");
         assert_eq!(run.notes.decisions[0].citations, vec![3]);
         let tldr: Vec<&str> = run.notes.tldr.iter().map(|i| i.text.as_str()).collect();
         assert_eq!(tldr, ["Late"], "55 reachable, unmarked uncited 30 is not");
