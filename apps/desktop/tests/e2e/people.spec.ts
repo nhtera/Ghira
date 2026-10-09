@@ -28,7 +28,7 @@ test("Remove name from notes: the count is shown and the person goes (no voice p
   // Only the name confirm is open: voice data is a separate control with its own confirm.
   await expect(page.getByRole("alertdialog")).toHaveCount(1);
   await page.getByRole("button", { name: "Remove name", exact: true }).click();
-  await expect(page.getByText(/Name removed in \d+ meetings?\./)).toBeVisible();
+  await expect(page.getByText(/^Name removed in \d+ meetings?\./)).toBeVisible();
   await expect(list(page).getByRole("button", { name: /Linh/ })).toHaveCount(0);
   // The first row (Me) is shown, not an error for the person who just went away.
   await expect(page.getByRole("heading", { name: "Me", level: 2 })).toBeVisible();
