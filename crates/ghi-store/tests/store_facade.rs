@@ -1027,9 +1027,17 @@ fn the_notes_model_and_speaker_hint_live_and_die_with_the_meeting() {
     assert_eq!(store.expected_speakers(&m).unwrap(), Some(3));
     store.set_notes_model(&m, None).unwrap();
     assert_eq!(store.notes_model(&m).unwrap(), None);
+    assert_eq!(store.notes_lang(&m).unwrap(), None);
+    store.set_notes_lang(&m, Some("vi")).unwrap();
+    assert_eq!(store.notes_lang(&m).unwrap().as_deref(), Some("vi"));
+    store.set_notes_lang(&m, Some("en")).unwrap();
+    assert_eq!(store.notes_lang(&m).unwrap().as_deref(), Some("en"));
+    store.set_notes_lang(&m, None).unwrap();
+    assert_eq!(store.notes_lang(&m).unwrap(), None);
+    store.set_notes_lang(&m, Some("vi")).unwrap();
     store.set_notes_model(&m, Some("gpt")).unwrap();
     store.delete_meeting(&m).unwrap();
-    let left: Vec<_> = ["notes_model:", "expected_speakers:"]
+    let left: Vec<_> = ["notes_model:", "notes_lang:", "expected_speakers:"]
         .iter()
         .filter_map(|p| store.get_setting(&format!("{p}{m}")).unwrap())
         .collect();

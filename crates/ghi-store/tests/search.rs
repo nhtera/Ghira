@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use ghi_store::search::{HitKind, SearchFilter, SearchQuery};
-use ghi_store::store::{NewMeeting, NewSegment, NewSpeaker, Store};
+use ghi_store::store::{NewMeeting, NewNoteBlock, NewSegment, NewSpeaker, Provenance, Store};
 
 /// Tests share the CPU with the timing bench; run them one at a time.
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -27,6 +27,41 @@ fn bundled_sqlite_supports_contentless_delete() {
     let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap());
     let (major, minor) = (parts.next().unwrap(), parts.next().unwrap());
     assert!(major > 3 || (major == 3 && minor >= 43), "SQLite {v}");
+}
+
+/// A proposed decision is a note block like any other: found by search.
+#[test]
+fn proposals_are_searchable_like_decisions() {
+    let _g = serial();
+    let tmp = tempfile::tempdir().unwrap();
+    let (store, _k) = common::open(tmp.path());
+    let m = common::meeting(&store, "Họp");
+    for (kind, body) in [
+        ("decision", "Ship the beta on Friday"),
+        ("proposal", "Maybe add a dark theme"),
+    ] {
+        store
+            .add_note_block(
+                &m,
+                NewNoteBlock {
+                    kind: kind.into(),
+                    provenance: Provenance::Ai,
+                    body: body.into(),
+                    anchors: vec![],
+                    pinned: false,
+                },
+            )
+            .unwrap();
+    }
+    for (q, want) in [
+        ("beta", "Ship the beta"),
+        ("dark theme", "Maybe add a dark"),
+    ] {
+        let hits = store.search(&SearchQuery::new(q)).unwrap();
+        assert_eq!(hits.len(), 1, "{q}");
+        assert_eq!(hits[0].kind, HitKind::Note);
+        assert!(hits[0].snippet.starts_with(want), "{}", hits[0].snippet);
+    }
 }
 
 fn two_meetings(store: &Store) -> (String, String, String) {

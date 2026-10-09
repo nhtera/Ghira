@@ -54,6 +54,7 @@ pub fn extension(f: Format) -> &'static str {
 struct Strings {
     summary: &'static str,
     decisions: &'static str,
+    proposed: &'static str,
     actions: &'static str,
     questions: &'static str,
     quotes: &'static str,
@@ -73,6 +74,7 @@ struct Strings {
 const EN: Strings = Strings {
     summary: "Summary",
     decisions: "Decisions",
+    proposed: "Proposed",
     actions: "Action items",
     questions: "Open questions",
     quotes: "Key quotes",
@@ -92,6 +94,7 @@ const EN: Strings = Strings {
 const VI: Strings = Strings {
     summary: "Tóm tắt",
     decisions: "Quyết định",
+    proposed: "Đề xuất",
     actions: "Việc cần làm",
     questions: "Câu hỏi mở",
     quotes: "Trích dẫn chính",
@@ -779,6 +782,7 @@ fn note_sections(
     }
 
     push(s.decisions.into(), ai("decision"));
+    push(s.proposed.into(), ai("proposal"));
     let acts = actions
         .iter()
         .filter(|a| a.provenance != Provenance::User)
@@ -981,6 +985,7 @@ mod tests {
         for b in [
             ai("tldr", "Chốt lịch beta"),
             ai("decision", "Ship by Friday"),
+            ai("proposal", "Maybe a dark theme"),
             ai("question", "Who owns QA?"),
             ai("section:done", "Wrote the parser"),
             NewNoteBlock {
@@ -1034,7 +1039,10 @@ mod tests {
         assert!(md.contains(&format!("**Participants:** {AN}, Speaker 2")));
         assert!(md.contains("## Summary\n\n- Chốt lịch beta\n"));
         assert!(md.contains("## Done\n\n- Wrote the parser\n"));
-        assert!(md.contains("## Decisions\n\n- Ship by Friday"));
+        assert!(md.contains("## Decisions\n\n- Ship by Friday\n"));
+        // A suggestion that nobody accepted is not under Decisions.
+        assert!(md.contains("## Proposed\n\n- Maybe a dark theme\n"), "{md}");
+        assert!(!md.contains("## Decisions\n\n- Ship by Friday\n- Maybe"));
         assert!(md.contains("- [x] Send the recap"));
         assert!(md.contains(&format!("- [ ] Deploy beta — {AN} (due thứ Sáu)")));
         assert!(md.contains("## Open questions"));
@@ -1059,6 +1067,7 @@ mod tests {
         let md = render_str(&store, &g, Format::Markdown, &o);
         assert!(md.contains("## Tóm tắt"));
         assert!(md.contains("## Việc cần làm"));
+        assert!(md.contains("## Đề xuất\n\n- Maybe a dark theme"));
         assert!(md.contains("(hạn thứ Sáu)"));
         assert!(!md.contains("Bản ghi"));
         let o = ExportOptions {
@@ -1076,6 +1085,7 @@ mod tests {
         let t = render_str(&store, &g, Format::Text, &opts());
         assert!(t.starts_with("Weekly sync\n\nDate: 2026-10-02 09:30 UTC\n"));
         assert!(t.contains("\nSummary\n\n• Chốt lịch beta\n"));
+        assert!(t.contains("\nProposed\n\n• Maybe a dark theme\n"), "{t}");
         assert!(t.contains("☑ Send the recap"));
         assert!(t.contains(&format!("☐ Deploy beta — {AN} (due thứ Sáu)")));
         assert!(t.contains("\nSpeaker 2 [00:05]\nR&D agrees --> go <b>now</b>\n"));
@@ -1198,6 +1208,10 @@ mod tests {
         assert!(body.starts_with(&format!(
             "---\ntitle: \"Weekly sync\"\ndate: 2026-10-02T09:30\nduration: \"12:05\"\nparticipants: [\"{AN}\", \"Speaker 2\"]\ntags: [ghira]\n---\n\n# Weekly sync"
         )), "{body}");
+        assert!(
+            body.contains("## Proposed\n\n- Maybe a dark theme"),
+            "{body}"
+        );
     }
 
     #[test]
@@ -1261,6 +1275,7 @@ mod tests {
         assert!(xml.contains("Chào mọi người, hôm nay chốt lịch beta."));
         assert!(xml.contains("R&amp;D agrees --&gt; go &lt;b&gt;now&lt;/b&gt;"));
         assert!(xml.contains("☑ Send the recap"));
+        assert!(xml.contains("Proposed") && xml.contains("Maybe a dark theme"));
         assert!(xml.contains("w:val=\"Title\"") && xml.contains("w:val=\"Heading1\""));
         let mut styles = String::new();
         zip.by_name("word/styles.xml")

@@ -162,6 +162,7 @@ pub fn notes_doc(
         "lang": n.lang,
         "summary": items(&n.tldr),
         "decisions": items(&n.decisions),
+        "proposals": items(&n.proposals),
         "action_items": n.action_items.iter().map(|a| json!({
             "text": a.text, "owner": a.owner, "due": a.due, "citations": a.citations,
         })).collect::<Vec<_>>(),
@@ -565,6 +566,7 @@ mod tests {
                 citations: vec![0],
             }],
             decisions: vec![],
+            proposals: vec![],
             action_items: vec![notes::ActionItem {
                 text: "Send doc".into(),
                 owner: Some("S2".into()),

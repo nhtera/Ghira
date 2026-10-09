@@ -252,6 +252,9 @@ pub(crate) fn save_notes_leased(
     for i in &n.decisions {
         block("decision", &i.text, &i.citations)?;
     }
+    for i in &n.proposals {
+        block("proposal", &i.text, &i.citations)?;
+    }
     for i in &n.open_questions {
         block("question", &i.text, &i.citations)?;
     }
@@ -299,6 +302,7 @@ pub(crate) fn save_notes_leased(
     })?;
     // Not worth failing the save over.
     let _ = store.set_notes_model(meeting, Some(model));
+    let _ = store.set_notes_lang(meeting, Some(&n.lang));
     Ok(saved)
 }
 
@@ -566,11 +570,16 @@ mod tests {
             .create_meeting(ghi_store::store::NewMeeting::default())
             .unwrap()
             .gid;
+        let item = |t: &str| ghi_llm::notes::Item {
+            text: t.into(),
+            citations: vec![0],
+        };
         let notes = Notes {
             template: "general".into(),
-            lang: "en".into(),
+            lang: "vi".into(),
             tldr: vec![],
-            decisions: vec![],
+            decisions: vec![item("Ship Friday")],
+            proposals: vec![item("Maybe dark mode")],
             action_items: vec![],
             open_questions: vec![],
             key_quotes: vec![],
@@ -578,9 +587,33 @@ mod tests {
             sections: vec![],
         };
         // The CLI, the job and a cloud send all go through this.
-        save_notes(&store, &m, &notes, &[], "qwen3-4b").unwrap();
+        store
+            .add_segments(
+                &m,
+                vec![ghi_store::store::NewSegment {
+                    t0_ms: 0,
+                    t1_ms: 1000,
+                    text: "x".into(),
+                    ..Default::default()
+                }],
+            )
+            .unwrap();
+        let segs = store.segments(&m).unwrap();
+        save_notes(&store, &m, &notes, &segs, "qwen3-4b").unwrap();
         assert_eq!(store.notes_model(&m).unwrap().as_deref(), Some("qwen3-4b"));
-        save_notes_with(&store, &m, &notes, &[], Vec::new(), "gpt-4.1-mini").unwrap();
+        // The language the notes are written in is kept with them.
+        assert_eq!(store.notes_lang(&m).unwrap().as_deref(), Some("vi"));
+        // A proposed decision is its own kind of block, apart from decisions.
+        let blocks = store.note_blocks(&m).unwrap();
+        let kinds: Vec<_> = blocks
+            .iter()
+            .map(|b| (b.kind.as_str(), b.body.as_str()))
+            .collect();
+        assert_eq!(
+            kinds,
+            [("decision", "Ship Friday"), ("proposal", "Maybe dark mode")]
+        );
+        save_notes_with(&store, &m, &notes, &segs, Vec::new(), "gpt-4.1-mini").unwrap();
         assert_eq!(
             store.notes_model(&m).unwrap().as_deref(),
             Some("gpt-4.1-mini")

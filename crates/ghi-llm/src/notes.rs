@@ -25,7 +25,7 @@ use crate::run::{self, Outcome, PROMPT_OVERHEAD, RETRY_RESERVE, estimate_tokens}
 use crate::schema::{self, Dialect, MAX_QUOTES, MAX_TLDR, MAX_TOPICS, Shape};
 use crate::template::{OutLang, Template};
 use crate::transcript::{Aliases, Segment, Transcript, render};
-use crate::validate::{Cites, Diagnostics, plain_text, snap, supported};
+use crate::validate::{Cites, Diagnostics, claim_words, is_weak, plain_text, snap, source_score};
 use crate::{EngineInfo, Llm, LlmError, Message, Request, Result, prompt};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,7 +73,12 @@ pub struct Notes {
     /// Output language (`en` / `vi`).
     pub lang: String,
     pub tldr: Vec<Item>,
+    /// Decisions someone agreed or confirmed.
     pub decisions: Vec<Item>,
+    /// Decisions only proposed (stored as block kind `proposal`). Notes saved
+    /// before this field existed have none.
+    #[serde(default)]
+    pub proposals: Vec<Item>,
     pub action_items: Vec<ActionItem>,
     pub open_questions: Vec<Item>,
     pub key_quotes: Vec<Quote>,
@@ -87,6 +92,7 @@ impl Notes {
         let mut items = |v: &mut Vec<Item>| v.iter_mut().for_each(|i| i.text = f(&i.text));
         items(&mut self.tldr);
         items(&mut self.decisions);
+        items(&mut self.proposals);
         items(&mut self.open_questions);
         for s in &mut self.sections {
             items(&mut s.items);
@@ -109,6 +115,7 @@ impl Notes {
             .tldr
             .iter()
             .chain(&self.decisions)
+            .chain(&self.proposals)
             .chain(&self.open_questions)
             .chain(self.sections.iter().flat_map(|s| &s.items))
             .map(|i| i.citations.as_slice());
@@ -468,8 +475,13 @@ impl<'a> Ctx<'a> {
             snap(&text, &mut cites, near, |id| self.t.get(id), d);
         }
         let segs = self.segments(&cites);
-        if same_lang && !supported(&text, &segs) {
-            d.weak_anchors += 1;
+        if same_lang {
+            let claim = claim_words(&text);
+            let cited: Vec<HashSet<String>> = segs.iter().map(|s| claim_words(&s.text)).collect();
+            let cited: Vec<&HashSet<String>> = cited.iter().collect();
+            if source_score(&claim, &cited).is_some_and(is_weak) {
+                d.weak_anchors += 1;
+            }
         }
         Some((text, cites))
     }
@@ -483,6 +495,17 @@ impl<'a> Ctx<'a> {
 #[serde(deny_unknown_fields)]
 struct RawItem {
     text: String,
+    cite: Vec<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawDecision {
+    text: String,
+    /// Required by the schema; a missing one reads as decided (notes written
+    /// before statuses existed).
+    #[serde(default)]
+    status: Option<String>,
     cite: Vec<i64>,
 }
 
@@ -587,7 +610,24 @@ fn parse_notes(v: &Value, ctx: &Ctx, d: &mut Diagnostics) -> std::result::Result
     };
 
     let tldr = cap(items("tldr", d)?, MAX_TLDR, d);
-    let decisions = cap(items("decisions", d)?, usize::MAX, d);
+    let (mut decisions, mut proposals) = (Vec::new(), Vec::new());
+    for r in field::<Vec<RawDecision>>(obj, "decisions")? {
+        let proposed = match r.status.as_deref() {
+            None | Some("decided") => false,
+            Some("proposed") => true,
+            Some(other) => return Err(format!("`decisions`: unknown status `{other}`")),
+        };
+        if let Some((text, citations)) = ctx.anchored(&r.text, &r.cite, d) {
+            let item = Item { text, citations };
+            if proposed {
+                proposals.push(item);
+            } else {
+                decisions.push(item);
+            }
+        }
+    }
+    let decisions = cap(decisions, usize::MAX, d);
+    let proposals = cap(proposals, usize::MAX, d);
     let open_questions = cap(items("open_questions", d)?, usize::MAX, d);
 
     let mut action_items = Vec::new();
@@ -663,6 +703,7 @@ fn parse_notes(v: &Value, ctx: &Ctx, d: &mut Diagnostics) -> std::result::Result
         lang: ctx.lang.code().to_string(),
         tldr,
         decisions,
+        proposals,
         action_items,
         open_questions,
         key_quotes,
@@ -804,8 +845,11 @@ fn reduce(
     match run::complete_json(llm, req, opts.lang, &mut diag, |v, d| {
         parse_notes(v, &Ctx::new(t, aliases, opts, &allowed), d)
     })? {
-        Outcome::Done(notes) => Ok(Run {
-            notes,
+        Outcome::Done(mut notes) => Ok(Run {
+            notes: {
+                keep_proposals(&mut notes, &facts);
+                notes
+            },
             engine: llm.engine(),
             strategy: Strategy::MapReduce { parts: n },
             diagnostics: diag,
@@ -813,6 +857,34 @@ fn reduce(
         Outcome::Truncated => Err(LlmError::InvalidOutput(
             "the notes hit the token limit".into(),
         )),
+    }
+}
+
+/// The map steps know which lines were only suggested; a small model reducing
+/// them sometimes files a suggestion ("hay là ... nhỉ") under open questions.
+/// An open question that cites only lines of `proposal` facts (and none of a
+/// `decision` fact) is a proposed decision.
+fn keep_proposals(notes: &mut Notes, facts: &[Fact]) {
+    let of = |kind: &str| -> HashSet<u64> {
+        facts
+            .iter()
+            .filter(|f| f.kind == kind)
+            .flat_map(|f| f.cites.iter().copied())
+            .collect()
+    };
+    let (proposed, decided) = (of("proposal"), of("decision"));
+    let (moved, kept): (Vec<Item>, Vec<Item>) = std::mem::take(&mut notes.open_questions)
+        .into_iter()
+        .partition(|q| {
+            q.citations
+                .iter()
+                .all(|c| proposed.contains(c) && !decided.contains(c))
+        });
+    notes.open_questions = kept;
+    for q in moved {
+        if !notes.proposals.iter().any(|p| p.text == q.text) {
+            notes.proposals.push(q);
+        }
     }
 }
 
@@ -837,9 +909,16 @@ fn render_facts(facts: &[Fact]) -> String {
             } else {
                 format!(" ({})", extra.join(", "))
             };
+            // Spelled out: a small model leaves "proposal" facts out of the
+            // decisions otherwise.
+            let kind = match f.kind.as_str() {
+                "proposal" => "proposal, decisions with status proposed",
+                "decision" => "decision, decisions with status decided",
+                k => k,
+            };
             format!(
                 "- [{}] {}{} cite: {}",
-                f.kind,
+                kind,
                 f.text,
                 extra,
                 cites.join(", ")
@@ -970,6 +1049,7 @@ pub(crate) mod tests {
     use crate::template;
     use crate::transcript::tests::seg;
     use crate::{Completion, Llm};
+    use serde_json::json;
 
     /// Replies with scripted texts in order and records the requests.
     pub struct Scripted {
@@ -1405,5 +1485,127 @@ pub(crate) mod tests {
         assert_eq!(run.notes.decisions[0].citations, vec![3]);
         let tldr: Vec<&str> = run.notes.tldr.iter().map(|i| i.text.as_str()).collect();
         assert_eq!(tldr, ["Late"], "55 reachable, unmarked uncited 30 is not");
+    }
+
+    #[test]
+    fn decisions_split_into_decided_and_proposed() {
+        let t = meeting();
+        let mut llm = Scripted::new(&[&reply(
+            r#"{"decisions":[
+                {"text":"Chốt scope beta","status":"decided","cite":[0]},
+                {"text":"Có thể xem lại ngân sách","status":"proposed","cite":[2]},
+                {"text":"Bịa","status":"proposed","cite":[99]},
+                {"text":"Gửi tài liệu","cite":[1]}]}"#,
+        )]);
+        let run = generate(&mut llm, &t, &opts()).unwrap();
+        let texts = |v: &[Item]| v.iter().map(|i| i.text.clone()).collect::<Vec<_>>();
+        assert_eq!(
+            texts(&run.notes.decisions),
+            ["Chốt scope beta", "Gửi tài liệu"],
+            "no status reads as decided (old stored JSON)"
+        );
+        assert_eq!(texts(&run.notes.proposals), ["Có thể xem lại ngân sách"]);
+        assert_eq!(run.diagnostics.dropped_items, 1);
+        assert!(run.notes.all_citations().any(|c| c == [2]));
+        // The model is told what the two statuses mean, and the grammar forces one.
+        let req = &llm.requests[0];
+        assert!(req.messages[1].content.contains("\"decided\" chỉ khi"));
+        let decisions = &req.schema.as_ref().unwrap()["properties"]["decisions"]["items"];
+        assert_eq!(
+            decisions["properties"]["status"]["enum"],
+            json!(["decided", "proposed"])
+        );
+        assert!(
+            decisions["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("status"))
+        );
+        // Anything else is invalid output.
+        let mut bad = Scripted::new(&[
+            &reply(r#"{"decisions":[{"text":"x","status":"maybe","cite":[0]}]}"#),
+            &reply(r#"{"decisions":[{"text":"x","status":"maybe","cite":[0]}]}"#),
+            &reply(r#"{"decisions":[{"text":"x","status":"maybe","cite":[0]}]}"#),
+        ]);
+        assert!(generate(&mut bad, &t, &opts()).is_err());
+        // Notes stored before proposals existed still load.
+        let old = serde_json::to_value(&run.notes).unwrap();
+        let mut old = old.as_object().unwrap().clone();
+        old.remove("proposals");
+        let back: Notes = serde_json::from_value(Value::Object(old)).unwrap();
+        assert!(back.proposals.is_empty());
+    }
+
+    #[test]
+    fn map_reduce_keeps_proposals_apart_from_decisions() {
+        let mut segs = Vec::new();
+        for i in 0..40u64 {
+            let sp = if i % 2 == 0 { "S1" } else { "S2" };
+            segs.push(seg(
+                i,
+                i as f64 * 30.0,
+                i as f64 * 30.0 + 25.0,
+                sp,
+                &"word ".repeat(40),
+                "en",
+            ));
+        }
+        let t = Transcript::new(segs).unwrap();
+        let mut llm = Scripted::new(&[
+            r#"{"facts":[{"kind":"proposal","text":"Maybe a dark mode","speaker":"SPK1","owner":null,"due":null,"cite":[0]}]}"#,
+            r#"{"facts":[{"kind":"decision","text":"Ship Friday","speaker":"SPK2","owner":null,"due":null,"cite":[21]}]}"#,
+            &reply(
+                r#"{"decisions":[{"text":"Ship Friday","status":"decided","cite":[21]},{"text":"Dark mode","status":"proposed","cite":[0]}]}"#,
+            ),
+        ]);
+        llm.context = 6500;
+        let o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        let run = generate(&mut llm, &t, &o).unwrap();
+        assert_eq!(run.strategy, Strategy::MapReduce { parts: 2 });
+        assert_eq!(run.notes.decisions[0].text, "Ship Friday");
+        assert_eq!(run.notes.proposals[0].text, "Dark mode");
+        let reduce = &llm.requests[2].messages[1].content;
+        assert!(reduce.contains("- [proposal, decisions with status proposed] Maybe a dark mode"));
+        assert!(reduce.contains("- [decision, decisions with status decided] Ship Friday"));
+        // The map step may extract proposals.
+        assert!(
+            llm.requests[0]
+                .schema
+                .as_ref()
+                .unwrap()
+                .to_string()
+                .contains("\"proposal\"")
+        );
+    }
+
+    #[test]
+    fn a_suggestion_filed_as_a_question_by_the_reduce_is_a_proposal() {
+        let mut segs = Vec::new();
+        for i in 0..40u64 {
+            let sp = if i % 2 == 0 { "S1" } else { "S2" };
+            segs.push(seg(
+                i,
+                i as f64 * 30.0,
+                i as f64 * 30.0 + 25.0,
+                sp,
+                &"word ".repeat(40),
+                "en",
+            ));
+        }
+        let t = Transcript::new(segs).unwrap();
+        let mut llm = Scripted::new(&[
+            r#"{"facts":[{"kind":"proposal","text":"Try dark mode","speaker":"SPK1","owner":null,"due":null,"cite":[0]}]}"#,
+            r#"{"facts":[{"kind":"decision","text":"Ship Friday","speaker":"SPK2","owner":null,"due":null,"cite":[21]},{"kind":"question","text":"Budget?","speaker":"SPK2","owner":null,"due":null,"cite":[22]}]}"#,
+            &reply(
+                r#"{"decisions":[{"text":"Ship Friday","status":"decided","cite":[21]}],
+                    "open_questions":[{"text":"Try dark mode","cite":[0]},{"text":"Budget?","cite":[22]}]}"#,
+            ),
+        ]);
+        llm.context = 6500;
+        let o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        let run = generate(&mut llm, &t, &o).unwrap();
+        assert_eq!(run.notes.proposals[0].text, "Try dark mode");
+        assert_eq!(run.notes.open_questions.len(), 1, "a real question stays");
+        assert_eq!(run.notes.open_questions[0].text, "Budget?");
     }
 }

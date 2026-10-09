@@ -51,6 +51,7 @@ fn notes_text(store: &Store, meeting: &str) -> Result<String, String> {
         let label = match b.kind.as_str() {
             "tldr" => "Summary",
             "decision" => "Decision",
+            "proposal" => "Proposed, not agreed",
             "question" => "Open question",
             "topic" | "quote" => continue,
             _ if b.provenance == Provenance::User => "Note",
@@ -88,7 +89,8 @@ fn request(title: &str, notes: &str, lang: OutLang, tone: Tone) -> Request {
     };
     let system = format!(
         "You write short follow-up emails after meetings. Write in {language}. The tone is \
-         {tone}. Use only the facts in the notes; never invent names, dates or numbers. \
+         {tone}. Use only the facts in the notes; never invent names, dates or numbers. Lines marked \
+         \"Proposed, not agreed\" were only suggested: never present them as decided. \
          Structure: a one-line greeting, two or three sentences on what was decided, the \
          action items as a list (\"- item (owner, due)\"), and a one-line closing. Plain \
          text only: no Markdown headings, no bold. Do not sign with a name. Reply as JSON \
@@ -226,6 +228,17 @@ mod tests {
             },
         )
         .unwrap();
+        s.add_note_block(
+            &m,
+            NewNoteBlock {
+                kind: "proposal".into(),
+                provenance: Provenance::Ai,
+                body: "Maybe move support to a new vendor".into(),
+                anchors: Vec::new(),
+                pinned: false,
+            },
+        )
+        .unwrap();
         s.add_action_item(
             &m,
             NewActionItem {
@@ -248,6 +261,10 @@ mod tests {
         let prompt = seen.lock().unwrap().join("\n");
         assert!(prompt.contains("Vietnamese") && prompt.contains("formal"));
         assert!(prompt.contains("Decision: Beta ships in November"));
+        // A proposal is its own group, not a "Point", and the model is told so.
+        assert!(prompt.contains("Proposed, not agreed: Maybe move support to a new vendor"));
+        assert!(!prompt.contains("Point: Maybe"));
+        assert!(prompt.contains("never present them as decided"));
         assert!(prompt.contains("Action: Send the deck (owner: Lan) (due: Friday)"));
     }
 

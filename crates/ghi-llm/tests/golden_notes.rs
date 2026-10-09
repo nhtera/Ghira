@@ -193,7 +193,16 @@ fn golden_meetings() {
 
 /// Digit runs ("135", "9:30" gives "9" and "30") in `s`.
 fn numbers(s: &str) -> Vec<String> {
-    s.split(|c: char| !c.is_ascii_digit())
+    // A speaker label ("S1") is a name, not a number.
+    let no_labels: String = s
+        .split_inclusive(char::is_whitespace)
+        .filter(|w| {
+            let w = w.trim_matches(|c: char| !c.is_alphanumeric());
+            !(w.len() > 1 && w.starts_with('S') && w[1..].chars().all(|c| c.is_ascii_digit()))
+        })
+        .collect();
+    no_labels
+        .split(|c: char| !c.is_ascii_digit())
         .filter(|p| !p.is_empty())
         .map(String::from)
         .collect()
@@ -295,6 +304,7 @@ fn marks_on_a_long_meeting() {
     let count = |n: &Notes| {
         n.tldr.len()
             + n.decisions.len()
+            + n.proposals.len()
             + n.action_items.len()
             + n.open_questions.len()
             + n.key_quotes.len()
@@ -307,7 +317,16 @@ fn marks_on_a_long_meeting() {
             o.marks = marks.clone();
         }
         let started = Instant::now();
-        let run = notes::generate(&mut llm, &t, &o).unwrap();
+        let run = match notes::generate(&mut llm, &t, &o) {
+            Ok(run) => run,
+            Err(e) => {
+                report.push(format!(
+                    "{label}: failed after {:.1} s: {e}",
+                    started.elapsed().as_secs_f64()
+                ));
+                continue;
+            }
+        };
         let wall = started.elapsed().as_secs_f64();
         let cited: std::collections::HashSet<u64> =
             run.notes.all_citations().flatten().copied().collect();
@@ -322,4 +341,101 @@ fn marks_on_a_long_meeting() {
         ));
     }
     eprintln!("{}", report.join("\n"));
+}
+
+/// Meetings with lines that were agreed and lines only suggested: `agreed`
+/// and `suggested` are the lines each kind of decision comes from.
+struct Statuses {
+    lang: OutLang,
+    lines: &'static [&'static str],
+    agreed: &'static [u64],
+    suggested: &'static [u64],
+}
+
+const STATUS_SETS: &[Statuses] = &[
+    Statuses {
+        lang: OutLang::En,
+        lines: &[
+            "Agreed, we ship the beta on Friday.",
+            "Yes, confirmed, Friday it is.",
+            "We could maybe try a dark mode theme next quarter.",
+            "Maybe we should consider moving support to a new vendor.",
+            "Okay, final: the budget cap is fifty thousand dollars.",
+            "Agreed on the cap, fifty thousand.",
+            "Perhaps we could hire a contractor for the design work, not sure yet.",
+            "Good, that is all for today.",
+        ],
+        agreed: &[0, 1, 4, 5],
+        suggested: &[2, 3, 6],
+    },
+    Statuses {
+        lang: OutLang::Vi,
+        lines: &[
+            "Đồng ý, mình phát hành bản beta vào thứ Sáu.",
+            "Vâng, chốt rồi, thứ Sáu.",
+            "Hay là quý sau mình thử làm giao diện tối nhỉ.",
+            "Có thể mình nên cân nhắc chuyển bộ phận hỗ trợ sang nhà cung cấp mới.",
+            "Được, chốt: mức trần ngân sách là năm mươi nghìn đô.",
+            "Đồng ý với mức trần năm mươi nghìn.",
+            "Có lẽ mình thuê thêm một bạn làm thiết kế, chưa chắc lắm.",
+            "Tốt, hôm nay vậy thôi.",
+        ],
+        agreed: &[0, 1, 4, 5],
+        suggested: &[2, 3, 6],
+    },
+];
+
+/// Decided vs proposed on the local model, single pass and map-reduce (the
+/// same lines spread over 20 minutes so they are cut into parts).
+#[test]
+fn golden_decided_and_proposed() {
+    let Some(mut llm) = model() else { return };
+    for set in STATUS_SETS {
+        for (label, gap_s) in [("single pass", 10.0), ("map-reduce", 180.0)] {
+            let segs: Vec<Segment> = set
+                .lines
+                .iter()
+                .enumerate()
+                .map(|(i, text)| Segment {
+                    id: i as u64,
+                    t0_ms: (i as f64 * gap_s * 1000.0) as i64,
+                    t1_ms: (i as f64 * gap_s * 1000.0) as i64 + 4000,
+                    speaker: Some(format!("S{}", i % 3 + 1)),
+                    text: text.to_string(),
+                    lang: Some(set.lang.code().to_string()),
+                })
+                .collect();
+            let t = Transcript::new(segs).unwrap();
+            let mut o = Options::new(template::builtin("general").unwrap(), set.lang);
+            o.chunk_minutes = 5;
+            let started = Instant::now();
+            let run = notes::generate_steps(&mut llm, &t, &o, None, &mut |_| {}).unwrap();
+            let n = &run.notes;
+            // An item is right when it comes from the lines of its own status.
+            let right = |items: &[notes::Item], from: &[u64]| {
+                items
+                    .iter()
+                    .filter(|i| i.citations.iter().all(|c| from.contains(c)))
+                    .count()
+            };
+            let total = n.decisions.len() + n.proposals.len();
+            let ok = right(&n.decisions, set.agreed) + right(&n.proposals, set.suggested);
+            eprintln!(
+                "{:?} {label}: {:.1} s, {:?}: {ok} of {total} decisions have the right status \
+                 ({} decided, {} proposed)\n  decided: {:?}\n  proposed: {:?}",
+                set.lang,
+                started.elapsed().as_secs_f64(),
+                run.strategy,
+                n.decisions.len(),
+                n.proposals.len(),
+                n.decisions.iter().map(|i| &i.text).collect::<Vec<_>>(),
+                n.proposals.iter().map(|i| &i.text).collect::<Vec<_>>(),
+            );
+            assert!(total >= 2, "{label}: too few decisions");
+            assert!(ok * 10 >= total * 8, "{label}: {ok} of {total} right");
+            assert!(!n.proposals.is_empty(), "{label}: nothing proposed");
+            assert!(!n.decisions.is_empty(), "{label}: nothing decided");
+            check(&t, n);
+        }
+    }
 }

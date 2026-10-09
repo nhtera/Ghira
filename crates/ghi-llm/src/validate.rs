@@ -36,7 +36,7 @@ pub struct Diagnostics {
     pub dropped_items: u32,
     /// Citations removed (unknown segment id or duplicates).
     pub dropped_cites: u32,
-    /// Items whose text shares no word with the segments they cite.
+    /// Items whose text scores below [`WEAK_BELOW`] against the segments they cite.
     pub weak_anchors: u32,
     /// Action items whose owner wasn't a speaker of the cited segments.
     pub unassigned_owners: u32,
@@ -201,6 +201,177 @@ pub fn supported(text: &str, cited: &[&Segment]) -> bool {
         .any(|s| !content_words(&s.text).is_disjoint(&words))
 }
 
+/// A claim is weak (worth a second look) when less than this share of its
+/// content words is found in the lines it cites. Calibrated by
+/// `source_score_separates_good_cites_from_wrong_ones`; the only place the
+/// threshold lives.
+pub const WEAK_BELOW: f32 = 0.34;
+
+/// Words too common to say anything about a source (EN + VI), as written;
+/// compared folded.
+const STOPWORDS: &[&str] = &[
+    // English
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "these",
+    "those",
+    "from",
+    "are",
+    "was",
+    "were",
+    "will",
+    "would",
+    "should",
+    "could",
+    "can",
+    "has",
+    "have",
+    "had",
+    "been",
+    "being",
+    "not",
+    "but",
+    "also",
+    "its",
+    "their",
+    "there",
+    "then",
+    "than",
+    "into",
+    "about",
+    "over",
+    "out",
+    "all",
+    "any",
+    "who",
+    "what",
+    "when",
+    "where",
+    "which",
+    "how",
+    "why",
+    "our",
+    "your",
+    "they",
+    "them",
+    "she",
+    "his",
+    "her",
+    "you",
+    "just",
+    "more",
+    "some",
+    "one",
+    "per",
+    "via",
+    "need",
+    "needs",
+    "agreed",
+    "discussed",
+    "team",
+    "meeting",
+    // Vietnamese
+    "và",
+    "của",
+    "là",
+    "có",
+    "không",
+    "được",
+    "cho",
+    "này",
+    "với",
+    "những",
+    "các",
+    "một",
+    "trong",
+    "để",
+    "khi",
+    "thì",
+    "sẽ",
+    "đã",
+    "rồi",
+    "nhé",
+    "ạ",
+    "cũng",
+    "như",
+    "nên",
+    "cần",
+    "phải",
+    "vào",
+    "ra",
+    "đến",
+    "từ",
+    "về",
+    "mà",
+    "hay",
+    "hoặc",
+    "nhưng",
+    "vì",
+    "nếu",
+    "đó",
+    "cả",
+    "mình",
+    "chúng",
+    "tôi",
+    "anh",
+    "chị",
+    "em",
+    "ông",
+    "bà",
+    "người",
+    "việc",
+    "đang",
+    "vẫn",
+    "còn",
+    "thêm",
+    "nhóm",
+    "họp",
+    "cuộc",
+];
+
+static STOP: LazyLock<HashSet<String>> =
+    LazyLock::new(|| STOPWORDS.iter().map(|w| ghi_text::fold(w)).collect());
+
+/// The words a claim or a source line is compared by: folded (so Vietnamese
+/// matches with or without marks), stopwords removed, long words cut to a
+/// five-letter stem (so "decided" meets "decide").
+pub fn claim_words(text: &str) -> HashSet<String> {
+    content_words(text)
+        .into_iter()
+        .filter(|w| !STOP.contains(w))
+        .map(|w| {
+            if w.chars().count() > 5 {
+                w.chars().take(5).collect()
+            } else {
+                w
+            }
+        })
+        .collect()
+}
+
+/// The share (0 to 1) of the claim's content words found in the cited lines'
+/// words ([`claim_words`] of each), or `None` when there is nothing to
+/// compare (no content words in the claim, or no cited line).
+pub fn source_score(claim: &HashSet<String>, cited: &[&HashSet<String>]) -> Option<f32> {
+    if claim.is_empty() || cited.is_empty() {
+        return None;
+    }
+    let found = claim
+        .iter()
+        .filter(|w| cited.iter().any(|c| c.contains(*w)))
+        .count();
+    Some(found as f32 / claim.len() as f32)
+}
+
+/// Whether a score says to check the source.
+pub fn is_weak(score: f32) -> bool {
+    score < WEAK_BELOW
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,5 +480,171 @@ mod tests {
         let s = seg(0, 0.0, 1.0, "S1", "Mình chốt scope cho bản beta nhé", "vi");
         assert!(supported("Chot scope beta", &[&s]));
         assert!(!supported("Budget approved", &[&s]));
+    }
+
+    /// Claims as a model words them (paraphrased, not copied), with the lines
+    /// they come from, for the EN, VI and clinic goldens. `loose` ones share
+    /// almost no word with their line (synonyms): reported, not required.
+    #[rustfmt::skip]
+    const GOOD: &[(&str, &str, &[u64], &str)] = &[
+        ("en", "Beta will ship without calendar sync", &[4], ""),
+        ("en", "Calendar sync was unstable, with two crashes last week", &[3], ""),
+        ("en", "The build is ready except the calendar sync feature", &[1], ""),
+        ("en", "Release notes will be written and sent to everyone by Thursday", &[6], ""),
+        ("en", "Marketing suggested nine dollars per month for the paid plan, finance has not confirmed", &[8], ""),
+        ("en", "Pricing is not decided until finance provides numbers", &[9], ""),
+        ("en", "Whether to offer an early-user discount stays open", &[10, 11], ""),
+        ("en", "Ask finance for the cost numbers before Monday", &[12], ""),
+        ("en", "Forty support tickets are unanswered", &[13], ""),
+        ("en", "Clear the support queue on Friday afternoon", &[14], ""),
+        ("en", "The security review on the fifteenth needs the encryption design document first", &[15, 16], ""),
+        ("en", "Send the encryption design document to the auditors tomorrow", &[17], ""),
+        ("en", "The onboarding video is too long, users skip it; cut it under two minutes", &[18, 19], ""),
+        ("en", "Edit the onboarding video next week", &[20], ""),
+        ("en", "Leave the calendar feature out of the first beta", &[4], ""),
+        ("clinic", "Blood pressure was 135 over 85 and 140 over 90, above the target", &[3, 4], ""),
+        ("clinic", "Headaches for about 2 weeks, mostly in the evening", &[1], ""),
+        ("clinic", "Keep the 5 milligram tablet once a day and cut down on salt and coffee", &[6], ""),
+        ("clinic", "Limit ibuprofen to 2 tablets a day and not more than 3 days in a row", &[9], ""),
+        ("clinic", "Drink at least 2 liters of water a day and go to bed before 11", &[7], ""),
+        ("clinic", "Write down blood pressure morning and evening and when each headache starts", &[11], ""),
+        ("clinic", "Next visit on Tuesday the 14th at 9:30", &[13], ""),
+        ("clinic", "Call the clinic if the headache suddenly gets much worse", &[15], ""),
+        ("clinic", "The patient wants to ask about a blood test next time", &[14], ""),
+        ("vi", "Bản beta ra mắt không có đồng bộ lịch", &[4], ""),
+        ("vi", "Đồng bộ lịch bị lỗi sập hai lần tuần trước", &[3], ""),
+        ("vi", "Bản build đã xong, chỉ còn tính năng đồng bộ lịch chưa ổn", &[1], ""),
+        ("vi", "Viết ghi chú phát hành và gửi cả nhóm trước thứ Năm", &[6], ""),
+        ("vi", "Marketing đề xuất giá chín mươi chín nghìn một tháng, tài chính chưa xác nhận", &[8], ""),
+        ("vi", "Chưa chốt giá, cần số liệu từ bộ phận tài chính", &[9], ""),
+        ("vi", "Việc giảm giá cho người dùng sớm vẫn để mở", &[10, 11], ""),
+        ("vi", "Hỏi tài chính số liệu chi phí trước thứ Hai", &[12], ""),
+        ("vi", "Hộp thư hỗ trợ có bốn mươi yêu cầu chưa trả lời", &[13], ""),
+        ("vi", "Xử lý hết hàng đợi hỗ trợ vào chiều thứ Sáu", &[14], ""),
+        ("vi", "Buổi đánh giá bảo mật ngày mười lăm, kiểm toán cần tài liệu thiết kế mã hóa trước", &[15, 16], ""),
+        ("vi", "Gửi tài liệu thiết kế mã hóa cho bên kiểm toán vào ngày mai", &[17], ""),
+        ("vi", "Video hướng dẫn quá dài, rút xuống dưới hai phút", &[18, 19], ""),
+        ("vi", "Dựng lại video hướng dẫn vào tuần sau", &[20], ""),
+        ("vi", "Thống nhất để tính năng lịch cho bản sau", &[2, 4], ""),
+        ("vi", "Không chép nguyên văn: ra mắt beta không đồng bộ lịch", &[2], ""),
+        ("en", "The group postponed the calendar integration to a later release", &[2, 4], "loose"),
+        ("en", "Finance must supply figures before any price is fixed", &[9], "loose"),
+        ("en", "A shorter intro clip was requested for new users", &[19], "loose"),
+        ("clinic", "Hypertension readings slightly exceed the goal", &[4], "loose"),
+        ("clinic", "Patient told to avoid painkillers beyond a small daily amount", &[9], "loose"),
+        ("vi", "Nhóm hoãn việc tích hợp lịch sang phiên bản kế tiếp", &[2, 4], "loose"),
+        ("vi", "Chưa xác định mức giá cho gói trả tiền", &[9], "loose"),
+        ("vi", "Phải rút ngắn clip giới thiệu cho người mới", &[19], "loose"),
+    ];
+
+    fn golden_lines(name: &str) -> Vec<String> {
+        let raw = match name {
+            "en" => include_str!("../tests/golden/en.transcript.json"),
+            "vi" => include_str!("../tests/golden/vi.transcript.json"),
+            _ => include_str!("../tests/golden/consultation.transcript.json"),
+        };
+        let doc: Value = serde_json::from_str(raw).unwrap();
+        doc["segments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["text"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    fn score_of(claim: &str, ids: &[u64], lines: &[String]) -> Option<f32> {
+        let cited: Vec<HashSet<String>> = ids
+            .iter()
+            .map(|&i| claim_words(&lines[i as usize]))
+            .collect();
+        let cited: Vec<&HashSet<String>> = cited.iter().collect();
+        source_score(&claim_words(claim), &cited)
+    }
+
+    /// Weak flags on good cites and on seeded wrong ones (a line elsewhere in
+    /// the meeting), per language: the threshold's calibration.
+    #[test]
+    fn source_score_separates_good_cites_from_wrong_ones() {
+        for (lang, langs) in [
+            ("EN", ["en", "clinic"].as_slice()),
+            ("VI", ["vi"].as_slice()),
+        ] {
+            let (mut good, mut good_weak, mut bad, mut bad_weak) = (0, 0, 0, 0);
+            let (mut near, mut near_weak) = (0, 0);
+            let mut missed = Vec::new();
+            let (mut loose, mut loose_weak) = (0, 0);
+            for (src, claim, ids, kind) in GOOD.iter().filter(|g| langs.contains(&g.0)) {
+                let lines = golden_lines(src);
+                let n = lines.len() as u64;
+                let g = score_of(claim, ids, &lines).unwrap();
+                if *kind == "loose" {
+                    loose += 1;
+                    loose_weak += usize::from(is_weak(g));
+                } else {
+                    good += 1;
+                    if is_weak(g) {
+                        good_weak += 1;
+                        missed.push(format!("good flagged {g:.2}: {claim}"));
+                    }
+                }
+                // Seeded wrong cite: lines 7 and 11 further on (wrapping), not near the right ones.
+                for shift in [7, 11, 1, 2] {
+                    let wrong: Vec<u64> = ids.iter().map(|i| (i + shift) % n).collect();
+                    if wrong.iter().any(|w| ids.contains(w)) {
+                        continue;
+                    }
+                    let b = score_of(claim, &wrong, &lines).unwrap();
+                    // Next door (+1, +2) is reported only: the snap step
+                    // handles neighbours and word overlap cannot tell them apart.
+                    let far = shift > 2;
+                    if far {
+                        bad += 1;
+                    }
+                    if is_weak(b) {
+                        if far {
+                            bad_weak += 1;
+                        } else {
+                            near_weak += 1;
+                        }
+                    } else if far {
+                        missed.push(format!("bad passed {b:.2}: {claim} -> {wrong:?}"));
+                    }
+                    if !far {
+                        near += 1;
+                    }
+                }
+            }
+            eprintln!(
+                "{lang}: good flagged {good_weak}/{good}, wrong flagged {bad_weak}/{bad} (next-door wrong: {near_weak}/{near}; loose paraphrase flagged {loose_weak}/{loose})\n{}",
+                missed.join("\n")
+            );
+            assert!(
+                good_weak * 10 <= good,
+                "{lang}: {good_weak} of {good} good cites flagged"
+            );
+            assert!(
+                bad_weak * 10 >= bad * 6,
+                "{lang}: only {bad_weak} of {bad} wrong cites flagged"
+            );
+        }
+    }
+
+    #[test]
+    fn source_score_edge_cases() {
+        let words = |t: &str| claim_words(t);
+        // Nothing to compare: no score, never "weak".
+        assert_eq!(
+            source_score(&words("the and of"), &[&words("anything")]),
+            None
+        );
+        assert_eq!(source_score(&words("ship friday"), &[]), None);
+        // Vietnamese matches with or without marks, and stems meet.
+        let line = words("Chốt lịch beta, đã quyết định");
+        assert_eq!(source_score(&words("chot lich beta"), &[&line]), Some(1.0));
+        assert_eq!(
+            source_score(&words("deciding"), &[&words("decided")]),
+            Some(1.0)
+        );
+        assert!(is_weak(0.0) && !is_weak(1.0));
     }
 }

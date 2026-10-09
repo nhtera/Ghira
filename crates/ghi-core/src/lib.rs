@@ -28,6 +28,7 @@ pub mod recluster;
 pub mod recover;
 pub mod sensitive;
 pub mod session;
+pub mod source_check;
 pub mod speakers;
 pub mod vocab;
 pub mod voice_job;
