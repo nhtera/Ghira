@@ -137,6 +137,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
         // Notes come from the paired computer or a cloud provider, never a
         // model on the phone (owner, 2026-10-09).
         no_local_notes: true,
+        no_saved_answers: true,
         before_spawn: Some(Arc::new(move |runner| lifecycle.sync_runner(runner))),
         mic: Some(enrollment_mic()),
         gate_launch: true,

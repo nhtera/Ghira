@@ -525,6 +525,7 @@ pub async fn delete_meeting(
         }
         store.delete_meeting(&meeting).map_err(|e| e.to_string())?;
         tokens.revoke_meeting(&meeting);
+        c.forget_meeting_answers(&meeting);
         Ok(())
     })
     .await

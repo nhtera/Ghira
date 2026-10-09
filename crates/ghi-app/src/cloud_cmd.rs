@@ -261,8 +261,15 @@ pub struct AskAnswer {
 
 /// Answers kept per meeting for "Save to notes".
 pub const ANSWERS_KEPT: usize = 10;
+/// Answers kept in all, whatever the meetings.
+pub const ANSWERS_KEPT_TOTAL: usize = 50;
+/// How long an answer waits to be saved.
+const ANSWER_TTL: Duration = Duration::from_secs(30 * 60);
 /// Answers saved into one meeting's notes at most (prompts stay bounded).
 pub const ANSWERS_SAVED_MAX: usize = 10;
+/// A saved answer's question and answer are cut to this many characters.
+pub const SAVED_QUESTION_CHARS: usize = 300;
+pub const SAVED_ANSWER_CHARS: usize = 1200;
 /// Block kind of a saved answer.
 pub const ANSWER_KIND: &str = "answer";
 
@@ -276,38 +283,68 @@ pub struct AnswerDraft {
     pub anchors: Vec<Anchor>,
 }
 
-/// The last [`ANSWERS_KEPT`] answers of each meeting, in memory only.
+/// An answer taken out of the cache to be saved: put it back if the save
+/// fails ([`AnswerCache::give_back`]).
+pub struct TakenAnswer {
+    id: String,
+    draft: AnswerDraft,
+    at: Instant,
+}
+
+/// The recent answers of each meeting, in memory only: gone after
+/// [`ANSWER_TTL`], when the app locks, and when their meeting is deleted.
 #[derive(Default)]
-pub struct AnswerCache(Mutex<VecDeque<(String, AnswerDraft)>>);
+pub struct AnswerCache(Mutex<VecDeque<(String, AnswerDraft, Instant)>>);
 
 impl AnswerCache {
+    fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<(String, AnswerDraft, Instant)>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     fn put(&self, d: AnswerDraft) -> String {
         let mut b = [0u8; 16];
         OsRng.fill_bytes(&mut b);
         let id: String = b.iter().map(|x| format!("{x:02x}")).collect();
-        let mut q = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut q = self.lock();
+        q.retain(|(_, _, at)| at.elapsed() < ANSWER_TTL);
         let meeting = d.meeting.clone();
-        q.push_back((id.clone(), d));
-        while q.iter().filter(|(_, x)| x.meeting == meeting).count() > ANSWERS_KEPT {
-            if let Some(i) = q.iter().position(|(_, x)| x.meeting == meeting) {
+        q.push_back((id.clone(), d, Instant::now()));
+        while q.iter().filter(|(_, x, _)| x.meeting == meeting).count() > ANSWERS_KEPT {
+            if let Some(i) = q.iter().position(|(_, x, _)| x.meeting == meeting) {
                 q.remove(i);
             }
+        }
+        while q.len() > ANSWERS_KEPT_TOTAL {
+            q.pop_front();
         }
         id
     }
 
-    /// The answer made for `meeting` under `id` (a forged or expired id, or
-    /// another meeting's, finds nothing).
-    fn get(&self, meeting: &str, id: &str) -> Option<AnswerDraft> {
-        let q = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        q.iter()
-            .find(|(i, d)| i == id && d.meeting == meeting)
-            .map(|(_, d)| d.clone())
+    /// Takes the answer made for `meeting` under `id` out of the cache (a
+    /// forged, used, expired or other meeting's id finds nothing). Two saves
+    /// at once cannot both get it.
+    fn take(&self, meeting: &str, id: &str) -> Option<TakenAnswer> {
+        let mut q = self.lock();
+        let i = q.iter().position(|(i, d, at)| {
+            i == id && d.meeting == meeting && at.elapsed() < ANSWER_TTL
+        })?;
+        let (id, draft, at) = q.remove(i)?;
+        Some(TakenAnswer { id, draft, at })
     }
 
-    fn forget(&self, id: &str) {
-        let mut q = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        q.retain(|(i, _)| i != id);
+    /// Puts a taken answer back (the save did not happen).
+    fn give_back(&self, t: TakenAnswer) {
+        self.lock().push_front((t.id, t.draft, t.at));
+    }
+
+    /// Forgets everything (the app locked, or all data was deleted).
+    pub fn clear(&self) {
+        self.lock().clear();
+    }
+
+    /// Forgets a meeting's answers (it was deleted).
+    pub fn forget_meeting(&self, meeting: &str) {
+        self.lock().retain(|(_, d, _)| d.meeting != meeting);
     }
 }
 
@@ -338,33 +375,34 @@ fn answer_view(
     meeting: &str,
     question: &str,
     a: Answer,
+    // The lines the answer's numbers point into, and the transcript version
+    // they were read at (one snapshot: a final pass in between cannot shift them).
     segs: &[Segment],
+    version: i64,
     engine: &str,
 ) -> Result<AskAnswer, String> {
-    let version = c
-        .store()?
-        .get_meeting(meeting)
-        .map_err(err)?
-        .transcript_version;
     Ok(match a {
         Answer::Answered { text, citations } => {
             let cited: Vec<&Segment> = citations
                 .iter()
                 .filter_map(|&i| segs.get(i as usize))
                 .collect();
-            let id = c.answers().put(AnswerDraft {
-                meeting: meeting.to_string(),
-                question: question.to_string(),
-                text: text.clone(),
-                anchors: cited
-                    .iter()
-                    .map(|s| Anchor {
-                        meeting_gid: meeting.to_string(),
-                        t0_ms: s.t0_ms,
-                        t1_ms: s.t1_ms,
-                        transcript_version: version,
-                    })
-                    .collect(),
+            // The phone has no "save to notes": nothing is kept for it.
+            let id = c.keeps_answers().then(|| {
+                c.answers().put(AnswerDraft {
+                    meeting: meeting.to_string(),
+                    question: question.to_string(),
+                    text: text.clone(),
+                    anchors: cited
+                        .iter()
+                        .map(|s| Anchor {
+                            meeting_gid: meeting.to_string(),
+                            t0_ms: s.t0_ms,
+                            t1_ms: s.t1_ms,
+                            transcript_version: version,
+                        })
+                        .collect(),
+                })
             });
             AskAnswer {
                 answered: true,
@@ -375,7 +413,7 @@ fn answer_view(
                     .collect(),
                 searched: Vec::new(),
                 engine: engine.into(),
-                id: Some(id),
+                id,
             }
         }
         Answer::NotDiscussed { searched } => AskAnswer {
@@ -433,9 +471,10 @@ pub async fn cloud_preview(
             &Prices::builtin(),
         )? {
             Planned::NotDiscussed(a) => {
+                let version = store.get_meeting(&meeting).map_err(err)?.transcript_version;
                 let (_, segs) = ghi_core::notes_job::stored_transcript(&store, &meeting)?;
                 Ok(CloudPreviewResult::Answer(answer_view(
-                    c, &meeting, "", a, &segs, "local",
+                    c, &meeting, "", a, &segs, version, "local",
                 )?))
             }
             Planned::Send(p) => {
@@ -535,12 +574,14 @@ pub async fn cloud_send(
             .ok_or("this preview expired: review it again")?;
         let is_notes = plan.is_notes();
         let question = plan.ask_question().unwrap_or_default().to_string();
+        // The lines and version the request was built from, not whatever the
+        // transcript is when the answer comes back.
+        let (version, segs) = (plan.version(), plan.segments().to_vec());
         match cloud::send(&store, *plan, &key, policy)? {
             Outcome::Done(Sent::Notes(_)) => Ok(CloudSendResult::Notes),
             Outcome::Done(Sent::Answer(a)) => {
-                let (_, segs) = ghi_core::notes_job::stored_transcript(&store, &meeting)?;
                 Ok(CloudSendResult::Answer(answer_view(
-                    c, &meeting, &question, a, &segs, &provider,
+                    c, &meeting, &question, a, &segs, version, &provider,
                 )?))
             }
             Outcome::Failed {
@@ -705,6 +746,7 @@ pub async fn ask_meeting(
         if question.trim().is_empty() {
             return Err("ask a question".into());
         }
+        let version = store.get_meeting(&meeting).map_err(err)?.transcript_version;
         let (t, segs) = ghi_core::notes_job::stored_transcript(&store, &meeting)?;
         if t.is_empty() {
             return Err("this meeting has no transcript yet".into());
@@ -715,7 +757,7 @@ pub async fn ask_meeting(
         let run =
             ghi_llm::ask::ask(llm.as_mut(), &t, &question, lang).map_err(|e| e.to_string())?;
         drop(llm);
-        answer_view(c, &meeting, &question, run.answer, &segs, "local")
+        answer_view(c, &meeting, &question, run.answer, &segs, version, "local")
     })
     .await
 }
@@ -779,33 +821,44 @@ pub const ANSWER_LIMIT: &str = "answerLimit";
 pub(crate) fn save_answer_now(c: &Core, meeting: &str, id: &str) -> Result<String, String> {
     // Refused while the app is locked, like every content command.
     let store = c.store()?;
-    let draft = c
+    // Taken out of the cache first: two saves at once cannot both write it.
+    let taken = c
         .answers()
-        .get(meeting, id)
+        .take(meeting, id)
         .ok_or_else(|| ANSWER_EXPIRED.to_string())?;
-    let saved = store
-        .note_blocks(meeting)
-        .map_err(err)?
-        .iter()
-        .filter(|b| b.kind == ANSWER_KIND)
-        .count();
+    let saved = match store.note_blocks(meeting) {
+        Ok(b) => b.iter().filter(|b| b.kind == ANSWER_KIND).count(),
+        Err(e) => {
+            c.answers().give_back(taken);
+            return Err(err(e));
+        }
+    };
     if saved >= ANSWERS_SAVED_MAX {
+        c.answers().give_back(taken);
         return Err(ANSWER_LIMIT.into());
     }
-    let block = store
-        .add_note_block(
-            meeting,
-            NewNoteBlock {
-                kind: ANSWER_KIND.into(),
-                provenance: Provenance::Ai,
-                body: format!("Q: {}\nA: {}", draft.question.trim(), draft.text.trim()),
-                anchors: draft.anchors,
-                pinned: true,
-            },
-        )
-        .map_err(err)?;
-    c.answers().forget(id);
-    Ok(block.gid)
+    // Kept in the notes prompt (pinned text), so bounded.
+    let body = format!(
+        "Q: {}\nA: {}",
+        crate::detail::shorten(taken.draft.question.trim(), SAVED_QUESTION_CHARS),
+        crate::detail::shorten(taken.draft.text.trim(), SAVED_ANSWER_CHARS)
+    );
+    match store.add_note_block(
+        meeting,
+        NewNoteBlock {
+            kind: ANSWER_KIND.into(),
+            provenance: Provenance::Ai,
+            body,
+            anchors: taken.draft.anchors.clone(),
+            pinned: true,
+        },
+    ) {
+        Ok(block) => Ok(block.gid),
+        Err(e) => {
+            c.answers().give_back(taken);
+            Err(err(e))
+        }
+    }
 }
 
 /// "Save to notes" on an Ask answer, by the id the answer came with.
@@ -946,15 +999,19 @@ mod tests {
     }
 
     #[test]
-    fn a_locked_app_refuses_and_writes_nothing() {
+    fn a_locked_app_refuses_and_forgets_the_waiting_answers() {
         let f = fix();
         let id = f.core.answers().put(draft(&f, 1));
         f.core.set_locked(true);
         assert!(save_answer_now(&f.core, &f.meeting, &id).is_err());
         f.core.set_locked(false);
         assert!(answers(&f).is_empty());
-        // The answer is still there to save once unlocked.
-        save_answer_now(&f.core, &f.meeting, &id).unwrap();
+        // Locking wiped the answers waiting in memory: ask again to save.
+        assert_eq!(
+            save_answer_now(&f.core, &f.meeting, &id),
+            Err(ANSWER_EXPIRED.into())
+        );
+        assert!(answers(&f).is_empty());
     }
 
     #[test]
@@ -984,5 +1041,165 @@ mod tests {
             .collect();
         assert!(kinds.contains(&ANSWER_KIND.to_string()), "{kinds:?}");
         assert!(kinds.contains(&"tldr".to_string()));
+    }
+
+    #[test]
+    fn deleting_a_meeting_forgets_its_answers() {
+        let f = fix();
+        let id = f.core.answers().put(draft(&f, 1));
+        let other = f.core.answers().put(AnswerDraft {
+            meeting: "other".into(),
+            ..draft(&f, 2)
+        });
+        f.core.forget_meeting_answers(&f.meeting);
+        assert_eq!(
+            save_answer_now(&f.core, &f.meeting, &id),
+            Err(ANSWER_EXPIRED.into())
+        );
+        assert!(f.core.answers().take("other", &other).is_some());
+    }
+
+    #[test]
+    fn the_cache_is_capped_overall_and_expires() {
+        let f = fix();
+        let first = f.core.answers().put(AnswerDraft {
+            meeting: "m0".into(),
+            ..draft(&f, 0)
+        });
+        for n in 1..=ANSWERS_KEPT_TOTAL {
+            f.core.answers().put(AnswerDraft {
+                meeting: format!("m{n}"),
+                ..draft(&f, n)
+            });
+        }
+        assert!(f.core.answers().take("m0", &first).is_none(), "oldest dropped");
+        assert_eq!(f.core.answers().lock().len(), ANSWERS_KEPT_TOTAL);
+        // An answer past its time is not found.
+        let old = f.core.answers().put(draft(&f, 7));
+        {
+            let mut q = f.core.answers().lock();
+            let e = q.iter_mut().find(|(i, _, _)| *i == old).unwrap();
+            e.2 = Instant::now() - ANSWER_TTL - Duration::from_secs(1);
+        }
+        assert_eq!(
+            save_answer_now(&f.core, &f.meeting, &old),
+            Err(ANSWER_EXPIRED.into())
+        );
+    }
+
+    #[test]
+    fn two_saves_at_once_write_one_block() {
+        let f = fix();
+        let id = f.core.answers().put(draft(&f, 1));
+        let results: Vec<Result<String, String>> = std::thread::scope(|s| {
+            let hs: Vec<_> = (0..4)
+                .map(|_| s.spawn(|| save_answer_now(&f.core, &f.meeting, &id)))
+                .collect();
+            hs.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1, "{results:?}");
+        assert_eq!(answers(&f).len(), 1);
+    }
+
+    #[test]
+    fn a_refused_save_leaves_the_answer_to_try_again() {
+        let f = fix();
+        for n in 0..ANSWERS_SAVED_MAX {
+            let id = f.core.answers().put(draft(&f, n));
+            save_answer_now(&f.core, &f.meeting, &id).unwrap();
+        }
+        let id = f.core.answers().put(draft(&f, 99));
+        assert_eq!(save_answer_now(&f.core, &f.meeting, &id), Err(ANSWER_LIMIT.into()));
+        // Still there: once a block is deleted the same id saves.
+        let gone = answers(&f)[0].gid.clone();
+        f.core.store().unwrap().delete_note_blocks(&[gone]).unwrap();
+        save_answer_now(&f.core, &f.meeting, &id).unwrap();
+    }
+
+    #[test]
+    fn a_saved_answer_is_cut_to_a_bounded_size() {
+        let f = fix();
+        let id = f.core.answers().put(AnswerDraft {
+            question: "q ".repeat(500),
+            text: "a ".repeat(2000),
+            ..draft(&f, 1)
+        });
+        save_answer_now(&f.core, &f.meeting, &id).unwrap();
+        let body = answers(&f).remove(0).body;
+        let (q, a) = body.split_once("\nA: ").unwrap();
+        assert!(q.chars().count() <= SAVED_QUESTION_CHARS + 3 + 1, "{}", q.len());
+        assert!(a.chars().count() <= SAVED_ANSWER_CHARS + 1);
+        assert!(q.ends_with('…') && a.ends_with('…'));
+    }
+
+    #[test]
+    fn answer_view_turns_citation_numbers_into_anchors_and_keeps_the_answer() {
+        let f = fix();
+        let store = f.core.store().unwrap();
+        let segs = store.segments(&f.meeting).unwrap();
+        let v = answer_view(
+            &f.core,
+            &f.meeting,
+            "When?",
+            Answer::Answered {
+                text: "On the 12th.".into(),
+                citations: vec![0, 5],
+            },
+            &segs,
+            7,
+            "local",
+        )
+        .unwrap();
+        // The out-of-range number is dropped; the line is the citation and the anchor.
+        assert_eq!(v.citations.len(), 1);
+        assert_eq!(v.citations[0].t0_ms, 1000.0);
+        let id = v.id.clone().expect("a real answer has an id");
+        let kept = f.core.answers().take(&f.meeting, &id).unwrap().draft;
+        assert_eq!(kept.question, "When?");
+        assert_eq!(kept.anchors.len(), 1);
+        assert_eq!((kept.anchors[0].t0_ms, kept.anchors[0].transcript_version), (1000, 7));
+        // Not discussed: nothing to save.
+        let nd = answer_view(
+            &f.core,
+            &f.meeting,
+            "x?",
+            Answer::NotDiscussed {
+                searched: vec!["x".into()],
+            },
+            &segs,
+            7,
+            "local",
+        )
+        .unwrap();
+        assert!(!nd.answered && nd.id.is_none());
+    }
+
+    #[test]
+    fn a_core_that_cannot_save_keeps_no_answers() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (core, _rx) = Core::for_test_with(
+            tmp.path().join("data"),
+            crate::core::CoreHooks {
+                no_saved_answers: true,
+                ..Default::default()
+            },
+        );
+        let store = core.store().unwrap();
+        let m = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        let v = answer_view(
+            &core,
+            &m,
+            "q?",
+            Answer::Answered {
+                text: "t".into(),
+                citations: vec![],
+            },
+            &[],
+            1,
+            "local",
+        )
+        .unwrap();
+        assert!(v.id.is_none());
+        assert!(core.answers().lock().is_empty());
     }
 }

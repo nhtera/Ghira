@@ -119,6 +119,9 @@ pub struct CoreHooks {
     /// This device writes no notes itself (the phone): recovery calls off its
     /// own notes jobs (`recover::drop_local_notes_jobs`).
     pub no_local_notes: bool,
+    /// This device has no "save an Ask answer to the notes" (the phone): Ask
+    /// answers are not kept in memory.
+    pub no_saved_answers: bool,
     /// Runs on the new job runner right before it is spawned (the phone
     /// pauses it when launched in the background).
     pub before_spawn: Option<RunnerHook>,
@@ -493,6 +496,16 @@ impl Core {
         &self.answers
     }
 
+    /// Ask answers can be saved to the notes here (not on the phone).
+    pub(crate) fn keeps_answers(&self) -> bool {
+        !self.hooks.no_saved_answers
+    }
+
+    /// A meeting was deleted: its Ask answers go from memory too.
+    pub fn forget_meeting_answers(&self, meeting: &str) {
+        self.answers.forget_meeting(meeting);
+    }
+
     /// Starts forwarding core events to the webview.
     /// `on_event` also sees every event (the tray follows the session).
     pub fn new<R: Runtime>(
@@ -849,6 +862,8 @@ impl Core {
         // The mic never stays open behind the lock screen.
         if locked {
             crate::voice_cmd::drop_enrollment(&self.enrollment);
+            // Answers waiting to be saved are meeting text: not behind the lock screen.
+            self.answers.clear();
         }
         self.locked
             .store(locked, std::sync::atomic::Ordering::Release);
@@ -913,6 +928,7 @@ impl Core {
             return Err("all data is already being deleted".into());
         }
         // From here `store()` refuses: nothing reopens the database.
+        self.answers.clear();
         let r = self.delete_locked();
         if r.is_err() {
             // Nothing was deleted: the next `store()` opens it again, with

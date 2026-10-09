@@ -76,6 +76,17 @@ pub struct Plan {
 pub const EXCERPT_MAX: usize = 4000;
 
 impl Plan {
+    /// The transcript version the request was built from.
+    pub fn version(&self) -> i64 {
+        self.version
+    }
+
+    /// The lines the request was built from (an answer's citation numbers
+    /// point into these).
+    pub fn segments(&self) -> &[Segment] {
+        &self.segs
+    }
+
     /// The question of an Ask plan, as the user typed it (not redacted).
     pub fn ask_question(&self) -> Option<&str> {
         match &self.task {

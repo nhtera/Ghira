@@ -63,9 +63,12 @@ function AnswerCard({
   const { show } = useToast();
   const client = useQueryClient();
   const [saved, setSaved] = useState(false);
+  // A second click while the first is on its way would ask again.
+  const [saving, setSaving] = useState(false);
   const save = async () => {
-    if (!a?.id) return;
-    const r = await ipc.commands.saveAnswer(meeting, a.id);
+    if (!a?.id || saving) return;
+    setSaving(true);
+    const r = await ipc.commands.saveAnswer(meeting, a.id).finally(() => setSaving(false));
     if (r.status === "ok") {
       setSaved(true);
       void invalidateMeeting(client, meeting);
@@ -124,7 +127,7 @@ function AnswerCard({
             </div>
           )}
           {a.id && (
-            <Button size="sm" variant="ghost" icon={saved ? "check" : "bookmark"} disabled={saved} onClick={() => void save()} className="self-start">
+            <Button size="sm" variant="ghost" icon={saved ? "check" : "bookmark"} disabled={saved || saving} onClick={() => void save()} className="self-start">
               {saved ? t("ask.meeting.saved") : t("ask.meeting.save")}
             </Button>
           )}

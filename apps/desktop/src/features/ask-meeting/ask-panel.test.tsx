@@ -278,6 +278,21 @@ describe("AskPanel", () => {
     expect((done as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("a second click while the save is on its way does not ask twice", async () => {
+    commands.askMeeting.mockReturnValue(ok(answered));
+    let done!: (v: unknown) => void;
+    commands.saveAnswer.mockReturnValue(new Promise((r) => (done = r)));
+    ask("Why NeMo?");
+    await screen.findByText("We chose NeMo for diarization.");
+    const save = screen.getByRole("button", { name: "Save to notes" });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    expect(commands.saveAnswer).toHaveBeenCalledTimes(1);
+    await act(async () => done({ status: "ok", data: null }));
+    expect(await screen.findByRole("button", { name: "Saved to notes" })).toBeTruthy();
+  });
+
   it("an expired or full save is said in words", async () => {
     commands.askMeeting.mockReturnValue(ok(answered));
     commands.saveAnswer.mockReturnValue(Promise.resolve({ status: "error" as const, error: "answerExpired" }));
