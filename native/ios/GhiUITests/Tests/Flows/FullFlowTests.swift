@@ -130,12 +130,22 @@ final class FullFlowTests: XCTestCase {
             app.activate()
             let unlock = app.buttons["Unlock with Face ID"]
             XCTAssertTrue(unlock.waitForExistence(timeout: 10), "lock gate not shown\n" + app.debugDescription)
-            Ghira.faceID(match: false)
-            XCTAssertTrue(staticText(app, "didn’t work").waitForExistence(timeout: 10), app.debugDescription)
+            // The gate asks for Face ID by itself; on a slow machine the
+            // prompt comes up after the first simulated result, which is then
+            // lost: repeat each result until it shows.
+            let failed = staticText(app, "didn’t work")
+            for _ in 0..<8 where !failed.exists {
+                Ghira.faceID(match: false)
+                _ = Ghira.waitUntil(1.5) { failed.exists }
+            }
+            XCTAssertTrue(failed.exists, app.debugDescription)
             XCTAssertTrue(unlock.exists, "unlocked on a failed Face ID")
             unlock.tap()
-            Ghira.faceID(match: true)
-            XCTAssertTrue(unlock.waitForNonExistence(timeout: 10), "still locked after a match")
+            for _ in 0..<8 where unlock.exists {
+                Ghira.faceID(match: true)
+                _ = Ghira.waitUntil(1.5) { !unlock.exists }
+            }
+            XCTAssertFalse(unlock.exists, "still locked after a match")
         }
 
         step("9 delete everything returns to onboarding") {
