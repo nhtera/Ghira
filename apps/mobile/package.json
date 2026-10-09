@@ -38,7 +38,7 @@
   "dependencies": {
     "@ghi/i18n": "workspace:*",
     "@ghi/ui": "workspace:*",
-    "@tanstack/react-router": "^1.170.40",
+    "@tanstack/react-router": "^1.170.41",
     "@tanstack/react-virtual": "^3.13.12",
     "@tauri-apps/api": "^2.12.0",
     "i18next": "^26.4.2",
