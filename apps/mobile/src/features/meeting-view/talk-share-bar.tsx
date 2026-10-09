@@ -16,13 +16,16 @@ export function TalkShareBar({
   speakers: readonly MeetingSpeaker[];
 }) {
   const { t } = useTranslation();
-  const people = useMemo(() => speakers.filter((s) => !s.notPerson), [speakers]);
+  // Everyone who spoke keeps their own share (a "not a person" speaker too, as on the computer);
+  // only people count in "N speakers".
   const entries = useMemo(
-    () => talkShare(segments, people),
-    [segments, people],
+    () => talkShare(segments, speakers),
+    [segments, speakers],
   );
-  const named = entries.filter((e) => e.gid !== null).length;
-  // Nobody to compare (no diarized speakers): no bar.
+  const named = entries.filter(
+    (e) => e.gid !== null && !speakers.find((s) => s.gid === e.gid)?.notPerson,
+  ).length;
+  // Nobody to compare (no diarized people): no bar.
   if (named === 0) return null;
   const turns = entries.reduce((n, e) => n + e.turns, 0);
   const numbered = (n: number) => t("speakers.numbered", { number: n });

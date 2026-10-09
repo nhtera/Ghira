@@ -24,6 +24,7 @@
         "body": "Điện thoại ghi âm và chuyển thành văn bản. Để có ghi chú, bạn có thể gửi nội dung bản ghi (không bao giờ gửi âm thanh) đến mô hình đám mây do bạn chọn.",
         "title": "Chưa có ghi chú trên điện thoại này"
       },
+      "outline": "Dàn ý ({{count}})",
       "quote": {
         "missing": "Không tìm thấy lời nào khớp ở thời điểm đó.",
         "stale": "Viết từ một phiên bản bản ghi cũ hơn.",

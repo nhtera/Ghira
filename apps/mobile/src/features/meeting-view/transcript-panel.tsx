@@ -80,8 +80,17 @@ export function TranscriptPanel({
   });
   const numbered = (number: number) => t("speakers.numbered", { number });
 
+  // What sits above the list (the talk-share bar, which wraps or comes and goes) moves it:
+  // measure again whenever the list's parent changes size, not only when the data does.
   useLayoutEffect(() => {
-    if (listRef.current) setMargin(listRef.current.offsetTop);
+    const list = listRef.current;
+    if (!list) return;
+    const measure = () => setMargin(list.offsetTop);
+    measure();
+    if (typeof ResizeObserver === "undefined" || !list.parentElement) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(list.parentElement);
+    return () => ro.disconnect();
   }, [segments.length, speakers]);
 
   const marksOf = useMemo(() => marksBySegment(marks), [marks]);

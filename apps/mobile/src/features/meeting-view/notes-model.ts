@@ -2,7 +2,7 @@
 // Pure mapping from the core's notes and transcript views to what the
 // @ghi/ui components draw: provenance, sections, citations, speaker labels.
 import type {
-  NotesTreeInput,
+  notesTree,
   NoteCitation,
   NoteKind,
   TranscriptSpeaker,
@@ -18,6 +18,8 @@ import type {
   SegmentView,
   TemplateSection,
 } from "../../bindings";
+
+type NotesTreeInput = notesTree.NotesTreeInput;
 
 /** user / AI / AI-edited; an AI expansion with no text is "not found". */
 export function noteKind(
@@ -266,6 +268,7 @@ export function outlineInput(
     actions: notes.actionItems,
     questions: ai("question"),
     topics: ai("topic"),
+    answers: ai("answer"),
     other: ai("other"),
     marks: uncoveredMarks(notes.marks).map((m, i) => ({
       gid: `mark-${i}`,

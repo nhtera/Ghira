@@ -55,6 +55,7 @@ export function NotesPanel({
           actions: t("notes.sections.actionItems"),
           questions: t("notes.sections.openQuestions"),
           topics: t("detail.topics.title"),
+          answers: t("notes.sections.fromAsk"),
           marked: t("mindmap.sections.marked"),
           other: t("mindmap.sections.other"),
         },

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { notesTree } from "@ghi/ui";
 import { describe, expect, it } from "vitest";
 import type { Citation, MarkedMoment, MarkView, MeetingNotes, MeetingSpeaker, SegmentView } from "../../bindings";
 import {
@@ -222,7 +223,7 @@ describe("groupBlocks: proposed decisions", () => {
   });
 });
 
-const titles = { summary: "S", decisions: "D", proposed: "P", actions: "A", questions: "Q", topics: "T", marked: "M", other: "O" };
+const titles = { summary: "S", decisions: "D", proposed: "P", actions: "A", questions: "Q", topics: "T", answers: "AK", marked: "M", other: "O" };
 
 describe("unknown future kinds", () => {
   it("stay in 'other' (the Notes tab) and in the outline's Other section", () => {
@@ -235,6 +236,14 @@ describe("unknown future kinds", () => {
     const t = outlineInput(notes, { title: "T", vi: false, titles: titles, markLabel: (x) => x });
     expect(t.other?.map((x) => x.text)).toEqual(["x"]);
     expect(t.tldr).toHaveLength(1);
+  });
+
+  it("saved Ask answers are the outline's own branch", () => {
+    const notes = { sections: [], marks: [], actionItems: [], blocks: [block("tldr"), block("answer", "ai")] } as unknown as MeetingNotes;
+    const t = outlineInput(notes, { title: "T", vi: false, titles, markLabel: (x) => x });
+    expect(t.answers).toHaveLength(1);
+    expect(t.other ?? []).toHaveLength(0);
+    expect(notesTree.notesToTree(t).children.map((c) => c.full)).toEqual(["S", "AK"]);
   });
 
   it("the outline splits decided from proposed, titles a template's sections, and lists only uncovered marks", () => {

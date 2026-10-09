@@ -3,7 +3,9 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initMobileI18n } from "@ghi/i18n/mobile";
-import { PlatformProvider, type NotesTreeInput } from "@ghi/ui";
+import { PlatformProvider, type notesTree } from "@ghi/ui";
+
+type NotesTreeInput = notesTree.NotesTreeInput;
 import type { MeetingSpeaker } from "../../bindings";
 import { Outline } from "./outline";
 import { TalkShareBar } from "./talk-share-bar";
@@ -24,7 +26,7 @@ const b = (gid: string, text: string, at: number | null = 1000, missing = false)
 });
 const input: NotesTreeInput = {
   title: "Product sync",
-  titles: { summary: "Summary", decisions: "Decisions", proposed: "Proposed", actions: "Action items", questions: "Open questions", topics: "Topics", marked: "Moments you marked", other: "Other" },
+  titles: { summary: "Summary", decisions: "Decisions", proposed: "Proposed", actions: "Action items", questions: "Open questions", topics: "Topics", answers: "Saved from Ask", marked: "Moments you marked", other: "Other" },
   tldr: [b("t1", "We ship on the 12th.", 90_000)],
   sections: [],
   decisions: [b("d1", "Scope: iPhone only.", 96_000)],
@@ -63,17 +65,17 @@ describe("Outline", () => {
     const play = vi.fn();
     wrap(<Outline input={input} speakers={speakers} onPlayAt={play} />);
     fireEvent.click(screen.getByRole("button", { name: /^Outline/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Play from 01:36" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Scope: iPhone only\.(, [^,]+)*, Play from 01:36$/ }));
     expect(play).toHaveBeenCalledWith(96_000);
     // missing citation (q1) and no citation (o1): not buttons
-    expect(screen.queryByRole("button", { name: "Play from 03:20" })).toBeNull();
-    expect(screen.getAllByRole("button", { name: /^Play from/ })).toHaveLength(4);
+    expect(screen.queryByRole("button", { name: /Play from 03:20/ })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /, Play from \d\d:\d\d$/ })).toHaveLength(4);
   });
 
   it("without audio nothing plays", () => {
     wrap(<Outline input={input} speakers={speakers} />);
     fireEvent.click(screen.getByRole("button", { name: /^Outline/ }));
-    expect(screen.queryAllByRole("button", { name: /^Play from/ })).toHaveLength(0);
+    expect(screen.queryAllByRole("button", { name: /, Play from \d\d:\d\d$/ })).toHaveLength(0);
     expect(screen.getByText("Scope: iPhone only.")).toBeTruthy();
   });
 
@@ -97,10 +99,19 @@ describe("TalkShareBar", () => {
     expect(entries.reduce((n, e) => n + Number.parseInt(e.querySelector(".font-mono")!.textContent!, 10), 0)).toBe(100);
   });
 
+  it("a not-a-person speaker keeps its own share but is not one of the speakers", () => {
+    wrap(<TalkShareBar segments={[seg("a", 0, 6000), seg("m", 6000, 10_000)]} speakers={[spk("a", "Linh", 1), spk("m", "Music", 3, { notPerson: true })]} />);
+    const bar = within(screen.getByTestId("talk-share"));
+    expect(bar.getByText(/1 speaker · 2 turns/)).toBeTruthy();
+    const entries = bar.getAllByRole("listitem").map((e) => e.textContent);
+    expect(entries).toEqual([expect.stringMatching(/Linh60%/), expect.stringMatching(/Music40%/)]);
+  });
+
   it("is left out without any diarized speaker or talk time, and not-a-person speakers do not count", () => {
     const { container } = wrap(<TalkShareBar segments={[seg(null, 0, 4000)]} speakers={[spk("a", "Linh", 1)]} />);
     expect(container.querySelector('[data-testid="talk-share"]')).toBeNull();
     cleanup();
+    // Only a not-a-person speaker talked: nobody to compare.
     wrap(<TalkShareBar segments={[seg("m", 0, 4000)]} speakers={[spk("m", "Music", 3, { notPerson: true })]} />);
     expect(screen.queryByTestId("talk-share")).toBeNull();
   });

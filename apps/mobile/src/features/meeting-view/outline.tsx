@@ -3,7 +3,10 @@
 // (@ghi/ui), the phone's counterpart of the computer's mind map. Read-only: a
 // leaf with audio plays its first citation when tapped.
 import { formatClock } from "@ghi/i18n";
-import { Icon, cn, notesToTree, type MapNode, type NotesTreeInput } from "@ghi/ui";
+import { Icon, cn, notesTree } from "@ghi/ui";
+
+type MapNode = notesTree.MapNode;
+type NotesTreeInput = notesTree.NotesTreeInput;
 import { useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MeetingSpeaker } from "../../bindings";
@@ -18,7 +21,7 @@ export type OutlineProps = {
 
 export function Outline({ input, speakers, onPlayAt }: OutlineProps) {
   const { t } = useTranslation();
-  const root = useMemo(() => notesToTree(input), [input]);
+  const root = useMemo(() => notesTree.notesToTree(input), [input]);
   const [open, setOpen] = useState(false);
   const panel = useId();
   const leaves = root.children.reduce((n, s) => n + s.children.length, 0);
@@ -64,13 +67,10 @@ export function Outline({ input, speakers, onPlayAt }: OutlineProps) {
       </>
     );
     const row = "text-ios-body flex min-h-ios-target w-full items-baseline gap-2 py-1.5";
+    // The name says what the row says (text, who, due, proposed, starred), then what a tap does.
+    const name = [n.proposed ? t("mindmap.proposed") : null, n.full, who, n.due, n.starred ? t("mindmap.marked") : null].filter(Boolean).join(", ");
     return playable ? (
-      <button
-        type="button"
-        onClick={() => onPlayAt(at)}
-        aria-label={t("mobile.detail.playFrom", { time: formatClock(at, { pad: true }) })}
-        className={row}
-      >
+      <button type="button" onClick={() => onPlayAt(at)} aria-label={`${name}, ${t("mobile.detail.playFrom", { time: formatClock(at, { pad: true }) })}`} className={row}>
         {body}
       </button>
     ) : (
@@ -83,12 +83,12 @@ export function Outline({ input, speakers, onPlayAt }: OutlineProps) {
       <button
         type="button"
         aria-expanded={open}
-        aria-controls={panel}
+        aria-controls={open ? panel : undefined}
         onClick={() => setOpen((o) => !o)}
         className="text-ios-footnote flex min-h-ios-target w-full items-center gap-1.5 font-semibold tracking-[0.07em] text-muted uppercase"
       >
         <Icon name={open ? "expand_more" : "chevron_right"} size={18} className="size-[1.125rem]" />
-        {t("detail.topics.outline", { count: leaves })}
+        {t("mobile.detail.outline", { count: leaves })}
       </button>
       {open && (
         <ul id={panel} className="m-0 flex list-none flex-col gap-3 p-0 pb-2">

@@ -24,6 +24,7 @@
         "body": "This phone records and transcribes. For notes, you can send the transcript text (never the audio) to a cloud model you choose.",
         "title": "Notes: not generated on this phone"
       },
+      "outline": "Outline ({{count}})",
       "quote": {
         "missing": "No matching words were found at that moment.",
         "stale": "Written from an earlier version of the transcript.",
