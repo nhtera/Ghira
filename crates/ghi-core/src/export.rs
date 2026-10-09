@@ -55,6 +55,7 @@ struct Strings {
     summary: &'static str,
     decisions: &'static str,
     proposed: &'static str,
+    answers: &'static str,
     actions: &'static str,
     questions: &'static str,
     quotes: &'static str,
@@ -75,6 +76,7 @@ const EN: Strings = Strings {
     summary: "Summary",
     decisions: "Decisions",
     proposed: "Proposed",
+    answers: "Saved answers",
     actions: "Action items",
     questions: "Open questions",
     quotes: "Key quotes",
@@ -95,6 +97,7 @@ const VI: Strings = Strings {
     summary: "Tóm tắt",
     decisions: "Quyết định",
     proposed: "Đề xuất",
+    answers: "Câu trả lời đã lưu",
     actions: "Việc cần làm",
     questions: "Câu hỏi mở",
     quotes: "Trích dẫn chính",
@@ -746,6 +749,25 @@ fn note_sections(
             .collect()
     };
 
+    // Answers saved from Ask: "Q: ...\nA: ..." as a question with its answer under it.
+    let answers: Vec<Item> = blocks
+        .iter()
+        .filter(|b| b.kind == "answer")
+        .map(|b| {
+            let squash = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
+            match b.body.split_once("\nA: ") {
+                Some((q, a)) => Item::Bullet {
+                    text: squash(q),
+                    sub: vec![format!("A: {}", squash(a))],
+                },
+                None => Item::Bullet {
+                    text: squash(&b.body),
+                    sub: vec![],
+                },
+            }
+        })
+        .collect();
+
     let mut sections = Vec::new();
     let mut push = |heading: String, items: Vec<Item>| {
         if !items.is_empty() {
@@ -792,6 +814,7 @@ fn note_sections(
     push(s.questions.into(), ai("question"));
     push(s.quotes.into(), ai("quote"));
     push(s.topics.into(), ai("topic"));
+    push(s.answers.into(), answers);
 
     // What the user wrote, in order, each kind tagged.
     let mut mine: Vec<Item> = blocks
@@ -986,6 +1009,7 @@ mod tests {
             ai("tldr", "Chốt lịch beta"),
             ai("decision", "Ship by Friday"),
             ai("proposal", "Maybe a dark theme"),
+            ai("answer", "Q: Who owns QA?\nA: Nam, from Monday."),
             ai("question", "Who owns QA?"),
             ai("section:done", "Wrote the parser"),
             NewNoteBlock {
@@ -1046,6 +1070,10 @@ mod tests {
         assert!(md.contains("- [x] Send the recap"));
         assert!(md.contains(&format!("- [ ] Deploy beta — {AN} (due thứ Sáu)")));
         assert!(md.contains("## Open questions"));
+        assert!(
+            md.contains("## Saved answers\n\n- Q: Who owns QA?\n  - A: Nam, from Monday."),
+            "{md}"
+        );
         assert!(md.contains("## My notes\n\n- ship date?"));
         assert!(md.contains("- \\- remember the demo"));
         // Consecutive lines of one speaker are one paragraph.
@@ -1068,6 +1096,7 @@ mod tests {
         assert!(md.contains("## Tóm tắt"));
         assert!(md.contains("## Việc cần làm"));
         assert!(md.contains("## Đề xuất\n\n- Maybe a dark theme"));
+        assert!(md.contains("## Câu trả lời đã lưu"));
         assert!(md.contains("(hạn thứ Sáu)"));
         assert!(!md.contains("Bản ghi"));
         let o = ExportOptions {
@@ -1086,6 +1115,8 @@ mod tests {
         assert!(t.starts_with("Weekly sync\n\nDate: 2026-10-02 09:30 UTC\n"));
         assert!(t.contains("\nSummary\n\n• Chốt lịch beta\n"));
         assert!(t.contains("\nProposed\n\n• Maybe a dark theme\n"), "{t}");
+        assert!(t.contains("\nSaved answers\n\n• Q: Who owns QA?\n"), "{t}");
+        assert!(t.contains("A: Nam, from Monday."), "{t}");
         assert!(t.contains("☑ Send the recap"));
         assert!(t.contains(&format!("☐ Deploy beta — {AN} (due thứ Sáu)")));
         assert!(t.contains("\nSpeaker 2 [00:05]\nR&D agrees --> go <b>now</b>\n"));
@@ -1276,6 +1307,7 @@ mod tests {
         assert!(xml.contains("R&amp;D agrees --&gt; go &lt;b&gt;now&lt;/b&gt;"));
         assert!(xml.contains("☑ Send the recap"));
         assert!(xml.contains("Proposed") && xml.contains("Maybe a dark theme"));
+        assert!(xml.contains("Saved answers") && xml.contains("Nam, from Monday."));
         assert!(xml.contains("w:val=\"Title\"") && xml.contains("w:val=\"Heading1\""));
         let mut styles = String::new();
         zip.by_name("word/styles.xml")

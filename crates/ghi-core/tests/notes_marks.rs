@@ -108,3 +108,82 @@ fn three_marks_in_three_line_ids_in_the_prompt() {
         "the silent mark is out"
     );
 }
+
+/// A short meeting with ten saved answers (pinned, up to 1,500 characters each)
+/// puts all of that text in the prompt: the model is opened for it.
+#[test]
+fn saved_answers_count_when_the_context_is_sized() {
+    use ghi_store::store::Provenance;
+    let tmp = tempfile::tempdir().unwrap();
+    let store = Arc::new(
+        Store::open(
+            tmp.path(),
+            Arc::new(MemoryKeyStore::default()),
+            Protection::default(),
+        )
+        .unwrap(),
+    );
+    let m = store.create_meeting(NewMeeting::default()).unwrap().gid;
+    store
+        .add_segments(
+            &m,
+            vec![NewSegment {
+                t0_ms: 0,
+                t1_ms: 3000,
+                text: "chốt lịch beta".into(),
+                lang: Some("vi".into()),
+                ..Default::default()
+            }],
+        )
+        .unwrap();
+    for i in 0..10 {
+        store
+            .add_note_block(
+                &m,
+                ghi_store::store::NewNoteBlock {
+                    kind: "answer".into(),
+                    provenance: Provenance::Ai,
+                    body: format!("Q: {}\nA: {}", "q".repeat(300), "a".repeat(1200 + i)),
+                    anchors: vec![],
+                    pinned: true,
+                },
+            )
+            .unwrap();
+    }
+    store
+        .enqueue_job(
+            Some(&m),
+            NOTES_FINAL_JOB,
+            JOB_PAYLOAD_VERSION,
+            &serde_json::json!({ "lang": "vi" }),
+        )
+        .unwrap();
+    let sized = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let (sz, sn) = (sized.clone(), seen.clone());
+    let (tx, _rx) = bus();
+    let runner = JobRunner::new(
+        store.clone(),
+        tx,
+        vec![Arc::new(NotesJob {
+            kind: NOTES_FINAL_JOB,
+            version: 2,
+            template: ghi_llm::template::builtin("general").unwrap(),
+            llm: Arc::new(move |bytes| {
+                sz.lock().unwrap().push(bytes);
+                Ok(Box::new(Recorder(sn.clone())) as Box<dyn Llm + Send>)
+            }),
+            ready: always_ready(),
+        })],
+    );
+    let (_, outcome) = runner.run_one().expect("a job ran");
+    assert!(matches!(outcome, Ok(Outcome::Done)), "{outcome:?}");
+    let bytes = sized.lock().unwrap()[0];
+    assert!(bytes >= 10 * 1500, "{bytes} bytes sized the context");
+    // And they are in the prompt the model got.
+    let prompt = seen.lock().unwrap()[0].messages[1].content.clone();
+    assert!(
+        prompt.matches("Q: qqqq").count() == 10,
+        "ten saved answers kept"
+    );
+}

@@ -52,12 +52,14 @@ fn notes_text(store: &Store, meeting: &str) -> Result<String, String> {
             "tldr" => "Summary",
             "decision" => "Decision",
             "proposal" => "Proposed, not agreed",
+            "answer" => "Saved answer",
             "question" => "Open question",
             "topic" | "quote" => continue,
             _ if b.provenance == Provenance::User => "Note",
             _ => "Point",
         };
-        lines.push(format!("{label}: {}", b.body.trim()));
+        let body = b.body.split_whitespace().collect::<Vec<_>>().join(" ");
+        lines.push(format!("{label}: {body}"));
     }
     for a in store.action_items(meeting).map_err(store_err)? {
         let owner = name(&a.owner_speaker_gid)
@@ -239,6 +241,17 @@ mod tests {
             },
         )
         .unwrap();
+        s.add_note_block(
+            &m,
+            NewNoteBlock {
+                kind: "answer".into(),
+                provenance: Provenance::Ai,
+                body: "Q: Who owns QA?\nA: Nam.".into(),
+                anchors: Vec::new(),
+                pinned: true,
+            },
+        )
+        .unwrap();
         s.add_action_item(
             &m,
             NewActionItem {
@@ -264,6 +277,8 @@ mod tests {
         // A proposal is its own group, not a "Point", and the model is told so.
         assert!(prompt.contains("Proposed, not agreed: Maybe move support to a new vendor"));
         assert!(!prompt.contains("Point: Maybe"));
+        assert!(prompt.contains("Saved answer: Q: Who owns QA? A: Nam."));
+        assert!(!prompt.contains("Point: Q:"));
         assert!(prompt.contains("never present them as decided"));
         assert!(prompt.contains("Action: Send the deck (owner: Lan) (due: Friday)"));
     }

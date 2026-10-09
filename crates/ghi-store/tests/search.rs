@@ -31,7 +31,7 @@ fn bundled_sqlite_supports_contentless_delete() {
 
 /// A proposed decision is a note block like any other: found by search.
 #[test]
-fn proposals_are_searchable_like_decisions() {
+fn proposals_and_saved_answers_are_searchable_like_decisions() {
     let _g = serial();
     let tmp = tempfile::tempdir().unwrap();
     let (store, _k) = common::open(tmp.path());
@@ -39,6 +39,7 @@ fn proposals_are_searchable_like_decisions() {
     for (kind, body) in [
         ("decision", "Ship the beta on Friday"),
         ("proposal", "Maybe add a dark theme"),
+        ("answer", "Q: Who owns QA?\nA: Nam handles testing."),
     ] {
         store
             .add_note_block(
