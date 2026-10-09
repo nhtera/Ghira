@@ -15,6 +15,10 @@ When Ghira is unsure it chooses **Proposed**. It is the safer way to be wrong: n
 
 You know what was agreed. On a decision, open **Decision options** and choose **Mark as proposed** or **Mark as decided**. The item moves, and counts as **Edited by you**, so **Regenerate notes** keeps it. This works on what Ghira wrote, not on lines you typed yourself.
 
+## Sources
+
+Every sentence and action Ghira writes can link to the moment it came from. Above the notes, **Sources linked 43** says how many of them do. It counts links, not proof: open a source to check that it says what the note says.
+
 ## Exports and search
 
 **Export** puts proposed items in their own **Proposed** section, and the follow-up email lists them as "Proposed, not agreed". Search finds them like any other note. On iPhone they appear under Decisions after the decided ones, with the same chip.
