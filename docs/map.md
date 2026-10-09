@@ -25,7 +25,7 @@ Animations are off when your system asks for reduced motion.
 
 ## On iPhone
 
-The iPhone has an **Outline** at the end of the Notes tab instead of a map: the same sections and points as a list. Tap a point to play its first source.
+The iPhone has an **Outline** instead of a map. It is a collapsed row near the end of the Notes tab, below the notes and **Moments you marked**. Open it to see the same sections and points as a list. Tap a point to play its first source; this works when the audio is on that phone (a meeting recorded on your Mac shows the points without playing them).
 
 ## Limits
 

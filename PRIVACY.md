@@ -47,9 +47,11 @@ redact. Audio is never sent, and neither are the notes you type yourself. Each
 request is recorded on your device (provider, model and token counts, not the
 text), and the meeting is marked as having used cloud AI.
 
-A cloud request carries the transcript text and nothing built from your own
-settings or habits: it leaves out the moments you marked, your glossary
-spellings, and the titles and instructions of your own note templates. If a
+Besides the transcript text and the task (the built-in template, the language
+and speaker names, unless you redact them), a cloud request carries nothing
+built from your own settings or habits: it leaves out the moments you marked,
+your glossary spellings, and the titles and instructions of your own note
+templates. If a
 meeting uses one of your templates, a cloud rewrite uses the built-in General
 template instead and the preview says so.
 

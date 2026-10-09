@@ -21,7 +21,7 @@ Open a meeting, open the **Export** menu, pick your template from the list, and 
 
 ## Notes never lose a section
 
-If you rename a section, remove one or delete the whole template, the notes already written keep every section. A renamed section keeps its notes. A removed one stays in old notes under a plain title made from its name, and is never reused by a new section. Exports show the same sections.
+If you rename a section, remove one or delete the whole template, the notes already written keep every section. A renamed section keeps its notes. A removed one stays in old notes, and is never reused by a new section. Once a section is no longer in the template (or on an iPhone, which does not have your templates), its title is a plain one made from its first name, without accents or punctuation, for example "Went well" for a section that was called "Went well!". Exports show the same sections the same way.
 
 ## Cloud AI
 
@@ -29,4 +29,4 @@ Your template's titles and instructions are **never sent to a cloud model**. If 
 
 ## Where they live
 
-Your templates stay on the computer where you made them. They are not synced. An iPhone shows notes written with them, with the same sections, but you edit templates on the computer.
+Your templates stay on the computer where you made them. They are not synced. An iPhone shows notes written with them, with the same sections but with those plain titles, and you edit templates on the computer.

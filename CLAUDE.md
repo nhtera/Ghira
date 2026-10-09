@@ -187,7 +187,7 @@ Third-party voice profiles are hard-off (`THIRD_PARTY_APPROVED` in `system.rs`,
 store `ThirdPartyApproved` token) until counsel signs off.
 
 Review studio (marks, proposals, answers, packs, templates, map): `ghi-core::marks` is the single
-source of truth for mark → line (the last line starting at or before it, within 10 s; `MarkView.segment`, `MarkedMoment`
+source of truth for mark → line (the last line starting at or before it, within 10 s, else the last line whose span contains it; `MarkView.segment`, `MarkedMoment`
 via `ghi-app` `detail.rs`); coverage is by time overlap of AI sentences and actions only (`covers_marks`: not topics,
 not your notes) and is computed on read; marks steer the LOCAL notes prompt only and never go to cloud. Decisions are
 `decision` or `proposal` blocks (user toggle: `set_decision_status`, kind change → `ai_edited`); `ghi-core::source_check`

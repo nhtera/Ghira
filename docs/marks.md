@@ -11,7 +11,7 @@ When you tag a note on the **Live** screen as **Decision**, **Action** or **Ques
 ## What a mark does
 
 - **Steers the notes.** When the local model writes the notes, it is told which transcript lines you marked and asked to cover each one, in the matching section when the mark has a tag. It still writes everything else as usual.
-- **Sits on a line.** A mark belongs to the last transcript line that started at or before it, if that line ended no more than 10 seconds earlier. A mark in a long silence keeps only its time.
+- **Sits on a line.** A mark belongs to the last transcript line that started at or before it, if that line ended no more than 10 seconds earlier. If people talked over each other and a longer line that started earlier is still running, the mark sits on that line. A mark in a long silence keeps only its time.
 - **Shows in the transcript.** The line shows a star and the mark's tag if it has one.
 - **Shows on the waveform.** The audio bar has a tick for each mark.
 
