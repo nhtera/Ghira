@@ -43,7 +43,7 @@ pub struct ModelArgs {
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct NotesArgs {
-    /// Built-in template: general, one_on_one, standup, sales, interview, client, lecture.
+    /// Built-in template: general, one_on_one, standup, sales, interview, client, lecture, consultation.
     #[arg(long, default_value = "general")]
     pub template: String,
     /// A custom template (TOML), instead of --template.
