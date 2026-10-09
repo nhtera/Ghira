@@ -11,6 +11,8 @@ Open **Settings → Templates**.
 - Optionally add one line about what these meetings are.
 - Add up to **8 sections**. Each has a title and one line (up to 200 characters) saying what belongs in it.
 
+Or describe your meetings in a sentence or two under **Draft from a description** and choose **Draft**. The notes model on your Mac drafts the name, a line about the meetings and some sections. It fills in the form for you to read and change. It needs the notes model installed and a quiet moment (not while you record or notes are being written). Ghira never saves a draft by itself.
+
 Nothing is saved until you choose **Save template**. You can have up to 20 templates. Choose **Edit** or **Delete** on any of yours.
 
 ## Use it

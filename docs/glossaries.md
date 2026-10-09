@@ -17,7 +17,7 @@ Each pack shows how many terms it holds. Packs are bundled with Ghira, so nothin
 
 ## What they do, and what they don't
 
-- The terms go to the model that writes the notes, so it writes them the way they are spelled.
+- The terms that were actually said in the meeting (up to 40, together with your own vocabulary and the people in the calendar event) go to the model that writes the notes, so it writes them the way they are spelled. Terms nobody said are not sent to the model.
 - They **never change the transcript.** The words in the transcript stay what the speech model heard. Fix a wrong word there by hand.
 - Your own words work the same way. Add them under **Custom vocabulary**, or let Ghira learn them from speaker names. See [Settings](settings.md).
 
