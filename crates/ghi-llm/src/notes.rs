@@ -119,6 +119,51 @@ impl Notes {
     }
 }
 
+/// What kind of moment the user marked while recording.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MarkKind {
+    Star,
+    Decision,
+    Action,
+    Question,
+}
+
+impl MarkKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MarkKind::Star => "star",
+            MarkKind::Decision => "decision",
+            MarkKind::Action => "action",
+            MarkKind::Question => "question",
+        }
+    }
+}
+
+/// A moment the user marked, as the transcript line it falls on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MarkHint {
+    /// The transcript line (segment id as in the prompt).
+    pub id: u64,
+    pub kind: MarkKind,
+    /// When it was marked (orders marks when there are too many).
+    pub t_ms: i64,
+}
+
+/// Most marks one prompt carries.
+pub const MAX_MARKS: usize = 24;
+
+/// The marks one prompt carries: at most [`MAX_MARKS`], decision / action /
+/// question before star, then the newest; in line order.
+pub fn pick_marks(marks: &[MarkHint]) -> Vec<MarkHint> {
+    let mut v: Vec<MarkHint> = marks.to_vec();
+    v.sort_by_key(|m| (m.kind == MarkKind::Star, std::cmp::Reverse(m.t_ms), m.id));
+    v.dedup_by_key(|m| (m.id, m.kind));
+    v.truncate(MAX_MARKS);
+    v.sort_by_key(|m| (m.id, m.t_ms));
+    v
+}
+
 #[derive(Debug, Clone)]
 pub struct Options {
     pub template: Template,
@@ -131,6 +176,9 @@ pub struct Options {
     /// Compact notes ([`schema::compact`]): no quotes or topics, fewer items
     /// per list (a phone, where every output token costs time and heat).
     pub compact: bool,
+    /// Moments the user marked: local prompts ask the model to cover them.
+    /// Never part of a cloud request.
+    pub marks: Vec<MarkHint>,
 }
 
 impl Options {
@@ -142,7 +190,13 @@ impl Options {
             max_output_tokens: 2048,
             chunk_minutes: 10,
             compact: false,
+            marks: Vec::new(),
         }
+    }
+
+    /// Tokens the marks block takes in a local prompt.
+    fn marks_tokens(&self) -> u32 {
+        estimate_tokens(&prompt::marks_block(self.lang, &pick_marks(&self.marks)))
     }
 }
 
@@ -172,6 +226,7 @@ pub fn generate(llm: &mut dyn Llm, t: &Transcript, opts: &Options) -> Result<Run
     // Pinned notes are in every prompt too.
     let budget = transcript_budget(llm, opts.max_output_tokens)
         .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
+        .saturating_sub(opts.marks_tokens())
         .max(512);
     let rendered = render(t, &aliases, &all);
     // The estimate is high; count exactly before falling back to map-reduce.
@@ -245,6 +300,7 @@ pub fn generate_steps(
     let mut diag = Diagnostics::default();
     let budget = transcript_budget(llm, opts.max_output_tokens)
         .saturating_sub(estimate_tokens(&opts.pinned.join("\n")))
+        .saturating_sub(opts.marks_tokens())
         .max(512);
     let mut st = match saved {
         Some(s) if s.fingerprint == fingerprint(t) && s.done <= s.parts.len() => s,
@@ -309,9 +365,22 @@ pub fn request(
         ids: &ids,
         speakers: aliases.aliases(),
     };
+    // Marks are local-only: a cloud request never carries them.
+    let marks = match dialect {
+        Dialect::Local => {
+            let on_page: Vec<MarkHint> = opts
+                .marks
+                .iter()
+                .copied()
+                .filter(|m| ids.contains(&m.id))
+                .collect();
+            pick_marks(&on_page)
+        }
+        Dialect::Cloud => Vec::new(),
+    };
     let user = format!(
         "{}\n{}",
-        prompt::notes_task(&opts.template, opts.lang, &opts.pinned),
+        prompt::notes_task(&opts.template, opts.lang, &opts.pinned, &marks),
         prompt::transcript_block(opts.lang, &render(t, aliases, segments))
     );
     let req = Request {
@@ -695,7 +764,20 @@ fn reduce(
         facts.truncate(facts.len() * 3 / 4);
         diag.truncated_lists += 1;
     }
-    let cited: HashSet<u64> = facts.iter().flat_map(|f| f.cites.iter().copied()).collect();
+    // Marked lines may be cited too, even when the map steps left them out.
+    let marks = pick_marks(
+        &opts
+            .marks
+            .iter()
+            .copied()
+            .filter(|m| t.get(m.id).is_some())
+            .collect::<Vec<_>>(),
+    );
+    let cited: HashSet<u64> = facts
+        .iter()
+        .flat_map(|f| f.cites.iter().copied())
+        .chain(marks.iter().map(|m| m.id))
+        .collect();
     let lines = render_facts(&facts);
     let mut ids: Vec<u64> = cited.iter().copied().collect();
     ids.sort_unstable();
@@ -706,7 +788,7 @@ fn reduce(
     };
     let user = format!(
         "{}\n{}",
-        prompt::notes_task(&opts.template, opts.lang, &opts.pinned),
+        prompt::notes_task(&opts.template, opts.lang, &opts.pinned, &marks),
         prompt::reduce_block(opts.lang, &lines)
     );
     let req = Request {
@@ -785,6 +867,15 @@ fn map_part(
         ids: &ids,
         speakers: aliases.aliases(),
     };
+    let in_part: HashSet<u64> = ids.iter().copied().collect();
+    let marks = pick_marks(
+        &opts
+            .marks
+            .iter()
+            .copied()
+            .filter(|m| in_part.contains(&m.id))
+            .collect::<Vec<_>>(),
+    );
     let req = Request {
         messages: vec![
             Message::system(prompt::map_system(opts.lang)),
@@ -793,6 +884,7 @@ fn map_part(
                 n,
                 of,
                 &render(t, aliases, &segs),
+                &marks,
             )),
         ],
         schema: Some(if opts.compact {
@@ -807,7 +899,6 @@ fn map_part(
         },
         temperature: 0.3,
     };
-    let in_part: HashSet<u64> = ids.iter().copied().collect();
     let allowed = |id: u64| in_part.contains(&id);
     let cites = Cites::new(&allowed);
     let outcome = run::complete_json(llm, req, opts.lang, diag, |v, d| {
@@ -1182,5 +1273,137 @@ pub(crate) mod tests {
         let parts = chunk(&t, &Aliases::new(&t), 1000, 10);
         assert!(parts.len() > 1);
         assert_eq!(parts.iter().map(Vec::len).sum::<usize>(), 30);
+    }
+
+    fn hint(id: u64, kind: MarkKind, t_ms: i64) -> MarkHint {
+        MarkHint { id, kind, t_ms }
+    }
+
+    #[test]
+    fn marks_are_capped_tagged_first_then_newest() {
+        let mut marks: Vec<MarkHint> = (0..30)
+            .map(|i| hint(i, MarkKind::Star, i as i64 * 1000))
+            .collect();
+        marks.push(hint(100, MarkKind::Decision, 0));
+        marks.push(hint(100, MarkKind::Decision, 0));
+        marks.push(hint(101, MarkKind::Question, 1));
+        let picked = pick_marks(&marks);
+        assert_eq!(picked.len(), MAX_MARKS);
+        let ids: Vec<u64> = picked.iter().map(|m| m.id).collect();
+        assert!(ids.contains(&100) && ids.contains(&101), "tagged marks win");
+        assert_eq!(ids.iter().filter(|&&i| i == 100).count(), 1, "repeats go");
+        assert!(!ids.contains(&0), "the oldest stars go first");
+        assert!(ids.contains(&29));
+        assert!(ids.windows(2).all(|w| w[0] <= w[1]), "in line order");
+    }
+
+    #[test]
+    fn single_pass_prompt_lists_marks_in_english_and_vietnamese() {
+        let t = meeting();
+        let marks = vec![
+            hint(0, MarkKind::Decision, 1000),
+            hint(2, MarkKind::Star, 9000),
+            hint(1, MarkKind::Action, 5000),
+            // Not a line of this transcript: never reaches the prompt.
+            hint(77, MarkKind::Star, 9500),
+        ];
+        for lang in [OutLang::En, OutLang::Vi] {
+            let mut o = Options::new(template::builtin("general").unwrap(), lang);
+            o.marks = marks.clone();
+            let mut llm = Scripted::new(&[&reply(r#"{"tldr":[{"text":"ok","cite":[0]}]}"#)]);
+            generate(&mut llm, &t, &o).unwrap();
+            let prompt = &llm.requests[0].messages[1].content;
+            assert!(
+                prompt.contains("[s0 decision] [s1 action] [s2 star]"),
+                "{prompt}"
+            );
+            assert!(!prompt.contains("s77"));
+            let want = match lang {
+                OutLang::En => "The user marked these moments as important",
+                OutLang::Vi => "Người dùng đã đánh dấu các thời điểm quan trọng",
+            };
+            assert!(prompt.contains(want));
+            // After the output keys, before the transcript.
+            assert!(prompt.find(want).unwrap() < prompt.find("[s0] (00:00)").unwrap());
+        }
+        let mut llm = Scripted::new(&[&reply(r#"{"tldr":[{"text":"ok","cite":[0]}]}"#)]);
+        generate(&mut llm, &t, &opts()).unwrap();
+        let prompt = &llm.requests[0].messages[1].content;
+        assert!(!prompt.contains("đánh dấu"), "no marks, no block");
+    }
+
+    #[test]
+    fn a_cloud_request_never_carries_marks() {
+        let t = meeting();
+        let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        o.marks = vec![hint(1, MarkKind::Decision, 5000)];
+        let aliases = Aliases::new(&t);
+        let all: Vec<&Segment> = t.segments().iter().collect();
+        let (local, _) = request(&t, &all, &aliases, &o, Dialect::Local);
+        let (cloud, _) = request(&t, &all, &aliases, &o, Dialect::Cloud);
+        assert!(local.messages[1].content.contains("[s1 decision]"));
+        let sent = serde_json::to_string(&cloud.messages).unwrap();
+        assert!(!sent.contains("marked") && !sent.contains("[s1 decision]"));
+    }
+
+    #[test]
+    fn marks_shrink_the_transcript_budget() {
+        let mut llm = Scripted::new(&[]);
+        llm.context = 8192;
+        let plain = transcript_budget(&llm, 2048);
+        let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        o.marks = (0..10).map(|i| hint(i, MarkKind::Decision, 0)).collect();
+        assert!(o.marks_tokens() > 0);
+        let with = plain.saturating_sub(o.marks_tokens());
+        assert!(with < plain);
+    }
+
+    /// Marks in the first and the last of three parts: each part's prompt
+    /// carries only its own, and the reduce step may cite both even though no
+    /// fact did (a >32k-token transcript, so it cannot be one call).
+    #[test]
+    fn marks_in_early_and_late_parts_both_reach_the_reduce() {
+        let segs: Vec<_> = (0..60u64)
+            .map(|i| {
+                let sp = if i % 2 == 0 { "S1" } else { "S2" };
+                let text = format!("line{i} {}", "word ".repeat(330));
+                seg(i, i as f64 * 30.0, i as f64 * 30.0 + 25.0, sp, &text, "en")
+            })
+            .collect();
+        let t = Transcript::new(segs).unwrap();
+        let total: u32 = t.segments().iter().map(|s| estimate_tokens(&s.text)).sum();
+        assert!(total > 32_000, "{total}");
+        let fact = |cite: u64| {
+            format!(
+                r#"{{"facts":[{{"kind":"point","text":"P{cite}","speaker":null,"owner":null,"due":null,"cite":[{cite}]}}]}}"#
+            )
+        };
+        let (f1, f2, f3) = (fact(5), fact(25), fact(45));
+        let reduce = reply(
+            r#"{"decisions":[{"text":"Early","cite":[3]}],"tldr":[{"text":"Late","cite":[55]},{"text":"Unmarked","cite":[30]}]}"#,
+        );
+        let mut llm = Scripted::new(&[&f1, &f2, &f3, &reduce]);
+        let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        o.marks = vec![
+            hint(3, MarkKind::Decision, 90_000),
+            hint(55, MarkKind::Star, 1_650_000),
+        ];
+        let run = generate_steps(&mut llm, &t, &o, None, &mut |_| {}).unwrap();
+        assert_eq!(run.strategy, Strategy::MapReduce { parts: 3 });
+        let map = |i: usize| llm.requests[i].messages[1].content.clone();
+        assert!(map(0).contains("[s3 decision]") && !map(0).contains("s55 star"));
+        assert!(!map(1).contains("marked these") && !map(1).contains("[s3 decision]"));
+        assert!(map(2).contains("[s55 star]") && !map(2).contains("[s3 decision]"));
+        let reduce_req = &llm.requests[3];
+        assert!(
+            reduce_req.messages[1]
+                .content
+                .contains("[s3 decision] [s55 star]")
+        );
+        let schema = reduce_req.schema.as_ref().unwrap().to_string();
+        assert!(schema.contains("3") && schema.contains("55"));
+        assert_eq!(run.notes.decisions[0].citations, vec![3]);
+        let tldr: Vec<&str> = run.notes.tldr.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(tldr, ["Late"], "55 reachable, unmarked uncited 30 is not");
     }
 }

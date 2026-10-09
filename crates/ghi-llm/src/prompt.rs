@@ -8,6 +8,7 @@
 //! instructions"). The schema and the plain-text check are what actually
 //! bound the output; this line just makes compliance more likely.
 
+use crate::notes::MarkHint;
 use crate::template::{OutLang, Template};
 
 pub(crate) fn notes_system(lang: OutLang) -> String {
@@ -38,7 +39,12 @@ Chỉ trả lời bằng JSON."
 }
 
 /// What each output key means, then the template's own sections.
-pub(crate) fn notes_task(template: &Template, lang: OutLang, pinned: &[String]) -> String {
+pub(crate) fn notes_task(
+    template: &Template,
+    lang: OutLang,
+    pinned: &[String],
+    marks: &[MarkHint],
+) -> String {
     let mut s = String::new();
     match lang {
         OutLang::En => {
@@ -83,7 +89,32 @@ pub(crate) fn notes_task(template: &Template, lang: OutLang, pinned: &[String]) 
     for p in pinned {
         s.push_str(&format!("- {p}\n"));
     }
+    s.push_str(&marks_block(lang, marks));
     s
+}
+
+/// The moments the user marked, to be covered (empty when there are none).
+pub(crate) fn marks_block(lang: OutLang, marks: &[MarkHint]) -> String {
+    if marks.is_empty() {
+        return String::new();
+    }
+    let list: Vec<String> = marks
+        .iter()
+        .map(|m| format!("[s{} {}]", m.id, m.kind.as_str()))
+        .collect();
+    let list = list.join(" ");
+    match lang {
+        OutLang::En => format!(
+            "\nThe user marked these moments as important: {list}\n\
+Cover each with an item citing that line, in the matching section when it is tagged \
+(decision, action, question); also cover everything else as usual.\n"
+        ),
+        OutLang::Vi => format!(
+            "\nNgười dùng đã đánh dấu các thời điểm quan trọng sau: {list}\n\
+Hãy có một mục trích dẫn mỗi dòng đó, đặt đúng phần nếu có gắn nhãn \
+(decision, action, question); đồng thời vẫn nêu mọi nội dung khác như thường lệ.\n"
+        ),
+    }
 }
 
 /// The transcript, then the output language again: last in the prompt,
@@ -116,14 +147,21 @@ Chỉ trả lời bằng JSON."
     }
 }
 
-pub(crate) fn map_task(lang: OutLang, part: usize, parts: usize, lines: &str) -> String {
+pub(crate) fn map_task(
+    lang: OutLang,
+    part: usize,
+    parts: usize,
+    lines: &str,
+    marks: &[MarkHint],
+) -> String {
+    let marks = marks_block(lang, marks);
     match lang {
         OutLang::En => format!(
-            "Part {part} of {parts} of the meeting.\n\n{}",
+            "Part {part} of {parts} of the meeting.\n{marks}\n{}",
             transcript_block(lang, lines)
         ),
         OutLang::Vi => format!(
-            "Phần {part}/{parts} của cuộc họp.\n\n{}",
+            "Phần {part}/{parts} của cuộc họp.\n{marks}\n{}",
             transcript_block(lang, lines)
         ),
     }

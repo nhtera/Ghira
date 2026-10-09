@@ -212,7 +212,9 @@ pub fn plan(
     let (request, state): (Request, Prepared2) = match task {
         Task::Notes { template, lang } => {
             // Transcript text only: never the user's own notes (so no
-            // `pinned` either; what they wrote stays on this device).
+            // `pinned` either; what they wrote stays on this device). Marks
+            // stay local too: `Options::marks` is empty here, and the cloud
+            // dialect leaves it out regardless.
             let opts = Options::new(template, lang);
             let all: Vec<&ghi_llm::Segment> = red.segments().iter().collect();
             let (req, _) = notes::request(&red, &all, &aliases, &opts, Dialect::Cloud);
@@ -464,6 +466,40 @@ mod tests {
             panic!()
         };
         assert_eq!(again.preview.sha256, p.preview.sha256);
+    }
+
+    #[test]
+    fn the_preview_holds_no_marks_block() {
+        let (_tmp, store) = store();
+        let m = meeting(&store);
+        store
+            .add_mark(&m, 1000, ghi_store::store::MarkTag::Decision)
+            .unwrap();
+        store
+            .add_mark(&m, 2000, ghi_store::store::MarkTag::Star)
+            .unwrap();
+        let Planned::Send(p) = plan(
+            &store,
+            &m,
+            CloudProvider::preset("openai", "gpt-4.1-mini").unwrap(),
+            notes_task(),
+            true,
+            &[],
+            &Prices::builtin(),
+        )
+        .unwrap() else {
+            panic!("a request")
+        };
+        let body = String::from_utf8_lossy(&p.prepared.body).to_string();
+        for text in [&p.preview.payload, &body] {
+            assert!(text.contains("pricing deck"), "the transcript is sent");
+            assert!(!text.contains("marked these"), "{text}");
+            assert!(
+                !text.contains("decision]") && !text.contains("star]"),
+                "{text}"
+            );
+        }
+        // The same marks do reach a local prompt (see tests/notes_marks.rs).
     }
 
     #[test]

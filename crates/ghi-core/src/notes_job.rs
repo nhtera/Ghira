@@ -428,6 +428,10 @@ impl JobHandler for NotesJob {
                     .unwrap_or(OutLang::En),
             );
             opts.pinned = kept_texts(ctx.store, meeting)?;
+            // What the user marked while recording steers the local model; a
+            // cloud send never gets it (`cloud::plan` builds its own options).
+            let marks = ctx.store.marks(meeting).map_err(store_err)?;
+            opts.marks = crate::marks::hints(&crate::marks::mark_lines(&marks, &segs));
             let bytes: usize = segs.iter().map(|s| s.text.len()).sum();
             let mut llm = (self.llm)(bytes)?;
             // The model's own progress, as the meeting's: reading the

@@ -18,6 +18,7 @@ pub mod import;
 pub mod index_job;
 pub mod jobs;
 pub mod live;
+pub mod marks;
 pub mod notes_job;
 pub mod pages;
 pub mod persist;
