@@ -256,8 +256,10 @@
       "decisions": "Quyết định",
       "actionItems": "Việc cần làm",
       "openQuestions": "Câu hỏi mở",
-      "keyQuotes": "Trích dẫn chính"
+      "keyQuotes": "Trích dẫn chính",
+      "marked": "Thời điểm bạn đã đánh dấu"
     },
+    "markedAt": "Bạn đã đánh dấu chỗ này lúc {{time}}",
     "yourNoteLabel": "Ghi chú của bạn",
     "enhancedLabel": "Ý từ bản ghi",
     "blockLabel": "Ghi chú",
@@ -725,7 +727,7 @@
       },
       "packs": {
         "title": "Bộ thuật ngữ",
-        "hint": "Thuật ngữ thông dụng của một lĩnh vực. Bản ghi cuối được sửa theo các từ này, nhưng chỉ sửa lỗi gần đúng của từ dài, nên từ thường ngày vẫn giữ nguyên như đã nói.",
+        "hint": "Thuật ngữ thông dụng của một lĩnh vực. Giúp ghi chú viết đúng các thuật ngữ đã được nói. Không bao giờ thay đổi bản ghi.",
         "names": {
           "medical": "Y tế",
           "legal": "Pháp lý",

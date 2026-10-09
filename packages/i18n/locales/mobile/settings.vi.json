@@ -162,7 +162,7 @@
       },
       "packs": {
         "header": "Bộ thuật ngữ",
-        "footer": "Thuật ngữ thông dụng của một lĩnh vực. Bản ghi cuối được sửa theo các từ này, nhưng chỉ sửa lỗi gần đúng của từ dài, nên từ thường ngày vẫn giữ nguyên như đã nói.",
+        "footer": "Thuật ngữ thông dụng của một lĩnh vực. Giúp ghi chú viết đúng các thuật ngữ đã được nói. Không bao giờ thay đổi bản ghi.",
         "names": {
           "medical": "Y tế",
           "legal": "Pháp lý",

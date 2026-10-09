@@ -163,7 +163,7 @@
       },
       "packs": {
         "header": "Glossary packs",
-        "footer": "Common terms for a field. The final transcript is corrected towards them, but only close misspellings of longer terms, so everyday words stay as spoken.",
+        "footer": "Common terms for a field. They help the notes spell the terms that were said. They never change the transcript.",
         "names": {
           "medical": "Medical",
           "legal": "Legal",

@@ -27,7 +27,7 @@ pub const SYNCED_KEYS: [&str; 8] = [
 ];
 
 /// The glossary packs that exist (`ghi-core` `glossaries/`): `<domain>-<lang>`.
-/// `vocabulary.packs` is a list of these.
+/// `vocabulary.packs` is a list of pack ids (see [`is_pack_id`]).
 pub const PACK_IDS: [&str; 8] = [
     "medical-en",
     "medical-vi",
@@ -44,6 +44,22 @@ const APP_KEY: &str = "app";
 const MAX_TEXT: usize = 4_000;
 const MAX_TERMS: usize = 10_000;
 const MAX_TERM_LEN: usize = 512;
+
+/// Most pack ids a synced list may hold.
+const MAX_PACKS: usize = 32;
+
+/// The shape of a pack id: `<domain>-<lang>`, lowercase, at most 32 bytes. Any
+/// such id syncs; only [`PACK_IDS`] are applied.
+pub fn is_pack_id(id: &str) -> bool {
+    let Some((domain, lang)) = id.split_once('-') else {
+        return false;
+    };
+    id.len() <= 32
+        && !domain.is_empty()
+        && domain.bytes().all(|b| b.is_ascii_lowercase())
+        && lang.len() == 2
+        && lang.bytes().all(|b| b.is_ascii_lowercase())
+}
 
 /// Whether `key` is on the allowlist.
 pub fn is_synced_key(key: &str) -> bool {
@@ -74,9 +90,11 @@ fn parse_value(key: &str, value_json: &str) -> Result<Value> {
                 && a.iter()
                     .all(|t| t.as_str().is_some_and(|s| s.len() <= MAX_TERM_LEN))
         }),
+        // Any `<domain>-<lang>` id: a newer peer may know packs this build does
+        // not, and dropping its list here would have last-writer-wins wipe it.
+        // The app keeps only the ids it knows when it reads them.
         "vocabulary.packs" => v.as_array().is_some_and(|a| {
-            a.iter()
-                .all(|t| t.as_str().is_some_and(|s| PACK_IDS.contains(&s)))
+            a.len() <= MAX_PACKS && a.iter().all(|t| t.as_str().is_some_and(is_pack_id))
         }),
         _ => false,
     };

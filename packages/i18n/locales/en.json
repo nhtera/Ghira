@@ -268,8 +268,10 @@
       "decisions": "Decisions",
       "actionItems": "Action items",
       "openQuestions": "Open questions",
-      "keyQuotes": "Key quotes"
+      "keyQuotes": "Key quotes",
+      "marked": "Moments you marked"
     },
+    "markedAt": "You marked this at {{time}}",
     "yourNoteLabel": "Your note",
     "enhancedLabel": "Points from the transcript",
     "blockLabel": "Note",
@@ -743,7 +745,7 @@
       },
       "packs": {
         "title": "Glossary packs",
-        "hint": "Common terms for a field. The final transcript is corrected towards them, but only close misspellings of longer terms, so everyday words stay as spoken.",
+        "hint": "Common terms for a field. They help the notes spell the terms that were said. They never change the transcript.",
         "names": {
           "medical": "Medical",
           "legal": "Legal",

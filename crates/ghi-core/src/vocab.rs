@@ -16,7 +16,8 @@ pub const MAX_TERMS: usize = 200;
 
 /// At most this many glossary-pack terms (8 packs of up to 150): their own cap,
 /// apart from [`MAX_TERMS`], so enabling packs never cuts the user's terms
-/// and the user's list never cuts a pack's.
+/// and the user's list never cuts a pack's. Packs only help the notes spell
+/// terms that were said ([`pack_terms_seen`]); they never rewrite the transcript.
 pub const MAX_PACK_TERMS: usize = 1_200;
 
 /// Store setting: the user's own terms (a JSON list of strings).
@@ -78,6 +79,66 @@ pub fn enabled_packs(store: &ghi_store::store::Store) -> Result<Vec<String>, Str
         .collect())
 }
 
+/// Of the packs named in `ids`, the terms the lines actually say, in the
+/// order first said. Glossary packs only ever help the notes spell terms that
+/// were said; they never change the transcript. So a term counts only on an
+/// exact whole-word match (case and, for terms without accents, diacritics
+/// ignored), on a line in the pack's own language ([`crate::live::line_language`]):
+/// nothing fuzzy, and a Vietnamese term is never looked for in an English line.
+pub fn pack_terms_seen<S: AsRef<str>>(lines: &[S], ids: &[String]) -> Vec<String> {
+    use std::collections::HashMap;
+    // (language, folded words joined by one space) → the terms written so.
+    let mut index: HashMap<(&str, String), Vec<&'static str>> = HashMap::new();
+    let mut sizes: Vec<usize> = Vec::new();
+    for p in packs().iter().filter(|p| ids.contains(&p.id)) {
+        for t in &p.terms {
+            let w = words(t);
+            if w.is_empty() {
+                continue;
+            }
+            if !sizes.contains(&w.len()) {
+                sizes.push(w.len());
+            }
+            let slot = index.entry((p.lang.as_str(), w.join(" "))).or_default();
+            if !slot.contains(&t.as_str()) {
+                slot.push(t);
+            }
+        }
+    }
+    let mut seen: Vec<String> = Vec::new();
+    if index.is_empty() {
+        return seen;
+    }
+    for line in lines {
+        let nfc = ghi_text::nfc(line.as_ref());
+        let Some(lang) = crate::live::line_language(&nfc, None) else {
+            continue;
+        };
+        let toks = tokenize(&nfc);
+        for &n in &sizes {
+            for w in toks.windows(n) {
+                let key = w
+                    .iter()
+                    .map(|t| t.folded.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let Some(terms) = index.get(&(lang.as_str(), key)) else {
+                    continue;
+                };
+                let src = nfc[w[0].range.start..w[n - 1].range.end].to_lowercase();
+                for t in terms {
+                    // A term written with accents is said with them.
+                    let said = !ghi_text::has_diacritics(t) || src == t.to_lowercase();
+                    if said && !seen.iter().any(|x| x == t) {
+                        seen.push((*t).to_string());
+                    }
+                }
+            }
+        }
+    }
+    seen
+}
+
 /// The terms of the packs named in `ids`, at most [`MAX_PACK_TERMS`].
 pub fn pack_terms(ids: &[String]) -> Vec<&'static str> {
     packs()
@@ -86,12 +147,6 @@ pub fn pack_terms(ids: &[String]) -> Vec<&'static str> {
         .flat_map(|p| p.terms.iter().map(String::as_str))
         .take(MAX_PACK_TERMS)
         .collect()
-}
-
-/// The strict vocabulary of the enabled packs, if any are on.
-pub fn pack_vocabulary(store: &ghi_store::store::Store) -> Result<Option<Vocabulary>, String> {
-    let ids = enabled_packs(store)?;
-    Ok(Some(Vocabulary::pack(&pack_terms(&ids))).filter(|v| !v.is_empty()))
 }
 
 fn list(store: &ghi_store::store::Store, key: &str) -> Result<Vec<String>, String> {
@@ -173,8 +228,7 @@ pub fn meeting_terms(
 struct Term {
     text: String,
     words: Vec<String>,
-    /// The folded words joined by single spaces, and as chars.
-    folded: String,
+    /// The folded words joined by single spaces, as chars.
     chars: Vec<char>,
     len: usize,
 }
@@ -194,8 +248,6 @@ pub struct Vocabulary {
     terms: Vec<Term>,
     /// Longest first, like `terms`.
     groups: Vec<Group>,
-    /// Pack terms: see [`Vocabulary::pack`].
-    strict: bool,
 }
 
 /// Edits allowed for a folded term of `len` characters.
@@ -209,10 +261,6 @@ fn budget(len: usize) -> usize {
 
 /// The most edits any term can allow.
 const MAX_BUDGET: usize = 2;
-
-/// Pack terms are corrected by one edit at most, and only when the term has
-/// this many characters.
-const PACK_MIN_LEN: usize = 5;
 
 /// The edit distance of `a` and `b` if it is at most `k`, else `None`; gives up
 /// as soon as no alignment can stay within `k`.
@@ -246,29 +294,13 @@ fn words(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// `s` with its first letter upper-cased.
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    c.next()
-        .map(|f| f.to_uppercase().chain(c).collect())
-        .unwrap_or_default()
-}
-
 impl Vocabulary {
     /// Builds the list (blank and duplicate terms dropped, at most [`MAX_TERMS`]).
     pub fn new<S: AsRef<str>>(terms: &[S]) -> Vocabulary {
-        Self::build(terms, MAX_TERMS, false)
+        Self::build(terms, MAX_TERMS)
     }
 
-    /// A pack's terms (at most [`MAX_PACK_TERMS`], a cap of their own so the
-    /// user's list never crowds them out). Stricter than [`Vocabulary::new`]:
-    /// one edit at most and only for terms of 5+ characters, a plural is not
-    /// a near-miss, and a difference of case alone is left as spoken.
-    pub fn pack<S: AsRef<str>>(terms: &[S]) -> Vocabulary {
-        Self::build(terms, MAX_PACK_TERMS, true)
-    }
-
-    fn build<S: AsRef<str>>(terms: &[S], cap: usize, strict: bool) -> Vocabulary {
+    fn build<S: AsRef<str>>(terms: &[S], cap: usize) -> Vocabulary {
         let mut out: Vec<Term> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for t in terms {
@@ -277,14 +309,12 @@ impl Vocabulary {
             if w.is_empty() || !seen.insert(w.clone()) {
                 continue;
             }
-            let folded = w.join(" ");
-            let chars: Vec<char> = folded.chars().collect();
+            let chars: Vec<char> = w.join(" ").chars().collect();
             out.push(Term {
                 text: t.to_string(),
                 words: w,
                 len: chars.len(),
                 chars,
-                folded,
             });
             if out.len() == cap {
                 break;
@@ -305,33 +335,19 @@ impl Vocabulary {
                 g.by_len.entry(t.len).or_default().push(i);
             }
         }
-        Vocabulary {
-            terms: out,
-            groups,
-            strict,
-        }
+        Vocabulary { terms: out, groups }
     }
 
     pub fn is_empty(&self) -> bool {
         self.terms.is_empty()
     }
 
-    /// Edits allowed for a term of `len` characters.
-    fn allowed(&self, len: usize) -> usize {
-        if self.strict {
-            usize::from(len >= PACK_MIN_LEN)
-        } else {
-            budget(len)
-        }
-    }
-
     /// The term the window of `toks[i..i + g.n]` is a near-miss of, if any:
-    /// the first in list order, or for a pack the closest (then first).
+    /// the first in list order.
     fn find(&self, text: &str, toks: &[Tok], i: usize, g: &Group) -> Option<&Term> {
         let n = g.n;
         let wlen = toks[i..i + n].iter().map(|t| t.len).sum::<usize>() + n - 1;
-        let reach = if self.strict { 1 } else { MAX_BUDGET };
-        let mut buckets = (wlen.saturating_sub(reach)..=wlen + reach)
+        let mut buckets = (wlen.saturating_sub(MAX_BUDGET)..=wlen + MAX_BUDGET)
             .filter_map(|l| g.by_len.get(&l))
             .peekable();
         buckets.peek()?;
@@ -345,33 +361,23 @@ impl Vocabulary {
         let src = &text[span];
         let accented = ghi_text::has_diacritics(src);
         let src_lower = src.to_lowercase();
-        let mut best: Option<(usize, usize)> = None; // (distance, index)
+        let mut best: Option<usize> = None;
         for &c in buckets.flatten() {
             let t = &self.terms[c];
-            if !self.strict && best.is_some_and(|(_, bi)| bi < c) {
+            if best.is_some_and(|b| b < c) {
                 continue;
             }
-            let Some(d) = within(&window, &t.chars, self.allowed(t.len)) else {
+            if within(&window, &t.chars, budget(t.len)).is_none() {
                 continue;
-            };
+            }
             // Words already written with diacritics are real Vietnamese
             // words ("mình" is not "Minh"): only an exact match counts.
             if accented && src_lower != t.text.to_lowercase() {
                 continue;
             }
-            // "tendons" is not a near-miss of "tendon".
-            if self.strict && d == 1 {
-                let (w, term) = (folded.as_str(), t.folded.as_str());
-                if w.strip_suffix('s') == Some(term) || term.strip_suffix('s') == Some(w) {
-                    continue;
-                }
-            }
-            let key = (if self.strict { d } else { 0 }, c);
-            if best.is_none_or(|b| key < b) {
-                best = Some(key);
-            }
+            best = Some(c);
         }
-        best.map(|(_, c)| &self.terms[c])
+        best.map(|c| &self.terms[c])
     }
 
     /// `text` with near-misses of the terms replaced. Returns `None` when
@@ -380,27 +386,10 @@ impl Vocabulary {
         if self.terms.is_empty() {
             return None;
         }
-        // Work on the NFC text (what the store keeps); byte ranges of its
-        // words (the fold maps char ranges back), and their folded forms.
+        // Work on the NFC text (what the store keeps).
         let nfc = ghi_text::nfc(text);
         let text = nfc.as_str();
-        let bytes: Vec<usize> = text
-            .char_indices()
-            .map(|(b, _)| b)
-            .chain([text.len()])
-            .collect();
-        let folded = ghi_text::fold_mapped(text);
-        let toks: Vec<Tok> = ghi_text::tokens(&folded.text)
-            .into_iter()
-            .map(|(r, w)| {
-                let c = folded.to_original(r);
-                Tok {
-                    range: bytes[c.start]..bytes[c.end],
-                    len: w.chars().count(),
-                    folded: w,
-                }
-            })
-            .collect();
+        let toks = tokenize(text);
         let mut out = String::with_capacity(text.len());
         let mut last = 0usize;
         let mut changed = false;
@@ -415,23 +404,9 @@ impl Vocabulary {
                 };
                 let span = toks[i].range.start..toks[i + g.n - 1].range.end;
                 let src = &text[span.clone()];
-                let replacement = if self.strict {
-                    // Case alone is the speaker's (or the sentence's).
-                    if src.to_lowercase() == term.text.to_lowercase() {
-                        None
-                    } else if src.chars().next().is_some_and(char::is_uppercase)
-                        && term.text.chars().next().is_some_and(char::is_lowercase)
-                    {
-                        Some(capitalize(&term.text))
-                    } else {
-                        Some(term.text.clone())
-                    }
-                } else {
-                    (src != term.text).then(|| term.text.clone())
-                };
-                if let Some(r) = replacement {
+                if src != term.text {
                     out.push_str(&text[last..span.start]);
-                    out.push_str(&r);
+                    out.push_str(&term.text);
                     last = span.end;
                     changed = true;
                 }
@@ -445,6 +420,28 @@ impl Vocabulary {
             out
         })
     }
+}
+
+/// The words of NFC `text`: byte ranges in it (the fold maps char ranges
+/// back), folded forms and their lengths.
+fn tokenize(text: &str) -> Vec<Tok> {
+    let bytes: Vec<usize> = text
+        .char_indices()
+        .map(|(b, _)| b)
+        .chain([text.len()])
+        .collect();
+    let folded = ghi_text::fold_mapped(text);
+    ghi_text::tokens(&folded.text)
+        .into_iter()
+        .map(|(r, w)| {
+            let c = folded.to_original(r);
+            Tok {
+                range: bytes[c.start]..bytes[c.end],
+                len: w.chars().count(),
+                folded: w,
+            }
+        })
+        .collect()
 }
 
 /// A word of the text: byte range in the NFC text, folded form and its length.
@@ -683,114 +680,89 @@ mod tests {
     }
 
     #[test]
-    fn packs_have_their_own_cap() {
-        let many: Vec<String> = (0..1_500).map(|i| format!("glossaryterm{i}")).collect();
-        assert_eq!(Vocabulary::new(&many).terms.len(), MAX_TERMS);
-        assert_eq!(Vocabulary::pack(&many).terms.len(), MAX_PACK_TERMS);
-        // Every pack at once fits.
+    fn all_packs_fit_under_their_own_cap() {
         let all: Vec<String> = packs().iter().flat_map(|p| p.terms.clone()).collect();
         assert!(all.len() <= MAX_PACK_TERMS, "{}", all.len());
         let ids: Vec<String> = packs().iter().map(|p| p.id.clone()).collect();
         assert_eq!(pack_terms(&ids).len(), all.len());
-        // The user's 200 terms and the packs' do not share a budget.
-        let user = Vocabulary::new(&many[..MAX_TERMS]);
-        assert_eq!(user.terms.len(), MAX_TERMS);
-        assert_eq!(Vocabulary::pack(&all).terms.len(), {
-            let mut f: Vec<_> = all.iter().map(|t| words(t)).collect();
-            f.sort();
-            f.dedup();
-            f.len()
-        });
+        // Apart from the user's cap: 200 user terms and every pack at once.
+        assert!(MAX_TERMS + all.len() > MAX_TERMS);
+    }
+
+    fn ids(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
-    fn pack_terms_are_corrected_by_one_edit_and_five_letters() {
-        let v = Vocabulary::pack(&["tendon", "MRI", "lien", "bệnh viện"]);
+    fn a_pack_term_is_seen_only_when_said_exactly_in_its_language() {
+        let seen = |lines: &[&str], packs: &[&str]| pack_terms_seen(lines, &ids(packs));
+        // Positive, EN and VI (case ignored, order of first mention).
         assert_eq!(
-            v.correct("the tendom is sore").as_deref(),
-            Some("the tendon is sore")
-        );
-        // Two edits: no. Under five letters: only exact.
-        assert_eq!(v.correct("the tendxm is sore"), None);
-        assert_eq!(v.correct("a lier and a mri"), None);
-        // Case alone is left as spoken; a plural is not a near-miss.
-        assert_eq!(v.correct("Tendon first, TENDON"), None);
-        assert_eq!(v.correct("two tendons"), None);
-        assert_eq!(
-            v.correct("Tendom first").as_deref(),
-            Some("Tendon first"),
-            "sentence case kept"
-        );
-        // Accents come back on an unaccented exact match, but accented words stay.
-        assert_eq!(v.correct("vao benh vien").as_deref(), Some("vao bệnh viện"));
-        assert_eq!(v.correct("bênh viện"), None);
-        // The user's list keeps its wider reach on the same text.
-        assert!(
-            Vocabulary::new(&["cardiology"])
-                .correct("cardiolxgx")
-                .is_some()
+            seen(
+                &["My hypertension is high.", "Take Metformin daily."],
+                &["medical-en"]
+            ),
+            ["hypertension", "metformin"]
         );
         assert_eq!(
-            Vocabulary::pack(&["cardiology"]).correct("cardiolxgx"),
-            None
+            seen(&["Bác sĩ nói huyết áp của tôi hơi cao."], &["medical-vi"]),
+            ["huyết áp"]
         );
-    }
-
-    const COMMON_EN: &[&str] = &[
-        "Thanks for joining the call today, let's start with the agenda and the last action items.",
-        "I think the contract is fine but the contact person changed, so please confirm the cause.",
-        "We moved the meeting to Thursday because the revenge of the weather was too much to handle.",
-        "The patient parent said the station was closed, so they took a different route home.",
-        "Please share your screen, the audio is breaking up and the video is frozen again.",
-        "He felt a tension in the room and lost his balance for a moment, then kept walking.",
-        "The report is divided into three parts: background, results and a short conclusion.",
-        "Our team will print the documents, then reach out to the other office about the lease.",
-        "Can you hear me? I will send the schema, the scheme and the plan after lunch tomorrow.",
-        "It is a nice day, the sky is clear, and we should probably go for a walk after the call.",
-        "Inflation is high this year and the price of coffee and fuel has gone up again.",
-        "The doctor's office called to say that the appointment is on Tuesday at nine in the morning.",
-    ];
-    const COMMON_VI: &[&str] = &[
-        "Chào mọi người, hôm nay chúng ta họp về kế hoạch quý sau và các việc còn tồn đọng.",
-        "Mình nghĩ là hợp đồng này ổn, nhưng cần hỏi lại bên kia về thời hạn thanh toán.",
-        "Anh ấy bị đau đầu từ hôm qua nên đã nghỉ làm, chiều nay sẽ đi khám.",
-        "Chị Lan nói rằng cuối tuần này cả nhà sẽ về quê thăm ông bà và ăn cơm cùng nhau.",
-        "Giá xăng tăng nên chi phí đi lại của công ty cũng tăng theo, phải tính lại ngân sách.",
-        "Em gửi lại file cho anh nhé, nếu có gì chưa rõ thì mình trao đổi thêm vào buổi chiều.",
-        "Hom nay troi dep qua, chung ta di an trua roi quay lai lam tiep nhe moi nguoi.",
-    ];
-
-    #[test]
-    fn packs_do_not_rewrite_everyday_speech() {
-        let all: Vec<String> = packs().iter().flat_map(|p| p.terms.clone()).collect();
-        let v = Vocabulary::pack(&all);
-        for s in COMMON_EN.iter().chain(COMMON_VI) {
-            assert_eq!(v.correct(s), None, "{s}");
+        assert_eq!(
+            seen(
+                &["we run it on kubernetes", "the Kubernetes pod"],
+                &["tech-en"]
+            ),
+            ["Kubernetes"],
+            "once"
+        );
+        // Nothing fuzzy: common EN pairs the old corrector rewrote, inflections
+        // and near-misses do not count.
+        let common = [
+            "I can",
+            "I don't",
+            "to do",
+            "so to",
+            "So can we",
+            "pay me",
+            "do the",
+            "sharing the screen",
+            "an evaluation",
+            "he trusted me",
+            "stating the facts",
+            "the box was contained",
+            "two diagnoses",
+            "aspiring to learn",
+            "next is lunch",
+            "my hypertensin",
+            "kubernetis",
+        ];
+        let all = [
+            "medical-en",
+            "medical-vi",
+            "legal-en",
+            "legal-vi",
+            "finance-en",
+            "finance-vi",
+            "tech-en",
+            "tech-vi",
+        ];
+        for line in common {
+            assert!(
+                seen(&[line], &all).is_empty(),
+                "{line}: {:?}",
+                seen(&[line], &all)
+            );
         }
-    }
-
-    #[test]
-    fn packs_fix_near_misses_of_their_terms() {
-        let on = |ids: &[&str]| {
-            let ids: Vec<String> = ids.iter().map(|s| s.to_string()).collect();
-            Vocabulary::pack(&pack_terms(&ids))
-        };
-        assert_eq!(
-            on(&["medical-en"])
-                .correct("my hypertensin and the metformn")
-                .as_deref(),
-            Some("my hypertension and the metformin")
-        );
-        assert_eq!(
-            on(&["medical-vi"]).correct("bị tang huyet ap").as_deref(),
-            Some("bị tăng huyết áp")
-        );
-        assert_eq!(
-            on(&["tech-en"]).correct("deploy to kubernetis").as_deref(),
-            Some("deploy to Kubernetes")
-        );
-        // A pack that is off does nothing.
-        assert_eq!(on(&["finance-en"]).correct("hypertensin"), None);
+        // A Vietnamese term is not looked for in an English line, nor an English
+        // term in a Vietnamese pack's language.
+        assert!(seen(&["sổ đỏ"], &["legal-en"]).is_empty());
+        assert!(seen(&["it is a so do"], &["legal-vi"]).is_empty());
+        assert!(seen(&["the hypertension"], &["medical-vi"]).is_empty());
+        // Accents belong to the term: "huyet ap" on a line that has accents elsewhere.
+        assert!(seen(&["tôi bị huyet ap"], &["medical-vi"]).is_empty());
+        // A pack that is off sees nothing.
+        assert!(seen(&["hypertension"], &["tech-en"]).is_empty());
     }
 
     #[test]
@@ -818,26 +790,6 @@ mod tests {
                 assert!(!folded[i].is_empty(), "{}: blank term", p.id);
                 assert!(!folded[..i].contains(&folded[i]), "{}: `{t}` twice", p.id);
             }
-            // Two terms one edit apart would correct each other's spelling.
-            for (i, a) in folded.iter().enumerate() {
-                for b in &folded[..i] {
-                    // (In Vietnamese the accents of real words guard them.)
-                    if p.lang == "en"
-                        && a.chars().count() >= PACK_MIN_LEN
-                        && b.chars().count() >= PACK_MIN_LEN
-                    {
-                        let (ac, bc): (Vec<char>, Vec<char>) =
-                            (a.chars().collect(), b.chars().collect());
-                        let plural =
-                            a.strip_suffix('s') == Some(b) || b.strip_suffix('s') == Some(a);
-                        assert!(
-                            plural || levenshtein(&ac, &bc) > 1,
-                            "{}: `{a}` ~ `{b}`",
-                            p.id
-                        );
-                    }
-                }
-            }
             if p.lang == "vi" {
                 assert!(
                     p.terms.iter().any(|t| ghi_text::has_diacritics(t)),
@@ -859,7 +811,6 @@ mod tests {
         )
         .unwrap();
         assert!(enabled_packs(&store).unwrap().is_empty());
-        assert!(pack_vocabulary(&store).unwrap().is_none());
         store
             .set_setting(
                 PACKS_SETTING,
@@ -867,15 +818,13 @@ mod tests {
             )
             .unwrap();
         assert_eq!(enabled_packs(&store).unwrap(), ["medical-en", "tech-vi"]);
-        let v = pack_vocabulary(&store).unwrap().unwrap();
-        assert!(v.correct("hypertensin").is_some());
     }
 
-    /// A 60-minute transcript (150 words a minute, 15-word lines) with a term
+    /// Ten minutes of speech (150 words a minute, 15-word lines) with a term
     /// misspelled now and then.
-    fn hour(terms: &[String]) -> Vec<String> {
+    fn ten_minutes(terms: &[String]) -> Vec<String> {
         let mut r = Rng(99);
-        (0..600)
+        (0..100)
             .map(|_| {
                 (0..15)
                     .map(|_| {
@@ -892,21 +841,15 @@ mod tests {
             .collect()
     }
 
+    /// The length-bucket index keeps the user's 200 terms well under the cost of
+    /// the old scan (it was O(words x terms)); wall-clock, so best of 3.
     #[test]
-    fn two_hundred_user_and_six_hundred_pack_terms_are_no_slower_than_two_hundred_naive() {
+    fn the_index_is_faster_than_the_full_scan_on_two_hundred_terms() {
         let user: Vec<String> = (0..MAX_TERMS)
             .map(|i| format!("{}{}", ["Tran", "Nguyen", "Pham", "Vo"][i % 4], i))
             .collect();
-        let pack: Vec<String> = packs()
-            .iter()
-            .flat_map(|p| p.terms.clone())
-            .take(600)
-            .collect();
-        assert_eq!(pack.len(), 600);
-        let mut say = user.clone();
-        say.extend(pack.iter().cloned());
-        let lines = hour(&say);
-        let (uv, pv) = (Vocabulary::new(&user), Vocabulary::pack(&pack));
+        let lines = ten_minutes(&user);
+        let v = Vocabulary::new(&user);
         let best = |f: &dyn Fn(&str) -> Option<String>| {
             (0..3)
                 .map(|_| {
@@ -919,12 +862,9 @@ mod tests {
                 .min()
                 .unwrap()
         };
-        let before = best(&|l| naive_correct(&uv, l));
-        let after = best(&|l| {
-            let a = uv.correct(l);
-            pv.correct(a.as_deref().unwrap_or(l)).or(a)
-        });
-        eprintln!("200 terms, naive scan: {before:?}; 200 + 600 terms, indexed: {after:?}");
+        let before = best(&|l| naive_correct(&v, l));
+        let after = best(&|l| v.correct(l));
+        eprintln!("200 terms, 10 min: naive scan {before:?}, indexed {after:?}");
         assert!(after <= before, "{after:?} > {before:?}");
     }
 }

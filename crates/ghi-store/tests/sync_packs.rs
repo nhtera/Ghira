@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The `vocabulary.packs` synced setting: only known pack ids sync (red-team M8).
+//! The `vocabulary.packs` synced setting: lists of pack-shaped ids sync, so a
+//! newer peer's list is kept (red-team M8); the app applies only the ids it knows.
 
 mod common;
 
@@ -28,13 +29,17 @@ fn packs_setting_is_on_the_allowlist() {
 }
 
 #[test]
-fn only_known_pack_ids_are_accepted_locally() {
+fn only_pack_shaped_ids_are_accepted_locally() {
     let tmp = tempfile::tempdir().unwrap();
     let (store, _) = common::open(tmp.path());
     for bad in [
         "\"medical-en\"",
         "[\"medical\"]",
-        "[\"medical-fr\"]",
+        "[\"medical-eng\"]",
+        "[\"Medical-en\"]",
+        "[\"-en\"]",
+        "[\"medical_en\"]",
+        "[\"medicalmedicalmedicalmedicalmedical-en\"]",
         "[1]",
         "[\"../etc\"]",
         "{}",
@@ -48,6 +53,8 @@ fn only_known_pack_ids_are_accepted_locally() {
             "{bad}"
         );
     }
+    let many = format!("[{}]", vec!["\"tech-en\""; 33].join(","));
+    assert!(store.put_synced("vocabulary.packs", &many).is_err());
     store.put_synced("vocabulary.packs", "[]").unwrap();
     store
         .put_synced("vocabulary.packs", "[\"medical-vi\", \"tech-en\"]")
@@ -71,8 +78,16 @@ fn only_known_pack_ids_are_accepted_locally() {
 fn a_peers_packs_are_validated_then_written_as_the_setting() {
     let tmp = tempfile::tempdir().unwrap();
     let (store, _) = common::open(tmp.path());
-    assert!(store.apply_synced(&rec("[\"klingon-en\"]", 5)).is_err());
+    assert!(store.apply_synced(&rec("[\"../etc\"]", 5)).is_err());
     assert!(store.get_setting("vocabulary.packs").unwrap().is_none());
+    // A newer peer's pack is kept (not dropped, so it is not wiped on the way back).
+    store
+        .apply_synced(&rec("[\"klingon-en\",\"tech-en\"]", 5))
+        .unwrap();
+    assert_eq!(
+        store.get_setting("vocabulary.packs").unwrap().unwrap(),
+        serde_json::json!(["klingon-en", "tech-en"])
+    );
 
     store
         .apply_synced(&rec("[\"legal-en\",\"finance-vi\"]", 6))
