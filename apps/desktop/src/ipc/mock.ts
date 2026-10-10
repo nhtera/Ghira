@@ -24,7 +24,7 @@ import type {
   Stage,
 } from "../bindings";
 import type { Commands, Ipc } from "./ipc";
-import { audioUrl, namesOf, onImportStaged, onImportUpdate, reviewCommands, simulateImportDrop, transcriptOf } from "./mock-review";
+import { audioUrl, namesOf, onImportStaged, onImportUpdate, reviewCommands, simulateImportDrop, takeTagSuggestion, transcriptOf } from "./mock-review";
 import { aiCommands, audioDeleted, sensitiveMeetings } from "./mock-ai";
 import { calendarCommands } from "./mock-calendar";
 import { organizeCommands } from "./mock-organize";
@@ -238,6 +238,8 @@ const setLocked = (v: boolean) => {
 
 const sync = createSyncMock();
 
+const organize = organizeCommands({ rows });
+
 const commands: Commands = {
   lockState: () => ok(locked),
   lockNow: () => {
@@ -262,7 +264,18 @@ const commands: Commands = {
   installUpdate: () => fail("updates are installed by the app, not the mock"),
   ...reviewCommands({ rows, process }),
   ...calendarCommands(),
-  ...organizeCommands({ rows }),
+  ...organize,
+  // A suggested tag goes through the same rules as one typed in (reused by name, limits).
+  acceptTagSuggestion: async (m, suggestion) => {
+    const name = takeTagSuggestion(m, suggestion);
+    if (name == null) return fail("notFound");
+    const tag = await organize.createTag(name);
+    if (tag.status === "error") return tag;
+    const linked = await organize.tagMeetings([m], tag.data.gid);
+    if (linked.status === "error") return linked;
+    return ok({ ...tag.data, meetings: tag.data.meetings + linked.data });
+  },
+  dismissTagSuggestion: (m, suggestion) => (takeTagSuggestion(m, suggestion) == null ? fail("notFound") : ok(null)),
   ...sync.commands,
   ...peopleCommands({ rows, voiceReady: () => voiceInstalled, recording: () => session != null }),
   ...aiCommands({

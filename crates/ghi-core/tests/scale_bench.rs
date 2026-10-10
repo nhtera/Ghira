@@ -257,7 +257,7 @@ fn scale_bench() {
             store.active_jobs().unwrap();
             store.speaker_chips(&g).unwrap();
             store.meeting_tags(&g).unwrap();
-            store.first_tldrs(&g).unwrap();
+            store.row_summaries(&g).unwrap();
             store.unnamed_voice_counts(&g).unwrap();
         }),
     );
@@ -267,8 +267,8 @@ fn scale_bench() {
         time(pages, |p| store.list_meetings(50, p * 50).unwrap()),
     );
     report(
-        "  first_tldrs (summary)",
-        time(20, |_| store.first_tldrs(&page).unwrap()),
+        "  row_summaries (summary)",
+        time(20, |_| store.row_summaries(&page).unwrap()),
     );
     report(
         "  unnamed_voice_counts",

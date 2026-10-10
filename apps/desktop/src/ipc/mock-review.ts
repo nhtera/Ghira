@@ -172,7 +172,19 @@ function build(lang: "en" | "vi"): Detail {
     .sort((a, b) => (a.tMs ?? 0) - (b.tMs ?? 0));
   return {
     speakers,
-    notes: { blocks, actionItems, sections: [], marks: [], linked: 0 },
+    notes: {
+      blocks,
+      actionItems,
+      sections: [],
+      marks: [],
+      linked: 0,
+      headline: null,
+      // What the notes suggest filing the meeting under (taken or dismissed by gid).
+      tagSuggestions: [
+        { gid: gid("tag-hint"), name: "Beta" },
+        { gid: gid("tag-hint"), name: lang === "vi" ? "Kế hoạch" : "Planning" },
+      ],
+    },
     transcript: {
       version: 2,
       segments: segs,
@@ -462,6 +474,14 @@ export const onImportUpdate = (cb: (e: ImportUpdate) => void) => {
 export const audioUrl = (token: string) => audio.get(token) ?? "";
 /** For the AI mock: a meeting's transcript and speaker names. */
 /** The meeting's stored speakers (mutable: the mock's voice commands edit them). */
+/** Removes a tag the notes suggest; its name, or null when the meeting has no such suggestion. */
+export function takeTagSuggestion(m: string, suggestion: string): string | null {
+  const notes = detailOf(m).notes;
+  const s = notes.tagSuggestions.find((x) => x.gid === suggestion);
+  if (!s) return null;
+  notes.tagSuggestions = notes.tagSuggestions.filter((x) => x !== s);
+  return s.name;
+}
 export const speakersOf = (m: string) => detailOf(m).speakers;
 export const transcriptOf = (m: string) => detailOf(m).transcript;
 export const namesOf = (m: string) => detailOf(m).speakers.flatMap((s) => (s.name ? [s.name] : []));
@@ -798,6 +818,8 @@ export function reviewCommands(host: ReviewHost): ReviewCommands {
         sections: [],
         marks: [],
         linked: 0,
+        headline: fresh.notes.headline,
+        tagSuggestions: fresh.notes.tagSuggestions,
       };
       host.process(m);
       return ok(false);

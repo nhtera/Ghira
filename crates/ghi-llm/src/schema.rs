@@ -25,6 +25,8 @@ pub const CORE_KEYS: &[&str] = &[
     "open_questions",
     "key_quotes",
     "topics",
+    "headline",
+    "tags",
 ];
 
 /// At most this many TL;DR bullets (doc 02 §E).
@@ -33,6 +35,11 @@ pub const MAX_TLDR: usize = 5;
 pub const MAX_CITES: usize = 8;
 pub const MAX_QUOTES: usize = 5;
 pub const MAX_TOPICS: usize = 12;
+/// Suggested tags per meeting.
+pub const MAX_TAGS: usize = 3;
+/// Characters of the one-sentence headline and of one tag.
+pub const HEADLINE_CHARS: usize = 200;
+pub const TAG_CHARS: usize = 32;
 /// Facts one map step may return.
 pub const MAX_FACTS: usize = 40;
 /// Supporting points per enhanced note line.
@@ -82,6 +89,14 @@ fn array(items: Value, min: Option<usize>, max: Option<usize>, d: Dialect) -> Va
 
 fn string() -> Value {
     json!({"type": "string"})
+}
+
+/// A string of at most `max` characters (the bound only for the local grammar).
+fn short_string(max: usize, d: Dialect) -> Value {
+    match d {
+        Dialect::Local => json!({"type": "string", "maxLength": max}),
+        Dialect::Cloud => string(),
+    }
 }
 
 fn nullable_string() -> Value {
@@ -173,6 +188,13 @@ pub fn notes(template: &Template, s: &Shape) -> Value {
     for sec in &template.sections {
         props.push((sec.id.as_str(), array(item(s), None, None, d)));
     }
+    // The meeting in one sentence (the library row) and tags to file it
+    // under: suggestions the user may take (`tag_hint` blocks).
+    props.push(("headline", short_string(HEADLINE_CHARS, d)));
+    props.push((
+        "tags",
+        array(short_string(TAG_CHARS, d), None, Some(MAX_TAGS), d),
+    ));
     object(&props)
 }
 
@@ -215,7 +237,7 @@ pub fn compact(mut schema: Value, d: Dialect) -> Value {
         return schema;
     }
     if let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
-        for (key, prop) in props.iter_mut() {
+        for (key, prop) in props.iter_mut().filter(|(_, p)| p["type"] == "array") {
             let cap = COMPACT_CAPS
                 .iter()
                 .find(|(k, _)| k == key)
@@ -413,6 +435,14 @@ mod tests {
         for k in CORE_KEYS.iter().chain(["done", "next", "blockers"].iter()) {
             assert!(s["properties"].get(*k).is_some(), "{k}");
         }
+        assert_eq!(s["properties"]["headline"]["maxLength"], HEADLINE_CHARS);
+        assert_eq!(s["properties"]["tags"]["maxItems"], MAX_TAGS);
+        let compact = compact(s.clone(), Dialect::Local);
+        assert_eq!(
+            compact["properties"]["headline"],
+            s["properties"]["headline"]
+        );
+        assert_eq!(compact["properties"]["tags"]["maxItems"], MAX_TAGS);
         let owner = &s["properties"]["action_items"]["items"]["properties"]["owner"];
         assert_eq!(owner["enum"], json!(["S1", "S2", null]));
         let none = notes(

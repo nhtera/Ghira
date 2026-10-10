@@ -93,6 +93,15 @@ pub fn kept_texts(store: &Store, meeting: &str) -> Result<Vec<String>, String> {
 /// nothing for that note ("not found").
 pub const ENHANCED_PREFIX: &str = "enhanced:";
 
+/// Kind of the one-sentence headline of the notes (no anchors): the library
+/// row's second line (`Store::row_summaries` prefers it to the first TL;DR).
+pub const HEADLINE_KIND: &str = "headline";
+
+/// Kind of a tag the notes suggest (no anchors; the body is the tag's name).
+/// Taking it links the tag and removes the block; it is never applied by
+/// itself.
+pub const TAG_HINT_KIND: &str = "tag_hint";
+
 /// Time anchors for segment indexes (citations).
 fn anchors_for(
     store: &Store,
@@ -268,6 +277,13 @@ pub(crate) fn save_notes_leased(
         for i in &sec.items {
             block(&format!("section:{}", sec.id), &i.text, &i.citations)?;
         }
+    }
+    // Uncited: the library row's line and the tags offered to the user.
+    if let Some(h) = &n.headline {
+        block(HEADLINE_KIND, h, &[])?;
+    }
+    for t in &n.tags {
+        block(TAG_HINT_KIND, t, &[])?;
     }
     blocks.extend(extra);
     let mut actions = Vec::new();
@@ -446,6 +462,11 @@ impl JobHandler for NotesJob {
                 &segs,
                 ghi_llm::notes::MAX_SPELLINGS,
             );
+            // The user's tags, most used first, so the suggestions reuse
+            // them: local prompts only, like the spellings.
+            let mut tags = ctx.store.tags().map_err(store_err)?;
+            tags.sort_by_key(|t| std::cmp::Reverse(t.meetings));
+            opts.known_tags = tags.into_iter().map(|t| t.name).collect();
             // Everything in the prompt sizes the model's context: the
             // transcript, the texts the user keeps (saved answers can be
             // ~10 x 1.5k characters on a short meeting) and the template's own
@@ -454,6 +475,7 @@ impl JobHandler for NotesJob {
                 + opts.pinned.iter().map(String::len).sum::<usize>()
                 + opts.template_bytes()
                 + opts.spellings().iter().map(String::len).sum::<usize>()
+                + opts.known_tags().iter().map(|t| t.len() + 2).sum::<usize>()
                 // The marks block: at most 24 entries of about 20 bytes.
                 + opts.marks.len().min(ghi_llm::notes::MAX_MARKS) * 20;
             let mut llm = (self.llm)(bytes)?;
@@ -617,6 +639,8 @@ mod tests {
             key_quotes: vec![],
             topics: vec![],
             sections: vec![],
+            headline: None,
+            tags: vec![],
         };
         // The CLI, the job and a cloud send all go through this.
         store

@@ -80,6 +80,8 @@ fn main() {
             "test_capture",
             "import_tracks_separately",
             "untag_meetings",
+            "accept_tag_suggestion",
+            "dismiss_tag_suggestion",
             "tag_meetings",
             "delete_tag",
             "rename_tag",

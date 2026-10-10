@@ -188,6 +188,8 @@
     "allow-delete-tag",
     "allow-tag-meetings",
     "allow-untag-meetings",
+    "allow-accept-tag-suggestion",
+    "allow-dismiss-tag-suggestion",
     "allow-import-tracks-separately"
   ]
 }

@@ -186,6 +186,8 @@ function build(
         coveredBy: [],
       })),
       linked: 0,
+      headline: null,
+      tagSuggestions: [],
     },
     transcript: o.transcript ?? {
       version: 2,
@@ -322,6 +324,8 @@ function defaults(): MockMeeting[] {
         sections: [],
         // The app's own cited sentences (summary, decision, proposal, question, saved answer) and its one cited action.
         linked: 6,
+        headline: null,
+        tagSuggestions: [],
         marks: [
           { tMs: 91_000, tag: "decision", segment: "t1", text: "We can ship the beta on the fifteenth if QA signs off by Friday.", coveredBy: ["n1"] },
           { tMs: 106_000, tag: "question", segment: "t3", text: "I will send the revised budget in đồng and dollars before the review.", coveredBy: [] },

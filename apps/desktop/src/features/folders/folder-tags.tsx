@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // The meeting header's folder and tags: the folder chip opens the move dialog,
 // tags are chips with × to remove, and "Add tag…" is a combobox that can make
-// a tag on the spot. Names are text nodes.
+// a tag on the spot. Tags the notes suggest follow as dashed chips: + adds
+// one, × dismisses it; none is ever added by itself. Names are text nodes.
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon, Popover } from "@ghi/ui";
 import { useMeetings } from "../library/use-meetings";
+import { useMeetingNotes } from "../../state/meeting-queries";
 import { MoveDialog } from "./move-dialog";
 import { useFolders, useOrganizeActions, useTags } from "./organize";
 import { TagCombobox, type Choice } from "./tag-combobox";
@@ -18,6 +20,7 @@ export function FolderTags({ meeting }: { meeting: string }) {
   const folders = useFolders().data ?? [];
   const tags = useTags().data ?? [];
   const actions = useOrganizeActions();
+  const suggestions = useMeetingNotes(meeting).data?.tagSuggestions ?? [];
   const [moving, setMoving] = useState(false);
   const [adding, setAdding] = useState(false);
   if (!row) return null;
@@ -52,6 +55,31 @@ export function FolderTags({ meeting }: { meeting: string }) {
       <Popover open={adding} onOpenChange={setAdding} label={t("organize.addTag")} trigger={<button type="button" className={chip + " border-dashed hover:border-accent hover:text-accent"}><Icon name="add" size={14} />{t("organize.addTag")}</button>}>
         <TagCombobox tags={tags} exclude={have} autoFocus onChoose={(c) => void choose(c)} />
       </Popover>
+      {suggestions.length > 0 && (
+        <span aria-hidden className="ml-1 text-[12px] text-muted">
+          {t("organize.suggested")}
+        </span>
+      )}
+      {suggestions.length > 0 && (
+        <ul aria-label={t("organize.suggested")} className="m-0 flex list-none flex-wrap items-center gap-1.5 p-0">
+          {suggestions.map((s) => (
+            <li key={s.gid} className={chip + " border-dashed"}>
+              <button type="button" aria-label={t("organize.addSuggested", { name: s.name })} onClick={() => void actions.acceptSuggestion(meeting, s)} className="inline-flex items-center gap-1 hover:text-accent">
+                <Icon name="add" size={14} />
+                {s.name}
+              </button>
+              <button
+                type="button"
+                aria-label={t("organize.dismissSuggested", { name: s.name })}
+                onClick={() => void actions.dismissSuggestion(meeting, s)}
+                className="-mr-1 grid size-5 place-items-center rounded-full hover:bg-sunk"
+              >
+                <Icon name="close" size={12} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <MoveDialog open={moving} meetings={[meeting]} onClose={() => setMoving(false)} />
     </div>
   );

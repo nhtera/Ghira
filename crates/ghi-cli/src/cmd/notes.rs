@@ -177,6 +177,8 @@ pub fn notes_doc(
         "sections": n.sections.iter().map(|s| json!({
             "id": s.id, "title": s.title, "items": items(&s.items),
         })).collect::<Vec<_>>(),
+        "headline": n.headline,
+        "tags": n.tags,
     });
     let obj = doc.as_object_mut().expect("object");
     obj.extend(extra);
@@ -582,6 +584,8 @@ mod tests {
             key_quotes: vec![],
             topics: vec![],
             sections: vec![],
+            headline: None,
+            tags: vec![],
         };
         let engine = ghi_llm::EngineInfo {
             name: "qwen3-4b".into(),

@@ -200,7 +200,10 @@ cleared on lock/delete; never `put` on the phone: `CoreHooks::no_saved_answers`)
 transcript. User templates (`ghi-core::user_templates`, `ghi-app` `templates_cmd`, setting `templates.user`, desktop-local,
 NOT in `SYNCED_KEYS`, ≤ 20, `Records` keeps entries it cannot read) are `user:<gid>`; a cloud notes request with one
 sends General and sets `CloudPreview.template_fallback` (`cloud_notes_template`); `user_templates::sections_for` lists
-the template's sections plus any `section:<id>` the blocks hold, for the notes tab, exports and phone. Mind map:
+the template's sections plus any `section:<id>` the blocks hold, for the notes tab, exports and phone. Notes also return an uncited
+`headline` and up to 3 `tags` (`ghi-llm` schema; the user's tags go in the LOCAL prompt only): stored as AI blocks
+`headline` (the library row's line, `Store::row_summaries`) and `tag_hint` (suggestions, lifted out of `MeetingNotes.blocks`
+into `headline`/`tag_suggestions`; desktop `accept_tag_suggestion`/`dismiss_tag_suggestion`, never applied by themselves). Mind map:
 `apps/desktop/src/features/mindmap` (`tidyLayout`, `MindMap`, `MindMapTab`); `talkShare` and `notesToTree` live in
 `packages/ui/src/lib` (pure: `layering.test.ts` forbids React and app imports there) and the phone uses them for its
 talk share bar and Outline list.

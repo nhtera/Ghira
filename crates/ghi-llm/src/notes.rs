@@ -85,6 +85,14 @@ pub struct Notes {
     pub key_quotes: Vec<Quote>,
     pub topics: Vec<Topic>,
     pub sections: Vec<Section>,
+    /// The whole meeting in one sentence (the library row's second line);
+    /// uncited, so plain text and length are all that is checked.
+    #[serde(default)]
+    pub headline: Option<String>,
+    /// Up to [`schema::MAX_TAGS`] tags to file the meeting under: offered to
+    /// the user, never applied by themselves.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 impl Notes {
@@ -107,6 +115,10 @@ impl Notes {
         }
         for t in &mut self.topics {
             t.title = f(&t.title);
+        }
+        self.headline = self.headline.as_deref().map(&mut f);
+        for t in &mut self.tags {
+            *t = f(t);
         }
     }
 
@@ -193,7 +205,13 @@ pub struct Options {
     /// ones the transcript says). Local prompts only: never part of a cloud
     /// request.
     pub spellings: Vec<String>,
+    /// The user's tags, so the suggested ones reuse them. Local prompts only:
+    /// never part of a cloud request.
+    pub known_tags: Vec<String>,
 }
+
+/// Most known tags one prompt carries.
+pub const MAX_KNOWN_TAGS: usize = 40;
 
 /// Most spellings one prompt carries.
 pub const MAX_SPELLINGS: usize = 40;
@@ -209,7 +227,19 @@ impl Options {
             compact: false,
             marks: Vec::new(),
             spellings: Vec::new(),
+            known_tags: Vec::new(),
         }
+    }
+
+    /// The known tags one prompt carries: at most [`MAX_KNOWN_TAGS`], distinct.
+    pub fn known_tags(&self) -> Vec<String> {
+        let mut seen = HashSet::new();
+        self.known_tags
+            .iter()
+            .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|t| !t.is_empty() && seen.insert(ghi_text::fold(t)))
+            .take(MAX_KNOWN_TAGS)
+            .collect()
     }
 
     /// The spellings one prompt carries: at most [`MAX_SPELLINGS`], distinct, in order.
@@ -243,8 +273,8 @@ impl Options {
     fn template_task(&self) -> (String, String) {
         let general = crate::template::builtin("general").expect("general is built in");
         (
-            prompt::notes_task(&self.template, self.lang, &[], &[], &[], false),
-            prompt::notes_task(&general, self.lang, &[], &[], &[], false),
+            prompt::notes_task(&self.template, self.lang, &[], &[], &[], &[], false),
+            prompt::notes_task(&general, self.lang, &[], &[], &[], &[], false),
         )
     }
 
@@ -552,6 +582,10 @@ fn extras_tokens(opts: &Options) -> u32 {
         .saturating_add(opts.marks_tokens())
         .saturating_add(opts.template_tokens())
         .saturating_add(opts.spellings_tokens())
+        .saturating_add(estimate_tokens(&prompt::tags_block(
+            opts.lang,
+            &opts.known_tags(),
+        )))
 }
 
 /// Tokens of transcript (or facts) one call that writes up to `max_output`
@@ -627,7 +661,7 @@ fn bound_reduce(mut schema: serde_json::Value) -> serde_json::Value {
     let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) else {
         return schema;
     };
-    for (key, prop) in props.iter_mut() {
+    for (key, prop) in props.iter_mut().filter(|(_, p)| p["type"] == "array") {
         let cap = REDUCE_CAPS
             .iter()
             .find(|(k, _)| k == key)
@@ -680,10 +714,11 @@ pub fn request(
         ids: &ids,
         speakers: aliases.aliases(),
     };
-    // Spellings (the user's vocabulary, attendees, glossary packs) are local-only too.
-    let spellings = match dialect {
-        Dialect::Local => opts.spellings(),
-        Dialect::Cloud => Vec::new(),
+    // Spellings (the user's vocabulary, attendees, glossary packs) and the
+    // user's tags are local-only too.
+    let (spellings, known_tags) = match dialect {
+        Dialect::Local => (opts.spellings(), opts.known_tags()),
+        Dialect::Cloud => (Vec::new(), Vec::new()),
     };
     // Marks are local-only: a cloud request never carries them.
     let marks = match dialect {
@@ -706,6 +741,7 @@ pub fn request(
             &opts.pinned,
             &marks,
             &spellings,
+            &known_tags,
             dialect == Dialect::Cloud
         ),
         prompt::transcript_block(opts.lang, &render(t, aliases, segments))
@@ -1022,6 +1058,23 @@ fn parse_notes(v: &Value, ctx: &Ctx, d: &mut Diagnostics) -> std::result::Result
         });
     }
 
+    // Uncited, so optional: a reply without them still makes notes.
+    let headline = obj
+        .get("headline")
+        .and_then(Value::as_str)
+        .map(plain_text)
+        .filter(|h| !h.is_empty() && h.chars().count() <= schema::HEADLINE_CHARS);
+    let tags = obj
+        .get("tags")
+        .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok())
+        .unwrap_or_default();
+    // A tag that only names the kind of meeting ("General", "Standup") files nothing.
+    let kind = [ctx.template.id.as_str(), ctx.template.name.as_str()].map(ghi_text::fold);
+    let tags = clean_tags(&tags)
+        .into_iter()
+        .filter(|t| !kind.contains(&ghi_text::fold(t)))
+        .collect();
+
     Ok(Notes {
         template: ctx.template.id.clone(),
         lang: ctx.lang.code().to_string(),
@@ -1033,7 +1086,41 @@ fn parse_notes(v: &Value, ctx: &Ctx, d: &mut Diagnostics) -> std::result::Result
         key_quotes,
         topics,
         sections,
+        headline,
+        tags,
     })
+}
+
+/// Tags that file nothing: the meeting itself, in either language (folded).
+const GENERIC_TAGS: &[&str] = &["meeting", "meetings", "general", "cuoc hop", "chung"];
+
+/// Suggested tags as they are kept: plain words (no leading `#`, `-` and `_`
+/// as spaces), a first capital when the model wrote all lower case, at most
+/// [`schema::TAG_CHARS`] characters and three words, never a generic one
+/// ("Meeting"), distinct (folded), at most [`schema::MAX_TAGS`].
+pub fn clean_tags(raw: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    raw.iter()
+        .map(|t| plain_text(t.trim().trim_start_matches('#')).replace(['-', '_'], " "))
+        .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
+        .map(|t| {
+            if t.chars().any(char::is_uppercase) {
+                return t;
+            }
+            let mut c = t.chars();
+            c.next()
+                .map(|f| f.to_uppercase().chain(c).collect())
+                .unwrap_or_default()
+        })
+        .filter(|t| {
+            !t.is_empty()
+                && t.chars().count() <= schema::TAG_CHARS
+                && t.split(' ').count() <= 3
+                && !GENERIC_TAGS.contains(&ghi_text::fold(t).as_str())
+                && seen.insert(ghi_text::fold(t))
+        })
+        .take(schema::MAX_TAGS)
+        .collect()
 }
 
 /// One extracted fact of the map step (speakers still aliased).
@@ -1152,6 +1239,7 @@ fn reduce(
                 &opts.pinned,
                 &marks,
                 &opts.spellings(),
+                &opts.known_tags(),
                 false
             ),
             prompt::reduce_block(opts.lang, &lines)
@@ -1972,6 +2060,67 @@ pub(crate) mod tests {
         o.spellings.clear();
         assert!(!text(Dialect::Local, &o).contains("exactly like this"));
         assert_eq!(prompt::spellings_block(OutLang::En, &[]), "");
+    }
+
+    #[test]
+    fn a_headline_and_cleaned_tags_come_back_and_a_reply_without_them_still_makes_notes() {
+        let t = meeting();
+        let mut llm = Scripted::new(&[&reply(
+            r##"{"tldr":[{"text":"Chốt scope beta","cite":[0]}],
+                "headline":"  Nhóm chốt scope bản beta, không làm lịch.  ",
+                "tags":["#Beta","beta","General","cuộc họp","sản-phẩm","a b c d","", "Khách hàng", "Thừa"]}"##,
+        )]);
+        let n = generate(&mut llm, &t, &opts()).unwrap().notes;
+        assert_eq!(
+            n.headline.as_deref(),
+            Some("Nhóm chốt scope bản beta, không làm lịch.")
+        );
+        // `#` dropped, `-` a space, a first capital; repeats (folded), the
+        // template's name, generic, long and empty ones out; three at most.
+        assert_eq!(n.tags, ["Beta", "Sản phẩm", "Khách hàng"]);
+        let mut old = Scripted::new(&[&reply(r#"{"tldr":[{"text":"ok","cite":[0]}]}"#)]);
+        let n = generate(&mut old, &t, &opts()).unwrap().notes;
+        assert_eq!((n.headline, n.tags.len()), (None, 0));
+        // Too long for a headline: none rather than a paragraph.
+        let long = format!(r#"{{"headline":"{}"}}"#, "x ".repeat(150));
+        let mut llm = Scripted::new(&[&reply(&long)]);
+        assert_eq!(
+            generate(&mut llm, &t, &opts()).unwrap().notes.headline,
+            None
+        );
+    }
+
+    #[test]
+    fn known_tags_are_a_local_prompt_block_and_never_in_a_cloud_request() {
+        let t = meeting();
+        let all: Vec<&Segment> = t.segments().iter().collect();
+        let mut o = Options::new(template::builtin("general").unwrap(), OutLang::En);
+        o.known_tags = vec!["Clients".into(), " clients ".into(), "Recruiting".into()];
+        let text = |d: Dialect, o: &Options| {
+            request(&t, &all, &Aliases::new(&t), o, d).0.messages[1]
+                .content
+                .clone()
+        };
+        let local = text(Dialect::Local, &o);
+        assert!(
+            local.contains("Tags already in use (reuse one when it fits): Clients, Recruiting\n"),
+            "{local}"
+        );
+        assert!(local.contains("- headline: one sentence"));
+        let cloud = text(Dialect::Cloud, &o);
+        assert!(
+            !cloud.contains("Recruiting") && !cloud.contains("already in use"),
+            "{cloud}"
+        );
+        // The cloud is still asked for tags, just not shown the user's.
+        assert!(cloud.contains("- tags: 1 to 3 short tags"));
+        o.lang = OutLang::Vi;
+        assert!(
+            text(Dialect::Local, &o)
+                .contains("Các nhãn đang dùng (dùng lại nếu phù hợp): Clients, Recruiting\n")
+        );
+        o.known_tags = (0..60).map(|i| format!("t{i}")).collect();
+        assert_eq!(o.known_tags().len(), MAX_KNOWN_TAGS);
     }
 
     #[test]

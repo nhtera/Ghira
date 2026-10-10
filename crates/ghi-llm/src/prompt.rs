@@ -45,6 +45,7 @@ pub(crate) fn notes_task(
     pinned: &[String],
     marks: &[MarkHint],
     spellings: &[String],
+    known_tags: &[String],
     cloud_status: bool,
 ) -> String {
     // A cloud request sorts decided from proposed in the one call; the local
@@ -81,6 +82,10 @@ pub(crate) fn notes_task(
             for sec in &template.sections {
                 s.push_str(&format!("- {}: {}\n", sec.id, sec.instruction));
             }
+            s.push_str(
+                "- headline: one sentence (under 20 words) with the meeting's main outcome, like \"The Acme renewal moves to March once legal has read the new terms.\" It names the subject; a point left undecided is called open there, never decided. Do not start it with \"The meeting\" or \"Discussed\".\n\
+- tags: 1 to 3 short tags of one or two plain words (like \"Acme\" or \"Hiring\") naming what the meeting was about: a project, product, client or subject, not the kind of meeting\n",
+            );
             if !pinned.is_empty() {
                 s.push_str("\nThe user already wrote these notes; do not repeat them:\n");
             }
@@ -101,6 +106,10 @@ pub(crate) fn notes_task(
             for sec in &template.sections {
                 s.push_str(&format!("- {}: {}\n", sec.id, sec.instruction));
             }
+            s.push_str(
+                "- headline: một câu (dưới 20 từ) nêu kết quả chính của cuộc họp, ví dụ \"Gia hạn hợp đồng Acme dời sang tháng Ba, sau khi pháp chế đọc điều khoản mới.\" Câu này nêu rõ việc gì; việc nào còn bỏ ngỏ thì ghi \"chưa chốt\" ngay sau việc đó, không bao giờ nói là đã chốt. Đừng mở đầu bằng \"Cuộc họp\" hay \"Thảo luận\".\n\
+- tags: 1 đến 3 nhãn ngắn, mỗi nhãn một hoặc hai từ (ví dụ \"Acme\" hay \"Tuyển dụng\"), nói cuộc họp bàn về gì: dự án, sản phẩm, khách hàng hoặc chủ đề, không phải loại cuộc họp\n",
+            );
             if !pinned.is_empty() {
                 s.push_str("\nNgười dùng đã tự viết các ghi chú sau; đừng lặp lại:\n");
             }
@@ -111,7 +120,23 @@ pub(crate) fn notes_task(
     }
     s.push_str(&marks_block(lang, marks));
     s.push_str(&spellings_block(lang, spellings));
+    s.push_str(&tags_block(lang, known_tags));
     s
+}
+
+/// The user's tags, for the model to reuse one when it fits (empty when there
+/// are none). Only for a local prompt.
+pub(crate) fn tags_block(lang: OutLang, tags: &[String]) -> String {
+    if tags.is_empty() {
+        return String::new();
+    }
+    let list = tags.join(", ");
+    match lang {
+        OutLang::En => format!("\nTags already in use (reuse one when it fits): {list}\n"),
+        OutLang::Vi => {
+            format!("\nCác nhãn đang dùng (dùng lại nếu phù hợp): {list}\n")
+        }
+    }
 }
 
 /// Terms said in the meeting, with the spelling to write them in (empty when

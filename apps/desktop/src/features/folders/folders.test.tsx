@@ -19,6 +19,9 @@ const commands = vi.hoisted(() => ({
   moveToFolder: vi.fn(),
   tagMeetings: vi.fn(),
   untagMeetings: vi.fn(),
+  meetingNotes: vi.fn(),
+  acceptTagSuggestion: vi.fn(),
+  dismissTagSuggestion: vi.fn(),
 }));
 vi.mock("../../ipc", () => ({ ipc: { commands, onCoreEvent: () => Promise.resolve(() => {}) } }));
 vi.mock("@tanstack/react-router", () => ({
@@ -59,6 +62,8 @@ const row = (gid: string, over: Partial<MeetingRow> = {}): MeetingRow => ({
   ...over,
 });
 
+const notes = (tagSuggestions: { gid: string; name: string }[]) => ({ blocks: [], actionItems: [], sections: [], marks: [], linked: 0, headline: null, tagSuggestions });
+
 let folders: FolderRow[];
 let tags: TagRow[];
 let rows: MeetingRow[];
@@ -70,6 +75,7 @@ beforeEach(() => {
   commands.listFolders.mockImplementation(() => ok(folders));
   commands.listTags.mockImplementation(() => ok(tags));
   commands.listMeetings.mockImplementation((_n: number, offset: number) => ok(offset ? [] : rows));
+  commands.meetingNotes.mockImplementation(() => ok(notes([])));
   for (const c of ["renameFolder", "renameTag", "untagMeetings", "tagMeetings", "moveToFolder", "deleteFolder", "deleteTag"] as const) commands[c].mockReturnValue(ok(1));
 });
 afterEach(cleanup);
@@ -159,6 +165,29 @@ describe("FolderTags (meeting header)", () => {
     await user.type(screen.getByRole("combobox", { name: "Tag name" }), "Review{Enter}");
     await waitFor(() => expect(commands.createTag).toHaveBeenCalledExactlyOnceWith("Review"));
     await waitFor(() => expect(commands.tagMeetings).toHaveBeenCalledExactlyOnceWith(["m1"], "t9"));
+  });
+
+  it("suggested tags are only offered: + takes one, × dismisses one, and nothing is added by itself", async () => {
+    commands.meetingNotes.mockImplementation(() => ok(notes([{ gid: "h1", name: "Beta" }, { gid: "h2", name: "Planning" }])));
+    commands.acceptTagSuggestion.mockReturnValue(ok(tag("t9", "Beta", 1)));
+    commands.dismissTagSuggestion.mockReturnValue(ok(null));
+    renderLive(<FolderTags meeting="m1" />);
+    const list = await screen.findByRole("list", { name: "Suggested" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    expect(commands.tagMeetings).not.toHaveBeenCalled();
+    expect(commands.acceptTagSuggestion).not.toHaveBeenCalled();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Add tag Beta" }));
+    await waitFor(() => expect(commands.acceptTagSuggestion).toHaveBeenCalledExactlyOnceWith("m1", "h1"));
+    await user.click(screen.getByRole("button", { name: "Dismiss suggestion Planning" }));
+    await waitFor(() => expect(commands.dismissTagSuggestion).toHaveBeenCalledExactlyOnceWith("m1", "h2"));
+  });
+
+  it("no suggestions, no Suggested list", async () => {
+    renderLive(<FolderTags meeting="m1" />);
+    await screen.findByRole("button", { name: "Add tag…" });
+    await waitFor(() => expect(commands.meetingNotes).toHaveBeenCalled());
+    expect(screen.queryByRole("list", { name: "Suggested" })).toBeNull();
   });
 
   it("a refusal from the core is a sentence (limit)", async () => {

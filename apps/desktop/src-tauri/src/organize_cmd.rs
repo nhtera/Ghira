@@ -226,6 +226,76 @@ pub async fn untag_meetings(
     .await
 }
 
+/// The `tag_hint` block `suggestion` of `meeting`, or `notFound`.
+fn suggestion_of(
+    store: &ghi_store::store::Store,
+    meeting: &str,
+    suggestion: &str,
+) -> Result<ghi_store::store::NoteBlock, String> {
+    store
+        .note_blocks(meeting)
+        .map_err(code)?
+        .into_iter()
+        .find(|b| b.gid == suggestion && b.kind == ghi_core::notes_job::TAG_HINT_KIND)
+        .ok_or_else(|| NOT_FOUND.into())
+}
+
+/// Takes a tag the notes suggest: the tag of that name (made if new) goes on
+/// the meeting and the suggestion goes away.
+pub(crate) fn take_suggestion(
+    store: &ghi_store::store::Store,
+    meeting: &str,
+    suggestion: &str,
+) -> Result<TagRow, String> {
+    let hint = suggestion_of(store, meeting, suggestion)?;
+    let tag = store.create_tag(&hint.body).map_err(code)?;
+    store
+        .tag_meetings(&[meeting.to_string()], &tag.gid)
+        .map_err(code)?;
+    store.delete_note_block(&hint.gid).map_err(code)?;
+    // Counted before the link was made.
+    let mut row: TagRow = tag.into();
+    row.meetings = store
+        .tags()
+        .map_err(code)?
+        .into_iter()
+        .find(|t| t.gid == row.gid)
+        .map_or(row.meetings, |t| n(t.meetings));
+    Ok(row)
+}
+
+/// Puts a tag the notes suggest on the meeting. Errors: `notFound` (no such
+/// suggestion), `limit`, `tooLong`, `empty`.
+#[tauri::command]
+#[specta::specta]
+pub async fn accept_tag_suggestion(
+    core: CoreState<'_>,
+    meeting: String,
+    suggestion: String,
+) -> Result<TagRow, String> {
+    blocking(&core, move |c| {
+        take_suggestion(&*c.store()?, &meeting, &suggestion)
+    })
+    .await
+}
+
+/// Drops a tag the notes suggest (new notes may suggest it again). Errors:
+/// `notFound`.
+#[tauri::command]
+#[specta::specta]
+pub async fn dismiss_tag_suggestion(
+    core: CoreState<'_>,
+    meeting: String,
+    suggestion: String,
+) -> Result<(), String> {
+    blocking(&core, move |c| {
+        let store = c.store()?;
+        let hint = suggestion_of(&store, &meeting, &suggestion)?;
+        store.delete_note_block(&hint.gid).map_err(code)
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +337,64 @@ mod tests {
         );
         assert_eq!(code(s.rename_folder("nope", "A").unwrap_err()), NOT_FOUND);
         assert_eq!(code(s.delete_tag("nope").unwrap_err()), NOT_FOUND);
+    }
+
+    #[test]
+    fn a_suggested_tag_is_taken_once_into_the_existing_tag_and_only_from_its_meeting() {
+        use ghi_store::store::{NewNoteBlock, Provenance};
+        let (_t, s) = open();
+        let (m, other) = (meeting(&s), meeting(&s));
+        let clients = s.create_tag("Clients").unwrap();
+        let hint = |kind: &str, body: &str| NewNoteBlock {
+            kind: kind.into(),
+            provenance: Provenance::Ai,
+            body: body.into(),
+            anchors: vec![],
+            pinned: false,
+        };
+        s.replace_ai_notes(
+            &m,
+            vec![
+                hint("tldr", "ok"),
+                hint("tag_hint", "clients"),
+                hint("tag_hint", "Beta"),
+            ],
+            vec![],
+        )
+        .unwrap();
+        let gid = |body: &str| {
+            s.note_blocks(&m)
+                .unwrap()
+                .into_iter()
+                .find(|b| b.body == body)
+                .unwrap()
+                .gid
+        };
+        let (c, beta, tldr) = (gid("clients"), gid("Beta"), gid("ok"));
+        // Not this meeting's suggestion, or not a suggestion at all.
+        assert_eq!(take_suggestion(&s, &other, &c).unwrap_err(), NOT_FOUND);
+        assert_eq!(take_suggestion(&s, &m, &tldr).unwrap_err(), NOT_FOUND);
+        let row = take_suggestion(&s, &m, &c).unwrap();
+        assert_eq!((row.gid.as_str(), row.meetings), (clients.gid.as_str(), 1));
+        assert_eq!(
+            take_suggestion(&s, &m, &c).unwrap_err(),
+            NOT_FOUND,
+            "taken once"
+        );
+        let new = take_suggestion(&s, &m, &beta).unwrap();
+        assert_eq!(new.name, "Beta");
+        let on: Vec<String> = s.meeting_tags(std::slice::from_ref(&m)).unwrap()[&m]
+            .iter()
+            .map(|t| t.name.clone())
+            .collect();
+        assert_eq!(on.len(), 2);
+        let kinds: Vec<String> = s
+            .note_blocks(&m)
+            .unwrap()
+            .into_iter()
+            .map(|b| b.kind)
+            .collect();
+        assert_eq!(kinds, ["tldr"]);
     }
 
     #[test]

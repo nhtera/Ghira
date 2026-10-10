@@ -8,8 +8,9 @@ import type { TFunction } from "i18next";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useToast } from "@ghi/ui";
-import type { FolderRow, TagRow } from "../../bindings";
+import type { FolderRow, TagRow, TagSuggestion } from "../../bindings";
 import { ipc } from "../../ipc";
+import { invalidateMeeting } from "../../state/meeting-queries";
 import { MEETINGS_KEY } from "../library/use-meetings";
 
 /** The core's limits (the core enforces them; these only word the messages). */
@@ -74,6 +75,7 @@ export function useOrganizeActions() {
   const { t } = useTranslation();
   const { show } = useToast();
   const invalidate = useInvalidateOrganize();
+  const client = useQueryClient();
   return useMemo(() => {
     const warn = (code: string, ctx?: { name?: string; max?: number }) => {
       const title = organizeError(t, code, ctx);
@@ -111,6 +113,20 @@ export function useOrganizeActions() {
         invalidate();
         return true;
       },
+      /** Puts a tag the notes suggest on the meeting (the tag of that name, made if new). */
+      async acceptSuggestion(meeting: string, s: TagSuggestion): Promise<boolean> {
+        const r = await ipc.commands.acceptTagSuggestion(meeting, s.gid);
+        if (r.status === "error") return warn(r.error, { name: s.name, max: r.error === "limit" ? MAX.tagsPerMeeting : MAX.tagName }), false;
+        invalidate();
+        void invalidateMeeting(client, meeting);
+        return true;
+      },
+      async dismissSuggestion(meeting: string, s: TagSuggestion): Promise<boolean> {
+        const r = await ipc.commands.dismissTagSuggestion(meeting, s.gid);
+        if (r.status === "error") return warn(r.error), false;
+        void invalidateMeeting(client, meeting);
+        return true;
+      },
     };
-  }, [invalidate, show, t]);
+  }, [client, invalidate, show, t]);
 }

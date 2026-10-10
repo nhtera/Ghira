@@ -1134,7 +1134,7 @@ fn a_retention_policy_applies_to_every_meeting() {
 }
 
 #[test]
-fn first_tldrs_returns_only_the_first_tldr_of_each_meeting() {
+fn row_summaries_return_the_headline_else_the_first_tldr_of_each_meeting() {
     let tmp = tempfile::tempdir().unwrap();
     let (store, _k) = common::open(tmp.path());
     let block = |kind: &str, body: &str| NewNoteBlock {
@@ -1162,9 +1162,30 @@ fn first_tldrs_returns_only_the_first_tldr_of_each_meeting() {
         .replace_ai_notes(&b.gid, vec![block("decision", "only a decision")], vec![])
         .unwrap();
     let got = store
-        .first_tldrs(&[a.gid.clone(), b.gid.clone(), c.gid.clone()])
+        .row_summaries(&[a.gid.clone(), b.gid.clone(), c.gid.clone()])
         .unwrap();
     assert_eq!(got.len(), 1);
     assert_eq!(got[&a.gid], "first");
-    assert!(store.first_tldrs(&[]).unwrap().is_empty());
+    assert!(store.row_summaries(&[]).unwrap().is_empty());
+    // A headline wins over the TL;DR, wherever it sits in the notes.
+    store
+        .replace_ai_notes(
+            &a.gid,
+            vec![
+                block("tldr", "first"),
+                block("tag_hint", "Clients"),
+                block("headline", "The team agreed the beta scope."),
+            ],
+            vec![],
+        )
+        .unwrap();
+    store
+        .replace_ai_notes(&c.gid, vec![block("headline", "Only a headline.")], vec![])
+        .unwrap();
+    let got = store
+        .row_summaries(&[a.gid.clone(), b.gid.clone(), c.gid.clone()])
+        .unwrap();
+    assert_eq!(got[&a.gid], "The team agreed the beta scope.");
+    assert_eq!(got[&c.gid], "Only a headline.");
+    assert_eq!(got.len(), 2);
 }

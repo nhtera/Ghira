@@ -49,12 +49,12 @@ fn notes_text(store: &Store, meeting: &str) -> Result<String, String> {
             continue;
         }
         let label = match b.kind.as_str() {
-            "tldr" => "Summary",
+            "tldr" | crate::notes_job::HEADLINE_KIND => "Summary",
             "decision" => "Decision",
             "proposal" => "Proposed, not agreed",
             "answer" => "Saved answer",
             "question" => "Open question",
-            "topic" | "quote" => continue,
+            "topic" | "quote" | crate::notes_job::TAG_HINT_KIND => continue,
             _ if b.provenance == Provenance::User => "Note",
             _ => "Point",
         };

@@ -564,6 +564,16 @@ export const commands = {
 	 *  tags per meeting), `notFound`.
 	 */
 	tagMeetings: (meetings: string[], tag: string) => typedError<number, string>(__TAURI_INVOKE("tag_meetings", { meetings, tag })),
+	/**
+	 *  Puts a tag the notes suggest on the meeting. Errors: `notFound` (no such
+	 *  suggestion), `limit`, `tooLong`, `empty`.
+	 */
+	acceptTagSuggestion: (meeting: string, suggestion: string) => typedError<TagRow, string>(__TAURI_INVOKE("accept_tag_suggestion", { meeting, suggestion })),
+	/**
+	 *  Drops a tag the notes suggest (new notes may suggest it again). Errors:
+	 *  `notFound`.
+	 */
+	dismissTagSuggestion: (meeting: string, suggestion: string) => typedError<null, string>(__TAURI_INVOKE("dismiss_tag_suggestion", { meeting, suggestion })),
 	/**  Removes a tag from meetings. Returns how many lost it. Errors: `notFound`. */
 	untagMeetings: (meetings: string[], tag: string) => typedError<number, string>(__TAURI_INVOKE("untag_meetings", { meetings, tag })),
 	/**
@@ -1418,6 +1428,13 @@ export type MeetingNotes = {
 	 *  that each source proves its sentence.
 	 */
 	linked: number,
+	/**  The notes' one-sentence headline (not among `blocks`). */
+	headline: string | null,
+	/**
+	 *  Tags the notes suggest that the meeting does not have yet (not among
+	 *  `blocks`); taken or dismissed by their gid.
+	 */
+	tagSuggestions: TagSuggestion[],
 };
 
 export type MeetingRef = {
@@ -1956,6 +1973,12 @@ export type TagRow = {
 	name: string,
 	/**  Meetings with it. */
 	meetings: number,
+};
+
+/**  A tag the notes suggest (a `tag_hint` block). */
+export type TagSuggestion = {
+	gid: string,
+	name: string,
 };
 
 /**  What the editor shows and sends. */

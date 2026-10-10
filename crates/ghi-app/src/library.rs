@@ -159,7 +159,7 @@ fn rows_of(
     let gids: Vec<String> = meetings.iter().map(|m| m.gid.clone()).collect();
     let mut people = store.speaker_chips(&gids).map_err(|e| e.to_string())?;
     let mut tags = store.meeting_tags(&gids).map_err(|e| e.to_string())?;
-    let mut summaries = store.first_tldrs(&gids).map_err(|e| e.to_string())?;
+    let mut summaries = store.row_summaries(&gids).map_err(|e| e.to_string())?;
     let mut unnamed = store
         .unnamed_voice_counts(&gids)
         .map_err(|e| e.to_string())?;

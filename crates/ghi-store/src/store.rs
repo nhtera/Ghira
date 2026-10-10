@@ -1260,19 +1260,20 @@ impl Store {
             .and_then(|v| v.as_str().map(str::to_string)))
     }
 
-    /// The first TL;DR note body of each of `meeting_gids` that has one, in
-    /// one query: only those blocks are decrypted (the library's summary line).
-    pub fn first_tldrs(&self, meeting_gids: &[String]) -> Result<HashMap<String, String>> {
+    /// The summary line of each of `meeting_gids` that has notes, in one
+    /// query: the notes' headline (block kind `headline`), else their first
+    /// TL;DR. Only those blocks are decrypted (the library's second line).
+    pub fn row_summaries(&self, meeting_gids: &[String]) -> Result<HashMap<String, String>> {
         let conn = self.conn();
         let want =
             serde_json::to_string(meeting_gids).map_err(|e| StoreError::Invalid(e.to_string()))?;
         let mut stmt = conn.prepare_cached(
             "SELECT m.id, m.gid, b.gid, b.body_ct
              FROM notes_blocks b JOIN meetings m ON m.id = b.meeting_id
-             WHERE b.kind = 'tldr' AND m.gid IN (SELECT value FROM json_each(?1))
+             WHERE b.kind IN ('headline', 'tldr') AND m.gid IN (SELECT value FROM json_each(?1))
                AND b.gid = (SELECT gid FROM notes_blocks
-                            WHERE meeting_id = b.meeting_id AND kind = 'tldr'
-                            ORDER BY ord, gid LIMIT 1)",
+                            WHERE meeting_id = b.meeting_id AND kind IN ('headline', 'tldr')
+                            ORDER BY kind = 'headline' DESC, ord, gid LIMIT 1)",
         )?;
         let rows = stmt
             .query_map([want], |r| {

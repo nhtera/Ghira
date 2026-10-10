@@ -80,6 +80,8 @@ let notes: MeetingNotes;
 beforeEach(() => {
   notes = {
     linked: 0,
+    headline: null,
+    tagSuggestions: [],
     marks: [],
     sections: [],
     blocks: [

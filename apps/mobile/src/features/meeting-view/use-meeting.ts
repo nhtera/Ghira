@@ -32,6 +32,8 @@ const NO_NOTES: MeetingNotes = {
   sections: [],
   marks: [],
   linked: 0,
+  headline: null,
+  tagSuggestions: [],
 };
 const NO_TRANSCRIPT: MeetingTranscript = {
   version: null,

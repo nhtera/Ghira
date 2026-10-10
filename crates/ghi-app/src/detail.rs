@@ -9,6 +9,7 @@
 //! the store, so a regenerate keeps them.
 
 use ghi_core::marks::{self, Cover};
+use ghi_core::notes_job::{HEADLINE_KIND, TAG_HINT_KIND};
 use ghi_store::anchors::Anchor;
 use ghi_store::search::{HitKind, SearchFilter, SearchQuery};
 use ghi_store::store::{Item, Mark, NewActionItem, NewNoteBlock, Provenance, Segment, Store};
@@ -170,6 +171,19 @@ pub struct MeetingNotes {
     /// least one moment ("Sources linked 43"). A count of links, not a claim
     /// that each source proves its sentence.
     pub linked: u32,
+    /// The notes' one-sentence headline (not among `blocks`).
+    pub headline: Option<String>,
+    /// Tags the notes suggest that the meeting does not have yet (not among
+    /// `blocks`); taken or dismissed by their gid.
+    pub tag_suggestions: Vec<TagSuggestion>,
+}
+
+/// A tag the notes suggest (a `tag_hint` block).
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TagSuggestion {
+    pub gid: String,
+    pub name: String,
 }
 
 /// A mark and what covers it: AI blocks and action items whose cited time
@@ -393,7 +407,33 @@ fn notes_of(store: &Store, meeting: &str) -> Result<MeetingNotes, String> {
     let m = store.get_meeting(meeting).map_err(err)?;
     let segs = store.segments(meeting).map_err(err)?;
     let v = m.transcript_version;
-    let raw_blocks = store.note_blocks(meeting).map_err(err)?;
+    let (meta, raw_blocks): (Vec<_>, Vec<_>) = store
+        .note_blocks(meeting)
+        .map_err(err)?
+        .into_iter()
+        .partition(|b| b.kind == HEADLINE_KIND || b.kind == TAG_HINT_KIND);
+    let headline = meta
+        .iter()
+        .find(|b| b.kind == HEADLINE_KIND)
+        .map(|b| b.body.clone());
+    let has: Vec<String> = store
+        .meeting_tags(&[meeting.to_string()])
+        .map_err(err)?
+        .remove(meeting)
+        .unwrap_or_default()
+        .iter()
+        .map(|t| ghi_store::organize::name_key(&t.name))
+        .collect();
+    let tag_suggestions = meta
+        .into_iter()
+        .filter(|b| {
+            b.kind == TAG_HINT_KIND && !has.contains(&ghi_store::organize::name_key(&b.body))
+        })
+        .map(|b| TagSuggestion {
+            gid: b.gid,
+            name: b.body,
+        })
+        .collect();
     let sections = sections_for(store, m.template.as_deref(), &raw_blocks);
     let raw_actions = store.action_items(meeting).map_err(err)?;
     let linked = linked_sources(&raw_blocks, &raw_actions);
@@ -441,6 +481,8 @@ fn notes_of(store: &Store, meeting: &str) -> Result<MeetingNotes, String> {
         sections,
         marks: moments,
         linked,
+        headline,
+        tag_suggestions,
     })
 }
 
@@ -1583,6 +1625,48 @@ mod tests {
             anchors: vec![],
             pinned: false,
         }
+    }
+
+    #[test]
+    fn the_headline_and_tag_hints_are_lifted_out_of_the_blocks_and_applied_tags_are_not_offered() {
+        let (_t, core, m) = core_and_meeting();
+        let store = core.store().unwrap();
+        let ai = |kind: &str, body: &str| NewNoteBlock {
+            kind: kind.into(),
+            provenance: Provenance::Ai,
+            body: body.into(),
+            anchors: vec![],
+            pinned: false,
+        };
+        store
+            .replace_ai_notes(
+                &m,
+                vec![
+                    ai("tldr", "Scope agreed"),
+                    ai(HEADLINE_KIND, "The team agreed the beta scope."),
+                    ai(TAG_HINT_KIND, "Beta"),
+                    ai(TAG_HINT_KIND, "clients"),
+                ],
+                vec![],
+            )
+            .unwrap();
+        let clients = store.create_tag("Clients").unwrap();
+        store
+            .tag_meetings(std::slice::from_ref(&m), &clients.gid)
+            .unwrap();
+        let notes = notes_of(&store, &m).unwrap();
+        assert_eq!(
+            notes.headline.as_deref(),
+            Some("The team agreed the beta scope.")
+        );
+        let names: Vec<&str> = notes
+            .tag_suggestions
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect();
+        assert_eq!(names, ["Beta"], "Clients is on the meeting already");
+        let kinds: Vec<&str> = notes.blocks.iter().map(|b| b.kind.as_str()).collect();
+        assert_eq!(kinds, ["tldr"]);
     }
 
     #[test]

@@ -626,6 +626,8 @@ fn status_pass_accuracy() {
                 key_quotes: vec![],
                 topics: vec![],
                 sections: vec![],
+                headline: None,
+                tags: vec![],
             },
             engine: llm_engine(),
             strategy: notes::Strategy::Single,

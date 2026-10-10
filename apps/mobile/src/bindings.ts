@@ -1043,6 +1043,13 @@ export type MeetingNotes = {
 	 *  that each source proves its sentence.
 	 */
 	linked: number,
+	/**  The notes' one-sentence headline (not among `blocks`). */
+	headline: string | null,
+	/**
+	 *  Tags the notes suggest that the meeting does not have yet (not among
+	 *  `blocks`); taken or dismissed by their gid.
+	 */
+	tagSuggestions: TagSuggestion[],
 };
 
 export type MeetingRow = {
@@ -1586,6 +1593,12 @@ export type SyncStatus = {
 
 /**  A tag on a meeting row. */
 export type TagChip = {
+	gid: string,
+	name: string,
+};
+
+/**  A tag the notes suggest (a `tag_hint` block). */
+export type TagSuggestion = {
 	gid: string,
 	name: string,
 };

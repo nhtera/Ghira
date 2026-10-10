@@ -214,9 +214,11 @@ has at least one. `summary` is the TL;DR (≤5). `owner` is the transcript's
 (never a guess). Text is plain (no Markdown, links or HTML). Also present:
 `template`, `lang`, `open_questions`, `key_quotes` (`speaker`), `topics`
 (`title`, `start`, `end`), `sections` (template-specific: `id`, `title`,
-`items`), `strategy` (`single` or `map_reduce` with `parts`) and
+`items`), `strategy` (`single` or `map_reduce` with `parts`),
 `diagnostics` (requests, retries, tokens, items dropped for invalid
-citations, weak anchors, unassigned owners).
+citations, weak anchors, unassigned owners), `headline` (one uncited
+sentence about the whole meeting, or `null`) and `tags` (up to 3 suggested
+tag names, possibly empty).
 
 ### `ghi ask <transcript.json> <question> [--lang auto|vi|en] --json`
 
