@@ -472,7 +472,8 @@ export type AppSettings = {
 	notesLanguage: NotesLanguage,
 	/**
 	 *  Meeting apps to detect (`zoom`, `teams`, `meet` for browsers, `slack`,
-	 *  `zalo`, `webex`, `facetime`); default all. Discord is not on the list:
+	 *  `zalo`, `webex`, `whatsapp`, `telegram`, `signal`, `viber`, `facetime`
+	 *  (FaceTime and iPhone calls)); default all. Discord is not on the list:
 	 *  it is always detected while `detect_meetings` is on.
 	 */
 	detectApps: string[],

@@ -872,7 +872,11 @@
         "slack": "Slack huddles",
         "zalo": "Zalo",
         "webex": "Webex",
-        "facetime": "FaceTime"
+        "whatsapp": "WhatsApp",
+        "telegram": "Telegram",
+        "signal": "Signal",
+        "viber": "Viber",
+        "facetime": "FaceTime and iPhone calls"
       }
     },
     "ai": {

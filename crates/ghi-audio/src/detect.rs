@@ -8,8 +8,12 @@
 //! * A meeting app is recognised by bundle id: an exact match or a prefix that
 //!   ends at a dot (`com.google.Chrome.helper.Renderer` belongs to Chrome,
 //!   `com.google.ChromeX` does not). Only a *running mic input* triggers.
-//! * Native apps (Zoom, Teams, Webex, Slack, Discord, Zalo) prompt with their
-//!   name; browsers prompt generically ("Browser call detected").
+//! * Native apps (Zoom, Teams, Webex, Slack, Discord, Zalo, WhatsApp, Telegram,
+//!   Signal, Viber, FaceTime) prompt with their name; browsers prompt
+//!   generically ("Browser call detected").
+//! * FaceTime calls and iPhone calls answered on the Mac run their audio in
+//!   system daemons (`avconferenced`, `callservicesd`), not in FaceTime.app, so
+//!   those bundle ids count as FaceTime too and are part of its tap.
 //! * Apps that are not listed (Voice Memos, dictation, music players) never
 //!   prompt. Our own process is ignored.
 //! * After a prompt the app is quiet for 30 minutes, and while it keeps using
@@ -49,6 +53,10 @@ pub enum App {
     Slack,
     Discord,
     Zalo,
+    WhatsApp,
+    Telegram,
+    Signal,
+    Viber,
     FaceTime,
     Chrome,
     Edge,
@@ -68,7 +76,27 @@ const TABLE: &[(App, &[&str])] = &[
     (App::Slack, &["com.tinyspeck.slackmacgap"]),
     (App::Discord, &["com.hnc.Discord"]),
     (App::Zalo, &["com.vng.zalo"]),
-    (App::FaceTime, &["com.apple.FaceTime"]),
+    (
+        App::WhatsApp,
+        &["net.whatsapp.WhatsApp", "desktop.WhatsApp"],
+    ),
+    (
+        App::Telegram,
+        &["ru.keepcoder.Telegram", "com.tdesktop.Telegram"],
+    ),
+    (App::Signal, &["org.whispersystems.signal-desktop"]),
+    (App::Viber, &["com.viber.osx"]),
+    (
+        App::FaceTime,
+        &[
+            "com.apple.FaceTime",
+            // The call daemons (`avconferenced`, `callservicesd`) and the
+            // Phone app (macOS 26).
+            "com.apple.avconferenced",
+            "com.apple.TelephonyUtilities",
+            "com.apple.mobilephone",
+        ],
+    ),
     (App::Chrome, &["com.google.Chrome"]),
     (App::Edge, &["com.microsoft.edgemac"]),
     (App::Safari, &["com.apple.Safari"]),
@@ -94,6 +122,10 @@ impl App {
             App::Slack => "slack",
             App::Discord => "discord",
             App::Zalo => "zalo",
+            App::WhatsApp => "whatsapp",
+            App::Telegram => "telegram",
+            App::Signal => "signal",
+            App::Viber => "viber",
             App::FaceTime => "facetime",
             App::Chrome => "chrome",
             App::Edge => "edge",
@@ -114,6 +146,10 @@ impl App {
             App::Webex => Some("webex"),
             App::Slack => Some("slack"),
             App::Zalo => Some("zalo"),
+            App::WhatsApp => Some("whatsapp"),
+            App::Telegram => Some("telegram"),
+            App::Signal => Some("signal"),
+            App::Viber => Some("viber"),
             App::FaceTime => Some("facetime"),
             App::Discord => None,
             _ => Some("meet"),
@@ -132,6 +168,10 @@ impl App {
             App::Slack => "Slack",
             App::Discord => "Discord",
             App::Zalo => "Zalo",
+            App::WhatsApp => "WhatsApp",
+            App::Telegram => "Telegram",
+            App::Signal => "Signal",
+            App::Viber => "Viber",
             App::FaceTime => "FaceTime",
             App::Chrome => "Google Chrome",
             App::Edge => "Microsoft Edge",
@@ -151,6 +191,10 @@ impl App {
             App::Slack => "Slack call detected",
             App::Discord => "Discord call detected",
             App::Zalo => "Zalo call detected",
+            App::WhatsApp => "WhatsApp call detected",
+            App::Telegram => "Telegram call detected",
+            App::Signal => "Signal call detected",
+            App::Viber => "Viber call detected",
             App::FaceTime => "FaceTime call detected",
             _ => "Browser call detected",
         }
@@ -663,6 +707,52 @@ mod tests {
         assert!(meeting_app_pids(&ps, Some(&["meet".to_string()]), 999).is_empty());
         // Our own process is never a target.
         assert!(meeting_app_pids(&ps, None, 10).is_empty());
+    }
+
+    #[test]
+    fn a_call_in_the_daemons_is_a_facetime_call_and_taps_them_all() {
+        // The daemons are always listed; only their running mic is a call.
+        let idle = [
+            proc(892, "com.apple.avconferenced", false),
+            proc(695, "com.apple.TelephonyUtilities", false),
+        ];
+        let mut d = det();
+        assert_eq!(settle(&mut d, &idle, 0), None);
+        let call = [
+            proc(892, "com.apple.avconferenced", true),
+            proc(695, "com.apple.TelephonyUtilities", false),
+            proc(40, "com.apple.FaceTime", false),
+        ];
+        let p = settle(&mut d, &call, 10).expect("prompt");
+        assert_eq!(p.app, App::FaceTime);
+        assert_eq!(p.pids, vec![40, 695, 892]);
+        assert_eq!(meeting_app_pids(&call, None, 999), vec![40, 695, 892]);
+        // An iPhone call through the Phone app (macOS 26) is the same entry.
+        assert_eq!(
+            App::from_bundle_id("com.apple.mobilephone"),
+            Some(App::FaceTime)
+        );
+        assert!(meeting_app_pids(&call, Some(&["zoom".to_string()]), 999).is_empty());
+    }
+
+    #[test]
+    fn messaging_apps_prompt_by_name() {
+        for (id, app) in [
+            ("net.whatsapp.WhatsApp", App::WhatsApp),
+            ("desktop.WhatsApp", App::WhatsApp),
+            ("ru.keepcoder.Telegram", App::Telegram),
+            ("com.tdesktop.Telegram", App::Telegram),
+            ("org.whispersystems.signal-desktop", App::Signal),
+            ("com.viber.osx", App::Viber),
+        ] {
+            assert_eq!(App::from_bundle_id(id), Some(app), "{id}");
+            assert!(!app.is_browser());
+            assert_eq!(App::from_key(app.key()), Some(app));
+            assert_eq!(app.setting_key(), Some(app.key()));
+            let mut d = det();
+            let p = settle(&mut d, &[proc(10, id, true)], 0).expect("prompt");
+            assert_eq!(p.title, format!("{} call detected", app.display_name()));
+        }
     }
 
     #[test]

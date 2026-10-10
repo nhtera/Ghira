@@ -49,7 +49,7 @@ export function RecordingSection() {
 }
 
 /** The meeting apps that may prompt "record this call?" (the master switch is `detectMeetings`). */
-const DETECT_APPS = ["zoom", "teams", "meet", "slack", "zalo", "webex", "facetime"] as const;
+const DETECT_APPS = ["zoom", "teams", "meet", "slack", "zalo", "webex", "whatsapp", "telegram", "signal", "viber", "facetime"] as const;
 
 function DetectApps({ apps, onChange }: { apps: string[]; onChange: (apps: string[]) => void }) {
   const { t } = useTranslation();

@@ -69,7 +69,8 @@ pub struct AppSettings {
     /// transcript's own).
     pub notes_language: NotesLanguage,
     /// Meeting apps to detect (`zoom`, `teams`, `meet` for browsers, `slack`,
-    /// `zalo`, `webex`, `facetime`); default all. Discord is not on the list:
+    /// `zalo`, `webex`, `whatsapp`, `telegram`, `signal`, `viber`, `facetime`
+    /// (FaceTime and iPhone calls)); default all. Discord is not on the list:
     /// it is always detected while `detect_meetings` is on.
     pub detect_apps: Vec<String>,
     /// Cancel the Mac's speaker output from the mic in call mode.
@@ -95,8 +96,9 @@ pub fn cloud_allowed(s: &AppSettings) -> Result<(), String> {
 }
 
 /// The apps `detect_apps` can list.
-pub const DETECT_APPS: [&str; 7] = [
-    "zoom", "teams", "meet", "slack", "zalo", "webex", "facetime",
+pub const DETECT_APPS: [&str; 11] = [
+    "zoom", "teams", "meet", "slack", "zalo", "webex", "whatsapp", "telegram", "signal", "viber",
+    "facetime",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
