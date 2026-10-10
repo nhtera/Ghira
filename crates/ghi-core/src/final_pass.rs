@@ -340,53 +340,43 @@ fn transcribe(
         if ctx.preempted() {
             return Ok(None);
         }
-        let mut chunk_out: Vec<Final> = Vec::new();
         let off = a as f64 / RATE;
-        let mut asr = engines.asr(language).map_err(|e| e.to_string())?;
-        let collect =
-            |asr: &mut crate::engines::BoxAsr, out: &mut Vec<Final>| -> Result<(), String> {
-                while let Some(r) = asr.next_result().map_err(|e| e.to_string())? {
-                    if !r.is_final || r.text.trim().is_empty() {
-                        continue;
-                    }
-                    let mut words: Vec<Word> = r
-                        .words
-                        .iter()
-                        .map(|w| Word {
-                            start: w.start + off,
-                            end: w.end + off,
-                            ..w.clone()
-                        })
-                        .collect();
-                    if words.is_empty() {
-                        let end = off + r.audio_processed;
-                        words.push(Word {
-                            text: r.text.trim().to_string(),
-                            start: (end - 1.0).max(off),
-                            end,
-                            confidence: 1.0,
-                            speaker: None,
-                        });
-                    }
-                    out.push(words);
-                }
-                Ok(())
-            };
-        for block in pcm[a..b].chunks(SAMPLE_RATE as usize) {
-            if ctx.preempted() {
-                return Ok(None);
-            }
-            asr.push(block, SAMPLE_RATE).map_err(|e| e.to_string())?;
-            collect(&mut asr, &mut chunk_out)?;
-        }
-        // Engines that decode at the end (Whisper) stop mid-chunk on preemption.
-        if !asr
-            .finish_abortable(&|| ctx.preempted())
-            .map_err(|e| e.to_string())?
-        {
+        // Read as live reads: a fresh stream after a Vietnamese line, long
+        // utterances cut (one stream over a minute of Vietnamese drifts).
+        let Some(finals) = crate::stream_read::read_finals(
+            &|| engines.asr(language).map_err(|e| e.to_string()),
+            &|line| engines.reset_after(line),
+            &pcm[a..b],
+            &|| ctx.preempted(),
+        )?
+        else {
             return Ok(None);
-        }
-        collect(&mut asr, &mut chunk_out)?;
+        };
+        let chunk_out: Vec<Final> = finals
+            .into_iter()
+            .map(|r| {
+                let mut words: Vec<Word> = r
+                    .words
+                    .iter()
+                    .map(|w| Word {
+                        start: w.start + off,
+                        end: w.end + off,
+                        ..w.clone()
+                    })
+                    .collect();
+                if words.is_empty() {
+                    let end = off + r.audio_processed;
+                    words.push(Word {
+                        text: r.text.trim().to_string(),
+                        start: (end - 1.0).max(off),
+                        end,
+                        confidence: 1.0,
+                        speaker: None,
+                    });
+                }
+                words
+            })
+            .collect();
         ck.save(&part, encode_finals(&chunk_out));
         out.extend(chunk_out);
         advance(ck);

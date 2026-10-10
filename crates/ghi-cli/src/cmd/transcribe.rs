@@ -138,7 +138,7 @@ fn nemo_gap_reader(args: &EngineArgs, language: Option<String>) -> ghi_speech::w
 }
 
 /// The file as 16 kHz mono (channels averaged), through `ghi-audio`'s decoder.
-#[cfg(feature = "whisper")]
+#[cfg(any(feature = "nemo", feature = "whisper"))]
 fn decode_16k(path: &Path) -> Result<Vec<f32>, ErrorDoc> {
     let bad = |e: ghi_audio::decode::DecodeError| {
         ErrorDoc::new(
@@ -203,14 +203,68 @@ fn run_nemo(args: &Args, audio: &Audio) -> Result<(), ErrorDoc> {
                 .map_or_else(|| writeln!(out, "{}", to_line(&end)), Err)
                 .map_err(|e| ErrorDoc::new(ErrorCode::Internal, e.to_string()));
         }
-        crate::cmd::feed_asr(&mut stream, audio, false, |r, _| {
-            builder.add(&r);
-            true
-        })
-        .map_err(engine::speech_error)?;
+        if args.pass == Pass::Final {
+            drop(stream);
+            read_like_final_pass(asr, &options, args.audio, audio, &mut builder)?;
+        } else {
+            crate::cmd::feed_asr(&mut stream, audio, false, |r, _| {
+                builder.add(&r);
+                true
+            })
+            .map_err(engine::speech_error)?;
+        }
     }
     let doc = builder.finish(args, audio, engine_info, started.elapsed().as_secs_f64());
     crate::emit(&doc)
+}
+
+/// The final pass's reading: 16 kHz audio in the app's chunks, each read by
+/// [`ghi_core::stream_read`] (a fresh stream after a Vietnamese line).
+#[cfg(feature = "nemo")]
+fn read_like_final_pass(
+    asr: ghi_speech::nemo::Asr,
+    options: &ghi_speech::nemo::AsrOptions,
+    path: &Path,
+    audio: &Audio,
+    builder: &mut TranscriptBuilder,
+) -> Result<(), ErrorDoc> {
+    use crate::contract::ErrorCode;
+
+    let asr = std::sync::Arc::new(asr);
+    let decoded;
+    let pcm = if audio.sample_rate == ghi_audio::SAMPLE_RATE {
+        &audio.samples
+    } else {
+        decoded = decode_16k(path)?;
+        &decoded
+    };
+    let open = || -> Result<ghi_core::engines::BoxAsr, String> {
+        Ok(Box::new(
+            asr.stream_owned(options).map_err(|e| e.to_string())?,
+        ))
+    };
+    // The app's chunks: at most 60 s, cut at the quietest moment.
+    let cuts = ghi_core::final_pass::cut_points(pcm, ghi_core::final_pass::CHECKPOINT_CHUNK_S);
+    for w in cuts.windows(2) {
+        let off = w[0] as f64 / f64::from(ghi_audio::SAMPLE_RATE);
+        let finals = ghi_core::stream_read::read_finals(
+            &open,
+            &ghi_core::engines::nemo_reset_after,
+            &pcm[w[0]..w[1]],
+            &|| false,
+        )
+        .map_err(|e| ErrorDoc::new(ErrorCode::Internal, e))?
+        .unwrap_or_default();
+        for mut r in finals {
+            for word in &mut r.words {
+                word.start += off;
+                word.end += off;
+            }
+            r.audio_processed += off;
+            builder.add(&r);
+        }
+    }
+    Ok(())
 }
 
 /// `--lang` to the engine's BCP-47 prompt; `None` = automatic detection.

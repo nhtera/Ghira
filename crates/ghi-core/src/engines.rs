@@ -11,6 +11,15 @@ use ghi_speech::{AsrResult, AsrStream, DiarStream, SpeakerSegment, SpeechError, 
 
 pub type Result<T> = std::result::Result<T, SpeechError>;
 pub type BoxAsr = Box<dyn AsrStream + Send>;
+
+/// Nemotron's [`SpeechEngines::reset_after`]: after a Vietnamese line
+/// (Vietnamese is written with diacritics) a fresh stream reads Vietnamese and
+/// code-switched speech better (live bench, 2026-10-06: ViMedCSS 35% -> 19%
+/// WER, VietMed 22% -> 18%, FLEURS vi 16% -> 15%), while English reads as well
+/// or better with its context kept (AMI, Earnings-21 flat).
+pub fn nemo_reset_after(line: &str) -> bool {
+    ghi_text::has_diacritics(line)
+}
 pub type BoxDiar = Box<dyn DiarStream + Send>;
 
 /// Opens streams on loaded models. One model per kind serves every track
@@ -125,6 +134,7 @@ mod nemo {
         fn asr(&self, language: Option<&str>) -> Result<BoxAsr> {
             let opts = AsrOptions {
                 language: language.map(str::to_string),
+                ..AsrOptions::default()
             };
             Ok(Box::new(self.asr.stream_owned(&opts)?))
         }
@@ -141,13 +151,8 @@ mod nemo {
             self.tag.clone()
         }
 
-        /// After a Vietnamese line (Vietnamese is written with diacritics): a
-        /// fresh Nemotron stream reads Vietnamese and code-switched speech
-        /// better (live bench, 2026-10-06: ViMedCSS 35% -> 19% WER, VietMed
-        /// 22% -> 18%, FLEURS vi 16% -> 15%), while English reads as well or
-        /// better with its context kept (AMI, Earnings-21 flat).
         fn reset_after(&self, line: &str) -> bool {
-            ghi_text::has_diacritics(line)
+            super::nemo_reset_after(line)
         }
     }
 }
@@ -209,6 +214,7 @@ mod whisper_final {
         fn read(&self, pcm: &[f32], language: Option<&str>) -> Result<Vec<AsrResult>> {
             let mut stream = self.get()?.stream_owned(&AsrOptions {
                 language: language.map(str::to_string),
+                ..AsrOptions::default()
             })?;
             stream.push(pcm, ghi_speech::whisper::SAMPLE_RATE)?;
             stream.finish()?;

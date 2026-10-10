@@ -133,7 +133,8 @@ Core pipeline (phase 8): `crates/ghi-core` — `session` (capture → pump →
 bundles; ASR ring → `live` engine → `persist` → store; event bus `events`),
 `speakers`/`aligner` (arrival order, provisional, Me in call mode),
 discard [RT-1] (store transaction + bundle rotation), `jobs` (the job runner;
-recording preempts), `final_pass` (v2 + `carry` name carry-over + `vocab`),
+recording preempts), `final_pass` (v2 + `carry` name carry-over + `vocab`;
+chunks read by `stream_read`: a fresh stream from a Vietnamese line's last word),
 `notes_job`, `import`, `recover` (startup). Without speech models a
 session records only and its jobs wait until the models are installed
 (`JobHandler::ready`). Speech engines behind
