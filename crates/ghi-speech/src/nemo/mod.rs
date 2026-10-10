@@ -54,9 +54,15 @@ pub const EOU_MS: u32 = 800;
 
 #[derive(Debug, Clone, Default)]
 pub struct AsrOptions {
-    /// BCP-47 code (`vi-VN`, `en-US`) or `None` for automatic detection.
+    /// BCP-47 code (`vi-VN`, `en-US`; a bare `vi` / `en` is widened) or `None`
+    /// for automatic detection.
     /// Streams always produce partial results (the C ABI has no switch for it).
     pub language: Option<String>,
+    /// Words and phrases to favour while decoding (names, products, jargon):
+    /// the engine's RNNT context biasing. Empty = none.
+    pub phrases: Vec<String>,
+    /// Weight of `phrases`; the engine clamps it to 0.1..=5. `0` = its default (1).
+    pub boost: f32,
 }
 
 /// A loaded ASR model.
@@ -123,14 +129,14 @@ impl Asr {
     /// Decodes a whole recording in one call (offline). Unlike streaming, the
     /// result reports detected languages.
     pub fn recognize(&self, pcm: &[f32], sample_rate: u32, opts: &AsrOptions) -> Result<AsrResult> {
-        let (raw, _lang) = raw_options(opts)?;
+        let raw = RawOptions::new(opts)?;
         let mut out = ptr::null_mut();
-        // SAFETY: `raw`, its language string and `pcm` live across the call;
+        // SAFETY: `raw`, the strings it points to and `pcm` live across the call;
         // `out` is a result we destroy after copying.
         check("nemo_speech_asr_recognize_f32", unsafe {
             sys::nemo_speech_asr_recognize_f32(
                 self.ptr.as_ptr(),
-                &raw,
+                &raw.raw,
                 pcm.as_ptr(),
                 pcm.len(),
                 rate(sample_rate)?,
@@ -146,11 +152,12 @@ impl Asr {
 
     /// Starts a streaming recognition.
     pub fn stream(&self, opts: &AsrOptions) -> Result<NemoAsrStream<'_>> {
-        let (raw, _lang) = raw_options(opts)?;
+        let raw = RawOptions::new(opts)?;
         let mut out = ptr::null_mut();
-        // SAFETY: `raw` and the language string it points to live across the call.
+        // SAFETY: `raw` and the strings it points to live across the call (the
+        // library copies them).
         check("nemo_speech_asr_streaming_recognize", unsafe {
-            sys::nemo_speech_asr_streaming_recognize(self.ptr.as_ptr(), &raw, &mut out)
+            sys::nemo_speech_asr_streaming_recognize(self.ptr.as_ptr(), &raw.raw, &mut out)
         })?;
         Ok(NemoAsrStream {
             ptr: non_null(out, "nemo_speech_asr_streaming_recognize")?,
@@ -370,16 +377,65 @@ fn right_context_frames(chunk_ms: u32) -> Result<i32> {
     }
 }
 
-/// Options struct plus the owned language string it points into.
-fn raw_options(opts: &AsrOptions) -> Result<(sys::RecognitionOptions, Option<CString>)> {
-    // SAFETY: returns a value, no pointers owned by the library.
-    let mut raw = unsafe { sys::nemo_speech_asr_recognition_options_default() };
-    let lang = opts.language.as_deref().map(cstring).transpose()?;
-    raw.language_code = lang.as_ref().map_or(ptr::null(), |l| l.as_ptr());
-    raw.interim_results = true;
-    raw.enable_word_time_offsets = true;
-    raw.enable_automatic_punctuation = true;
-    Ok((raw, lang))
+/// Options struct plus the owned strings it points into (heap data, so moving
+/// this value keeps the pointers valid).
+struct RawOptions {
+    raw: sys::RecognitionOptions,
+    _lang: Option<CString>,
+    _phrases: Vec<CString>,
+    _phrase_ptrs: Vec<*const c_char>,
+    _context: Box<sys::SpeechContext>,
+}
+
+impl RawOptions {
+    fn new(opts: &AsrOptions) -> Result<Self> {
+        // SAFETY: returns a value, no pointers owned by the library.
+        let mut raw = unsafe { sys::nemo_speech_asr_recognition_options_default() };
+        let lang = opts
+            .language
+            .as_deref()
+            .map(|l| cstring(&engine_language(l)))
+            .transpose()?;
+        raw.language_code = lang.as_ref().map_or(ptr::null(), |l| l.as_ptr());
+        raw.interim_results = true;
+        raw.enable_word_time_offsets = true;
+        raw.enable_automatic_punctuation = true;
+        let phrases = opts
+            .phrases
+            .iter()
+            .map(|p| p.trim())
+            .filter(|p| !p.is_empty())
+            .map(cstring)
+            .collect::<Result<Vec<_>>>()?;
+        let phrase_ptrs: Vec<*const c_char> = phrases.iter().map(|p| p.as_ptr()).collect();
+        let context = Box::new(sys::SpeechContext {
+            size: size_of::<sys::SpeechContext>(),
+            phrases: phrase_ptrs.as_ptr(),
+            phrase_count: phrase_ptrs.len(),
+            boost: opts.boost.max(0.0),
+        });
+        if !phrase_ptrs.is_empty() {
+            raw.speech_contexts = &*context;
+            raw.speech_context_count = 1;
+        }
+        Ok(RawOptions {
+            raw,
+            _lang: lang,
+            _phrases: phrases,
+            _phrase_ptrs: phrase_ptrs,
+            _context: context,
+        })
+    }
+}
+
+/// The model's prompt for a language: its dictionary has `vi-VN` but no bare
+/// `vi`, and an unknown tag silently means automatic detection.
+fn engine_language(tag: &str) -> String {
+    match tag.to_ascii_lowercase().as_str() {
+        "vi" => "vi-VN".into(),
+        "en" => "en-US".into(),
+        _ => tag.to_string(),
+    }
 }
 
 /// Copies a result out of library memory.
@@ -559,6 +615,42 @@ mod tests {
         assert_eq!(right_context_frames(560).unwrap(), 6);
         assert_eq!(right_context_frames(1120).unwrap(), 13);
         assert!(right_context_frames(500).is_err());
+    }
+
+    #[test]
+    fn bare_languages_get_the_models_region() {
+        assert_eq!(engine_language("vi"), "vi-VN");
+        assert_eq!(engine_language("EN"), "en-US");
+        assert_eq!(engine_language("vi-VN"), "vi-VN");
+        assert_eq!(engine_language("fr-FR"), "fr-FR");
+    }
+
+    #[test]
+    fn phrases_become_one_speech_context() {
+        let raw = RawOptions::new(&AsrOptions {
+            language: Some("vi".into()),
+            phrases: vec!["Ghira".into(), "  ".into(), "Lê Minh".into()],
+            boost: 2.0,
+        })
+        .unwrap();
+        assert_eq!(raw.raw.speech_context_count, 1);
+        // SAFETY: the pointers live in `raw`.
+        unsafe {
+            let ctx = &*raw.raw.speech_contexts;
+            assert_eq!(ctx.phrase_count, 2);
+            assert_eq!(ctx.boost, 2.0);
+            assert_eq!(
+                CStr::from_ptr(*ctx.phrases.add(1)).to_str().unwrap(),
+                "Lê Minh"
+            );
+            assert_eq!(
+                CStr::from_ptr(raw.raw.language_code).to_str().unwrap(),
+                "vi-VN"
+            );
+        }
+        let none = RawOptions::new(&AsrOptions::default()).unwrap();
+        assert_eq!(none.raw.speech_context_count, 0);
+        assert!(none.raw.language_code.is_null());
     }
 
     #[test]

@@ -100,7 +100,7 @@ fn run_whisper(args: &Args, audio: &Audio) -> Result<(), ErrorDoc> {
 #[cfg(all(feature = "whisper", feature = "nemo"))]
 fn nemo_gap_reader(args: &EngineArgs, language: Option<String>) -> ghi_speech::whisper::Fallback {
     use ghi_speech::AsrStream;
-    use ghi_speech::nemo::{Asr, AsrOptions};
+    use ghi_speech::nemo::Asr;
 
     let args = args.clone();
     let mut asr: Option<Asr> = None;
@@ -115,9 +115,7 @@ fn nemo_gap_reader(args: &EngineArgs, language: Option<String>) -> ghi_speech::w
         let Some(asr) = &asr else {
             return Ok(Vec::new());
         };
-        let opts = AsrOptions {
-            language: language.clone(),
-        };
+        let opts = engine::asr_options(&args, language.as_deref()).map_err(|e| e.message)?;
         let mut stream = asr.stream(&opts).map_err(|e| e.to_string())?;
         stream
             .push(pcm, ghi_speech::whisper::SAMPLE_RATE)
@@ -167,8 +165,6 @@ fn run_nemo(args: &Args, audio: &Audio) -> Result<(), ErrorDoc> {
     use std::io::Write;
     use std::time::Instant;
 
-    use ghi_speech::nemo::AsrOptions;
-
     use crate::contract::ErrorCode;
 
     fn to_line(ev: &Event) -> String {
@@ -177,9 +173,7 @@ fn run_nemo(args: &Args, audio: &Audio) -> Result<(), ErrorDoc> {
 
     let started = Instant::now();
     let (asr, engine_info) = engine::load_asr(args.engine, args.pass)?;
-    let options = AsrOptions {
-        language: language_code(args.lang).map(str::to_owned),
-    };
+    let options = engine::asr_options(args.engine, language_code(args.lang))?;
     let mut builder = TranscriptBuilder::default();
     if args.engine.offline && !args.stream {
         let mut r = asr

@@ -45,6 +45,14 @@ pub struct EngineArgs {
     /// streaming (spike S2 comparison; reports languages).
     #[arg(long)]
     pub offline: bool,
+    /// transcribe (NeMo): a UTF-8 file of words or phrases, one per line, the
+    /// recognizer favours while decoding (names, products, jargon).
+    #[arg(long)]
+    pub terms: Option<PathBuf>,
+    /// transcribe (NeMo): weight of `--terms` (the engine clamps it to 0.1..=5;
+    /// 0 = its default).
+    #[arg(long, default_value_t = 0.0)]
+    pub boost: f32,
 }
 
 pub const ASR_MODEL: &str = "nemotron-3.5-asr";
@@ -214,6 +222,33 @@ mod loaded {
         })
         .map_err(speech_error)?;
         Ok((asr, engine))
+    }
+
+    /// Recognition options for `transcribe`: the language and `--terms`.
+    pub fn asr_options(
+        args: &EngineArgs,
+        language: Option<&str>,
+    ) -> Result<ghi_speech::nemo::AsrOptions, ErrorDoc> {
+        let phrases = match &args.terms {
+            Some(path) => std::fs::read_to_string(path)
+                .map_err(|e| {
+                    ErrorDoc::new(
+                        ErrorCode::BadInput,
+                        format!("--terms {}: {e}", path.display()),
+                    )
+                })?
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            None => Vec::new(),
+        };
+        Ok(ghi_speech::nemo::AsrOptions {
+            language: language.map(str::to_owned),
+            phrases,
+            boost: args.boost,
+        })
     }
 
     pub fn load_diar(args: &EngineArgs, pass: Pass) -> Result<(Diarizer, Engine), ErrorDoc> {
