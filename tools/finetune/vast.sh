@@ -6,10 +6,11 @@
 # the box; meeting recordings never leave this Mac.
 #
 #   vast.sh create OFFER_ID [DISK_GB]   rent the offer, wait until it runs, save its id
-#   vast.sh push                        copy the scripts (+ the eval kit's text normaliser)
+#   vast.sh push [LABELS_DIR]           copy the scripts (+ the eval kit's text normaliser); with a
+#                                       saved hyp.json from an earlier run, the label stage is skipped
 #   vast.sh run [ENV=VAL ...]           start box.sh in the background (resumes by stage)
 #   vast.sh status                      last log lines, GPU use, credit
-#   vast.sh pull                        fetch the best .nemo to $OUT (default ./ft-out)
+#   vast.sh pull                        fetch best/avg .nemo, probe, log, manifests to $OUT (./ft-out)
 #   vast.sh destroy                     delete the instance and its disk (stops all charges)
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -47,6 +48,9 @@ case "${1:-}" in
     cp "$HERE"/prep_data.py "$HERE"/make_config.py "$HERE"/box.sh "$tmp/ft/"
     cp -r "$ROOT/tools/eval/ghi_eval" "$tmp/ft/"
     rsync -az -e "ssh -i $KEY -p $port -o StrictHostKeyChecking=accept-new" "$tmp/ft/" "$host:/workspace/ft/"
+    if [ -n "${2:-}" ]; then
+      rsync -az -e "ssh -i $KEY -p $port" --rsync-path="mkdir -p /workspace/data && rsync" "$2/hyp.json" "$host:/workspace/data/"
+    fi
     rm -rf "$tmp"; echo pushed ;;
   run)
     shift; run_ssh "cd /workspace && (env $* setsid nohup bash ft/box.sh >> ft.log 2>&1 < /dev/null &); echo started" ;;
@@ -57,7 +61,8 @@ case "${1:-}" in
     read -r host port < <(ssh_target)
     mkdir -p "$OUT"
     rsync -az --progress -e "ssh -i $KEY -p $port" \
-      "$host:/workspace/best.nemo" "$host:/workspace/ft.log" "$host:/workspace/data/*.json" "$OUT/" ;;
+      "$host:/workspace/best.nemo" "$host:/workspace/avg.nemo" "$host:/workspace/probe.txt" \
+      "$host:/workspace/ft.log" "$host:/workspace/data/*.json" "$OUT/" ;;
   destroy)
     # -y: the CLI's own prompt reads no stdin here, prints "Aborted." and still exits 0
     "$VAST" destroy instance "$(id_)" -y

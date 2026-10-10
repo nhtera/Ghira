@@ -4,6 +4,7 @@
     prep_data.py fetch  DATA [--yodas-shards 20] [--libri-files 7]   # download, 16 kHz wav, raw.json
     prep_data.py label  DATA BASE.nemo                                # base-model transcript per clip
     prep_data.py select DATA                                          # filter -> train.json, val.json
+    prep_data.py probe  DATA BASE.nemo CAND.nemo [...]                # dropped-speech check, base vs candidate
 
 Sources (licence-clean only; nothing non-commercial):
   vimedcss  tensorxt/ViMedCSS train, CC BY 4.0. Videos that also appear in its test split are
@@ -303,6 +304,76 @@ def select(root: Path, val_n: int, seed: int) -> None:
     print(f"train {len(train)} clips, {sum(r['duration'] for r in train) / 3600:.1f} h; val {len(val)}")
 
 
+# ---------------------------------------------------------------- probe
+
+
+def probe_set(root: Path, n: int) -> Path:
+    """First n clips (2-20 s) of YODAS en000 shard 0: varied real English speech, never trained on."""
+    out_man = root / "probe_en.json"
+    if out_man.exists():
+        return out_man
+    texts = {}
+    for line in open(hf("espnet/yodas", "data/en000/text/00000000.txt", root), encoding="utf-8"):
+        uid, _, text = line.rstrip("\n").partition(" ")
+        texts[uid] = text
+    durs = {}
+    for line in open(hf("espnet/yodas", "data/en000/duration/00000000.txt", root), encoding="utf-8"):
+        uid, d = line.split()[:2]
+        durs[uid] = float(d)
+    tar_path = hf("espnet/yodas", "data/en000/audio/00000000.tar.gz", root)
+    out_dir = root / "wav" / "probe_en"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rows = []
+    with tarfile.open(tar_path) as tar:
+        for m in tar:
+            uid = Path(m.name).stem
+            if not m.isfile() or not m.name.endswith(".wav") or uid not in texts or not 2 <= durs.get(uid, 0) <= 20:
+                continue
+            out = out_dir / f"{uid}.wav"
+            out.write_bytes(tar.extractfile(m).read())
+            rows.append({"audio_filepath": str(out), "duration": durs[uid], "text": texts[uid], "lang": "en-US", "target_lang": "en-US"})
+            if len(rows) >= n:
+                break
+    tar_path.unlink()
+    with open(out_man, "w", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    return out_man
+
+
+def transcribe_all(nemo: str, manifest: Path, batch: int) -> list[str]:
+    import torch
+    import nemo.collections.asr as nemo_asr
+
+    m = nemo_asr.models.ASRModel.restore_from(nemo, map_location="cuda" if torch.cuda.is_available() else "cpu")
+    m.eval()
+    with torch.autocast("cuda", dtype=torch.bfloat16, enabled=torch.cuda.is_available()), torch.inference_mode():
+        hyps = m.transcribe(str(manifest), batch_size=batch, verbose=False, num_workers=4)
+    del m
+    torch.cuda.empty_cache()
+    return [TAG.sub(" ", h.text if hasattr(h, "text") else str(h)).strip() for h in hyps]
+
+
+def probe(root: Path, base: str, cands: list[str], n: int, batch: int) -> None:
+    """Dropped-speech check: the pilot's failure was empty or half outputs on English it should read.
+
+    Per set and model: clips with no output, clips where the output has under half the base
+    model's words ("dropped"), and the caption error rate. FLEURS stays out of this on purpose.
+    """
+    sets = {"val": root / "val.json", "yodas-en": probe_set(root, n)}
+    for name, man in sets.items():
+        rows = [json.loads(line) for line in open(man, encoding="utf-8")]
+        refs = [TAG.sub(" ", r["text"]).strip() for r in rows]
+        langs = [r["lang"] for r in rows]
+        base_h = transcribe_all(base, man, batch)
+        for label_, nemo in [("base", base)] + [(Path(c).stem, c) for c in cands]:
+            hyp = base_h if nemo == base else transcribe_all(nemo, man, batch)
+            empty = sum(1 for h, b in zip(hyp, base_h) if not h.split() and len(b.split()) >= 3)
+            dropped = sum(1 for h, b in zip(hyp, base_h) if len(b.split()) >= 4 and len(h.split()) < 0.5 * len(b.split()))
+            err = sum(wer(r, h, lg) for r, h, lg in zip(refs, hyp, langs)) / len(rows)
+            print(f"PROBE {name:9s} {label_:10s} clips={len(rows)} empty={empty} dropped={dropped} caption_err={err:.3f}", flush=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -319,11 +390,19 @@ def main() -> None:
     s.add_argument("data", type=Path)
     s.add_argument("--val", type=int, default=400)
     s.add_argument("--seed", type=int, default=7)
+    p = sub.add_parser("probe")
+    p.add_argument("data", type=Path)
+    p.add_argument("nemo")
+    p.add_argument("cands", nargs="+")
+    p.add_argument("--en-clips", type=int, default=500)
+    p.add_argument("--batch", type=int, default=64)
     a = ap.parse_args()
     if a.cmd == "fetch":
         fetch(a.data, a.yodas_shards, a.libri_files, a.workers)
     elif a.cmd == "label":
         label(a.data, a.nemo, a.batch)
+    elif a.cmd == "probe":
+        probe(a.data, a.nemo, a.cands, a.en_clips, a.batch)
     else:
         select(a.data, a.val, a.seed)
 
