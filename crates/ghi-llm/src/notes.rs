@@ -1058,16 +1058,20 @@ fn parse_notes(v: &Value, ctx: &Ctx, d: &mut Diagnostics) -> std::result::Result
         });
     }
 
-    // Uncited, so optional: a reply without them still makes notes.
+    // Uncited, so optional: a reply without them still makes notes. Like
+    // every item, speaker aliases (SPK1) become the speakers' own names.
     let headline = obj
         .get("headline")
         .and_then(Value::as_str)
-        .map(plain_text)
+        .map(|h| ctx.aliases.expand(&plain_text(h)))
         .filter(|h| !h.is_empty() && h.chars().count() <= schema::HEADLINE_CHARS);
-    let tags = obj
+    let tags: Vec<String> = obj
         .get("tags")
         .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok())
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .iter()
+        .map(|t| ctx.aliases.expand(t))
+        .collect();
     // A tag that only names the kind of meeting ("General", "Standup") files nothing.
     let kind = [ctx.template.id.as_str(), ctx.template.name.as_str()].map(ghi_text::fold);
     let tags = clean_tags(&tags)
@@ -2081,6 +2085,12 @@ pub(crate) mod tests {
         let mut old = Scripted::new(&[&reply(r#"{"tldr":[{"text":"ok","cite":[0]}]}"#)]);
         let n = generate(&mut old, &t, &opts()).unwrap().notes;
         assert_eq!((n.headline, n.tags.len()), (None, 0));
+        // A speaker alias in the headline is the speaker's name, as in any item.
+        let mut llm = Scripted::new(&[&reply(
+            r#"{"tldr":[{"text":"ok","cite":[0]}],"headline":"SPK1 chốt scope beta."}"#,
+        )]);
+        let n = generate(&mut llm, &t, &opts()).unwrap().notes;
+        assert_eq!(n.headline.as_deref(), Some("Linh chốt scope beta."));
         // Too long for a headline: none rather than a paragraph.
         let long = format!(r#"{{"headline":"{}"}}"#, "x ".repeat(150));
         let mut llm = Scripted::new(&[&reply(&long)]);
