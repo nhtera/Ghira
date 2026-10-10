@@ -660,17 +660,18 @@ mod tests {
 
     #[test]
     fn progress_keeps_a_slow_request_alive_until_the_hard_cap() {
-        // 4 progress lines 0.15 s apart (0.6 s total) with a 0.3 s idle limit.
+        // 4 progress lines 0.4 s apart (1.6 s total, longer than the limit)
+        // with a 1 s idle limit: wide gaps so a busy CI runner can't trip it.
         let p = r#"echo '{"id":1,"kind":"progress","tokens_in_done":512,"tokens_out":0}'"#;
         let script = format!(
-            "read l; for i in 1 2 3 4; do {p}; sleep 0.15; done; echo '{{\"id\":1,\"kind\":\"health\",\"loaded\":true}}'"
+            "read l; for i in 1 2 3 4; do {p}; sleep 0.4; done; echo '{{\"id\":1,\"kind\":\"health\",\"loaded\":true}}'"
         );
         let mut s = fake(&script).unwrap();
         let mut seen = 0;
         let r = s
             .request_live(
                 Op::Health,
-                Duration::from_millis(300),
+                Duration::from_millis(1000),
                 Duration::from_secs(5),
                 &mut |a, _| {
                     assert_eq!(a, 512);
