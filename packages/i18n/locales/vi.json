@@ -133,6 +133,9 @@
       "micLost": "Micro đã bị ngắt. Hãy cắm lại để tiếp tục ghi giọng bạn.",
       "systemLost": "Âm thanh hệ thống đã dừng. Những người khác trong cuộc gọi không được ghi.",
       "appAudioFallback": "Đang ghi toàn bộ âm thanh hệ thống. Không tìm thấy ứng dụng họp.",
+      "callEnded": "Cuộc gọi {{meetingApp}} có vẻ đã kết thúc.",
+      "callEndedBrowser": "Cuộc gọi trên trình duyệt có vẻ đã kết thúc.",
+      "stopRecording": "Dừng ghi",
       "diskFull": "Ổ đĩa đã đầy. Bản ghi âm không thể lưu thêm. Hãy giải phóng dung lượng ngay."
     },
     "manyVoices": "Hơn 8 giọng nói. Các giọng thêm tạm chung làn Khác; {{app}} sẽ tách riêng sau cuộc họp."

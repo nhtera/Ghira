@@ -13,6 +13,7 @@ import { BANNER_ACTION, SystemBanner } from "../system-states/system-banner";
 import { useLive } from "../../state/live";
 import { NO_AUDIO_MS, formatBytes, minutesLeft, splitOthers, waitingForAudio } from "./logic";
 import type { ReactNode } from "react";
+import type { CoreEvent } from "../../bindings";
 
 type Tone = "warn" | "rec" | "info";
 const TONE: Record<Tone, string> = { warn: "bg-warn-soft text-warn", rec: "bg-rec-soft text-rec-ink", info: "bg-surface2 text-ink" };
@@ -158,6 +159,27 @@ function useAppAudioFallback() {
   return { shown: meeting != null, dismiss: () => setMeeting(null) };
 }
 
+/** The meeting app let go of the mic in this call ("stop recording?"), until it is back, the meeting changes or the user dismisses it. */
+function useCallEnded() {
+  const [ended, setEnded] = useState<Extract<CoreEvent["event"], { type: "callEnded" }> | null>(null);
+  const meeting = useLive((x) => x.meeting);
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let gone = false;
+    void ipc
+      .onCoreEvent((env) => {
+        if (env.event.type === "callEnded") setEnded(env.event);
+        if (env.event.type === "callResumed") setEnded(null);
+      })
+      .then((u) => (gone ? u() : (off = u)));
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, []);
+  return { ended: ended?.meeting === meeting ? ended : null, dismiss: () => setEnded(null) };
+}
+
 /** Capture conditions as full-width strips under the title bar. */
 export function LiveSystemBanners() {
   const { t, i18n } = useTranslation();
@@ -169,6 +191,12 @@ export function LiveSystemBanners() {
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const diskDismissed = dismissedAt != null && s.diskLowBytes != null && s.diskLowBytes >= dismissedAt * 0.75;
   const fallback = useAppAudioFallback();
+  const call = useCallEnded();
+  const stop = async () => {
+    call.dismiss();
+    const r = await ipc.commands.stopRecording();
+    if (r.status === "error") show({ tone: "warning", title: t("system.commandFailed", { message: r.error }) });
+  };
   // Hidden by the user: only the strip goes, the capture state is untouched.
   const [hidden, setHidden] = useState<string[]>([]);
   const hide = (id: string) => () => setHidden((h) => [...h, id]);
@@ -196,6 +224,21 @@ export function LiveSystemBanners() {
       {fallback.shown && (
         <SystemBanner id="app-audio-fallback" tone="info" icon="info" onDismiss={fallback.dismiss}>
           {t("live.banner.appAudioFallback")}
+        </SystemBanner>
+      )}
+      {call.ended && s.state === "recording" && (
+        <SystemBanner
+          id="call-ended"
+          tone="info"
+          icon="phone_disabled"
+          onDismiss={call.dismiss}
+          actions={
+            <Button size="sm" variant="ghost" className={BANNER_ACTION} onClick={() => void stop()}>
+              {t("live.banner.stopRecording")}
+            </Button>
+          }
+        >
+          {call.ended.browser ? t("live.banner.callEndedBrowser") : t("live.banner.callEnded", { meetingApp: call.ended.appName })}
         </SystemBanner>
       )}
       {s.systemSilent && !hidden.includes("system-silent") && (

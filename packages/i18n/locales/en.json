@@ -140,6 +140,9 @@
       "micLost": "The microphone was disconnected. Reconnect it to keep recording your voice.",
       "systemLost": "System audio stopped. The other people on the call are not being recorded.",
       "appAudioFallback": "Recording all system audio. No meeting app was found.",
+      "callEnded": "The {{meetingApp}} call seems to have ended.",
+      "callEndedBrowser": "The browser call seems to have ended.",
+      "stopRecording": "Stop recording",
       "diskFull": "The disk is full. Recording has stopped saving. Free up space now."
     },
     "manyVoices": "More than 8 voices. Extra ones share the Others lane for now; {{app}} tells them apart after the meeting."

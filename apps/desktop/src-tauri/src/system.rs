@@ -349,13 +349,20 @@ fn detection_loop(app: AppHandle, core: Arc<Core>, detection: Arc<Detection>) {
         .unwrap_or_default();
     *detection.0.lock().unwrap_or_else(|e| e.into_inner()) =
         Some(Detector::new(DetectConfig::default(), state));
+    // The call the current recording follows (by meeting id).
+    let mut watch: Option<(String, ghi_audio::detect::CallWatch)> = None;
     loop {
         std::thread::sleep(Duration::from_secs(2));
-        // Starting or recording: no prompt (and no store reads meanwhile).
-        if core.busy()
-            || !load_settings(&core)
-                .map(|s| s.detect_meetings)
-                .unwrap_or(false)
+        // Starting or recording: no prompt (and no store reads meanwhile),
+        // only the watch for the end of the call.
+        if core.busy() {
+            watch_call(&core, &mut watch);
+            continue;
+        }
+        watch = None;
+        if !load_settings(&core)
+            .map(|s| s.detect_meetings)
+            .unwrap_or(false)
         {
             continue;
         }
@@ -393,6 +400,50 @@ fn detection_loop(app: AppHandle, core: Arc<Core>, detection: Arc<Detection>) {
             );
         }
     }
+}
+
+/// Polls of the detection loop (2 s each) without the meeting app's mic before
+/// its call counts as ended.
+#[cfg(target_os = "macos")]
+const CALL_ENDED_POLLS: u32 = 5;
+
+/// While a call is recorded: tells the UI when the meeting app has let go of
+/// the microphone for 10 s ("stop recording?"), and when it is back.
+#[cfg(target_os = "macos")]
+fn watch_call(core: &Core, watch: &mut Option<(String, ghi_audio::detect::CallWatch)>) {
+    use ghi_audio::detect::{CallChange, CallWatch};
+    use ghi_core::events::Event;
+    let Ok((meeting, call)) = core.with_session(|s| {
+        (
+            s.meeting().to_string(),
+            s.mode() == ghi_core::live::Mode::Call,
+        )
+    }) else {
+        return;
+    };
+    if !call {
+        return;
+    }
+    if watch.as_ref().is_none_or(|(m, _)| *m != meeting) {
+        *watch = Some((
+            meeting.clone(),
+            CallWatch::new(std::process::id() as i32, CALL_ENDED_POLLS),
+        ));
+    }
+    let (Some((_, w)), Ok(processes)) = (watch.as_mut(), ghi_audio::macos::audio_processes())
+    else {
+        return;
+    };
+    let event = match w.poll(&processes) {
+        Some(CallChange::Ended(app)) => Event::CallEnded {
+            meeting,
+            app_name: app.display_name().into(),
+            browser: app.is_browser(),
+        },
+        Some(CallChange::Resumed(_)) => Event::CallResumed { meeting },
+        None => return,
+    };
+    core.events().emit(event);
 }
 
 /// Shows a detection prompt: in the main window only when the user is looking

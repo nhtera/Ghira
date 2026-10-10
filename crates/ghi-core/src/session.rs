@@ -493,6 +493,11 @@ impl Session {
         &self.meeting
     }
 
+    /// Call or room, as the session was started.
+    pub fn mode(&self) -> Mode {
+        self.cfg.mode
+    }
+
     pub fn state(&self) -> SessionState {
         *self.state.lock().unwrap_or_else(|e| e.into_inner())
     }

@@ -222,6 +222,18 @@ pub enum Event {
     AppAudioFallback {
         meeting: String,
     },
+    /// In a call recording, the meeting app let go of the microphone a while
+    /// ago (`app_name`; `browser`: a call in a browser): the UI asks whether
+    /// to stop. Never stops anything by itself (muting can look the same).
+    CallEnded {
+        meeting: String,
+        app_name: String,
+        browser: bool,
+    },
+    /// After `CallEnded`: the app uses the microphone again.
+    CallResumed {
+        meeting: String,
+    },
     /// After `retry_capture`: the devices are back (also when nothing had
     /// been lost).
     CaptureRecovered {

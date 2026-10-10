@@ -129,6 +129,29 @@ describe("LiveBanners", () => {
     expect(container.querySelector('[data-banner="app-audio-fallback"]')).toBeNull();
   });
 
+  it("asks to stop when the call app let go of the mic, goes when it is back, and stops on request", async () => {
+    setLive({ state: "recording", meeting: "m1" });
+    const { container } = renderLive(<LiveSystemBanners />);
+    const sim = (e: unknown) => (window as unknown as { __ghiMock: { simulateCoreEvent: (e: unknown) => void } }).__ghiMock.simulateCoreEvent(e);
+    const banner = () => container.querySelector('[data-banner="call-ended"]');
+    // Another meeting's end says nothing here.
+    await act(async () => {
+      await Promise.resolve();
+      sim({ type: "callEnded", meeting: "m0", appName: "Zoom", browser: false });
+    });
+    expect(banner()).toBeNull();
+    await act(async () => sim({ type: "callEnded", meeting: "m1", appName: "Zoom", browser: false }));
+    expect(screen.getByText("The Zoom call seems to have ended.")).toBeTruthy();
+    await act(async () => sim({ type: "callResumed", meeting: "m1" }));
+    expect(banner()).toBeNull();
+    await act(async () => sim({ type: "callEnded", meeting: "m1", appName: "Google Chrome", browser: true }));
+    expect(screen.getByText("The browser call seems to have ended.")).toBeTruthy();
+    const stop = vi.spyOn(ipc.commands, "stopRecording");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Stop recording" }));
+    expect(stop).toHaveBeenCalledOnce();
+    expect(banner()).toBeNull();
+  });
+
   it("shows a low disk with the time left", () => {
     setLive({ state: "recording", capture: cap({ diskLowBytes: 240_000 * 45 }) });
     renderLive(<LiveSystemBanners />);

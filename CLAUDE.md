@@ -82,7 +82,9 @@ uv sync --locked && uv run ruff check && uv run ruff format --check && uv run py
 ```
 
 Audio capture: `crates/ghi-audio` (rings, 16 kHz resample, AEC via `sonora`,
-Ogg Opus, meeting detect) + `native/macos/GhiAudioMac` (Swift, C ABI in its
+Ogg Opus, meeting detect: `detect.rs` prompts by bundle id, FaceTime/iPhone
+calls through the call daemons `com.apple.avconferenced`/`TelephonyUtilities`,
+`CallWatch` → core `CallEnded`/`CallResumed` "stop recording?") + `native/macos/GhiAudioMac` (Swift, C ABI in its
 `include/ghi_audio_mac.h`, built by `ghi-audio/build.rs`); `ghi record|recover|detect`.
 
 Storage: `crates/ghi-store` (SQLCipher, per-meeting DEKs, encrypted audio

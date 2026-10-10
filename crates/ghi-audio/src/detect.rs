@@ -418,6 +418,75 @@ impl Detector {
     }
 }
 
+/// While a call is recorded: notices when the meeting app lets go of the
+/// microphone, so the user can be asked whether to stop. Pure logic, fed the
+/// same process snapshots as [`Detector::poll`].
+///
+/// The app followed is the first meeting app seen with its mic running (the
+/// recording may start before the call does). Some apps release the mic
+/// while muted, so the end is only ever a question to the user.
+#[derive(Debug, Clone)]
+pub struct CallWatch {
+    own_pid: i32,
+    ended_polls: u32,
+    app: Option<App>,
+    quiet: u32,
+    ended: bool,
+}
+
+/// What [`CallWatch::poll`] noticed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallChange {
+    /// The app's mic has been off for `ended_polls` snapshots in a row.
+    Ended(App),
+    /// After `Ended`, the same app uses the mic again.
+    Resumed(App),
+}
+
+impl CallWatch {
+    /// `ended_polls`: snapshots without the mic before the call counts as
+    /// ended (at a poll every 2 s, 5 is 10 s).
+    pub fn new(own_pid: i32, ended_polls: u32) -> CallWatch {
+        CallWatch {
+            own_pid,
+            ended_polls: ended_polls.max(1),
+            app: None,
+            quiet: 0,
+            ended: false,
+        }
+    }
+
+    /// The app this recording follows, once one was seen in a call.
+    pub fn app(&self) -> Option<App> {
+        self.app
+    }
+
+    /// Feeds one snapshot. Every meeting app counts, whatever the "ask to
+    /// record" list says: that list is about prompts, not about calls.
+    pub fn poll(&mut self, processes: &[AudioProcess]) -> Option<CallChange> {
+        let mic_on: BTreeSet<App> = processes
+            .iter()
+            .filter(|p| p.input && p.pid != self.own_pid)
+            .filter_map(|p| App::from_bundle_id(&p.bundle_id))
+            .collect();
+        let app = self.app.or_else(|| mic_on.first().copied())?;
+        self.app = Some(app);
+        if mic_on.contains(&app) {
+            self.quiet = 0;
+            if std::mem::take(&mut self.ended) {
+                return Some(CallChange::Resumed(app));
+            }
+            return None;
+        }
+        self.quiet = self.quiet.saturating_add(1);
+        if !self.ended && self.quiet >= self.ended_polls {
+            self.ended = true;
+            return Some(CallChange::Ended(app));
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -774,5 +843,50 @@ mod tests {
         assert_eq!(ps[2].bundle_id, "");
         assert!(parse_processes("nope").is_err());
         assert!(parse_processes("[]").unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_call_end_is_noticed_once_after_the_quiet_polls_and_a_return_resumes() {
+        let mut w = CallWatch::new(999, 3);
+        let zoom = [
+            proc(10, "us.zoom.xos", true),
+            proc(11, "us.zoom.xos.helper", false),
+        ];
+        let gone = [proc(11, "us.zoom.xos.helper", false)];
+        // Nothing in a call yet: nothing to follow, however long.
+        for _ in 0..5 {
+            assert_eq!(w.poll(&[]), None);
+        }
+        assert_eq!(w.app(), None);
+        assert_eq!(w.poll(&zoom), None);
+        assert_eq!(w.app(), Some(App::Zoom));
+        assert_eq!(w.poll(&gone), None);
+        assert_eq!(w.poll(&gone), None);
+        // A blip shorter than the quiet polls is not an end.
+        assert_eq!(w.poll(&zoom), None);
+        assert_eq!(w.poll(&gone), None);
+        assert_eq!(w.poll(&gone), None);
+        assert_eq!(w.poll(&[]), Some(CallChange::Ended(App::Zoom)));
+        assert_eq!(w.poll(&[]), None, "said once");
+        assert_eq!(w.poll(&zoom), Some(CallChange::Resumed(App::Zoom)));
+        assert_eq!(w.poll(&zoom), None);
+    }
+
+    #[test]
+    fn the_watch_follows_one_app_and_ignores_others_and_its_own_process() {
+        let mut w = CallWatch::new(10, 1);
+        // Our own mic is not a call.
+        assert_eq!(w.poll(&[proc(10, "us.zoom.xos", true)]), None);
+        assert_eq!(w.app(), None);
+        // An app that is not a meeting app is not followed.
+        assert_eq!(w.poll(&[proc(20, "com.apple.VoiceMemos", true)]), None);
+        assert_eq!(w.app(), None);
+        assert_eq!(w.poll(&[proc(30, "com.microsoft.teams2", true)]), None);
+        assert_eq!(w.app(), Some(App::Teams));
+        // Teams hangs up while Zoom starts: Teams' call ended all the same.
+        assert_eq!(
+            w.poll(&[proc(20, "us.zoom.xos", true)]),
+            Some(CallChange::Ended(App::Teams))
+        );
     }
 }

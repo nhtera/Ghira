@@ -1122,6 +1122,14 @@ track: number; line: LineInfo } | { type: "speakerArrived"; meeting: string; spe
  */
 { type: "appAudioFallback"; meeting: string } | 
 /**
+ *  In a call recording, the meeting app let go of the microphone a while
+ *  ago (`app_name`; `browser`: a call in a browser): the UI asks whether
+ *  to stop. Never stops anything by itself (muting can look the same).
+ */
+{ type: "callEnded"; meeting: string; appName: string; browser: boolean } | 
+/**  After `CallEnded`: the app uses the microphone again. */
+{ type: "callResumed"; meeting: string } | 
+/**
  *  After `retry_capture`: the devices are back (also when nothing had
  *  been lost).
  */
