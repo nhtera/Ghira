@@ -91,7 +91,8 @@ export function DetectPanel({
 
   if (!detected) return null;
   return (
-    <main className="box-border flex h-screen flex-col bg-surface">
+    // The window is a fixed size (`DETECT_SIZE`): the card fills it and never scrolls.
+    <main className="box-border flex h-screen flex-col overflow-hidden bg-surface">
       <DetectionCard
         detected={detected}
         onReply={(r) => void reply(detected, r)}

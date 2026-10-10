@@ -34,7 +34,7 @@ const POPOVER_SIZE: (f64, f64) = (340.0, 440.0);
 const MINI_FULL: (f64, f64) = (360.0, 120.0);
 const MINI_PILL: (f64, f64) = (180.0, 44.0);
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-const DETECT_SIZE: (f64, f64) = (340.0, 150.0);
+const DETECT_SIZE: (f64, f64) = (340.0, 164.0);
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const CORNER_RADIUS: f64 = 12.0;
 

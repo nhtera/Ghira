@@ -66,24 +66,26 @@ export function DetectionCard({
             <b className="text-[13px] text-ink">{APP_NAME}</b>
             <span>{t("common.now")}</span>
           </div>
-          <p className="m-0 text-[13.5px] leading-snug font-semibold text-ink">{detectionTitle(t, detected, locked)}</p>
-          {!isCalendarPrompt(detected) && detected.title && !locked && <p className="m-0 text-[12.5px] text-muted">{t("tray.detected.subtitle", { title: detected.title })}</p>}
+          {/* At most two lines of title and one of subtitle: the panel is a fixed size (`DETECT_SIZE`). */}
+          <p className="m-0 line-clamp-2 text-[13.5px] leading-snug font-semibold text-ink">{detectionTitle(t, detected, locked)}</p>
+          {!isCalendarPrompt(detected) && detected.title && !locked && <p className="m-0 truncate text-[12.5px] text-muted">{t("tray.detected.subtitle", { title: detected.title })}</p>}
         </div>
       </div>
+      {/* Start and Not now share a row; "Never for <app>" gets its own, so a long app name never pushes them out. */}
       <div className="flex gap-1.5">
-        <Button variant="primary" className="flex-1" onClick={() => onReply("start")}>
+        <Button variant="primary" className="min-w-0 flex-1" onClick={() => onReply("start")}>
           <span aria-hidden className="size-2 rounded-full bg-current" />
           {t("tray.detected.start")}
         </Button>
-        <Button className="flex-1 font-medium" onClick={() => onReply("notNow")}>
+        <Button className="min-w-0 flex-1 font-medium" onClick={() => onReply("notNow")}>
           {t("tray.detected.notNow")}
         </Button>
-        {!isCalendarPrompt(detected) && (
-          <Button variant="ghost" className="px-2.5 text-[12.5px] font-normal text-muted" onClick={() => onReply("never")}>
-            {t("tray.detected.never", { meetingApp })}
-          </Button>
-        )}
       </div>
+      {!isCalendarPrompt(detected) && (
+        <Button variant="ghost" size="sm" className="-mt-1 max-w-full self-start font-normal text-muted" onClick={() => onReply("never")}>
+          <span className="truncate">{t("tray.detected.never", { meetingApp })}</span>
+        </Button>
+      )}
     </div>
   );
 }
