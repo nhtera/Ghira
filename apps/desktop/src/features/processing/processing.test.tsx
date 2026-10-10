@@ -66,7 +66,24 @@ describe("processing store", () => {
 
 describe("stepsFor", () => {
   it("marks earlier stages done and the current one running", () => {
-    expect(stepsFor({ stage: "improvingTranscript", kind: "final_pass" }).map((s) => s.status)).toEqual(["done", "done", "done", "running", "pending"]);
+    expect(stepsFor({ stage: "improvingTranscript", kind: "final_pass" }).map((s) => s.status)).toEqual(["done", "done", "running", "pending", "pending"]);
+  });
+  it("lists the steps in the order the final pass runs them: transcript, then voices", () => {
+    expect(stepsFor({ stage: "matchingVoices", kind: "final_pass" }).map((s) => s.id)).toEqual([
+      "decoding",
+      "refiningSpeakers",
+      "improvingTranscript",
+      "matchingVoices",
+      "writingNotes",
+    ]);
+  });
+  it("shows the running step's own share of a final pass's job progress", () => {
+    // ASR spans 0.12..0.97 of the job: 0.545 is half of it.
+    expect(stepsFor({ stage: "improvingTranscript", kind: "final_pass", progress: 0.545 })[2]!.progress).toBe(50);
+    // Matching starts at 0.97: an empty bar there, not a full one.
+    expect(stepsFor({ stage: "matchingVoices", kind: "final_pass", progress: 0.97 })[3]!.progress).toBe(0);
+    // Notes jobs report their own step's progress.
+    expect(stepsFor({ stage: null, kind: "notes_final", progress: 0.4 })[4]!.progress).toBe(40);
   });
   it("treats notes jobs without a stage as writing notes, and no stage as the first step", () => {
     expect(stepsFor({ stage: null, kind: "notes_final" })[4]!.status).toBe("running");
@@ -78,7 +95,7 @@ describe("ProcessingPanel", () => {
   it("shows the stepper and the leave-the-page copy", () => {
     render(
       <PlatformProvider value="mac">
-        <ProcessingPanel processing={{ stage: "refiningSpeakers", kind: "final_pass", progress: 0.2 }} />
+        <ProcessingPanel processing={{ stage: "refiningSpeakers", kind: "final_pass", progress: 0.04 }} />
       </PlatformProvider>,
     );
     expect(screen.getByText("Writing your notes on this Mac", { selector: "h2" })).toBeTruthy();
@@ -92,7 +109,8 @@ describe("ProcessingPanel", () => {
 describe("overallProgress", () => {
   it("counts finished stages, so a stage at 100% is not the whole pipeline", () => {
     expect(overallProgress({ stage: "decoding", kind: "final_pass", progress: 1 })).toBeCloseTo(0.2);
-    expect(overallProgress({ stage: "matchingVoices", kind: "final_pass", progress: 0.5 })).toBeCloseTo(0.5);
+    expect(overallProgress({ stage: "improvingTranscript", kind: "final_pass", progress: 0.545 })).toBeCloseTo(0.5);
+    expect(overallProgress({ stage: "matchingVoices", kind: "final_pass", progress: 0.985 })).toBeCloseTo(0.7);
     expect(overallProgress({ stage: null, kind: "notes_final", progress: null })).toBeCloseTo(0.8);
     expect(overallProgress({ stage: null, kind: "final_pass", progress: null })).toBe(0);
   });

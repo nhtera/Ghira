@@ -38,6 +38,7 @@ import { useTemplates } from "../state/meeting-queries";
 import { SHORTCUTS, matchChord } from "../shell/shortcuts";
 import { NameSpeakers } from "../features/processing/name-speakers";
 import { useUnnamed } from "../features/processing/use-unnamed";
+import { formatTime } from "@ghi/i18n";
 import { ProcessingPanel } from "../features/processing/processing-panel";
 import { useProcessing } from "../features/processing/processing-store";
 import { overallProgress } from "../features/processing/stepper-steps";
@@ -231,8 +232,16 @@ export function MeetingsScreen() {
       }),
     [navigate],
   );
-  const titleOf = (id: string) =>
-    meetings.rows.find((r) => r.gid === id)?.title;
+  // Names the meeting a stepper is for as its row does: title (or the
+  // placeholder) and start time, so two untitled ones are told apart.
+  const titleOf = (id: string) => {
+    const row = meetings.rows.find((r) => r.gid === id);
+    if (!row) return undefined;
+    const title = row.title || t("live.titlePlaceholder");
+    return row.startedAt == null
+      ? title
+      : `${title} · ${formatTime(row.startedAt, i18n.language === "vi" ? "vi" : "en")}`;
+  };
   const retry = async (id: string) => {
     const r = await ipc.commands.retryMeeting(id);
     if (r.status === "error")

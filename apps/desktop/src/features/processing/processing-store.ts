@@ -23,7 +23,28 @@ type State = {
   forget: (meeting: string) => void;
 };
 
-export const STAGES: Stage[] = ["decoding", "refiningSpeakers", "matchingVoices", "improvingTranscript", "writingNotes"];
+/** In the order the core runs them (`final_pass.rs`: speakers, transcript, then voices). */
+export const STAGES: Stage[] = ["decoding", "refiningSpeakers", "improvingTranscript", "matchingVoices", "writingNotes"];
+
+/**
+ * The final pass reports one 0..1 for the whole job; each stage owns a span of
+ * it (`P_DIAR`, `P_ASR`, `P_MATCH` in `crates/ghi-core/src/final_pass.rs`).
+ * Other jobs report their stage's own progress.
+ */
+const FINAL_PASS_SPANS: Partial<Record<Stage, [number, number]>> = {
+  decoding: [0, 0.02],
+  refiningSpeakers: [0.02, 0.12],
+  improvingTranscript: [0.12, 0.97],
+  matchingVoices: [0.97, 1],
+};
+
+/** The running stage's own progress (0..1), whatever scale its job reports on. */
+export function stageProgress(kind: string, stage: Stage | null, progress: number | null | undefined): number | null {
+  if (progress == null) return null;
+  const span = kind === "final_pass" && stage ? FINAL_PASS_SPANS[stage] : undefined;
+  const local = span ? (progress - span[0]) / (span[1] - span[0]) : progress;
+  return Math.min(1, Math.max(0, local));
+}
 
 /**
  * The jobs that make a meeting's notes. Others (the search index, voice
@@ -40,7 +61,7 @@ export function stageOf(kind: string, stage: Stage | null): Stage | null {
 /** Whole-pipeline progress (0..1): finished stages plus the running stage's share, never below the peak. */
 export function overallProgress(p: Pick<Processing, "stage" | "kind" | "progress" | "peak">): number {
   const at = Math.max(0, STAGES.indexOf(stageOf(p.kind, p.stage) ?? "decoding"));
-  const within = Math.min(1, Math.max(0, p.progress ?? 0));
+  const within = stageProgress(p.kind, stageOf(p.kind, p.stage), p.progress) ?? 0;
   return Math.max(p.peak ?? 0, (at + within) / STAGES.length);
 }
 

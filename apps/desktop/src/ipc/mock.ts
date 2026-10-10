@@ -124,7 +124,7 @@ function tick(s: Session) {
   if (noModels || s.next < sample.transcript.length) s.timers.push(window.setTimeout(() => tick(s), LINE_MS));
 }
 
-const STAGES: Stage[] = ["decoding", "refiningSpeakers", "matchingVoices", "improvingTranscript", "writingNotes"];
+const STAGES: Stage[] = ["decoding", "refiningSpeakers", "improvingTranscript", "matchingVoices", "writingNotes"];
 
 function setRow(id: string, patch: Partial<MeetingRow>) {
   const r = rows.find((x) => x.gid === id);
