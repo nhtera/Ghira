@@ -3,15 +3,18 @@
 # Runs ON the rented GPU box (pytorch/pytorch CUDA image), from the folder vast.sh pushed:
 #   prep_data.py make_config.py ghi_eval/ box.sh
 # Every stage leaves a marker in $W/state, so re-running after a stop resumes where it was.
-#   STEPS=2000 LR=3e-5 WARMUP=200 VAL_EVERY=250 BATCH=160 ACCUM=2 YODAS=20 LIBRI=7 bash box.sh
-# Pilot 1 (lr 1e-4, 5000 steps) dropped whole English utterances; these defaults are the gentler retry.
+#   STEPS=5000 LR=3e-5 WARMUP=300 VAL_EVERY=500 BATCH=160 ACCUM=2 YODAS=80 YODAS_EN=25 LIBRI=7 AUTO=0.5 bash box.sh
+# Pilot 1 (lr 1e-4, 5000 steps) dropped whole English utterances; pilot 2 (lr 3e-5, 2000 steps on
+# 128 h) plateaued halfway and dropped the first words of live lines under the auto prompt. These
+# defaults: all of YODAS vi000 + FOSD, more varied English, half the clips on the auto prompt.
 set -euo pipefail
 W=${W:-/workspace}
 HERE=$(cd "$(dirname "$0")" && pwd)
 NEMO_SHA=${NEMO_SHA:-e4a34fd25f895ecd7f64f0e56bc288165e078da9}   # NeMo main, 2026-10-10 (dry run on this)
 BASE_REV=ea30d66debe3740a08b573244286791d423d6b3e                  # nvidia/nemotron-3.5-asr-streaming-0.6b
-STEPS=${STEPS:-2000} LR=${LR:-3e-5} WARMUP=${WARMUP:-200} VAL_EVERY=${VAL_EVERY:-250}
-BATCH=${BATCH:-160} ACCUM=${ACCUM:-2} YODAS=${YODAS:-20} LIBRI=${LIBRI:-7} AVG=${AVG:-3}
+STEPS=${STEPS:-5000} LR=${LR:-3e-5} WARMUP=${WARMUP:-300} VAL_EVERY=${VAL_EVERY:-500}
+BATCH=${BATCH:-160} ACCUM=${ACCUM:-2} YODAS=${YODAS:-80} YODAS_EN=${YODAS_EN:-25} LIBRI=${LIBRI:-7}
+AUTO=${AUTO:-0.5} AVG=${AVG:-3}
 mkdir -p "$W/state"
 cd "$W"
 done_() { [ -f "$W/state/$1" ]; }
@@ -42,9 +45,9 @@ fi
 BASE=$W/base/nemotron-3.5-asr-streaming-0.6b.nemo
 
 # (if-blocks, not `a || b`: set -e must stop the run when a stage fails)
-if ! done_ fetch; then python "$HERE/prep_data.py" fetch "$W/data" --yodas-shards "$YODAS" --libri-files "$LIBRI"; mark fetch; fi
+if ! done_ fetch; then python "$HERE/prep_data.py" fetch "$W/data" --yodas-shards "$YODAS" --yodas-en-shards "$YODAS_EN" --libri-files "$LIBRI" --fosd; mark fetch; fi
 if ! done_ label; then python "$HERE/prep_data.py" label "$W/data" "$BASE" --batch 64; mark label; fi
-if ! done_ select; then python "$HERE/prep_data.py" select "$W/data"; mark select; fi
+if ! done_ select; then python "$HERE/prep_data.py" select "$W/data" --auto-frac "$AUTO"; mark select; fi
 
 python "$HERE/make_config.py" "$BASE" "$W/ft.yaml" --train "$W/data/train.json" --val "$W/data/val.json" \
   --exp-dir "$W/exp" --steps "$STEPS" --batch-duration "$BATCH" --accumulate "$ACCUM" --lr "$LR" --warmup "$WARMUP" \

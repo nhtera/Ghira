@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Training data for the Vietnamese Nemotron fine-tune (runs on the GPU box).
 
-    prep_data.py fetch  DATA [--yodas-shards 20] [--libri-files 7]   # download, 16 kHz wav, raw.json
+    prep_data.py fetch  DATA [--yodas-shards 20] [--yodas-en-shards 0] [--libri-files 7] [--fosd]
     prep_data.py label  DATA BASE.nemo                                # base-model transcript per clip
-    prep_data.py select DATA                                          # filter -> train.json, val.json
+    prep_data.py select DATA [--auto-frac 0.5]                        # filter -> train.json, val.json
     prep_data.py probe  DATA BASE.nemo CAND.nemo [...]                # dropped-speech check, base vs candidate
 
 Sources (licence-clean only; nothing non-commercial):
@@ -11,9 +11,12 @@ Sources (licence-clean only; nothing non-commercial):
             dropped: the benchmark reads that test split, and 898 of its 995 videos are in train.
   vietmed   leduckhai/VietMed train, MIT (no recording is shared with the test split).
   yodas     espnet/yodas vi000 (uploader captions of CC-licensed videos), CC BY 3.0.
+  fosd      doof-ferb/fpt_fosd, a copy of FPT Open Speech (Mendeley k9sxg2twv4), CC BY 4.0; ~30 h read.
   libri     openslr/librispeech_asr clean train.100, CC BY 4.0: English replay. Its target is the
             base model's own transcript, so English output (case, punctuation, numbers as words)
             is held where it is.
+  yodas_en  espnet/yodas en000 shards 1.. (shard 0 is the probe's), CC BY 3.0: varied English
+            replay, also the model's own transcript.
 
 Targets follow the base model's output format: cased, punctuated, numbers as words, and the
 language tag token last ("... chuyển. <vi-VN>"). FLEURS is deliberately not used, so it stays
@@ -45,6 +48,7 @@ REV = {
     "leduckhai/VietMed": "main",
     "espnet/yodas": "main",
     "openslr/librispeech_asr": "main",
+    "doof-ferb/fpt_fosd": "e6ff950456eeaef7a257e79bf7f4597bb39c264c",
 }
 TAG = re.compile(r"\s*<[a-z]{2,3}-[A-Z]{2}>\s*")
 
@@ -87,8 +91,8 @@ def parquet_rows(args):
     file, src, lang, text_col, id_col, keep, root = args
     rows = []
     table = pq.read_table(file)
-    for r in table.to_pylist():
-        uid = str(r[id_col]).replace("/", "_")
+    for i, r in enumerate(table.to_pylist()):
+        uid = str(r[id_col]).replace("/", "_") if id_col else f"{Path(file).stem}-{i}"
         if keep is not None and not keep(r):
             continue
         out = root / "wav" / src / f"{uid}.wav"
@@ -115,7 +119,38 @@ class NotInTest:
         return row.get("original_video_link") not in self.videos
 
 
-def fetch(root: Path, yodas_shards: int, libri_files: int, workers: int) -> None:
+def yodas_rows(args):
+    """One YODAS shard (sub = vi000 / en000) to wavs; returns raw manifest rows."""
+    sub, i, src, lang, root = args
+    name = f"{i:08d}"
+    texts = {}
+    for line in open(hf("espnet/yodas", f"data/{sub}/text/{name}.txt", root), encoding="utf-8"):
+        uid, _, text = line.rstrip("\n").partition(" ")
+        texts[uid] = text
+    durs = {}
+    for line in open(hf("espnet/yodas", f"data/{sub}/duration/{name}.txt", root), encoding="utf-8"):
+        uid, d = line.split()[:2]
+        durs[uid] = float(d)
+    tar_path = hf("espnet/yodas", f"data/{sub}/audio/{name}.tar.gz", root)
+    out_dir = root / "wav" / src
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rows = []
+    with tarfile.open(tar_path) as tar:
+        for m in tar:
+            if not m.isfile() or not m.name.endswith(".wav"):
+                continue
+            uid = Path(m.name).stem
+            if uid not in texts:
+                continue
+            out = out_dir / f"{uid}.wav"
+            if not out.exists():
+                out.write_bytes(tar.extractfile(m).read())
+            rows.append({"audio_filepath": str(out), "duration": durs.get(uid, 0.0), "text": texts[uid], "lang": lang, "source": src})
+    tar_path.unlink()  # 1 GB each; the wavs are what we keep
+    return rows
+
+
+def fetch(root: Path, yodas_shards: int, yodas_en_shards: int, libri_files: int, fosd: bool, workers: int) -> None:
     from huggingface_hub import list_repo_files
 
     root.mkdir(parents=True, exist_ok=True)
@@ -133,38 +168,22 @@ def fetch(root: Path, yodas_shards: int, libri_files: int, workers: int) -> None
     for f in libri[:libri_files]:
         jobs.append((hf("openslr/librispeech_asr", f, root), "libri", "en-US", "text", "id", None, root))
 
+    if fosd:
+        files = sorted(f for f in list_repo_files("doof-ferb/fpt_fosd", repo_type="dataset", revision=REV["doof-ferb/fpt_fosd"]) if f.endswith(".parquet"))
+        for f in files:
+            jobs.append((hf("doof-ferb/fpt_fosd", f, root), "fosd", "vi-VN", "transcription", None, None, root))
+
     rows = []
     with ProcessPoolExecutor(workers) as ex:
         for part in ex.map(parquet_rows, jobs):
             rows += part
             print(f"{part[0]['source'] if part else '?'}: +{len(part)} clips", flush=True)
-
-    for i in range(yodas_shards):
-        name = f"{i:08d}"
-        texts = {}
-        for line in open(hf("espnet/yodas", f"data/vi000/text/{name}.txt", root), encoding="utf-8"):
-            uid, _, text = line.rstrip("\n").partition(" ")
-            texts[uid] = text
-        durs = {}
-        for line in open(hf("espnet/yodas", f"data/vi000/duration/{name}.txt", root), encoding="utf-8"):
-            uid, d = line.split()[:2]
-            durs[uid] = float(d)
-        tar_path = hf("espnet/yodas", f"data/vi000/audio/{name}.tar.gz", root)
-        out_dir = root / "wav" / "yodas"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(tar_path) as tar:
-            for m in tar:
-                if not m.isfile() or not m.name.endswith(".wav"):
-                    continue
-                uid = Path(m.name).stem
-                if uid not in texts:
-                    continue
-                out = out_dir / f"{uid}.wav"
-                if not out.exists():
-                    out.write_bytes(tar.extractfile(m).read())
-                rows.append({"audio_filepath": str(out), "duration": durs.get(uid, 0.0), "text": texts[uid], "lang": "vi-VN", "source": "yodas"})
-        tar_path.unlink()  # 1 GB each; the wavs are what we keep
-        print(f"yodas {name}: {len(texts)} captions", flush=True)
+        # Shards download and unpack in parallel; en000 shard 0 is left for the probe.
+        shards = [("vi000", i, "yodas", "vi-VN", root) for i in range(yodas_shards)]
+        shards += [("en000", i, "yodas_en", "en-US", root) for i in range(1, yodas_en_shards + 1)]
+        for (sub, i, *_), part in zip(shards, ex.map(yodas_rows, shards)):
+            rows += part
+            print(f"yodas {sub} {i:08d}: +{len(part)} clips", flush=True)
 
     with open(root / "raw.json", "w", encoding="utf-8") as f:
         for r in rows:
@@ -195,8 +214,18 @@ def label(root: Path, nemo: str, batch: int) -> None:
             done[r["audio_filepath"]] = r["hyp"]
     todo = [r for r in rows if r["audio_filepath"] not in done]
     print(f"label: {len(todo)} of {len(rows)} clips to go", flush=True)
+    import soundfile as sf
+
+    # Some YODAS segments past the end of a video list 20 s but hold no samples; they crash
+    # the preprocessor. An empty hyp makes select drop them.
+    long_enough = {r["audio_filepath"]: sf.info(r["audio_filepath"]).frames >= 0.3 * SR for r in todo}
+    empty = [r for r in todo if not long_enough[r["audio_filepath"]]]
+    todo = [r for r in todo if long_enough[r["audio_filepath"]]]
     step = 2000
     with open(out_path, "a", encoding="utf-8") as out:
+        for r in empty:
+            out.write(json.dumps({"audio_filepath": r["audio_filepath"], "hyp": ""}) + "\n")
+        print(f"label: {len(empty)} clips with under 0.3 s of audio skipped", flush=True)
         for i in range(0, len(todo), step):
             chunk = todo[i : i + step]
             man = root / "label_chunk.json"
@@ -230,19 +259,26 @@ def clean_caption(text: str, lang: str) -> str | None:
     return text or None
 
 
-def transfer_format(caption: str, hyp: str) -> str:
-    """Lower-case unpunctuated caption + model transcript -> caption words in the model's style.
+def merge(caption: str, hyp: str) -> str:
+    """Caption + model transcript -> target that matches the audio at both clip edges.
 
-    Where the words agree the model's surface form (case, punctuation) is used; elsewhere the
-    caption word stays as written. Only used for sets whose captions carry no formatting.
+    Subtitle cuts are loose (only ~10% of YODAS clips agree with the model on both edge words):
+    a caption may hold words cut off in the audio, or miss words the audio has. Before the first
+    and after the last agreeing word the model's words are used; between them the caption's
+    (the human correction) where they differ, and the model's surface form (case, punctuation)
+    where they agree, so unpunctuated captions don't teach unpunctuated output.
     """
     cap = caption.split()
     hyp_words = hyp.split()
     key = lambda w: "".join(ch for ch in w.lower() if ch.isalnum())  # noqa: E731
-    sm = difflib.SequenceMatcher(a=[key(w) for w in cap], b=[key(w) for w in hyp_words], autojunk=False)
+    ops = difflib.SequenceMatcher(a=[key(w) for w in cap], b=[key(w) for w in hyp_words], autojunk=False).get_opcodes()
+    eq = [i for i, op in enumerate(ops) if op[0] == "equal"]
+    if not eq:
+        return hyp
     out = []
-    for op, a0, a1, b0, b1 in sm.get_opcodes():
-        out += hyp_words[b0:b1] if op == "equal" else cap[a0:a1]
+    for i, (op, a0, a1, b0, b1) in enumerate(ops):
+        edge = i < eq[0] or i > eq[-1]
+        out += hyp_words[b0:b1] if op == "equal" or edge else cap[a0:a1]
     s = " ".join(out)
     return s[:1].upper() + s[1:]
 
@@ -259,14 +295,19 @@ def wer(ref: str, hyp: str, lang: str) -> float:
 
 # Per source: maximum caption-vs-model disagreement kept, and where the target text comes from.
 RULES = {
-    "vimedcss": (0.6, "caption"),  # human transcripts; drop only misaligned clips
-    "vietmed": (0.6, "format"),  # human, but lower-case and unpunctuated
-    "yodas": (0.3, "caption"),  # uploader captions: often loose, keep the close ones
+    "vimedcss": (0.6, "merge"),  # human transcripts; drop only misaligned clips
+    "vietmed": (0.6, "merge"),  # human, but lower-case and unpunctuated
+    "fosd": (0.4, "merge"),  # human, read speech, lower-case and unpunctuated
+    "yodas": (0.3, "merge"),  # uploader captions: often loose, keep the close ones
     "libri": (0.15, "model"),  # English replay: the model's own words
+    "yodas_en": (0.15, "model"),
 }
 
 
-def select(root: Path, val_n: int, seed: int) -> None:
+def select(root: Path, val_n: int, seed: int, auto_frac: float) -> None:
+    """auto_frac of the train clips get the "auto" prompt. NeMo trains only on each clip's own
+    prompt, so without these the auto prompt (what a meeting with no language set uses) drifts:
+    pilot 2 dropped the first words of live English lines."""
     hyps = {}
     for line in open(root / "hyp.json", encoding="utf-8"):
         r = json.loads(line)
@@ -286,15 +327,19 @@ def select(root: Path, val_n: int, seed: int) -> None:
             continue
         if mode == "model":
             target = hyp
-        elif mode == "format":
-            target = transfer_format(cap, hyp)
+        elif mode == "merge":
+            target = merge(cap, hyp)
         else:
             target = cap
         kept.append({"audio_filepath": r["audio_filepath"], "duration": r["duration"], "text": f"{target} <{lang}>", "lang": lang, "target_lang": lang, "source": src})
         s["kept"] += 1
         s["hours"] += r["duration"] / 3600
-    random.Random(seed).shuffle(kept)
+    rng = random.Random(seed)
+    rng.shuffle(kept)
     val, train = kept[:val_n], kept[val_n:]
+    for r in train:
+        if rng.random() < auto_frac:
+            r["lang"] = r["target_lang"] = "auto"
     for name, rows in (("train", train), ("val", val)):
         with open(root / f"{name}.json", "w", encoding="utf-8") as f:
             for r in rows:
@@ -358,20 +403,31 @@ def probe(root: Path, base: str, cands: list[str], n: int, batch: int) -> None:
     """Dropped-speech check: the pilot's failure was empty or half outputs on English it should read.
 
     Per set and model: clips with no output, clips where the output has under half the base
-    model's words ("dropped"), and the caption error rate. FLEURS stays out of this on purpose.
+    model's words ("dropped"), clips missing the base's first word in their first three
+    ("head"), and the caption error rate. Each set runs with its language prompt and with
+    "auto". FLEURS stays out of this on purpose.
     """
+    key = lambda w: "".join(ch for ch in w.lower() if ch.isalnum())  # noqa: E731
     sets = {"val": root / "val.json", "yodas-en": probe_set(root, n)}
+    for name in list(sets):  # the same clips with the auto prompt (a meeting with no language set)
+        auto = root / f"probe_{name}_auto.json"
+        with open(auto, "w", encoding="utf-8") as f:
+            for line in open(sets[name], encoding="utf-8"):
+                r = json.loads(line)  # lang is the prompt NeMo reads; text_lang keeps the scoring language
+                f.write(json.dumps({**r, "lang": "auto", "target_lang": "auto", "text_lang": r["lang"]}, ensure_ascii=False) + "\n")
+        sets[f"{name}-auto"] = auto
     for name, man in sets.items():
         rows = [json.loads(line) for line in open(man, encoding="utf-8")]
         refs = [TAG.sub(" ", r["text"]).strip() for r in rows]
-        langs = [r["lang"] for r in rows]
+        langs = [r.get("text_lang", r["lang"]) for r in rows]
         base_h = transcribe_all(base, man, batch)
         for label_, nemo in [("base", base)] + [(Path(c).stem, c) for c in cands]:
             hyp = base_h if nemo == base else transcribe_all(nemo, man, batch)
             empty = sum(1 for h, b in zip(hyp, base_h) if not h.split() and len(b.split()) >= 3)
             dropped = sum(1 for h, b in zip(hyp, base_h) if len(b.split()) >= 4 and len(h.split()) < 0.5 * len(b.split()))
+            head = sum(1 for h, b in zip(hyp, base_h) if len(b.split()) >= 4 and key(b.split()[0]) not in [key(w) for w in h.split()[:3]])
             err = sum(wer(r, h, lg) for r, h, lg in zip(refs, hyp, langs)) / len(rows)
-            print(f"PROBE {name:9s} {label_:10s} clips={len(rows)} empty={empty} dropped={dropped} caption_err={err:.3f}", flush=True)
+            print(f"PROBE {name:14s} {label_:10s} clips={len(rows)} empty={empty} dropped={dropped} head={head} caption_err={err:.3f}", flush=True)
 
 
 def main() -> None:
@@ -380,6 +436,8 @@ def main() -> None:
     f = sub.add_parser("fetch")
     f.add_argument("data", type=Path)
     f.add_argument("--yodas-shards", type=int, default=20)
+    f.add_argument("--yodas-en-shards", type=int, default=0)
+    f.add_argument("--fosd", action="store_true")
     f.add_argument("--libri-files", type=int, default=7)
     f.add_argument("--workers", type=int, default=os.cpu_count() or 4)
     lb = sub.add_parser("label")
@@ -390,6 +448,7 @@ def main() -> None:
     s.add_argument("data", type=Path)
     s.add_argument("--val", type=int, default=400)
     s.add_argument("--seed", type=int, default=7)
+    s.add_argument("--auto-frac", type=float, default=0.5)
     p = sub.add_parser("probe")
     p.add_argument("data", type=Path)
     p.add_argument("nemo")
@@ -398,13 +457,13 @@ def main() -> None:
     p.add_argument("--batch", type=int, default=64)
     a = ap.parse_args()
     if a.cmd == "fetch":
-        fetch(a.data, a.yodas_shards, a.libri_files, a.workers)
+        fetch(a.data, a.yodas_shards, a.yodas_en_shards, a.libri_files, a.fosd, a.workers)
     elif a.cmd == "label":
         label(a.data, a.nemo, a.batch)
     elif a.cmd == "probe":
         probe(a.data, a.nemo, a.cands, a.en_clips, a.batch)
     else:
-        select(a.data, a.val, a.seed)
+        select(a.data, a.val, a.seed, a.auto_frac)
 
 
 if __name__ == "__main__":
