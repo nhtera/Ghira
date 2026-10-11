@@ -45,7 +45,7 @@ case "${1:-}" in
   push)
     read -r host port < <(ssh_target)
     tmp=$(mktemp -d); mkdir -p "$tmp/ft"
-    cp "$HERE"/prep_data.py "$HERE"/make_config.py "$HERE"/box.sh "$tmp/ft/"
+    cp "$HERE"/prep_data.py "$HERE"/make_config.py "$HERE"/box.sh "$HERE"/vimedcss_bench_videos.txt "$tmp/ft/"
     cp -r "$ROOT/tools/eval/ghi_eval" "$tmp/ft/"
     rsync -az -e "ssh -i $KEY -p $port -o StrictHostKeyChecking=accept-new" "$tmp/ft/" "$host:/workspace/ft/"
     if [ -n "${2:-}" ]; then

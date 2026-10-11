@@ -3,13 +3,15 @@
 
     prep_data.py fetch  DATA [--yodas-shards 20] [--yodas-en-shards 0] [--libri-files 7] [--fosd]
     prep_data.py label  DATA BASE.nemo                                # base-model transcript per clip
-    prep_data.py select DATA [--auto-frac 0.5] [--join-frac 0.5]      # filter, join -> train.json, val.json
+    prep_data.py select DATA [--auto-frac 0.5] [--join-frac 0.5] [--narrow-frac 0.15]   # -> train.json, val.json
     prep_data.py probe  DATA BASE.nemo CAND.nemo [...]                # dropped-speech check, base vs candidate
 
 Sources (licence-clean only; nothing non-commercial):
-  vimedcss  tensorxt/ViMedCSS train, CC BY 4.0. Videos that also appear in its test split are
-            dropped: the benchmark reads that test split, and 898 of its 995 videos are in train.
-  vietmed   leduckhai/VietMed train, MIT (no recording is shared with the test split).
+  vimedcss  tensorxt/ViMedCSS train + validation + hard, CC BY 4.0, except the 309 videos the
+            benchmark subset reads (vimedcss_bench_videos.txt): ~24 h. Run 4 dropped every video of
+            the whole test split (898 of its 995 are also in train) and kept 9 h. The test split
+            itself is never trained on.
+  vietmed   leduckhai/VietMed train + dev, MIT (~10 h; no speaker is shared with the test split).
   yodas     espnet/yodas vi000 (uploader captions of CC-licensed videos), CC BY 3.0.
   fosd      doof-ferb/fpt_fosd, a copy of FPT Open Speech (Mendeley k9sxg2twv4), CC BY 4.0; ~30 h read.
   libri     openslr/librispeech_asr clean train.100, CC BY 4.0: English replay. Its target is the
@@ -26,7 +28,6 @@ an untouched control in the benchmark.
 from __future__ import annotations
 
 import argparse
-import csv
 import difflib
 import io
 import json
@@ -89,7 +90,8 @@ def parquet_rows(args):
     """Decodes one parquet file to wavs; returns raw manifest rows."""
     import pyarrow.parquet as pq
 
-    file, src, lang, text_col, id_col, keep, root = args
+    file, src, lang, text_col, id_col, keep, root, *rest = args
+    group_col = rest[0] if rest else None
     rows = []
     table = pq.read_table(file)
     for i, r in enumerate(table.to_pylist()):
@@ -108,11 +110,14 @@ def parquet_rows(args):
         except Exception as e:  # a broken clip is skipped, not fatal
             print(f"skip {src} {uid}: {e}", file=sys.stderr)
             continue
-        rows.append({"audio_filepath": str(out), "duration": round(dur, 3), "text": r[text_col], "lang": lang, "source": src})
+        row = {"audio_filepath": str(out), "duration": round(dur, 3), "text": r[text_col], "lang": lang, "source": src}
+        if group_col:
+            row["group"] = str(r[group_col])  # video or speaker: val holds out whole groups
+        rows.append(row)
     return rows
 
 
-class NotInTest:
+class NotIn:
     def __init__(self, videos: set[str]):
         self.videos = videos
 
@@ -157,13 +162,14 @@ def fetch(root: Path, yodas_shards: int, yodas_en_shards: int, libri_files: int,
     root.mkdir(parents=True, exist_ok=True)
     jobs = []
 
-    test_csv = hf("tensorxt/ViMedCSS", "ViMedCSS-Metadata/test_set.csv", root)
-    test_videos = {r["original_video_link"] for r in csv.DictReader(open(test_csv, encoding="utf-8"))}
-    files = sorted(f for f in list_repo_files("tensorxt/ViMedCSS", repo_type="dataset") if f.startswith("data/train-"))
+    bench = Path(__file__).resolve().parent / "vimedcss_bench_videos.txt"
+    bench_videos = {line.strip() for line in open(bench, encoding="utf-8") if line.strip() and not line.startswith("#")}
+    files = sorted(f for f in list_repo_files("tensorxt/ViMedCSS", repo_type="dataset") if f.startswith(("data/train-", "data/validation-", "data/hard-")))
     for f in files:
-        jobs.append((hf("tensorxt/ViMedCSS", f, root), "vimedcss", "vi-VN", "segment_text", "segment_id", NotInTest(test_videos), root))
+        jobs.append((hf("tensorxt/ViMedCSS", f, root), "vimedcss", "vi-VN", "segment_text", "segment_id", NotIn(bench_videos), root, "original_video_link"))
 
-    jobs.append((hf("leduckhai/VietMed", "data/train-00000-of-00001.parquet", root), "vietmed", "vi-VN", "text", "utterance_id", None, root))
+    for split in ("train", "dev"):
+        jobs.append((hf("leduckhai/VietMed", f"data/{split}-00000-of-00001.parquet", root), "vietmed", "vi-VN", "text", "utterance_id", None, root, "speaker_name"))
 
     libri = sorted(f for f in list_repo_files("openslr/librispeech_asr", repo_type="dataset") if f.startswith("clean/train.100/"))
     for f in libri[:libri_files]:
@@ -320,6 +326,27 @@ RULES = {
 }
 
 
+# Validation clips per source, each source's clips from groups (videos, speakers) kept out of
+# train. Run 4's val was a random 400 (62% YODAS, 7 ViMedCSS, 0 VietMed) and so measured
+# agreement with YODAS pseudo-labels; this one weighs the medical sets the gate is about.
+VAL = {"vimedcss": 150, "vietmed": 150, "yodas": 120, "fosd": 60, "yodas_en": 60, "libri": 60}
+
+
+def group(r) -> str:
+    """The recording a clip belongs to: its video or speaker, else the YODAS video id, else itself."""
+    return r.get("group") or Path(r["audio_filepath"]).stem.split("-")[0]
+
+
+def narrow_audio(args) -> None:
+    """A telephone-band copy: down to 8 kHz and back (VietMed and many calls sound like this)."""
+    import soundfile as sf
+    import soxr
+
+    src, out = args
+    audio, sr = sf.read(src, dtype="float32")
+    sf.write(out, soxr.resample(soxr.resample(audio, sr, 8000), 8000, SR), SR, subtype="PCM_16")
+
+
 def join_audio(args) -> None:
     """Writes one joined example: the parts with a pause after each (not after the last)."""
     import numpy as np
@@ -333,7 +360,7 @@ def join_audio(args) -> None:
     sf.write(out, np.concatenate(pcm[:-1]), SR, subtype="PCM_16")
 
 
-def select(root: Path, val_n: int, seed: int, auto_frac: float, join_frac: float, repeat: dict[str, int], workers: int) -> None:
+def select(root: Path, val_n: dict[str, int], seed: int, auto_frac: float, join_frac: float, narrow_frac: float, repeat: dict[str, int], workers: int) -> None:
     """Filters the clips, builds targets, and writes train.json / val.json.
 
     auto_frac of the train examples get the "auto" prompt (NeMo trains only on each example's own
@@ -341,7 +368,8 @@ def select(root: Path, val_n: int, seed: int, auto_frac: float, join_frac: float
     join_frac of the train clips are joined 2-3 at a time, from different sources and videos,
     with 0.2-1.0 s pauses: a continuous stream carries the previous speaker and the last
     language tag into the next utterance, which single clips never teach. `repeat` repeats
-    the small in-domain sets (the medical ones are the gate's hard cases).
+    the small in-domain sets (the medical ones are the gate's hard cases). narrow_frac of the
+    single train clips (not VietMed, already 8 kHz) are read through a telephone band.
     """
     hyps = {}
     for line in open(root / "hyp.json", encoding="utf-8"):
@@ -361,12 +389,26 @@ def select(root: Path, val_n: int, seed: int, auto_frac: float, join_frac: float
         if cap is None or wer(cap, TAG.sub(" ", hyp), lang) > limit:
             continue
         target = hyp if mode == "model" else merge(cap, hyp)
-        kept.append({"audio_filepath": r["audio_filepath"], "duration": r["duration"], "text": target, "lang": lang, "target_lang": lang, "source": src})
+        kept.append({"audio_filepath": r["audio_filepath"], "duration": r["duration"], "text": target, "lang": lang, "target_lang": lang, "source": src, "group": group(r)})
         s["kept"] += 1
         s["hours"] += r["duration"] / 3600
     rng = random.Random(seed)
     rng.shuffle(kept)
-    val, train = kept[:val_n], kept[val_n:]
+    # Whole groups go to val until a source has its count; the rest of the last group is dropped.
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for r in kept:
+        groups.setdefault((r["source"], r["group"]), []).append(r)
+    order = list(groups)
+    rng.shuffle(order)
+    val, held, have = [], set(), dict.fromkeys(val_n, 0)
+    for key in order:
+        src = key[0]
+        if have.get(src, 0) < val_n.get(src, 0):
+            take = groups[key][: val_n[src] - have[src]]
+            val += take
+            have[src] += len(take)
+            held.add(key)
+    train = [r for r in kept if (r["source"], r["group"]) not in held]
     train += [r for r in train for _ in range(repeat.get(r["source"], 1) - 1)]
     rng.shuffle(train)
 
@@ -374,7 +416,6 @@ def select(root: Path, val_n: int, seed: int, auto_frac: float, join_frac: float
     # video id) up to 20 s in total.
     n_join = int(len(train) * join_frac)
     pool, single, jobs, joined = train[:n_join], train[n_join:], [], []
-    video = lambda r: Path(r["audio_filepath"]).stem.split("-")[0]  # noqa: E731
     out_dir = root / "wav" / "joined"
     out_dir.mkdir(parents=True, exist_ok=True)
     i = 0
@@ -383,7 +424,7 @@ def select(root: Path, val_n: int, seed: int, auto_frac: float, join_frac: float
         i += 1
         while len(parts) < want and i < len(pool):
             nxt = pool[i]
-            if video(nxt) in {video(p) for p in parts} or sum(p["duration"] for p in parts) + nxt["duration"] + 1.0 > 20:
+            if nxt["group"] in {p["group"] for p in parts} or sum(p["duration"] for p in parts) + nxt["duration"] + 1.0 > 20:
                 break
             parts.append(nxt)
             i += 1
@@ -396,8 +437,17 @@ def select(root: Path, val_n: int, seed: int, auto_frac: float, join_frac: float
         lang = langs.pop() if len(langs) == 1 else "auto"
         jobs.append((str(out), [p["audio_filepath"] for p in parts], gaps))
         joined.append({"audio_filepath": str(out), "duration": round(sum(p["duration"] for p in parts) + sum(gaps[:-1]), 3), "text": " ".join(p["text"] for p in parts), "lang": lang, "target_lang": lang, "source": "joined"})
+    narrow_dir = root / "wav" / "narrow"
+    narrow_dir.mkdir(parents=True, exist_ok=True)
+    narrow = {}
+    for i, r in enumerate(single):
+        if r["source"] != "vietmed" and rng.random() < narrow_frac:
+            out = narrow_dir / f"n{i:07d}.wav"
+            narrow[r["audio_filepath"], i] = str(out)
+            single[i] = {**r, "audio_filepath": str(out)}
     with ProcessPoolExecutor(workers) as ex:
         list(ex.map(join_audio, jobs, chunksize=256))
+        list(ex.map(narrow_audio, [(src, out) for (src, _), out in narrow.items()], chunksize=256))
     train = single + joined
     rng.shuffle(train)
     for r in train:
@@ -408,8 +458,9 @@ def select(root: Path, val_n: int, seed: int, auto_frac: float, join_frac: float
             for r in rows:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
     for src, s in stats.items():
-        print(f"{src:9s} kept {s['kept']}/{s['in']} clips, {s['hours']:.1f} h")
-    print(f"joined {len(joined)} examples from {sum(len(j[1]) for j in jobs)} clips")
+        n_val = sum(1 for r in val if r["source"] == src)
+        print(f"{src:9s} kept {s['kept']}/{s['in']} clips, {s['hours']:.1f} h; val {n_val} clips")
+    print(f"joined {len(joined)} examples from {sum(len(j[1]) for j in jobs)} clips; {len(narrow)} telephone-band clips")
     print(f"train {len(train)} examples, {sum(r['duration'] for r in train) / 3600:.1f} h; val {len(val)}")
 
 
@@ -509,6 +560,11 @@ def probe(root: Path, base: str, cands: list[str], n: int, batch: int) -> None:
             second = sum(1 for r, h, b in zip(rows, hyp, base_h) if len(r.get("second", [])) == 2 and tuple(r["second"]) in bigram(b) and tuple(r["second"]) not in bigram(h))
             err = sum(wer(r, h, lg) for r, h, lg in zip(refs, hyp, langs)) / len(rows)
             print(f"PROBE {name:14s} {label_:10s} clips={len(rows)} empty={empty} dropped={dropped} head={head} second={second} caption_err={err:.3f}", flush=True)
+            if name == "val":  # per source: the medical sets are the gate, YODAS is most of the mix
+                for src in sorted({r.get("source", "?") for r in rows}):
+                    idx = [i for i, r in enumerate(rows) if r.get("source", "?") == src]
+                    e = sum(wer(refs[i], hyp[i], langs[i]) for i in idx) / len(idx)
+                    print(f"PROBE val:{src:10s} {label_:10s} clips={len(idx)} caption_err={e:.3f}", flush=True)
 
 
 def main() -> None:
@@ -527,10 +583,11 @@ def main() -> None:
     lb.add_argument("--batch", type=int, default=64)
     s = sub.add_parser("select")
     s.add_argument("data", type=Path)
-    s.add_argument("--val", type=int, default=400)
+    s.add_argument("--val", default=",".join(f"{k}={v}" for k, v in VAL.items()), help="source=clips,...")
     s.add_argument("--seed", type=int, default=7)
     s.add_argument("--auto-frac", type=float, default=0.5)
     s.add_argument("--join-frac", type=float, default=0.5)
+    s.add_argument("--narrow-frac", type=float, default=0.15)
     s.add_argument("--repeat", default="vimedcss=3,vietmed=3", help="source=times,...")
     s.add_argument("--workers", type=int, default=os.cpu_count() or 4)
     p = sub.add_parser("probe")
@@ -547,8 +604,8 @@ def main() -> None:
     elif a.cmd == "probe":
         probe(a.data, a.nemo, a.cands, a.en_clips, a.batch)
     else:
-        repeat = {k: int(v) for k, v in (kv.split("=") for kv in a.repeat.split(",") if kv)}
-        select(a.data, a.val, a.seed, a.auto_frac, a.join_frac, repeat, a.workers)
+        counts = lambda spec: {k: int(v) for k, v in (kv.split("=") for kv in spec.split(",") if kv)}  # noqa: E731
+        select(a.data, counts(a.val), a.seed, a.auto_frac, a.join_frac, a.narrow_frac, counts(a.repeat), a.workers)
 
 
 if __name__ == "__main__":
