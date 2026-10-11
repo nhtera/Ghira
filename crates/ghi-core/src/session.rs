@@ -224,6 +224,7 @@ impl Session {
         if cfg.mode == Mode::Call && !tracks.contains(&Track::System) {
             cfg.mode = Mode::Room;
         }
+        let t0 = Instant::now();
         if let Some(h) = &hooks {
             h.recording_started();
         }
@@ -335,9 +336,11 @@ impl Session {
         // Audio is being pumped (and kept) while the engines load.
         // The pump keeps the capture ring drained while a running job gets
         // time to release its model.
+        let t_wait = Instant::now();
         if let Some(h) = &hooks {
             h.wait_idle(JOB_YIELD_WAIT);
         }
+        let t_load = Instant::now();
         let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             load_engines().and_then(|engines| {
                 engines
@@ -365,6 +368,13 @@ impl Session {
             Err(e) => return Err(abort(pump_tx, persist_tx, threads, e)),
         };
         let live = engine.is_some();
+        // Where a start's seconds go (the window waits on this call).
+        log::info!(
+            "recording start setup_ms={} jobs_wait_ms={} engines_ms={} live={live}",
+            (t_wait - t0).as_millis(),
+            (t_load - t_wait).as_millis(),
+            t_load.elapsed().as_millis(),
+        );
         if cfg.sensitive && !live {
             return Err(abort(
                 pump_tx,

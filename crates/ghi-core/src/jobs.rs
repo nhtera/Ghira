@@ -276,6 +276,9 @@ pub struct JobRunner {
     /// The app is not active (mobile lifecycle): no claims, running job yields.
     inactive: AtomicBool,
     preempt: AtomicBool,
+    /// Longest a starting recording waits for a running job to let go of its
+    /// model (`wait_idle`); `None` waits as long as the session asks.
+    start_wait: Mutex<Option<Duration>>,
     fence: Mutex<Option<Fence>>,
     backoff: Mutex<YieldBackoff>,
     yields: Mutex<HashMap<i64, YieldState>>,
@@ -306,6 +309,7 @@ impl JobRunner {
             recording: AtomicUsize::new(0),
             inactive: AtomicBool::new(false),
             preempt: AtomicBool::new(false),
+            start_wait: Mutex::new(None),
             fence: Mutex::new(None),
             backoff: Mutex::new(YieldBackoff::default()),
             yields: Mutex::new(HashMap::new()),
@@ -321,6 +325,13 @@ impl JobRunner {
     /// checked here (the store still fences the commit).
     pub fn set_fence(&self, fence: Fence) {
         *self.fence.lock().unwrap_or_else(|e| e.into_inner()) = Some(fence);
+    }
+
+    /// Caps how long a starting recording waits for a running job to yield.
+    /// Machines with room for the notes model and the speech engines together
+    /// set zero: the job is still told to yield, but the start doesn't wait.
+    pub fn set_start_wait(&self, max: Duration) {
+        *self.start_wait.lock().unwrap_or_else(|e| e.into_inner()) = Some(max);
     }
 
     /// Changes when a job that yields without progress is held.
@@ -660,7 +671,8 @@ impl RecordingHooks for JobRunner {
     }
 
     fn wait_idle(&self, max: Duration) -> bool {
-        let end = Instant::now() + max;
+        let cap = *self.start_wait.lock().unwrap_or_else(|e| e.into_inner());
+        let end = Instant::now() + cap.map_or(max, |c| c.min(max));
         while self.running.load(Ordering::SeqCst) > 0 {
             if Instant::now() >= end {
                 return false;
@@ -780,6 +792,41 @@ mod tests {
         stuck.stop.store(true, Ordering::SeqCst);
         t.join().unwrap();
         assert!(runner.wait_idle(Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn a_start_wait_cap_lets_a_recording_start_past_a_busy_job() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            Store::open(
+                tmp.path(),
+                Arc::new(MemoryKeyStore::default()),
+                Protection::default(),
+            )
+            .unwrap(),
+        );
+        let m = store.create_meeting(NewMeeting::default()).unwrap().gid;
+        let (tx, _rx) = bus();
+        let stuck = Arc::new(Stuck {
+            started: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+        });
+        let runner = JobRunner::new(store.clone(), tx, vec![stuck.clone()]);
+        runner.set_start_wait(Duration::ZERO);
+        store.enqueue_job(Some(&m), "stuck", 1, &json!({})).unwrap();
+        let r = runner.clone();
+        let t = std::thread::spawn(move || r.run_one());
+        while !stuck.started.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        runner.recording_started();
+        let at = Instant::now();
+        assert!(!runner.wait_idle(Duration::from_secs(5)));
+        assert!(at.elapsed() < Duration::from_secs(1));
+        // The job was still told to yield.
+        assert!(runner.preempt.load(Ordering::SeqCst));
+        stuck.stop.store(true, Ordering::SeqCst);
+        t.join().unwrap();
     }
 
     #[test]

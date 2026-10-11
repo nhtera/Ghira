@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useToast } from "@ghi/ui";
 import type { RecordMode } from "../bindings";
 import { ipc } from "../ipc";
-import { isActive, useLive } from "../state/live";
+import { initialLive, isActive, useLive } from "../state/live";
 import { useUi } from "../state/ui";
 import type { ShortcutId } from "./shortcuts";
 
@@ -30,9 +30,15 @@ export function useAppActions() {
   );
   const startRecording = useCallback(
     async (mode: RecordMode = recordMode) => {
+      // The live screen shows at once, already "starting": the core answers
+      // only once the speech models are loaded (seconds), while the audio is
+      // already being kept. A failed start puts the control back.
+      const optimistic = !isActive(useLive.getState().state);
+      if (optimistic) useLive.setState({ state: "starting" });
+      void navigate({ to: "/live" });
       // Sensitive mode, if armed, is applied by the core (and cleared by it).
       const r = await report(ipc.commands.startRecording(mode, null, ""));
-      if (r?.status === "ok") void navigate({ to: "/live" });
+      if (optimistic && r?.status !== "ok" && useLive.getState().state === "starting") useLive.setState({ ...initialLive });
       return r;
     },
     [navigate, recordMode, report],

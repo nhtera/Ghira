@@ -1270,6 +1270,12 @@ impl Core {
         // Jobs a paired phone leased to this device run under the lease's
         // fence (doc 07 §8); jobs without a lease never ask it.
         runner.set_fence(crate::sync_service::lease_fence(store.clone()));
+        // Where the notes model may stay loaded during a recording (all but
+        // Light, doc 05 §6), a start doesn't wait for a running job to unload
+        // it (the job is still told to yield).
+        if ghi_models::llm_allowed_while_recording(preset().tier) {
+            runner.set_start_wait(std::time::Duration::ZERO);
+        }
         if self.hooks.handlers.is_none() {
             // Light machines search by keywords only (no embedding model).
             let _ = ghi_core::index_job::set_enabled(
@@ -1283,6 +1289,25 @@ impl Core {
         }
         *lock(&self.runner_thread) = Some(runner.spawn().map_err(|e| e.to_string())?);
         *lock(&self.runner) = Some(runner);
+        // The first recording would hash the speech models (~850 MB, about
+        // a second) before loading them; check them now, so the click on
+        // Record only pays for the load. The result is cached per process.
+        if self.hooks.handlers.is_none() && speech_ready(&models) {
+            let spawned = std::thread::Builder::new()
+                .name("ghi-model-check".into())
+                .spawn(move || {
+                    let t = std::time::Instant::now();
+                    for id in &preset().speech_models {
+                        if let Err(e) = checked_model(&models, id) {
+                            log::warn!("speech model check: {e}");
+                        }
+                    }
+                    log::info!("speech models checked ms={}", t.elapsed().as_millis());
+                });
+            if let Err(e) = spawned {
+                log::warn!("speech model check thread: {e}");
+            }
+        }
         Ok(store)
     }
 
@@ -1418,8 +1443,13 @@ impl Core {
         // No meeting app in a call: all system audio is recorded, and the
         // recording says so. The pids are resolved once, here.
         let app_audio_fallback = want_app_only && tap_pids.is_empty();
+        let t_capture = std::time::Instant::now();
         let capture =
             ghi_core::capture::live(mode == Mode::Call, &tap_pids).map_err(|e| e.to_string())?;
+        log::info!(
+            "recording start capture_ms={}",
+            t_capture.elapsed().as_millis()
+        );
         let hooks = lock(&self.runner)
             .clone()
             .map(|r| r as Arc<dyn ghi_core::session::RecordingHooks>);
