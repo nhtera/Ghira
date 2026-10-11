@@ -4922,9 +4922,9 @@
   },
   {
    "id": "nemotron-3.5-asr",
-   "name": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+   "name": "nhtera/ghira-asr-vi-0.6b",
    "license": "OpenMDW-1.1",
-   "url": "https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b",
+   "url": "https://huggingface.co/nhtera/ghira-asr-vi-0.6b",
    "licenseKeys": []
   }
  ],

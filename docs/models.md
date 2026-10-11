@@ -23,7 +23,7 @@ speaker and notes models.
 
 | What it does | Model | Size | Preset |
 |---|---|---|---|
-| Speech to text | Nemotron 3.5 ASR | 742 MB | All |
+| Speech to text | Nemotron 3.5 ASR, Ghira's Vietnamese fine-tune | 742 MB | All |
 | Who said what | Nemotron 3 Diarization | 107 MB | All |
 | Meeting notes | Qwen3 4B | 2.5 GB | All |
 | Search by meaning | Qwen3 Embedding 0.6B | 639 MB | Balanced, Max |

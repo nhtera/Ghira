@@ -3,13 +3,16 @@
 # committed or bundled. Every file is fetched at `revision` and must match `sha256`.
 # Dev download: tools/scripts/fetch-models.sh; the in-app downloader (ghi-net) comes later.
 
+# Speech: Ghira's Vietnamese fine-tune of nvidia/nemotron-3.5-asr-streaming-0.6b
+# (rev ea30d66d; tools/finetune, run 4 of 2026-10-11). Same architecture, tokenizer,
+# prompts and file name as the base; better on every VN and EN set we bench.
 [[model]]
 id = "nemotron-3.5-asr"
 role = "asr"
-repo = "nvidia/nemotron-3.5-asr-streaming-0.6b"
-revision = "ea30d66debe3740a08b573244286791d423d6b3e"
+repo = "nhtera/ghira-asr-vi-0.6b"
+revision = "1975b46d33d154c44729fbcc86808223bc720d75"
 file = "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"
-sha256 = "3fc991d3badad7277c11030a7519832cddaf2057aafed6d4b25147e953a070b1"
+sha256 = "e0f2cd3c11de3bb3e1db0f5dc61d0bdb9dde4f28b90095dbc07e219cf1913367"
 size = 742090464
 license = "OpenMDW-1.1"
 

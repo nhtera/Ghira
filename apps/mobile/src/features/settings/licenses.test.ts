@@ -72,8 +72,8 @@ describe("licenses", () => {
   it("lists only the models the phone ships, and no Fluent icons", () => {
     expect(rows.filter((r) => r.group === "models").map((r) => r.name).sort()).toEqual([
       "csukuangfj/speaker-embedding-models",
+      "nhtera/ghira-asr-vi-0.6b",
       "nvidia/Nemotron-3-Diarization",
-      "nvidia/nemotron-3.5-asr-streaming-0.6b",
     ]);
     expect(rows.some((r) => /Fluent/i.test(r.name))).toBe(false);
   });
