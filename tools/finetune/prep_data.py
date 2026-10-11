@@ -3,7 +3,7 @@
 
     prep_data.py fetch  DATA [--yodas-shards 20] [--yodas-en-shards 0] [--libri-files 7] [--fosd]
     prep_data.py label  DATA BASE.nemo                                # base-model transcript per clip
-    prep_data.py select DATA [--auto-frac 0.5]                        # filter -> train.json, val.json
+    prep_data.py select DATA [--auto-frac 0.5] [--join-frac 0.5]      # filter, join -> train.json, val.json
     prep_data.py probe  DATA BASE.nemo CAND.nemo [...]                # dropped-speech check, base vs candidate
 
 Sources (licence-clean only; nothing non-commercial):
@@ -51,6 +51,7 @@ REV = {
     "doof-ferb/fpt_fosd": "e6ff950456eeaef7a257e79bf7f4597bb39c264c",
 }
 TAG = re.compile(r"\s*<[a-z]{2,3}-[A-Z]{2}>\s*")
+SILENCE = 0.4  # s of zeros after each part of a joined example (the eval kit's long-form gap)
 
 
 # ---------------------------------------------------------------- fetch
@@ -260,27 +261,42 @@ def clean_caption(text: str, lang: str) -> str | None:
 
 
 def merge(caption: str, hyp: str) -> str:
-    """Caption + model transcript -> target that matches the audio at both clip edges.
+    """Caption + model transcript (with its language tags) -> target that matches the audio.
 
     Subtitle cuts are loose (only ~10% of YODAS clips agree with the model on both edge words):
     a caption may hold words cut off in the audio, or miss words the audio has. Before the first
     and after the last agreeing word the model's words are used; between them the caption's
     (the human correction) where they differ, and the model's surface form (case, punctuation)
     where they agree, so unpunctuated captions don't teach unpunctuated output.
+
+    The model's language tags stay where it put them (at sentence ends, so a clip cut
+    mid-sentence ends without one). The streaming runtime keeps decoding after a tag, so a tag
+    must not be learned as "nothing follows": runs 2-3 put one tag at the end of every clip and
+    then dropped the first seconds of the next speaker in a continuous stream.
     """
     cap = caption.split()
-    hyp_words = hyp.split()
+    tokens = hyp.split()
+    words, tags_after = [], {}  # tags_after[j]: tags right after hyp word j (-1: before any)
+    for t in tokens:
+        if TAG.fullmatch(t):
+            tags_after.setdefault(len(words) - 1, []).append(t)
+        else:
+            words.append(t)
     key = lambda w: "".join(ch for ch in w.lower() if ch.isalnum())  # noqa: E731
-    ops = difflib.SequenceMatcher(a=[key(w) for w in cap], b=[key(w) for w in hyp_words], autojunk=False).get_opcodes()
+    ops = difflib.SequenceMatcher(a=[key(w) for w in cap], b=[key(w) for w in words], autojunk=False).get_opcodes()
     eq = [i for i, op in enumerate(ops) if op[0] == "equal"]
-    if not eq:
-        return hyp
     out = []
     for i, (op, a0, a1, b0, b1) in enumerate(ops):
-        edge = i < eq[0] or i > eq[-1]
-        out += hyp_words[b0:b1] if op == "equal" or edge else cap[a0:a1]
-    s = " ".join(out)
-    return s[:1].upper() + s[1:]
+        if op == "equal" or not eq or i < eq[0] or i > eq[-1]:
+            for j in range(b0, b1):
+                out.append(words[j])
+                out += tags_after.get(j, [])
+        else:  # a differing span between agreeing words: the caption's words, then the span's tags
+            out += cap[a0:a1]
+            for j in range(b0, b1):
+                out += tags_after.get(j, [])
+    text = " ".join(out)
+    return text[:1].upper() + text[1:]
 
 
 def wer(ref: str, hyp: str, lang: str) -> float:
@@ -304,14 +320,33 @@ RULES = {
 }
 
 
-def select(root: Path, val_n: int, seed: int, auto_frac: float) -> None:
-    """auto_frac of the train clips get the "auto" prompt. NeMo trains only on each clip's own
-    prompt, so without these the auto prompt (what a meeting with no language set uses) drifts:
-    pilot 2 dropped the first words of live English lines."""
+def join_audio(args) -> None:
+    """Writes one joined example: the parts with a pause after each (not after the last)."""
+    import numpy as np
+    import soundfile as sf
+
+    out, parts, gaps = args
+    pcm = []
+    for path, gap in zip(parts, gaps):
+        audio, sr = sf.read(path, dtype="float32")
+        pcm += [audio, np.zeros(int(gap * sr), dtype="float32")]
+    sf.write(out, np.concatenate(pcm[:-1]), SR, subtype="PCM_16")
+
+
+def select(root: Path, val_n: int, seed: int, auto_frac: float, join_frac: float, repeat: dict[str, int], workers: int) -> None:
+    """Filters the clips, builds targets, and writes train.json / val.json.
+
+    auto_frac of the train examples get the "auto" prompt (NeMo trains only on each example's own
+    prompt, so the auto prompt a meeting without a language uses would drift otherwise).
+    join_frac of the train clips are joined 2-3 at a time, from different sources and videos,
+    with 0.2-1.0 s pauses: a continuous stream carries the previous speaker and the last
+    language tag into the next utterance, which single clips never teach. `repeat` repeats
+    the small in-domain sets (the medical ones are the gate's hard cases).
+    """
     hyps = {}
     for line in open(root / "hyp.json", encoding="utf-8"):
         r = json.loads(line)
-        hyps[r["audio_filepath"]] = TAG.sub(" ", r["hyp"]).strip()
+        hyps[r["audio_filepath"]] = re.sub(r"\s+", " ", TAG.sub(lambda m: f" {m.group().strip()} ", r["hyp"])).strip()
     kept, stats = [], {}
     for line in open(root / "raw.json", encoding="utf-8"):
         r = json.loads(line)
@@ -319,24 +354,52 @@ def select(root: Path, val_n: int, seed: int, auto_frac: float) -> None:
         hyp = hyps.get(r["audio_filepath"])
         s = stats.setdefault(src, {"in": 0, "kept": 0, "hours": 0.0})
         s["in"] += 1
-        if hyp is None:
+        if not hyp:
             continue
         limit, mode = RULES[src]
         cap = clean_caption(r["text"], lang)
-        if cap is None or wer(cap, hyp, lang) > limit:
+        if cap is None or wer(cap, TAG.sub(" ", hyp), lang) > limit:
             continue
-        if mode == "model":
-            target = hyp
-        elif mode == "merge":
-            target = merge(cap, hyp)
-        else:
-            target = cap
-        kept.append({"audio_filepath": r["audio_filepath"], "duration": r["duration"], "text": f"{target} <{lang}>", "lang": lang, "target_lang": lang, "source": src})
+        target = hyp if mode == "model" else merge(cap, hyp)
+        kept.append({"audio_filepath": r["audio_filepath"], "duration": r["duration"], "text": target, "lang": lang, "target_lang": lang, "source": src})
         s["kept"] += 1
         s["hours"] += r["duration"] / 3600
     rng = random.Random(seed)
     rng.shuffle(kept)
     val, train = kept[:val_n], kept[val_n:]
+    train += [r for r in train for _ in range(repeat.get(r["source"], 1) - 1)]
+    rng.shuffle(train)
+
+    # Join: walk a shuffled pool, taking 2-3 clips of other videos (YODAS ids start with the
+    # video id) up to 20 s in total.
+    n_join = int(len(train) * join_frac)
+    pool, single, jobs, joined = train[:n_join], train[n_join:], [], []
+    video = lambda r: Path(r["audio_filepath"]).stem.split("-")[0]  # noqa: E731
+    out_dir = root / "wav" / "joined"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    i = 0
+    while i < len(pool):
+        parts, want = [pool[i]], rng.choice((2, 3))
+        i += 1
+        while len(parts) < want and i < len(pool):
+            nxt = pool[i]
+            if video(nxt) in {video(p) for p in parts} or sum(p["duration"] for p in parts) + nxt["duration"] + 1.0 > 20:
+                break
+            parts.append(nxt)
+            i += 1
+        if len(parts) == 1:
+            single.append(parts[0])
+            continue
+        gaps = [round(rng.uniform(0.2, 1.0), 2) for _ in parts]
+        out = out_dir / f"j{len(jobs):07d}.wav"
+        langs = {p["lang"] for p in parts}
+        lang = langs.pop() if len(langs) == 1 else "auto"
+        jobs.append((str(out), [p["audio_filepath"] for p in parts], gaps))
+        joined.append({"audio_filepath": str(out), "duration": round(sum(p["duration"] for p in parts) + sum(gaps[:-1]), 3), "text": " ".join(p["text"] for p in parts), "lang": lang, "target_lang": lang, "source": "joined"})
+    with ProcessPoolExecutor(workers) as ex:
+        list(ex.map(join_audio, jobs, chunksize=256))
+    train = single + joined
+    rng.shuffle(train)
     for r in train:
         if rng.random() < auto_frac:
             r["lang"] = r["target_lang"] = "auto"
@@ -346,7 +409,8 @@ def select(root: Path, val_n: int, seed: int, auto_frac: float) -> None:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
     for src, s in stats.items():
         print(f"{src:9s} kept {s['kept']}/{s['in']} clips, {s['hours']:.1f} h")
-    print(f"train {len(train)} clips, {sum(r['duration'] for r in train) / 3600:.1f} h; val {len(val)}")
+    print(f"joined {len(joined)} examples from {sum(len(j[1]) for j in jobs)} clips")
+    print(f"train {len(train)} examples, {sum(r['duration'] for r in train) / 3600:.1f} h; val {len(val)}")
 
 
 # ---------------------------------------------------------------- probe
@@ -405,7 +469,8 @@ def probe(root: Path, base: str, cands: list[str], n: int, batch: int) -> None:
     Per set and model: clips with no output, clips where the output has under half the base
     model's words ("dropped"), clips missing the base's first word in their first three
     ("head"), and the caption error rate. Each set runs with its language prompt and with
-    "auto". FLEURS stays out of this on purpose.
+    "auto", and as pairs joined by a pause ("second": the second clip's opening words that the
+    base reads but the candidate loses). FLEURS stays out of this on purpose.
     """
     key = lambda w: "".join(ch for ch in w.lower() if ch.isalnum())  # noqa: E731
     sets = {"val": root / "val.json", "yodas-en": probe_set(root, n)}
@@ -416,6 +481,19 @@ def probe(root: Path, base: str, cands: list[str], n: int, batch: int) -> None:
                 r = json.loads(line)  # lang is the prompt NeMo reads; text_lang keeps the scoring language
                 f.write(json.dumps({**r, "lang": "auto", "target_lang": "auto", "text_lang": r["lang"]}, ensure_ascii=False) + "\n")
         sets[f"{name}-auto"] = auto
+    for name in ("val", "yodas-en"):  # pairs joined with a pause: the second speaker follows a tag
+        rows = [json.loads(line) for line in open(sets[name], encoding="utf-8")]
+        half = len(rows) // 2
+        out_dir = root / "wav" / "probe_joined"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        joined = root / f"probe_{name}_joined.json"
+        with open(joined, "w", encoding="utf-8") as f:
+            for i, (a, b) in enumerate(zip(rows[:half], rows[half:])):
+                wav = out_dir / f"{name}-{i:04d}.wav"
+                join_audio((str(wav), [a["audio_filepath"], b["audio_filepath"]], [0.5, 0.5]))
+                second = [key(w) for w in TAG.sub(" ", b["text"]).split()][:2]
+                f.write(json.dumps({"audio_filepath": str(wav), "duration": a["duration"] + 0.5 + b["duration"], "text": f"{a['text']} {b['text']}", "lang": a["lang"], "target_lang": a["lang"], "second": second}, ensure_ascii=False) + "\n")
+        sets[f"{name}-joined"] = joined
     for name, man in sets.items():
         rows = [json.loads(line) for line in open(man, encoding="utf-8")]
         refs = [TAG.sub(" ", r["text"]).strip() for r in rows]
@@ -426,8 +504,11 @@ def probe(root: Path, base: str, cands: list[str], n: int, batch: int) -> None:
             empty = sum(1 for h, b in zip(hyp, base_h) if not h.split() and len(b.split()) >= 3)
             dropped = sum(1 for h, b in zip(hyp, base_h) if len(b.split()) >= 4 and len(h.split()) < 0.5 * len(b.split()))
             head = sum(1 for h, b in zip(hyp, base_h) if len(b.split()) >= 4 and key(b.split()[0]) not in [key(w) for w in h.split()[:3]])
+            # joined sets: the second clip's first two words, read by the base but lost here
+            bigram = lambda t: {tuple(key(w) for w in t.split()[i : i + 2]) for i in range(len(t.split()))}  # noqa: E731
+            second = sum(1 for r, h, b in zip(rows, hyp, base_h) if len(r.get("second", [])) == 2 and tuple(r["second"]) in bigram(b) and tuple(r["second"]) not in bigram(h))
             err = sum(wer(r, h, lg) for r, h, lg in zip(refs, hyp, langs)) / len(rows)
-            print(f"PROBE {name:14s} {label_:10s} clips={len(rows)} empty={empty} dropped={dropped} head={head} caption_err={err:.3f}", flush=True)
+            print(f"PROBE {name:14s} {label_:10s} clips={len(rows)} empty={empty} dropped={dropped} head={head} second={second} caption_err={err:.3f}", flush=True)
 
 
 def main() -> None:
@@ -449,6 +530,9 @@ def main() -> None:
     s.add_argument("--val", type=int, default=400)
     s.add_argument("--seed", type=int, default=7)
     s.add_argument("--auto-frac", type=float, default=0.5)
+    s.add_argument("--join-frac", type=float, default=0.5)
+    s.add_argument("--repeat", default="vimedcss=3,vietmed=3", help="source=times,...")
+    s.add_argument("--workers", type=int, default=os.cpu_count() or 4)
     p = sub.add_parser("probe")
     p.add_argument("data", type=Path)
     p.add_argument("nemo")
@@ -463,7 +547,8 @@ def main() -> None:
     elif a.cmd == "probe":
         probe(a.data, a.nemo, a.cands, a.en_clips, a.batch)
     else:
-        select(a.data, a.val, a.seed, a.auto_frac)
+        repeat = {k: int(v) for k, v in (kv.split("=") for kv in a.repeat.split(",") if kv)}
+        select(a.data, a.val, a.seed, a.auto_frac, a.join_frac, repeat, a.workers)
 
 
 if __name__ == "__main__":
