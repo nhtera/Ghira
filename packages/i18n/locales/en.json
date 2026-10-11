@@ -338,7 +338,10 @@
     "topics": {
       "title": "Topics",
       "subtitle": "Found by {{app}} · click to jump",
-      "outline": "Outline ({{count}})"
+      "outline": "Outline ({{count}})",
+      "resize": "Resize topics",
+      "hide": "Hide topics",
+      "show": "Show topics"
     },
     "failed": {
       "title": "{{app}} couldn’t write notes for this meeting",

@@ -326,7 +326,10 @@
     "topics": {
       "title": "Chủ đề",
       "subtitle": "{{app}} tự chia · bấm để chuyển tới",
-      "outline": "Dàn ý ({{count}})"
+      "outline": "Dàn ý ({{count}})",
+      "resize": "Đổi độ rộng cột Chủ đề",
+      "hide": "Ẩn cột Chủ đề",
+      "show": "Hiện cột Chủ đề"
     },
     "failed": {
       "title": "{{app}} chưa viết được ghi chú cho cuộc họp này",

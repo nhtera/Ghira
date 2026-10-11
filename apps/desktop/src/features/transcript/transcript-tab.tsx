@@ -269,7 +269,7 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
 
   if (transcript.isPending) {
     return (
-      <div role="status" aria-label={t("transcript.loading")} className="flex flex-col gap-3 p-4">
+      <div role="status" aria-label={t("transcript.loading")} className="flex max-w-[760px] flex-col gap-3 p-4">
         {[0, 1, 2].map((i) => (
           <div key={i} className="h-14 animate-pulse rounded-ctl bg-sunk motion-reduce:animate-none" />
         ))}
@@ -290,7 +290,8 @@ export function TranscriptTab({ meeting, detail, startAtMs }: { meeting: string;
 
   return (
     <div onKeyDown={onKeyDown} className="flex items-start gap-3">
-      <div className="min-w-0 flex-1">
+      {/* The transcript keeps its reading width; the topic rail docks at the right edge. */}
+      <div className="min-w-0 max-w-[760px] flex-1">
         <TalkShare entries={share} labels={labels} speakerCount={shareSpeakers} onOpenSpeaker={(gid) => openSpeaker(gid, "")} />
         {rail && <TopicOutline topics={topics} onJump={jumpTo} />}
         <div className="sticky top-0 z-10 bg-surface pt-1 pb-2">

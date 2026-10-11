@@ -3,11 +3,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TopicView } from "../../bindings";
 import { usePlayer } from "../../state/player";
+import { TOPIC_RAIL_WIDTH, usePrefs } from "../../state/prefs";
 import { TopicOutline, TopicRail, currentTopic, showTopicRail } from "./topic-rail";
 
 afterEach(() => {
   cleanup();
   usePlayer.setState({ src: null, currentMs: 0 });
+  usePrefs.setState({ topicRailWidth: TOPIC_RAIL_WIDTH.default, topicRailCollapsed: false });
 });
 
 const topics = (n: number): TopicView[] => Array.from({ length: n }, (_, i) => ({ title: `Topic ${i}`, tMs: i * 60_000 }));
@@ -62,5 +64,50 @@ describe("TopicRail", () => {
   it("lists every topic with its time", () => {
     render(<TopicRail topics={topics(2)} onJump={vi.fn()} />);
     expect(screen.getByTestId("topic-rail").textContent).toContain("01:00");
+  });
+
+  it("widens when its left edge is dragged left, and keeps the width", () => {
+    render(<TopicRail topics={topics(2)} onJump={vi.fn()} />);
+    const rail = screen.getByTestId("topic-rail");
+    const edge = screen.getByRole("separator", { name: "Resize topics" });
+    expect(rail.style.width).toBe(`${TOPIC_RAIL_WIDTH.default}px`);
+    fireEvent.pointerDown(edge, { button: 0, clientX: 800, pointerId: 1 });
+    fireEvent.pointerMove(edge, { clientX: 700, pointerId: 1 });
+    expect(rail.style.width).toBe(`${TOPIC_RAIL_WIDTH.default + 100}px`);
+    expect(usePrefs.getState().topicRailWidth).toBe(TOPIC_RAIL_WIDTH.default);
+    fireEvent.pointerUp(edge, { pointerId: 1 });
+    expect(usePrefs.getState().topicRailWidth).toBe(TOPIC_RAIL_WIDTH.default + 100);
+  });
+
+  it("stays within its limits, resizes from the keyboard and resets on double-click", () => {
+    render(<TopicRail topics={topics(2)} onJump={vi.fn()} />);
+    const edge = screen.getByRole("separator", { name: "Resize topics" });
+    fireEvent.pointerDown(edge, { button: 0, clientX: 800, pointerId: 1 });
+    fireEvent.pointerMove(edge, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerUp(edge, { pointerId: 1 });
+    expect(usePrefs.getState().topicRailWidth).toBe(TOPIC_RAIL_WIDTH.max);
+    fireEvent.keyDown(edge, { key: "End" });
+    expect(usePrefs.getState().topicRailWidth).toBe(TOPIC_RAIL_WIDTH.min);
+    fireEvent.keyDown(edge, { key: "ArrowLeft" });
+    expect(edge.getAttribute("aria-valuenow")).toBe(String(TOPIC_RAIL_WIDTH.min + 16));
+    fireEvent.doubleClick(edge);
+    expect(usePrefs.getState().topicRailWidth).toBe(TOPIC_RAIL_WIDTH.default);
+  });
+
+  it("folds to a strip with only its expand button, and opens again", () => {
+    render(<TopicRail topics={topics(2)} onJump={vi.fn()} />);
+    const hide = screen.getByRole("button", { name: "Hide topics" });
+    expect(hide.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(hide);
+    expect(usePrefs.getState().topicRailCollapsed).toBe(true);
+    expect(screen.getByTestId("topic-rail").style.width).toBe("");
+    expect(screen.queryByText("Topic 1")).toBeNull();
+    expect(screen.queryByRole("separator")).toBeNull();
+    const show = screen.getByRole("button", { name: "Show topics" });
+    expect(show).toBe(hide); // the same element, so focus stays on it
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(show);
+    expect(usePrefs.getState().topicRailCollapsed).toBe(false);
+    expect(screen.getByText("Topic 1")).toBeTruthy();
   });
 });

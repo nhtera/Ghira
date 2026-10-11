@@ -272,7 +272,7 @@ export function MeetingScreen({
             aria-labelledby={`tab-${tab}`}
             className="px-7 pt-5"
           >
-            <div className={tab === "map" ? "pb-6" : "max-w-[760px]"}>
+            <div className={tab === "map" ? "pb-6" : tab === "notes" ? "max-w-[760px]" : undefined}>
               {tab === "map" ? (
                 <MindMapTab meeting={id} detail={detail} />
               ) : tab === "notes" ? (

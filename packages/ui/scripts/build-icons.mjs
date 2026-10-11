@@ -120,6 +120,8 @@ export const ICONS = {
   refresh: ["refresh", "arrow_clockwise_20_regular"],
   remove_moderator: ["remove_moderator", "shield_prohibited_20_regular"],
   remove: ["remove", "subtract_20_regular"],
+  right_panel_close: ["right_panel_close", "panel_right_contract_20_regular"],
+  right_panel_open: ["right_panel_open", "panel_right_expand_20_regular"],
   schedule: ["schedule", "clock_20_regular"],
   science: ["science", "beaker_20_regular"],
   search: ["search", "search_20_regular"],
