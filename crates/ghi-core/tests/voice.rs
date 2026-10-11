@@ -550,6 +550,38 @@ fn call_mode_me_learns_with_the_guard_and_never_without_a_profile() {
     assert_eq!(me_exemplars(&s3).len(), 3, "unchanged");
 }
 
+/// A call whose far side stays silent (the meeting played from a phone into
+/// the Mac's mic): the mic is the room, so it is diarized, and Me comes from
+/// the voice profile instead of from the track.
+#[test]
+fn a_call_with_a_silent_far_track_is_read_as_a_room() {
+    let (_tmp, store) = open_store();
+    enroll_me(&store, B);
+    let runner = runner_with(&store, room_script(), Some(step(no_third_party())), None);
+    let mut tracks = room_audio();
+    tracks.push(ReplayTrack {
+        track: Track::System,
+        samples: vec![0.0; 48_000 * 24],
+        sample_rate: 48_000,
+    });
+    let meeting = record(&store, &runner, Mode::Call, tracks, 24.0);
+    assert_eq!(runner.run_pending(), 1);
+    let (a, b, c) = (
+        speaker_at(&store, &meeting, 1_000),
+        speaker_at(&store, &meeting, 9_000),
+        speaker_at(&store, &meeting, 17_000),
+    );
+    let gids = HashSet::from([a.gid.as_str(), b.gid.as_str(), c.gid.as_str()]);
+    assert_eq!(gids.len(), 3, "three voices on the mic, three speakers");
+    assert!(
+        b.is_me && !a.is_me && !c.is_me,
+        "Me by voice: {a:?} {b:?} {c:?}"
+    );
+    // From now on the meeting is a room: the user can say who is Me.
+    assert_eq!(store.get_meeting(&meeting).unwrap().mode, "room");
+    store.set_speaker_me(&a.gid).unwrap();
+}
+
 /// A missing model never blocks the pass.
 #[test]
 fn the_voice_step_never_blocks_the_final_pass() {

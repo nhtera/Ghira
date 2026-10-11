@@ -835,6 +835,12 @@ impl Store {
         self.update_meeting(gid, "lang = ?1", lang)
     }
 
+    /// The recording mode, `call` or `room` (the final pass reads a call whose
+    /// far track stayed silent as a room).
+    pub fn set_meeting_mode(&self, gid: &str, mode: &str) -> Result<()> {
+        self.update_meeting(gid, "mode = ?1", mode)
+    }
+
     /// The notes template the meeting's notes are written with (`None`: default).
     pub fn set_meeting_template(&self, gid: &str, template: Option<&str>) -> Result<()> {
         self.update_meeting(gid, "template = ?1", template)

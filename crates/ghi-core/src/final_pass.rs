@@ -11,8 +11,8 @@
 //! vocabulary → transcript v2 → `notes_final` queued.
 //!
 //! - Lines the user edited are kept as written; v2 lines under them are dropped.
-//! - Call mode: the mic track is Me; the far track is diarized. Room mode:
-//!   the mic track is diarized.
+//! - Call mode: the mic track is Me; the far track is diarized. Room mode,
+//!   or a call whose far track stayed silent: the mic track is diarized.
 //! - Voice step (14c, `voice_step`): after the carry-over, unnamed clusters
 //!   are matched with Me's profile (room mode) and, with the third-party flag
 //!   on, others'; Me learns from the mic. Never blocks the pass.
@@ -532,12 +532,23 @@ impl FinalPassJob {
             .map(|&t| (t, cut_points(&pcm[&t], chunk_s)))
             .collect();
 
-        // RefiningSpeakers: diarize the far track (call) or the room mic.
-        let diar_track = if call && pcm.contains_key(&Track::System) {
-            Track::System
-        } else {
-            Track::Mic
-        };
+        // RefiningSpeakers: diarize the far track (call) or the room mic. A
+        // far track that stayed silent (the meeting played from a phone into
+        // the mic) makes the call a room: everyone is on the mic.
+        let far_heard = pcm.get(&Track::System).is_some_and(|a| has_signal(a));
+        if call && pcm.contains_key(&Track::System) && !far_heard {
+            // The meeting says so from now on (the store then lets any voice be
+            // Me), and the live Me, which only meant "on the mic", becomes a
+            // speaker like the others for the carry-over and the voice step.
+            store.set_meeting_mode(&meeting, "room").map_err(err)?;
+            let speakers = store.speakers(&meeting).map_err(err)?;
+            if let Some(me) = speakers.iter().find(|s| s.is_me && s.merged_into.is_none()) {
+                store.clear_speaker_me(&me.gid).map_err(err)?;
+            }
+            log::info!("final pass: the far track is silent, the call is read as a room");
+        }
+        let call = call && far_heard;
+        let diar_track = if call { Track::System } else { Track::Mic };
         // The stamp ties checkpoints to this audio, engine and chunking.
         let stamp = pass_stamp(&engines.checkpoint_id(), language, chunk_s, &pcm);
         let saved = match store.pass_checkpoints(&meeting, &stamp) {
@@ -1023,6 +1034,12 @@ fn overlap_ms(spans: &[TrackSpan], t0_ms: i64, t1_ms: i64) -> i64 {
 
 /// Names the speaker model the re-clustering uses (its registry id and the
 /// start of its pinned hash), so a replaced model re-runs the diarization.
+/// Peak above -60 dBFS: a track with any sound in it. A system track nothing
+/// played into is digital silence (about -110 dBFS).
+fn has_signal(pcm: &[f32]) -> bool {
+    pcm.iter().any(|s| s.abs() > 1e-3)
+}
+
 fn voice_model_key() -> String {
     #[cfg(feature = "voice")]
     if let Some(m) = ghi_models::find(crate::profiles::VOICE_MODEL) {
