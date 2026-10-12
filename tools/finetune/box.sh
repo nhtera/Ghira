@@ -12,6 +12,9 @@
 # are joined 2-3 at a time.
 # Run 5: medical data 9 -> 24 h ViMedCSS (only the benchmark's own videos held out) and 5 -> 10 h
 # VietMed (+ dev), val held out per source by video/speaker, 15% telephone-band clips, ~1 epoch.
+# Its val_wer was lowest at step 250 (a third of val is the base model's own words), so the
+# top-3-by-val export is an early model: SNAPS keeps the weights at later steps too, and late.nemo
+# is their mean with the final step.
 set -euo pipefail
 W=${W:-/workspace}
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -19,7 +22,7 @@ NEMO_SHA=${NEMO_SHA:-e4a34fd25f895ecd7f64f0e56bc288165e078da9}   # NeMo main, 20
 BASE_REV=ea30d66debe3740a08b573244286791d423d6b3e                  # nvidia/nemotron-3.5-asr-streaming-0.6b
 STEPS=${STEPS:-6500} LR=${LR:-3e-5} WARMUP=${WARMUP:-300} VAL_EVERY=${VAL_EVERY:-500}
 BATCH=${BATCH:-160} ACCUM=${ACCUM:-2} YODAS=${YODAS:-80} YODAS_EN=${YODAS_EN:-25} LIBRI=${LIBRI:-7}
-AUTO=${AUTO:-0.5} JOIN=${JOIN:-0.5} NARROW=${NARROW:-0.15} AVG=${AVG:-3}
+AUTO=${AUTO:-0.5} JOIN=${JOIN:-0.5} NARROW=${NARROW:-0.15} AVG=${AVG:-3} SNAPS=${SNAPS:-"5000 6000"}
 mkdir -p "$W/state"
 cd "$W"
 done_() { [ -f "$W/state/$1" ]; }
@@ -58,13 +61,40 @@ python "$HERE/make_config.py" "$BASE" "$W/ft.yaml" --train "$W/data/train.json" 
   --exp-dir "$W/exp" --steps "$STEPS" --batch-duration "$BATCH" --accumulate "$ACCUM" --lr "$LR" --warmup "$WARMUP" \
   --val-every "$VAL_EVERY" --workers 8
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-if ! done_ train; then python nemo-src/examples/asr/speech_to_text_finetune.py --config-path="$W" --config-name=ft.yaml; mark train; fi
-ls -la "$W/exp/nemotron-vi-ft/checkpoints/"
+CKDIR=$W/exp/nemotron-vi-ft/checkpoints
+if ! done_ train; then
+  # Copies the weights of the run's last checkpoint when it reaches a SNAPS step. One "epoch" is
+  # VAL_EVERY batches = VAL_EVERY/ACCUM optimizer steps.
+  mkdir -p "$W/snap"
+  python - "$CKDIR" "$W" $((VAL_EVERY / ACCUM)) $SNAPS > "$W/snap.log" 2>&1 <<'EOF' &
+import glob, os, re, sys, time, torch
+ck, w, per, want = sys.argv[1], sys.argv[2], int(sys.argv[3]), {int(s) for s in sys.argv[4:]}
+while want and not os.path.exists(f"{w}/state/train"):
+    for p in glob.glob(ck + "/*-last.ckpt"):
+        step = (int(re.search(r"epoch=(\d+)", p)[1]) + 1) * per
+        out = f"{w}/snap/step{step}.pt"
+        if step in want and not os.path.exists(out):
+            m = os.path.getmtime(p); time.sleep(60)
+            if not os.path.exists(p) or os.path.getmtime(p) != m:
+                continue
+            try:
+                sd = torch.load(p, map_location="cpu", mmap=True, weights_only=False)["state_dict"]
+                torch.save({k: v.clone() for k, v in sd.items()}, out + ".tmp"); os.replace(out + ".tmp", out)
+                want.discard(step); print("saved", out, flush=True)
+            except Exception as e:
+                print("retry", step, e, flush=True)
+    time.sleep(60)
+print("snap done, missing:", sorted(want), flush=True)
+EOF
+  snap=$!; trap 'kill $snap 2>/dev/null || true' EXIT   # a failed train must not leave it polling
+  python nemo-src/examples/asr/speech_to_text_finetune.py --config-path="$W" --config-name=ft.yaml; mark train
+fi
+ls -la "$CKDIR"
 
 # The run's own .nemo is the LAST step. Export the checkpoint with the lowest val_wer (best.nemo)
 # and the mean of the AVG lowest (avg.nemo; averaging usually smooths a fine-tune's noise).
 if ! done_ best; then
-  python - "$BASE" "$W/exp/nemotron-vi-ft/checkpoints" "$W" "$AVG" <<'EOF'
+  python - "$BASE" "$CKDIR" "$W" "$AVG" <<'EOF'
 import glob, re, sys, torch
 from nemo.collections.asr.models import ASRModel
 base, ckdir, out, k = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
@@ -86,5 +116,24 @@ EOF
   mark best
 fi
 
+# last.nemo: the final step; late.nemo: the mean of the SNAPS steps and the final one.
+if ! done_ late; then
+  python - "$BASE" "$CKDIR" "$W" <<'EOF'
+import glob, sys, torch
+from nemo.collections.asr.models import ASRModel
+base, ckdir, out = sys.argv[1:4]
+last = torch.load(glob.glob(f"{ckdir}/*-last.ckpt")[0], map_location="cpu", mmap=True, weights_only=False)["state_dict"]
+m = ASRModel.restore_from(base, map_location="cpu")
+m.load_state_dict(last, strict=True)
+m.save_to(f"{out}/last.nemo")
+snaps = sorted(glob.glob(f"{out}/snap/step*.pt"))
+print("late", snaps, "+ last")
+parts = [torch.load(p, map_location="cpu", weights_only=False) for p in snaps] + [last]
+m.load_state_dict({k: (sum(p[k].double() for p in parts) / len(parts)).to(last[k].dtype) if last[k].is_floating_point() else last[k] for k in last}, strict=True)
+m.save_to(f"{out}/late.nemo")
+EOF
+  mark late
+fi
+
 # Dropped-speech check against the base model, on val and on YouTube English never trained on
-if ! done_ probe; then python "$HERE/prep_data.py" probe "$W/data" "$BASE" "$W/best.nemo" "$W/avg.nemo" | tee "$W/probe.txt"; mark probe; fi
+if ! done_ probe; then python "$HERE/prep_data.py" probe "$W/data" "$BASE" "$W/avg.nemo" "$W/late.nemo" "$W/last.nemo" | tee "$W/probe.txt"; mark probe; fi
