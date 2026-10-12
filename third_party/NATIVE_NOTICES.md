@@ -50,5 +50,6 @@ Models are downloaded, never bundled; their licenses are in
 `crates/ghi-models/registry.toml` (Nemotron models: OpenMDW-1.1; Whisper
 large-v3-turbo and Silero VAD: MIT). The speech model is Ghira's Vietnamese
 fine-tune of NVIDIA's nemotron-3.5-asr-streaming-0.6b; its model card credits
-the training data (YODAS and LibriSpeech: CC BY; FOSD and ViMedCSS: CC BY 4.0;
-VietMed: MIT).
+the training data (YODAS and LibriSpeech: CC BY; FOSD, ViMedCSS and VietMed
+unlabeled: CC BY 4.0; VietMed: MIT) and Whisper large-v3-turbo (MIT), which
+checked the labels of the unlabeled audio.

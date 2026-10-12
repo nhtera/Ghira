@@ -10,9 +10,9 @@
 id = "nemotron-3.5-asr"
 role = "asr"
 repo = "nhtera/ghira-asr-vi-0.6b"
-revision = "1975b46d33d154c44729fbcc86808223bc720d75"
+revision = "26460b3e86dc842b359a4302f34a1cbd5b81a9ca"
 file = "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"
-sha256 = "e0f2cd3c11de3bb3e1db0f5dc61d0bdb9dde4f28b90095dbc07e219cf1913367"
+sha256 = "e9fc8182aad764cc9716790d48144dc1c5106f341702dbff0a8d9b15b61e2922"
 size = 742090464
 license = "OpenMDW-1.1"
 
