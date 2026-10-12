@@ -15,6 +15,8 @@
 # Its val_wer was lowest at step 250 (a third of val is the base model's own words), so the
 # top-3-by-val export is an early model: SNAPS keeps the weights at later steps too, and late.nemo
 # is their mean with the final step.
+# Run 7: VIETMED_UN shards of VietMed's unlabeled medical audio (~8.6 h each), labelled by TEACHER
+# (vast.sh push puts it at $W/teacher.nemo; else the base model) and kept where Whisper agrees.
 set -euo pipefail
 W=${W:-/workspace}
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -23,6 +25,8 @@ BASE_REV=ea30d66debe3740a08b573244286791d423d6b3e                  # nvidia/nemo
 STEPS=${STEPS:-6500} LR=${LR:-3e-5} WARMUP=${WARMUP:-300} VAL_EVERY=${VAL_EVERY:-500}
 BATCH=${BATCH:-160} ACCUM=${ACCUM:-2} YODAS=${YODAS:-80} YODAS_EN=${YODAS_EN:-25} LIBRI=${LIBRI:-7}
 AUTO=${AUTO:-0.5} JOIN=${JOIN:-0.5} NARROW=${NARROW:-0.15} AVG=${AVG:-3} SNAPS=${SNAPS:-"5000 6000"}
+VIETMED_UN=${VIETMED_UN:-0} WBATCH=${WBATCH:-128}   # Whisper batch: 32 left the A100 at 36% (823 clips/min)
+SNAPS=${SNAPS//,/ }   # vast.sh run passes no spaces: SNAPS=6000,7000
 mkdir -p "$W/state"
 cd "$W"
 done_() { [ -f "$W/state/$1" ]; }
@@ -51,10 +55,15 @@ EOF
   mark base
 fi
 BASE=$W/base/nemotron-3.5-asr-streaming-0.6b.nemo
+TEACHER=${TEACHER:-$([ -f "$W/teacher.nemo" ] && echo "$W/teacher.nemo" || echo "$BASE")}
 
 # (if-blocks, not `a || b`: set -e must stop the run when a stage fails)
-if ! done_ fetch; then python "$HERE/prep_data.py" fetch "$W/data" --yodas-shards "$YODAS" --yodas-en-shards "$YODAS_EN" --libri-files "$LIBRI" --fosd; mark fetch; fi
-if ! done_ label; then python "$HERE/prep_data.py" label "$W/data" "$BASE" --batch 64; mark label; fi
+if ! done_ fetch; then python "$HERE/prep_data.py" fetch "$W/data" --yodas-shards "$YODAS" --yodas-en-shards "$YODAS_EN" --libri-files "$LIBRI" --fosd --vietmed-un-shards "$VIETMED_UN"; mark fetch; fi
+if ! done_ label; then python "$HERE/prep_data.py" label "$W/data" "$BASE" --batch 64 --exclude vietmed_un; mark label; fi
+if [ "$VIETMED_UN" -gt 0 ]; then
+  if ! done_ teacher; then echo "teacher $TEACHER"; python "$HERE/prep_data.py" label "$W/data" "$TEACHER" --batch 64 --sources vietmed_un --out hyp_teacher.json; mark teacher; fi
+  if ! done_ whisper; then python "$HERE/prep_data.py" whisper "$W/data" --sources vietmed_un --batch "$WBATCH"; mark whisper; fi
+fi
 if ! done_ select; then python "$HERE/prep_data.py" select "$W/data" --auto-frac "$AUTO" --join-frac "$JOIN" --narrow-frac "$NARROW"; mark select; fi
 
 python "$HERE/make_config.py" "$BASE" "$W/ft.yaml" --train "$W/data/train.json" --val "$W/data/val.json" \

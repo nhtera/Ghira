@@ -2,7 +2,10 @@
 """Training data for the Vietnamese Nemotron fine-tune (runs on the GPU box).
 
     prep_data.py fetch  DATA [--yodas-shards 20] [--yodas-en-shards 0] [--libri-files 7] [--fosd]
-    prep_data.py label  DATA BASE.nemo                                # base-model transcript per clip
+    prep_data.py fetch  DATA ... [--vietmed-un-shards 0]
+    prep_data.py label  DATA BASE.nemo [--exclude vietmed_un]          # base-model transcript per clip
+    prep_data.py label  DATA TEACHER.nemo --sources vietmed_un --out hyp_teacher.json
+    prep_data.py whisper DATA --sources vietmed_un                    # second opinion -> hyp_whisper.json
     prep_data.py select DATA [--auto-frac 0.5] [--join-frac 0.5] [--narrow-frac 0.15]   # -> train.json, val.json
     prep_data.py probe  DATA BASE.nemo CAND.nemo [...]                # dropped-speech check, base vs candidate
 
@@ -12,6 +15,11 @@ Sources (licence-clean only; nothing non-commercial):
             the whole test split (898 of its 995 are also in train) and kept 9 h. The test split
             itself is never trained on.
   vietmed   leduckhai/VietMed train + dev, MIT (~10 h; no speaker is shared with the test split).
+  vietmed_un  doof-ferb/VietMed_unlabeled, CC BY 4.0 (a mirror of VietMed's 966 h unlabeled
+            medical set, MIT; 650 recordings of their own, not the 62 labeled ones), 8 kHz, ~8.6 h a
+            shard. No captions: the target is a teacher model's transcript, kept only where
+            Whisper large-v3-turbo (MIT) reads the same words, and never when it repeats a
+            sentence of the VietMed test split.
   yodas     espnet/yodas vi000 (uploader captions of CC-licensed videos), CC BY 3.0.
   fosd      doof-ferb/fpt_fosd, a copy of FPT Open Speech (Mendeley k9sxg2twv4), CC BY 4.0; ~30 h read.
   libri     openslr/librispeech_asr clean train.100, CC BY 4.0: English replay. Its target is the
@@ -50,7 +58,9 @@ REV = {
     "espnet/yodas": "main",
     "openslr/librispeech_asr": "main",
     "doof-ferb/fpt_fosd": "e6ff950456eeaef7a257e79bf7f4597bb39c264c",
+    "doof-ferb/VietMed_unlabeled": "1cda7261264152c69ea49e558500df3bb918df1c",
 }
+WHISPER = ("openai/whisper-large-v3-turbo", "41f01f3fe87f28c78e2fbf8b568835947dd65ed9")
 TAG = re.compile(r"\s*<[a-z]{2,3}-[A-Z]{2}>\s*")
 SILENCE = 0.4  # s of zeros after each part of a joined example (the eval kit's long-form gap)
 
@@ -87,11 +97,13 @@ def decode(blob: bytes):
 
 
 def parquet_rows(args):
-    """Decodes one parquet file to wavs; returns raw manifest rows."""
+    """Decodes one parquet file to wavs (clips over 20 s are never trained on); returns raw
+    manifest rows. With `drop`, the parquet file is deleted after (VietMed_unlabeled: 27 GB)."""
     import pyarrow.parquet as pq
 
     file, src, lang, text_col, id_col, keep, root, *rest = args
     group_col = rest[0] if rest else None
+    drop = len(rest) > 1 and rest[1]
     rows = []
     table = pq.read_table(file)
     for i, r in enumerate(table.to_pylist()):
@@ -106,14 +118,18 @@ def parquet_rows(args):
                 dur = sf.info(out).duration
             else:
                 audio, sr = decode(r["audio"]["bytes"])
+                if len(audio) > 20 * sr:
+                    continue
                 dur = write_wav(out, audio, sr)
         except Exception as e:  # a broken clip is skipped, not fatal
             print(f"skip {src} {uid}: {e}", file=sys.stderr)
             continue
-        row = {"audio_filepath": str(out), "duration": round(dur, 3), "text": r[text_col], "lang": lang, "source": src}
+        row = {"audio_filepath": str(out), "duration": round(dur, 3), "text": r[text_col] if text_col else "", "lang": lang, "source": src}
         if group_col:
             row["group"] = str(r[group_col])  # video or speaker: val holds out whole groups
         rows.append(row)
+    if drop:
+        Path(file).unlink()
     return rows
 
 
@@ -156,7 +172,7 @@ def yodas_rows(args):
     return rows
 
 
-def fetch(root: Path, yodas_shards: int, yodas_en_shards: int, libri_files: int, fosd: bool, workers: int) -> None:
+def fetch(root: Path, yodas_shards: int, yodas_en_shards: int, libri_files: int, fosd: bool, vietmed_un_shards: int, workers: int) -> None:
     from huggingface_hub import list_repo_files
 
     root.mkdir(parents=True, exist_ok=True)
@@ -170,6 +186,16 @@ def fetch(root: Path, yodas_shards: int, yodas_en_shards: int, libri_files: int,
 
     for split in ("train", "dev"):
         jobs.append((hf("leduckhai/VietMed", f"data/{split}-00000-of-00001.parquet", root), "vietmed", "vi-VN", "text", "utterance_id", None, root, "speaker_name"))
+
+    if vietmed_un_shards:
+        import pyarrow.parquet as pq
+
+        # The test split's sentences, so select can drop an unlabeled clip that repeats one.
+        test = pq.read_table(hf("leduckhai/VietMed", "data/test-00000-of-00001.parquet", root), columns=["text"])
+        (root / "vietmed_test_refs.txt").write_text("\n".join(test.column("text").to_pylist()) + "\n", encoding="utf-8")
+        for i in range(vietmed_un_shards):
+            f = hf("doof-ferb/VietMed_unlabeled", f"data/train-{i:05d}-of-00116.parquet", root)
+            jobs.append((f, "vietmed_un", "vi-VN", None, None, None, root, "Metadata ID", True))
 
     libri = sorted(f for f in list_repo_files("openslr/librispeech_asr", repo_type="dataset") if f.startswith("clean/train.100/"))
     for f in libri[:libri_files]:
@@ -205,16 +231,18 @@ def fetch(root: Path, yodas_shards: int, yodas_en_shards: int, libri_files: int,
 # ---------------------------------------------------------------- label
 
 
-def label(root: Path, nemo: str, batch: int) -> None:
-    """Base-model transcript for every clip (target_lang = the clip's language)."""
+def label(root: Path, nemo: str, batch: int, sources: set[str] = frozenset(), exclude: set[str] = frozenset(), out_name: str = "hyp.json") -> None:
+    """A model's transcript for every clip (target_lang = the clip's language): the base model's
+    for the captioned sources (hyp.json), a teacher's for the uncaptioned ones (--out)."""
     import torch
     import nemo.collections.asr as nemo_asr
 
     m = nemo_asr.models.ASRModel.restore_from(nemo, map_location="cuda" if torch.cuda.is_available() else "cpu")
     m.eval()
     rows = [json.loads(line) for line in open(root / "raw.json", encoding="utf-8")]
+    rows = [r for r in rows if (not sources or r["source"] in sources) and r["source"] not in exclude]
     done = {}
-    out_path = root / "hyp.json"
+    out_path = root / out_name
     if out_path.exists():
         for line in open(out_path, encoding="utf-8"):
             r = json.loads(line)
@@ -246,6 +274,58 @@ def label(root: Path, nemo: str, batch: int) -> None:
                 out.write(json.dumps({"audio_filepath": r["audio_filepath"], "hyp": text}, ensure_ascii=False) + "\n")
             out.flush()
             print(f"label: {min(i + step, len(todo))}/{len(todo)}", flush=True)
+
+
+class WhisperFeatures:
+    """Clips -> log-mels, in DataLoader workers so feature extraction overlaps the GPU."""
+
+    def __init__(self, proc):
+        self.proc = proc
+
+    def __call__(self, chunk):
+        import soundfile as sf
+
+        audio = [sf.read(r["audio_filepath"], dtype="float32")[0] for r in chunk]
+        x = self.proc(audio, sampling_rate=SR, return_tensors="pt", return_attention_mask=True)
+        return chunk, x.input_features, x.attention_mask
+
+
+def whisper(root: Path, sources: set[str], batch: int) -> None:
+    """Whisper large-v3-turbo transcript of the uncaptioned clips (hyp_whisper.json): the second
+    opinion select checks a teacher transcript against (two models that agree are rarely both
+    wrong; Whisper alone hallucinates on 8 kHz Vietnamese).
+
+    Greedy `generate` with the attention mask: transformers' ASR pipeline and beam search both
+    gave "Hãy subscribe cho kênh ..." on clips that start with a few seconds of music or silence.
+    200 new tokens is more than a 20 s clip says; a looping hallucination would otherwise hold
+    its whole batch for 448.
+    """
+    import torch
+    from transformers import WhisperForConditionalGeneration, WhisperProcessor
+
+    rows = [json.loads(line) for line in open(root / "raw.json", encoding="utf-8")]
+    out_path = root / "hyp_whisper.json"
+    done = set()
+    if out_path.exists():
+        done = {json.loads(line)["audio_filepath"] for line in open(out_path, encoding="utf-8")}
+    todo = [r for r in rows if r["source"] in sources and r["audio_filepath"] not in done]
+    print(f"whisper: {len(todo)} clips to go", flush=True)
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if dev == "cuda" else torch.float32
+    proc = WhisperProcessor.from_pretrained(WHISPER[0], revision=WHISPER[1])
+    model = WhisperForConditionalGeneration.from_pretrained(WHISPER[0], revision=WHISPER[1], torch_dtype=dtype).to(dev).eval()
+
+    chunks = [todo[i : i + batch] for i in range(0, len(todo), batch)]
+    loader = torch.utils.data.DataLoader(chunks, batch_size=None, collate_fn=WhisperFeatures(proc), num_workers=min(8, os.cpu_count() or 1))
+    with open(out_path, "a", encoding="utf-8") as out:
+        for n, (chunk, feats, mask) in enumerate(loader):
+            with torch.inference_mode():
+                ids = model.generate(feats.to(dev, dtype), attention_mask=mask.to(dev), language="vi", task="transcribe", max_new_tokens=200)
+            for r, text in zip(chunk, proc.batch_decode(ids, skip_special_tokens=True)):
+                out.write(json.dumps({"audio_filepath": r["audio_filepath"], "hyp": text.strip()}, ensure_ascii=False) + "\n")
+            if (n + 1) % 100 == 0:
+                out.flush()
+                print(f"whisper: {(n + 1) * batch}/{len(todo)}", flush=True)
 
 
 # ---------------------------------------------------------------- select
@@ -323,6 +403,7 @@ RULES = {
     "yodas": (0.3, "merge"),  # uploader captions: often loose, keep the close ones
     "libri": (0.15, "model"),  # English replay: the model's own words
     "yodas_en": (0.15, "model"),
+    "vietmed_un": (0.1, "model"),  # the "caption" is Whisper's transcript; the target the teacher's
 }
 
 
@@ -370,12 +451,37 @@ def select(root: Path, val_n: dict[str, int], seed: int, auto_frac: float, join_
     language tag into the next utterance, which single clips never teach. `repeat` repeats
     the small in-domain sets (the medical ones are the gate's hard cases). narrow_frac of the
     single train clips (not VietMed, already 8 kHz) are read through a telephone band.
+
+    The uncaptioned clips (VietMed unlabeled) take the teacher's transcript (hyp_teacher.json)
+    as target and Whisper's (hyp_whisper.json) as the caption it must agree with. A whole
+    recording is dropped when any of its clips shares 8 words in a row with a VietMed test
+    sentence: some unlabeled recordings ARE test recordings (VietMed_un_685: 82 of 85 clips), and
+    others are episodes of the same TV programmes, with the same hosts.
     """
-    hyps = {}
-    for line in open(root / "hyp.json", encoding="utf-8"):
+
+    def load(name: str) -> dict[str, str]:
+        out = {}
+        if (root / name).exists():
+            for line in open(root / name, encoding="utf-8"):
+                r = json.loads(line)
+                out[r["audio_filepath"]] = re.sub(r"\s+", " ", TAG.sub(lambda m: f" {m.group().strip()} ", r["hyp"])).strip()
+        return out
+
+    hyps = load("hyp.json") | load("hyp_teacher.json")
+    second = load("hyp_whisper.json")
+    test_grams = set()
+    if (root / "vietmed_test_refs.txt").exists():
+        for line in open(root / "vietmed_test_refs.txt", encoding="utf-8"):
+            w = textnorm.normalize(line, "vi")
+            test_grams.update(tuple(w[i : i + 8]) for i in range(len(w) - 7))
+    leaky = set()  # recordings with any clip that repeats a test sentence
+    for line in open(root / "raw.json", encoding="utf-8"):
         r = json.loads(line)
-        hyps[r["audio_filepath"]] = re.sub(r"\s+", " ", TAG.sub(lambda m: f" {m.group().strip()} ", r["hyp"])).strip()
-    kept, stats = [], {}
+        if r["source"] == "vietmed_un" and r["audio_filepath"] in hyps:
+            w = textnorm.normalize(TAG.sub(" ", hyps[r["audio_filepath"]]), "vi")
+            if any(tuple(w[i : i + 8]) in test_grams for i in range(len(w) - 7)):
+                leaky.add(r["group"])
+    kept, stats, leaked = [], {}, 0
     for line in open(root / "raw.json", encoding="utf-8"):
         r = json.loads(line)
         src, lang = r["source"], r["lang"]
@@ -385,7 +491,10 @@ def select(root: Path, val_n: dict[str, int], seed: int, auto_frac: float, join_
         if not hyp:
             continue
         limit, mode = RULES[src]
-        cap = clean_caption(r["text"], lang)
+        cap = clean_caption(second.get(r["audio_filepath"], r["text"]), lang)
+        if src == "vietmed_un" and r["group"] in leaky:
+            leaked += 1
+            continue
         if cap is None or wer(cap, TAG.sub(" ", hyp), lang) > limit:
             continue
         target = hyp if mode == "model" else merge(cap, hyp)
@@ -441,7 +550,7 @@ def select(root: Path, val_n: dict[str, int], seed: int, auto_frac: float, join_
     narrow_dir.mkdir(parents=True, exist_ok=True)
     narrow = {}
     for i, r in enumerate(single):
-        if r["source"] != "vietmed" and rng.random() < narrow_frac:
+        if r["source"] not in ("vietmed", "vietmed_un") and rng.random() < narrow_frac:
             out = narrow_dir / f"n{i:07d}.wav"
             narrow[r["audio_filepath"], i] = str(out)
             single[i] = {**r, "audio_filepath": str(out)}
@@ -460,6 +569,8 @@ def select(root: Path, val_n: dict[str, int], seed: int, auto_frac: float, join_
     for src, s in stats.items():
         n_val = sum(1 for r in val if r["source"] == src)
         print(f"{src:9s} kept {s['kept']}/{s['in']} clips, {s['hours']:.1f} h; val {n_val} clips")
+    if leaked:
+        print(f"vietmed_un: {leaked} clips of {len(leaky)} recordings that repeat a VietMed test sentence dropped")
     print(f"joined {len(joined)} examples from {sum(len(j[1]) for j in jobs)} clips; {len(narrow)} telephone-band clips")
     print(f"train {len(train)} examples, {sum(r['duration'] for r in train) / 3600:.1f} h; val {len(val)}")
 
@@ -576,11 +687,19 @@ def main() -> None:
     f.add_argument("--yodas-en-shards", type=int, default=0)
     f.add_argument("--fosd", action="store_true")
     f.add_argument("--libri-files", type=int, default=7)
+    f.add_argument("--vietmed-un-shards", type=int, default=0)
     f.add_argument("--workers", type=int, default=os.cpu_count() or 4)
     lb = sub.add_parser("label")
     lb.add_argument("data", type=Path)
     lb.add_argument("nemo")
     lb.add_argument("--batch", type=int, default=64)
+    lb.add_argument("--sources", default="", help="only these sources (comma list)")
+    lb.add_argument("--exclude", default="", help="skip these sources")
+    lb.add_argument("--out", default="hyp.json")
+    wh = sub.add_parser("whisper")
+    wh.add_argument("data", type=Path)
+    wh.add_argument("--sources", default="vietmed_un")
+    wh.add_argument("--batch", type=int, default=32)
     s = sub.add_parser("select")
     s.add_argument("data", type=Path)
     s.add_argument("--val", default=",".join(f"{k}={v}" for k, v in VAL.items()), help="source=clips,...")
@@ -597,10 +716,13 @@ def main() -> None:
     p.add_argument("--en-clips", type=int, default=500)
     p.add_argument("--batch", type=int, default=64)
     a = ap.parse_args()
+    split = lambda spec: {x for x in spec.split(",") if x}  # noqa: E731
     if a.cmd == "fetch":
-        fetch(a.data, a.yodas_shards, a.yodas_en_shards, a.libri_files, a.fosd, a.workers)
+        fetch(a.data, a.yodas_shards, a.yodas_en_shards, a.libri_files, a.fosd, a.vietmed_un_shards, a.workers)
     elif a.cmd == "label":
-        label(a.data, a.nemo, a.batch)
+        label(a.data, a.nemo, a.batch, split(a.sources), split(a.exclude), a.out)
+    elif a.cmd == "whisper":
+        whisper(a.data, split(a.sources), a.batch)
     elif a.cmd == "probe":
         probe(a.data, a.nemo, a.cands, a.en_clips, a.batch)
     else:

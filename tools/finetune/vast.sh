@@ -2,12 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Mac-side helper for the Vietnamese Nemotron fine-tune on a rented Vast.ai GPU.
 # Needs: `vastai` CLI with its API key set, and an SSH key registered on the account
-# (VAST_SSH_KEY, default ~/.ssh/vast_ed25519). Only public data and NVIDIA's base model go to
-# the box; meeting recordings never leave this Mac.
+# (VAST_SSH_KEY, default ~/.ssh/vast_ed25519). Only public data, NVIDIA's base model and our own
+# fine-tunes go to the box; meeting recordings never leave this Mac.
 #
 #   vast.sh create OFFER_ID [DISK_GB]   rent the offer, wait until it runs, save its id
-#   vast.sh push [LABELS_DIR]           copy the scripts (+ the eval kit's text normaliser); with a
-#                                       saved hyp.json from an earlier run, the label stage is skipped
+#   vast.sh push [LABELS_DIR] [TEACHER.nemo]
+#                                       copy the scripts (+ the eval kit's text normaliser); with a
+#                                       saved hyp.json from an earlier run, the label stage is skipped;
+#                                       TEACHER labels the uncaptioned VietMed audio (box.sh VIETMED_UN)
 #   vast.sh run [ENV=VAL ...]           start box.sh in the background (resumes by stage)
 #   vast.sh status                      last log lines, GPU use, credit
 #   vast.sh pull                        fetch best/avg/late/last .nemo, probe, log, manifests to $OUT (./ft-out)
@@ -50,6 +52,9 @@ case "${1:-}" in
     rsync -az -e "ssh -i $KEY -p $port -o StrictHostKeyChecking=accept-new" "$tmp/ft/" "$host:/workspace/ft/"
     if [ -n "${2:-}" ]; then
       rsync -az -e "ssh -i $KEY -p $port" --rsync-path="mkdir -p /workspace/data && rsync" "$2/hyp.json" "$host:/workspace/data/"
+    fi
+    if [ -n "${3:-}" ]; then
+      rsync -a --partial -e "ssh -i $KEY -p $port" "$3" "$host:/workspace/teacher.nemo"
     fi
     rm -rf "$tmp"; echo pushed ;;
   run)
