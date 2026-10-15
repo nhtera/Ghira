@@ -41,7 +41,7 @@ jobs:
           tool: cargo-about@0.9.2
       - name: Third-party notices
         run: cargo about generate about.hbs -o THIRD_PARTY_NOTICES.html
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: third-party-notices
           path: THIRD_PARTY_NOTICES.html
