@@ -151,7 +151,7 @@ jobs:
           cargo cyclonedx --manifest-path apps/desktop/src-tauri/Cargo.toml --format json --override-filename sbom-rust
           cp apps/desktop/src-tauri/sbom-rust.json dist/
           (cd apps/desktop && npx --yes @cyclonedx/cyclonedx-npm --omit dev --output-file ../../dist/sbom-js.json)
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ghira-${{ github.ref_name }}-macos
           path: dist/
