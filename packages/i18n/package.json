@@ -25,7 +25,7 @@
     "react": "^19.3.0",
     "react-i18next": "^17.0.15",
     "typescript": "~6.0.3",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.3"
   },
   "peerDependencies": {
     "i18next": "^26.4.2",
